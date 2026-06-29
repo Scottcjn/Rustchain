@@ -201,3 +201,44 @@ class TestRustChainWalletExportImport:
         """Invalid word count raises ValueError."""
         with pytest.raises(ValueError, match="Seed phrase must be 12 or 24"):
             RustChainWallet.from_seed_phrase(["abandon"] * 10)
+
+
+class TestRustChainWalletEd25519Integrity:
+    """No insecure fallback: keys/signatures must be real Ed25519.
+
+    Regression coverage for a silent fallback that, when ``cryptography`` was
+    missing, derived a hash-based "public key" and signed with HMAC. That made
+    the same seed phrase resolve to a different address and produced signatures
+    the network rejects.
+    """
+
+    def test_signature_verifies_against_advertised_public_key(self):
+        """Signatures are genuine Ed25519 over the advertised public key."""
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+            Ed25519PublicKey,
+        )
+
+        wallet = RustChainWallet.create(strength=128)
+        message = b"transfer payload"
+        signature = wallet.sign(message)
+
+        pub = Ed25519PublicKey.from_public_bytes(
+            bytes.fromhex(wallet.public_key_hex)
+        )
+        # Raises InvalidSignature if the signature is not real Ed25519.
+        pub.verify(signature, message)
+
+    def test_missing_cryptography_raises_instead_of_forging_keys(self, monkeypatch):
+        """Without 'cryptography' the wallet refuses rather than forging keys."""
+        import builtins
+
+        real_import = builtins.__import__
+
+        def blocked_import(name, *args, **kwargs):
+            if name.startswith("cryptography"):
+                raise ImportError("simulated missing cryptography")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", blocked_import)
+        with pytest.raises(RuntimeError, match="requires the 'cryptography'"):
+            RustChainWallet.create(strength=128)

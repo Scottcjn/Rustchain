@@ -202,6 +202,35 @@ def _hmac_sha512(key: bytes, data: bytes) -> bytes:
     return hmac.new(key, data, hashlib.sha512).digest()
 
 
+def _load_ed25519():
+    """Import the Ed25519 primitives, or raise a clear error if unavailable.
+
+    The wallet MUST use real Ed25519 for key derivation and signing so that
+    addresses and transactions stay compatible with the RustChain network.
+    There is deliberately no hash/HMAC fallback: a silent fallback would derive
+    a *different* address from the same seed (depending only on whether the
+    ``cryptography`` package happens to be installed) and would emit signatures
+    the network rejects, corrupting wallet identity and risking loss of funds.
+    """
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+            Ed25519PrivateKey,
+        )
+        from cryptography.hazmat.primitives.serialization import (
+            Encoding,
+            PublicFormat,
+        )
+    except ImportError as exc:
+        raise RuntimeError(
+            "RustChainWallet requires the 'cryptography' package for Ed25519 "
+            "key derivation and signing. Install it with "
+            "'pip install cryptography'. A fallback scheme is intentionally not "
+            "provided because it would produce addresses and signatures that are "
+            "incompatible with the RustChain network."
+        ) from exc
+    return Ed25519PrivateKey, Encoding, PublicFormat
+
+
 class RustChainWallet:
     """
     RustChain wallet with BIP39 seed phrase and Ed25519 signing.
@@ -245,20 +274,11 @@ class RustChainWallet:
 
     @staticmethod
     def _derive_public_key(private_key: bytes) -> bytes:
-        """Derive public key from private key using Ed25519."""
-        try:
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-            from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
-            import base64
-
-            # Use cryptography library if available
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-            priv = Ed25519PrivateKey.from_private_bytes(private_key[:32])
-            pub = priv.public_key()
-            return pub.public_bytes(Encoding.Raw, PublicFormat.Raw)
-        except ImportError:
-            # Fallback: simple hash-based "public key" derivation
-            return _sha256d(b"pubkey" + private_key)[:32]
+        """Derive the Ed25519 public key from the private key."""
+        Ed25519PrivateKey, Encoding, PublicFormat = _load_ed25519()
+        priv = Ed25519PrivateKey.from_private_bytes(private_key[:32])
+        pub = priv.public_key()
+        return pub.public_bytes(Encoding.Raw, PublicFormat.Raw)
 
     @classmethod
     def create(cls, strength: int = 128) -> "RustChainWallet":
@@ -306,11 +326,8 @@ class RustChainWallet:
     @classmethod
     def _generate_address(cls, private_key: bytes) -> str:
         """Generate a wallet address from private key."""
-        # Derive public key
-        if hasattr(cls, "_derive_public_key"):
-            pubkey = cls._derive_public_key(private_key)
-        else:
-            pubkey = _sha256d(b"pubkey" + private_key)[:32]
+        # Derive public key (always real Ed25519; raises if cryptography missing)
+        pubkey = cls._derive_public_key(private_key)
 
         # Hash public key to get address
         addr_hash = _sha256d(b"address" + pubkey)
@@ -359,14 +376,9 @@ class RustChainWallet:
         Returns:
             The Ed25519 signature (64 bytes).
         """
-        try:
-            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
-            priv = Ed25519PrivateKey.from_private_bytes(self._private_key[:32])
-            return priv.sign(message)
-        except ImportError:
-            # Fallback: HMAC-based signature (not real Ed25519)
-            return _hmac_sha512(self._private_key, message)[:64]
+        Ed25519PrivateKey, _, _ = _load_ed25519()
+        priv = Ed25519PrivateKey.from_private_bytes(self._private_key[:32])
+        return priv.sign(message)
 
     def sign_transfer(
         self,
