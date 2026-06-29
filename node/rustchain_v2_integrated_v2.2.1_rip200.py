@@ -10182,52 +10182,43 @@ def _settle_account_transfer_in_utxo(c, from_m, to_m, amount_i64, epoch, tx_hash
         return
 
     target_nrtc = int(amount_i64) * _UTXO_PER_ACCOUNT
-
-    # Sender's unspent mirror boxes, smallest first (tidy consumption).
-    rows = c.execute(
-        """SELECT b.box_id, b.value_nrtc
-             FROM utxo_boxes b
-             JOIN account_mirror_boxes m ON m.box_id = b.box_id
-            WHERE m.account_wallet = ? AND b.spent_at IS NULL
-            ORDER BY b.value_nrtc ASC, b.box_id ASC""",
-        (from_m,),
-    ).fetchall()
-    if not rows:
-        return  # non-migrated sender: nothing mirrors this account balance
-
     spend_tx = f"account_confirm:{tx_hash}"
-    consumed_nrtc = 0
-    # Spend each candidate atomically and count ONLY boxes this statement
-    # actually marked spent (rowcount==1), so a concurrent spend between the
-    # SELECT snapshot and the UPDATE can't inflate the mirrored amount.
-    for box_id, value_nrtc in rows:
-        if consumed_nrtc >= target_nrtc:
-            break
-        res = c.execute(
-            "UPDATE utxo_boxes SET spent_at = ?, spent_by_tx = ? "
-            "WHERE box_id = ? AND spent_at IS NULL",
-            (now, spend_tx, box_id),
-        )
-        if res.rowcount != 1:
-            continue  # raced/already spent — do not count or mirror it
-        c.execute("DELETE FROM account_mirror_boxes WHERE box_id = ?", (box_id,))
-        consumed_nrtc += int(value_nrtc)
-
-    if consumed_nrtc <= 0:
-        return  # nothing was actually consumed (all raced); account move stands
-
-    moved_nrtc = min(consumed_nrtc, target_nrtc)
-    change_nrtc = consumed_nrtc - moved_nrtc
-
-    # Deterministic synthetic tx id for this reconciliation (valid hex for
-    # compute_box_id, which does bytes.fromhex on the tx id).
+    # Deterministic synthetic tx id for the reconciliation outputs (valid hex
+    # for compute_box_id, which does bytes.fromhex on the tx id).
     base = f"acctmirror:{tx_hash}:{from_m}:{to_m}:{int(amount_i64)}"
     recon_tx_id = hashlib.sha256(base.encode()).hexdigest()
 
-    def _emit_mirror(owner, value_nrtc, out_idx):
+    def _spend_wallet_mirror(wallet):
+        """Spend ALL of `wallet`'s unspent mirror boxes; return the nrtc actually
+        marked spent. Counts only rowcount==1 updates, so a concurrent spend
+        between the SELECT snapshot and the UPDATE can't inflate the total. The
+        per-wallet set is bounded — consolidation below keeps it to <=1 box."""
+        rows = c.execute(
+            "SELECT b.box_id, b.value_nrtc FROM utxo_boxes b "
+            "JOIN account_mirror_boxes m ON m.box_id = b.box_id "
+            "WHERE m.account_wallet = ? AND b.spent_at IS NULL",
+            (wallet,),
+        ).fetchall()  # fetchall-ok: bounded-by-schema (one wallet's mirror boxes; consolidation keeps it <=1)
+        total = 0
+        for box_id, value_nrtc in rows:
+            res = c.execute(
+                "UPDATE utxo_boxes SET spent_at = ?, spent_by_tx = ? "
+                "WHERE box_id = ? AND spent_at IS NULL",
+                (now, spend_tx, box_id),
+            )
+            if res.rowcount != 1:
+                continue
+            c.execute("DELETE FROM account_mirror_boxes WHERE box_id = ?", (box_id,))
+            total += int(value_nrtc)
+        return total
+
+    def _credit_wallet_mirror(wallet, value_nrtc, out_idx):
+        """Create ONE consolidated mirror box of `value_nrtc` for `wallet`, so
+        every wallet holds at most one mirror box (bounds the fetch to O(1) and
+        keeps mirror == balance exact)."""
         if value_nrtc <= 0:
             return
-        prop = utxo_address_to_proposition(owner)
+        prop = utxo_address_to_proposition(wallet)
         box_id = utxo_compute_box_id(int(value_nrtc), prop, int(epoch), recon_tx_id, out_idx)
         c.execute(
             """INSERT OR IGNORE INTO utxo_boxes
@@ -10235,18 +10226,26 @@ def _settle_account_transfer_in_utxo(c, from_m, to_m, amount_i64, epoch, tx_hash
                     creation_height, transaction_id, output_index,
                     tokens_json, registers_json, created_at)
                VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (box_id, int(value_nrtc), prop, owner, int(epoch), recon_tx_id,
+            (box_id, int(value_nrtc), prop, wallet, int(epoch), recon_tx_id,
              out_idx, '[]', json.dumps({'R4': 'account_migration_mirror'}), now),
         )
         c.execute(
             "INSERT OR REPLACE INTO account_mirror_boxes "
             "(box_id, account_wallet, value_nrtc, created_epoch) VALUES (?,?,?,?)",
-            (box_id, owner, int(value_nrtc), int(epoch)),
+            (box_id, wallet, int(value_nrtc), int(epoch)),
         )
 
-    # Receiver mirrors the moved value; sender keeps the change.
-    _emit_mirror(to_m, moved_nrtc, 0)
-    _emit_mirror(from_m, change_nrtc, 1)
+    # Consume the sender's whole mirror, move up to the transfer amount onto the
+    # receiver (folding the receiver's existing mirror so it stays one box), and
+    # return any change to the sender.
+    sender_mirror = _spend_wallet_mirror(from_m)
+    if sender_mirror <= 0:
+        return  # non-migrated sender: nothing mirrors this balance; move stands
+    moved_nrtc = min(sender_mirror, target_nrtc)
+    sender_change = sender_mirror - moved_nrtc
+    recv_existing = _spend_wallet_mirror(to_m)
+    _credit_wallet_mirror(to_m, recv_existing + moved_nrtc, 0)
+    _credit_wallet_mirror(from_m, sender_change, 1)
 
     # Consensus invariant (bounty #2819): a wallet's mirrored UTXO must never
     # exceed its account balance. mirror > balance is *exactly* the double-spend
