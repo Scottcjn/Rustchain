@@ -6516,10 +6516,32 @@ def request_withdrawal():
             fee_i64 = int(round(WITHDRAWAL_FEE * ACCOUNT_UNIT))
             total_needed_i64 = amount_i64 + fee_i64
             balance_i64 = _balance_i64_for_wallet(c, miner_pk)
-
-            if balance_i64 < total_needed_i64:
+            # Subtract funds reserved by in-flight ops (pending transfers, not-yet
+            # debited bridge deposits) so a withdrawal cannot drain balance that a
+            # pending operation is counting on. Read inside this BEGIN IMMEDIATE
+            # txn for a consistent snapshot.
+            from available_balance import encumbered_i64
+            try:
+                available_i64 = balance_i64 - encumbered_i64(c, miner_pk)
+            except sqlite3.OperationalError as exc:
+                # encumbered_i64 fails closed on a real DB error (locked/busy/IO)
+                # rather than under-counting. Turn that into a graceful, retryable
+                # 503 instead of an unhandled 500 — and never debit on doubt.
+                logging.warning("withdrawal encumbrance read failed for %s: %s", miner_pk, exc)
                 withdrawal_failed.inc()
-                return rollback_json({"error": "Insufficient balance", "balance": balance_i64 / ACCOUNT_UNIT}, 400)
+                return rollback_json(
+                    {"error": "Service temporarily unavailable, please retry"}, 503
+                )
+
+            if available_i64 < total_needed_i64:
+                withdrawal_failed.inc()
+                # Keep the legacy "Insufficient balance" string (clients match on
+                # it); add `available` so the reservation shortfall is visible.
+                return rollback_json({
+                    "error": "Insufficient balance",
+                    "balance": balance_i64 / ACCOUNT_UNIT,
+                    "available": available_i64 / ACCOUNT_UNIT,
+                }, 400)
 
             # Check daily limit
             today = datetime.now().strftime("%Y-%m-%d")
