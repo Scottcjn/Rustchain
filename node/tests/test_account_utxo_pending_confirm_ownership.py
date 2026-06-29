@@ -160,6 +160,26 @@ class _Base(unittest.TestCase):
         from utxo_db import UtxoDB
         return UtxoDB(self.db_path).get_unspent_for_address(wallet)
 
+    def _mirror_nrtc(self, wallet):
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(b.value_nrtc),0) FROM utxo_boxes b "
+                "JOIN account_mirror_boxes m ON m.box_id=b.box_id "
+                "WHERE m.account_wallet=? AND b.spent_at IS NULL", (wallet,)
+            ).fetchone()
+            return row[0] if row else 0
+
+    def _assert_amounts_match(self, wallet):
+        """Mirror UTXO must never exceed the account balance, and for a
+        mirror-tracked wallet they must be EQUAL (the consensus invariant)."""
+        mirror = self._mirror_nrtc(wallet)
+        balance_nrtc = int(_account_balance_rtc(self.db_path, wallet) * ACCOUNT_UNIT) * 100
+        self.assertLessEqual(mirror, balance_nrtc,
+                             f"{wallet}: UTXO mirror {mirror} exceeds balance {balance_nrtc}")
+        if mirror > 0:
+            self.assertEqual(mirror, balance_nrtc,
+                             f"{wallet}: mirror {mirror} != balance {balance_nrtc}")
+
     def test_confirm_consumes_migrated_mirror_box(self):
         """The migrated mirror box must not survive an account confirm."""
         from utxo_db import UNIT
@@ -178,6 +198,9 @@ class _Base(unittest.TestCase):
                          "migrated mirror box left spendable after account confirm")
         # The moved funds are mirrored onto Bob (dual-model stays consistent).
         self.assertEqual(sum(b["value_nrtc"] for b in self._unspent("bob")), 100 * UNIT)
+        # Consensus invariant: both amounts match on each wallet.
+        self._assert_amounts_match("alice")
+        self._assert_amounts_match("bob")
 
     def test_confirm_leaves_independently_earned_box(self):
         """An earned (non-mirror) box must NOT be burned by an account confirm."""
@@ -206,6 +229,24 @@ class _Base(unittest.TestCase):
         # Alice keeps 70 RTC of mirror change; Bob receives 30.
         self.assertEqual(sum(b["value_nrtc"] for b in self._unspent("alice")), 70 * UNIT)
         self.assertEqual(sum(b["value_nrtc"] for b in self._unspent("bob")), 30 * UNIT)
+        self._assert_amounts_match("alice")
+        self._assert_amounts_match("bob")
+
+    def test_rejects_when_mirror_would_exceed_balance(self):
+        """If a wallet's mirror UTXO exceeds its account balance (the
+        double-spend condition), the confirm is rejected, not committed."""
+        _seed_account_balance(self.db_path, "alice", 100)
+        _seed_account_balance(self.db_path, "bob", 0)
+        # Two mirror boxes summing to 200 RTC against a 100 RTC balance.
+        _seed_box(self.db_path, "alice", 100, mirror=True, tag="m1")
+        _seed_box(self.db_path, "alice", 100, mirror=True, tag="m2")
+
+        resp = _insert_pending_and_confirm(self.mod, self.db_path, "alice", "bob", 10)
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        # The invariant gate fires → nothing confirmed, account move rolled back.
+        self.assertEqual(resp.get_json()["confirmed_count"], 0)
+        self.assertEqual(_account_balance_rtc(self.db_path, "alice"), 100)
+        self.assertEqual(_account_balance_rtc(self.db_path, "bob"), 0)
 
     def test_backfill_adopts_pre_provenance_genesis_box(self):
         """A genesis box created before provenance tracking must be adopted by

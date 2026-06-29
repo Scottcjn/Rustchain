@@ -10248,6 +10248,35 @@ def _settle_account_transfer_in_utxo(c, from_m, to_m, amount_i64, epoch, tx_hash
     _emit_mirror(to_m, moved_nrtc, 0)
     _emit_mirror(from_m, change_nrtc, 1)
 
+    # Consensus invariant (bounty #2819): a wallet's mirrored UTXO must never
+    # exceed its account balance. mirror > balance is *exactly* the double-spend
+    # condition this fix prevents — the same funds counted in both models. The
+    # reconcile maintains mirror <= balance by construction (equal for a
+    # fully-mirrored wallet), so this can only trip on an unforeseen path; when
+    # it does we fail the confirm (rollback → transfer stays pending) rather than
+    # commit money that exists twice.
+    for _w in (from_m, to_m):
+        _mirror_nrtc = c.execute(
+            "SELECT COALESCE(SUM(b.value_nrtc), 0) FROM utxo_boxes b "
+            "JOIN account_mirror_boxes m ON m.box_id = b.box_id "
+            "WHERE m.account_wallet = ? AND b.spent_at IS NULL",
+            (_w,),
+        ).fetchone()[0]
+        _bal_nrtc = int(_balance_i64_for_wallet(c, _w)) * _UTXO_PER_ACCOUNT
+        if int(_mirror_nrtc) > _bal_nrtc:
+            try:
+                send_sophiacheck_alert(
+                    "critical",
+                    "account/UTXO mirror invariant violated on pending confirm",
+                    {"wallet": _w, "mirror_nrtc": int(_mirror_nrtc),
+                     "balance_nrtc": _bal_nrtc, "tx_hash": tx_hash},
+                )
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"mirror_exceeds_balance:{_w}:mirror={int(_mirror_nrtc)}:bal={_bal_nrtc}"
+            )
+
 
 @app.route('/pending/confirm', methods=['POST'])
 def confirm_pending():
