@@ -116,7 +116,6 @@ node/rustchain_tx_handler.py:return {row["nonce"] for row in cursor.fetchall()}
 node/rustchain_tx_handler.py:tables = {row[0] for row in cursor.fetchall()}
 node/rustchain_tx_handler.py:transactions = [dict(row) for row in cursor.fetchall()]
 node/rustchain_v2_integrated_v2.2.1_rip200.py:_epoch_state_cols = {row[1] for row in c.execute("PRAGMA table_info(epoch_state)").fetchall()}
-node/rustchain_v2_integrated_v2.2.1_rip200.py:""", (limit, offset)).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:""").fetchall())
 node/rustchain_v2_integrated_v2.2.1_rip200.py:""").fetchall())
 node/rustchain_v2_integrated_v2.2.1_rip200.py:""").fetchall())
