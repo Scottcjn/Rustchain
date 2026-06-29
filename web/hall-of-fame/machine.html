@@ -132,6 +132,13 @@
   </div>
 </div>
 <script>
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
+
 function q(name){ return new URLSearchParams(location.search).get(name) || ''; }
 function ts(v){ if(!v) return '—'; try { return new Date(v*1000).toISOString().slice(0,10); } catch { return '—'; } }
 function fallbackArt(){
