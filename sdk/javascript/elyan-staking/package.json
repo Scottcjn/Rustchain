@@ -1,0 +1,23 @@
+{
+  "name": "@elyan/staking",
+  "version": "0.1.0",
+  "description": "TypeScript staking SDK for RustChain — stake, submit, poll & verify Ed25519 verdicts",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test dist/test.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["rustchain", "rtc", "staking", "elyan", "blockchain"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
