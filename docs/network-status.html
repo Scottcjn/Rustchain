@@ -232,17 +232,29 @@
 
     function renderHistory() {
       const box = document.getElementById('historyList');
-      box.innerHTML = '';
+      box.replaceChildren();
       for (const base of NODE_ENDPOINTS) {
         const row = document.createElement('div');
         row.className = 'rounded border border-slate-800 bg-slate-950 p-3';
-        row.innerHTML = `
-          <div class="flex items-center justify-between mb-2">
-            <div class="font-mono text-xs break-all">${base}</div>
-            <div class="text-xs text-slate-300">90d uptime: <span class="text-emerald-300">${uptimePct(base)}</span></div>
-          </div>
-          ${sparkline(base)}
-        `;
+        // Build with safe DOM construction — never innerHTML for untrusted fields.
+        const top = document.createElement('div');
+        top.className = 'flex items-center justify-between mb-2';
+        const urlSpan = document.createElement('div');
+        urlSpan.className = 'font-mono text-xs break-all';
+        urlSpan.textContent = base;
+        const upSpan = document.createElement('div');
+        upSpan.className = 'text-xs text-slate-300';
+        upSpan.textContent = '90d uptime: ';
+        const upVal = document.createElement('span');
+        upVal.className = 'text-emerald-300';
+        upVal.textContent = uptimePct(base);
+        upSpan.appendChild(upVal);
+        top.append(urlSpan, upSpan);
+        // The sparkline returns an <svg> string with no untrusted interpolation,
+        // so a controlled innerHTML assignment is safe here.
+        const spark = document.createElement('div');
+        spark.innerHTML = sparkline(base);
+        row.append(top, spark);
         box.appendChild(row);
       }
     }
