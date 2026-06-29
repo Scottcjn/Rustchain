@@ -464,6 +464,12 @@
             { multiplier: 1.0, count: 2 }   // Modern x86
         ];
 
+        const DEFAULT_AVG_MULTIPLIER = (() => {
+            const weightedMultiplierSum = DEFAULT_NETWORK.reduce((sum, item) => sum + item.multiplier * item.count, 0);
+            const totalMiners = DEFAULT_NETWORK.reduce((sum, item) => sum + item.count, 0);
+            return totalMiners > 0 ? weightedMultiplierSum / totalMiners : 1.0;
+        })();
+
         function normalizeNetworkPayload(payload) {
             if (Array.isArray(payload)) {
                 return { miners: payload, total: payload.length };
@@ -576,7 +582,7 @@
                 const presetMiners = parseInt(networkMode);
                 
                 // Estimate total weight based on preset count and average multiplier
-                const avgMultiplier = 1.5; // Conservative average
+                const avgMultiplier = DEFAULT_AVG_MULTIPLIER;
                 const totalWeight = presetMiners * avgMultiplier + userMultiplier;
                 
                 performCalculations(userMultiplier, totalWeight, presetMiners + 1);
@@ -625,7 +631,7 @@
             tbody.innerHTML = '';
             
             const networkSizes = [10, 50, 100, 200, 500, 1000];
-            const avgMultiplier = 1.5;
+            const avgMultiplier = DEFAULT_AVG_MULTIPLIER;
             
             networkSizes.forEach(size => {
                 const totalWeight = (size * avgMultiplier) + userMultiplier;
