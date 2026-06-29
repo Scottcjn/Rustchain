@@ -324,12 +324,22 @@ class RustChainMiner:
                     if success:
                         self.shares_accepted += 1
                     if callback:
-                        callback({
+                        # Issue #7368: when a submission is rejected, surface
+                        # the safe response diagnostic in headless output so the
+                        # operator can fix registration or node configuration
+                        # without digging through the source. ``last_header_error``
+                        # is also persisted by ``submit_header`` for both HTTP
+                        # rejections and connection failures.
+                        share_event = {
                             "type":      "share",
+                            "slot":      slot,
                             "submitted": self.shares_submitted,
                             "accepted":  self.shares_accepted,
-                            "success":   success
-                        })
+                            "success":   success,
+                        }
+                        if not success and self.last_header_error:
+                            share_event["error"] = self.last_header_error
+                        callback(share_event)
                 time.sleep(10)
             except Exception as e:
                 if callback:
@@ -725,7 +735,17 @@ class RustChainMiner:
         }
 
     def submit_header(self, payload):
-        """Submit one signed header and remember accepted slots."""
+        """Submit one signed header and remember attempted slots.
+
+        Issue #7368: the previous version only updated
+        ``_last_submitted_slot`` on success, which meant a rejected or
+        connection-failed header (e.g. HTTP 403 ``no pubkey registered
+        for miner``) was retried every poll for the entire eligibility
+        window. We now record the slot as "handled" regardless of
+        outcome so each slot is attempted at most once. The failure
+        reason is preserved in ``last_header_error`` and surfaced to
+        the headless operator in the share event.
+        """
         slot = payload.get("header", {}).get("slot")
         try:
             response = requests.post(
@@ -740,14 +760,19 @@ class RustChainMiner:
                 and bool(result.get("ok"))
             )
             if success:
-                self._last_submitted_slot = slot
                 self.last_header_error = ""
             else:
                 self.last_header_error = self._response_diagnostic(response)
-            return success
         except Exception as e:
             self.last_header_error = f"header request failed: {e}"
-            return False
+            success = False
+        # Mark the slot as handled whether we succeeded or not. The
+        # outer mining loop guards on ``slot != self._last_submitted_slot``,
+        # so this is what stops a 10-second retry storm when a wallet
+        # is unregistered or a node is misconfigured.
+        if slot is not None:
+            self._last_submitted_slot = slot
+        return success
 
 
 # ---------------------------------------------------------------------------
@@ -842,10 +867,18 @@ def _format_headless_event(evt):
     t = evt.get("type")
     if t == "share":
         ok = "OK" if evt.get("success") else "FAIL"
-        return (
-            f"[share] submitted={evt.get('submitted')} "
+        line = (
+            f"[share] slot={evt.get('slot')} "
+            f"submitted={evt.get('submitted')} "
             f"accepted={evt.get('accepted')} {ok}"
         )
+        # Issue #7368: include the safe response diagnostic when a
+        # submission was rejected, so headless operators see the
+        # underlying HTTP error (e.g. "no pubkey registered for miner")
+        # without attaching a debugger.
+        if not evt.get("success") and evt.get("error"):
+            line += f" error={evt['error']}"
+        return line
     if t == "attest":
         return (
             f"[attest] {evt.get('message')} "
