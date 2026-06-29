@@ -323,7 +323,7 @@ def rust_leaderboard():
             LIMIT ?
         """, (limit,))
         
-        rows = c.fetchall()
+        rows = c.fetchall()  # fetchall-ok: already-paginated (LIMIT ?)
         conn.close()
         
         leaderboard = []
@@ -427,8 +427,8 @@ def hall_stats():
         c.execute("SELECT COUNT(*) FROM hall_of_rust WHERE capacitor_plague = 1")
         stats['capacitor_plague_survivors'] = c.fetchone()[0]
         
-        # Oldest machine
-        c.execute("SELECT miner_id, manufacture_year FROM hall_of_rust ORDER BY manufacture_year ASC LIMIT 1")
+        # Oldest machine (exclude null and zero years)
+        c.execute("SELECT miner_id, manufacture_year FROM hall_of_rust WHERE manufacture_year IS NOT NULL AND manufacture_year > 0 ORDER BY manufacture_year ASC LIMIT 1")
         oldest = c.fetchone()
         if oldest:
             stats['oldest_machine'] = {'miner_id': oldest[0], 'year': oldest[1]}
@@ -580,7 +580,7 @@ def api_hall_of_fame_leaderboard():
             """,
             params + [limit],
         )
-        rows = c.fetchall()
+        rows = c.fetchall()  # fetchall-ok: already-paginated (LIMIT ?)
         conn.close()
 
         leaderboard = []
@@ -660,7 +660,7 @@ def api_hall_of_fame_machine():
                     'rust_score': machine.get('rust_score'),
                     'samples': int(r['attestations'] or 0),
                 }
-                for r in c.fetchall()
+                for r in c.fetchall()  # fetchall-ok: bounded-by-schema (GROUP BY day, time-range scoped)
             ]
         elif _table_exists(c, 'rust_score_history'):
             c.execute(
@@ -682,7 +682,7 @@ def api_hall_of_fame_machine():
                     'samples': int(r['samples'] or 0),
                     'attestations': int(r['samples'] or 0),
                 }
-                for r in c.fetchall()
+                for r in c.fetchall()  # fetchall-ok: bounded-by-schema (GROUP BY day, time-range scoped)
             ]
 
         # Reward participation (best-effort) from enrollments + pending ledger credits.
@@ -728,6 +728,135 @@ def api_hall_of_fame_machine():
         })
     except Exception:
         return _internal_error_response("api_hall_of_fame_machine")
+
+
+@hall_bp.route('/api/hall_of_fame', methods=['GET'])
+def api_hall_of_fame():
+    """Public consolidated Hall of Fame API — returns stats and top categories."""
+    try:
+        from flask import current_app
+        db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+
+        # Stats
+        c.execute("SELECT COUNT(*) FROM hall_of_rust WHERE device_arch NOT IN ('unknown', 'default')")
+        total_machines = c.fetchone()[0]
+
+        c.execute("SELECT COUNT(*) FROM hall_of_rust WHERE is_deceased = 1")
+        deceased_machines = c.fetchone()[0]
+
+        c.execute("SELECT SUM(total_attestations) FROM hall_of_rust WHERE device_arch NOT IN ('unknown', 'default')")
+        total_attestations = c.fetchone()[0] or 0
+
+        c.execute("SELECT MAX(rust_score) FROM hall_of_rust")
+        highest_rust_score = c.fetchone()[0] or 0
+
+        # Oldest machine year
+        c.execute("SELECT MIN(manufacture_year) FROM hall_of_rust WHERE manufacture_year IS NOT NULL AND manufacture_year > 0")
+        row = c.fetchone()
+        oldest_year = row[0] if row and row[0] is not None else 0
+
+        stats = {
+            'total_machines': total_machines,
+            'deceased_machines': deceased_machines,
+            'total_attestations': total_attestations,
+            'highest_rust_score': highest_rust_score,
+            'oldest_machine_year': oldest_year,
+            'oldest_year': oldest_year,
+            'generated_at': int(time.time())
+        }
+
+        # Categories - Ancient Iron (Top 10 sorted by rust_score desc)
+        c.execute("""
+            SELECT fingerprint_hash, miner_id, device_family, device_arch,
+                   device_model, manufacture_year, rust_score, total_attestations,
+                   capacitor_plague, is_deceased, nickname
+            FROM hall_of_rust
+            ORDER BY rust_score DESC
+            LIMIT 10
+        """)
+        ancient_iron = [dict(row) for row in c.fetchall()]  # fetchall-ok: already-paginated
+
+        # Categories - Exotic Arch (Top 10 arch by count)
+        c.execute("""
+            SELECT device_arch, 
+                   COUNT(*) as machine_count, 
+                   MIN(manufacture_year) as oldest_year,
+                   MAX(rust_score) as top_rust_score,
+                   SUM(total_attestations) as total_attestations
+            FROM hall_of_rust 
+            WHERE device_arch NOT IN ('unknown', 'default')
+            GROUP BY device_arch 
+            ORDER BY machine_count DESC
+            LIMIT 10
+        """)
+        exotic_arch = []
+        for r in c.fetchall():  # fetchall-ok: already-paginated
+            exotic_arch.append({
+                'device_arch': r['device_arch'],
+                'machine_count': r['machine_count'],
+                'oldest_year': r['oldest_year'],
+                'top_rust_score': r['top_rust_score'],
+                'total_attestations': r['total_attestations']
+            })
+
+        conn.close()
+
+        return jsonify({
+            'stats': stats,
+            'categories': {
+                'ancient_iron': ancient_iron,
+                'exotic_arch': exotic_arch
+            }
+        })
+    except Exception:
+        return _internal_error_response("api_hall_of_fame")
+
+
+@hall_bp.route('/api/hall_of_fame/stats', methods=['GET'])
+def api_hall_of_fame_stats():
+    """Public stats endpoint."""
+    try:
+        from flask import current_app
+        db_path = current_app.config.get('DB_PATH', '/root/rustchain/rustchain_v2.db')
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+        
+        stats = {}
+        
+        c.execute("""SELECT COUNT(*) FROM hall_of_rust WHERE device_arch NOT IN ('unknown', 'default')""")
+        stats['total_machines'] = c.fetchone()[0]
+        
+        c.execute("SELECT COUNT(*) FROM hall_of_rust WHERE is_deceased = 1")
+        stats['deceased_machines'] = c.fetchone()[0]
+        
+        c.execute("""SELECT SUM(total_attestations) FROM hall_of_rust WHERE device_arch NOT IN ('unknown', 'default')""")
+        stats['total_attestations'] = c.fetchone()[0] or 0
+        
+        c.execute("""SELECT AVG(rust_score) FROM hall_of_rust WHERE device_arch NOT IN ('unknown', 'default')""")
+        stats['average_rust_score'] = round(c.fetchone()[0] or 0, 2)
+        
+        c.execute("SELECT MAX(rust_score) FROM hall_of_rust")
+        stats['highest_rust_score'] = c.fetchone()[0] or 0
+        
+        c.execute("SELECT COUNT(*) FROM hall_of_rust WHERE capacitor_plague = 1")
+        stats['capacitor_plague_survivors'] = c.fetchone()[0]
+        
+        # Oldest machine (exclude null and zero years)
+        c.execute("SELECT miner_id, manufacture_year FROM hall_of_rust WHERE manufacture_year IS NOT NULL AND manufacture_year > 0 ORDER BY manufacture_year ASC LIMIT 1")
+        oldest = c.fetchone()
+        if oldest:
+            stats['oldest_machine'] = {'miner_id': oldest[0], 'year': oldest[1]}
+            stats['oldest_machine_year'] = oldest[1]
+            stats['oldest_year'] = oldest[1]
+        
+        conn.close()
+        return jsonify(stats)
+    except Exception:
+        return _internal_error_response("api_hall_of_fame_stats")
+
 
 def register_hall_endpoints(app, db_path):
     """Register Hall of Rust endpoints with Flask app."""
@@ -821,7 +950,7 @@ def fleet_breakdown():
         c.execute("""
             SELECT device_arch, 
                    COUNT(*) as count, 
-                   MIN(manufacture_year) as oldest_year,
+                   MIN(CASE WHEN manufacture_year IS NOT NULL AND manufacture_year > 0 THEN manufacture_year END) as oldest_year,
                    MAX(rust_score) as top_score,
                    AVG(rust_score) as avg_score
             FROM hall_of_rust 
@@ -831,7 +960,7 @@ def fleet_breakdown():
         """)
         
         breakdown = []
-        for row in c.fetchall():
+        for row in c.fetchall():  # fetchall-ok: bounded-by-schema (GROUP BY device_arch, finite set)
             breakdown.append({
                 'architecture': row[0],
                 'count': row[1],
@@ -874,7 +1003,7 @@ def hall_timeline():
         """)
         
         timeline = []
-        for row in c.fetchall():
+        for row in c.fetchall():  # fetchall-ok: already-paginated (LIMIT 30)
             timeline.append({
                 'date': row[0],
                 'machines_joined': row[1],
