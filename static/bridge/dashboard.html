@@ -895,6 +895,15 @@
         async function fetchBridgeStats() {
             try {
                 const resp = await fetch(`${CONFIG.BRIDGE_API}/stats`);
+                if (!resp.ok) {
+                    console.warn('Bridge API returned', resp.status);
+                    return MOCK_DATA.stats;
+                }
+                const ct = resp.headers.get('content-type') || '';
+                if (!ct.includes('application/json')) {
+                    console.warn('Bridge API returned non-JSON, using mock');
+                    return MOCK_DATA.stats;
+                }
                 return await resp.json();
             } catch (e) {
                 console.log('Bridge API unavailable, using mock data');
@@ -905,6 +914,15 @@
         async function fetchBridgeLedger() {
             try {
                 const resp = await fetch(`${CONFIG.BRIDGE_API}/ledger?limit=50`);
+                if (!resp.ok) {
+                    console.warn('Bridge ledger returned', resp.status);
+                    return { locks: MOCK_DATA.transactions };
+                }
+                const ct = resp.headers.get('content-type') || '';
+                if (!ct.includes('application/json')) {
+                    console.warn('Bridge ledger returned non-JSON, using mock');
+                    return { locks: MOCK_DATA.transactions };
+                }
                 return await resp.json();
             } catch (e) {
                 console.log('Bridge ledger unavailable, using mock data');
@@ -1134,7 +1152,10 @@
             document.getElementById('lastUpdate').textContent = 'Last sync: ' + now.toLocaleTimeString();
         }
 
-        // 鈹€鈹€鈹€ Main Refresh Function 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+        /**
+         * Main data refresh — fetches data and updates all UI sections.
+         * Uses mock data when bridge API is unavailable.
+         */
         async function refreshAll() {
             try {
                 const [price, stats, ledger] = await Promise.all([
@@ -1143,12 +1164,11 @@
                     fetchBridgeLedger()
                 ]);
 
-                updateStats(MOCK_DATA.stats);
+                updateStats(stats);
+                updateFees(stats);
                 updatePriceInfo(price);
-                updateFees(MOCK_DATA.stats);
-                updateHealth(MOCK_DATA.health);
-                updateTransactions(ledger.locks || MOCK_DATA.transactions);
-
+                updateHealth(null);
+                updateTransactions(ledger.locks || []);
                 updateLastRefresh();
             } catch (e) {
                 console.error('Refresh error:', e);
