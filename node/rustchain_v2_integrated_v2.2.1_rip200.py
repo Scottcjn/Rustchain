@@ -53,12 +53,16 @@ try:
         DUST_THRESHOLD as UTXO_DUST_THRESHOLD,
         MAX_OUTPUTS as UTXO_MAX_OUTPUTS,
         UtxoDB,
+        address_to_proposition as utxo_address_to_proposition,
+        compute_box_id as utxo_compute_box_id,
     )
     HAVE_UTXO = True
 except ImportError:
     UTXO_DUST_THRESHOLD = 1_000
     UTXO_MAX_OUTPUTS = 100
     HAVE_UTXO = False
+    utxo_address_to_proposition = None
+    utxo_compute_box_id = None
     if UTXO_DUAL_WRITE:
         print("[WARN] utxo_db.py not found but UTXO_DUAL_WRITE=1 — disabling")
         UTXO_DUAL_WRITE = False
@@ -10090,6 +10094,161 @@ def void_pending():
         conn.close()
 
 
+# Account balances are micro-RTC; UTXO box values are nano-RTC (100x).
+_UTXO_PER_ACCOUNT = UTXO_UNIT // ACCOUNT_UNIT
+
+
+def _ensure_and_backfill_account_mirror(c):
+    """Create + backfill the mirror-provenance table (run ONCE per confirm pass,
+    outside the per-row savepoint).
+
+    ``account_mirror_boxes`` is the *discriminator* for the account/UTXO
+    cross-model double-spend (bounty #2819): it records exactly which boxes
+    represent account-model funds and for whom. It is deliberately an explicit
+    table rather than a ``registers_json`` marker match — a JSON marker is lost
+    on change boxes from partial spends, and "any box the sender owns" would
+    wrongly burn independently-earned UTXOs. The table is *maintained* across
+    change/receiver boxes so it stays complete after partial transfers.
+
+    Backfill makes the discriminator complete even on a DB whose genesis
+    migration ran *before* this provenance tracking existed: any unspent box
+    still carrying the migration register but missing a provenance row is
+    adopted here (idempotent). New migrations populate the table directly.
+    """
+    if not HAVE_UTXO:
+        return
+    if not c.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='utxo_boxes'"
+    ).fetchone():
+        return
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS account_mirror_boxes (
+               box_id TEXT PRIMARY KEY,
+               account_wallet TEXT NOT NULL,
+               value_nrtc INTEGER NOT NULL,
+               created_epoch INTEGER NOT NULL
+           )"""
+    )
+    c.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mirror_wallet "
+        "ON account_mirror_boxes(account_wallet)"
+    )
+    c.execute(
+        """INSERT OR IGNORE INTO account_mirror_boxes
+               (box_id, account_wallet, value_nrtc, created_epoch)
+           SELECT b.box_id, b.owner_address, b.value_nrtc, b.creation_height
+             FROM utxo_boxes b
+            WHERE b.spent_at IS NULL
+              AND json_extract(b.registers_json, '$.R4')
+                  IN ('genesis', 'account_migration_mirror')
+              AND NOT EXISTS (
+                  SELECT 1 FROM account_mirror_boxes m WHERE m.box_id = b.box_id
+              )"""
+    )
+
+
+def _settle_account_transfer_in_utxo(c, from_m, to_m, amount_i64, epoch, tx_hash, now):
+    """Keep the UTXO mirror consistent when an account pending-transfer confirms.
+
+    Without this, ``/pending/confirm`` debits the sender's account balance but
+    leaves their matching migrated UTXO box spendable, so the same funds move
+    once via account confirm and again via the UTXO path (bounty #2819 — a
+    Critical double-spend).
+
+    Properties (the synthesis of the two candidate fixes #7511/#7512):
+      * Robust discriminator — consumes only the sender's *mirror* boxes (via the
+        ``account_mirror_boxes`` provenance table), never independently-earned
+        boxes, and not dependent on a fragile registers_json match.
+      * Cannot strand a valid transfer — consumes only as much mirror value as
+        exists, up to the amount; an unmirrored remainder is account-only and
+        carries no double-spend risk, so this path never raises on "insufficient
+        UTXO" for an otherwise-valid account confirm.
+      * Mirrors the moved value to the receiver and returns change to the sender,
+        recording both in the provenance table so the set stays complete.
+      * Uses the pending row's ``epoch`` for box height (not wall-clock).
+      * Gated on HAVE_UTXO, independent of UTXO_DUAL_WRITE: a migrated box must be
+        reconciled whenever it exists. No-op for pure-account DBs and
+        non-migrated senders.
+    """
+    if not HAVE_UTXO or utxo_compute_box_id is None or utxo_address_to_proposition is None:
+        return
+    if amount_i64 <= 0:
+        return
+    # Pure-account DB (no UTXO model present): nothing to reconcile. The mirror
+    # table is created + backfilled once per pass by the caller before the loop.
+    if not c.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_mirror_boxes'"
+    ).fetchone():
+        return
+
+    target_nrtc = int(amount_i64) * _UTXO_PER_ACCOUNT
+
+    # Sender's unspent mirror boxes, smallest first (tidy consumption).
+    rows = c.execute(
+        """SELECT b.box_id, b.value_nrtc
+             FROM utxo_boxes b
+             JOIN account_mirror_boxes m ON m.box_id = b.box_id
+            WHERE m.account_wallet = ? AND b.spent_at IS NULL
+            ORDER BY b.value_nrtc ASC, b.box_id ASC""",
+        (from_m,),
+    ).fetchall()
+    if not rows:
+        return  # non-migrated sender: nothing mirrors this account balance
+
+    spend_tx = f"account_confirm:{tx_hash}"
+    consumed_nrtc = 0
+    # Spend each candidate atomically and count ONLY boxes this statement
+    # actually marked spent (rowcount==1), so a concurrent spend between the
+    # SELECT snapshot and the UPDATE can't inflate the mirrored amount.
+    for box_id, value_nrtc in rows:
+        if consumed_nrtc >= target_nrtc:
+            break
+        res = c.execute(
+            "UPDATE utxo_boxes SET spent_at = ?, spent_by_tx = ? "
+            "WHERE box_id = ? AND spent_at IS NULL",
+            (now, spend_tx, box_id),
+        )
+        if res.rowcount != 1:
+            continue  # raced/already spent — do not count or mirror it
+        c.execute("DELETE FROM account_mirror_boxes WHERE box_id = ?", (box_id,))
+        consumed_nrtc += int(value_nrtc)
+
+    if consumed_nrtc <= 0:
+        return  # nothing was actually consumed (all raced); account move stands
+
+    moved_nrtc = min(consumed_nrtc, target_nrtc)
+    change_nrtc = consumed_nrtc - moved_nrtc
+
+    # Deterministic synthetic tx id for this reconciliation (valid hex for
+    # compute_box_id, which does bytes.fromhex on the tx id).
+    base = f"acctmirror:{tx_hash}:{from_m}:{to_m}:{int(amount_i64)}"
+    recon_tx_id = hashlib.sha256(base.encode()).hexdigest()
+
+    def _emit_mirror(owner, value_nrtc, out_idx):
+        if value_nrtc <= 0:
+            return
+        prop = utxo_address_to_proposition(owner)
+        box_id = utxo_compute_box_id(int(value_nrtc), prop, int(epoch), recon_tx_id, out_idx)
+        c.execute(
+            """INSERT OR IGNORE INTO utxo_boxes
+                   (box_id, value_nrtc, proposition, owner_address,
+                    creation_height, transaction_id, output_index,
+                    tokens_json, registers_json, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (box_id, int(value_nrtc), prop, owner, int(epoch), recon_tx_id,
+             out_idx, '[]', json.dumps({'R4': 'account_migration_mirror'}), now),
+        )
+        c.execute(
+            "INSERT OR REPLACE INTO account_mirror_boxes "
+            "(box_id, account_wallet, value_nrtc, created_epoch) VALUES (?,?,?,?)",
+            (box_id, owner, int(value_nrtc), int(epoch)),
+        )
+
+    # Receiver mirrors the moved value; sender keeps the change.
+    _emit_mirror(to_m, moved_nrtc, 0)
+    _emit_mirror(from_m, change_nrtc, 1)
+
+
 @app.route('/pending/confirm', methods=['POST'])
 def confirm_pending():
     """Worker: Confirm pending transfers that have passed the delay period"""
@@ -10121,6 +10280,9 @@ def confirm_pending():
     try:
         c = conn.cursor()
         _ensure_transfer_ledger_table(c)
+        # Create + backfill the UTXO mirror provenance once per pass, before the
+        # per-row savepoints (avoids DDL inside a savepoint).
+        _ensure_and_backfill_account_mirror(c)
         balance_cols = _balance_columns(c)
         before_stats = _pending_overdue_stats(c, now)
 
@@ -10168,7 +10330,12 @@ def confirm_pending():
                 # Execute the actual transfer
                 _apply_wallet_balance_delta(c, from_m, -amount, balance_cols)
                 _apply_wallet_balance_delta(c, to_m, amount, balance_cols)
-                
+
+                # Reconcile the UTXO mirror in the same savepoint so the account
+                # and UTXO models move atomically — closes the cross-model
+                # double-spend where a migrated box stayed spendable (#2819).
+                _settle_account_transfer_in_utxo(c, from_m, to_m, amount, epoch, tx_hash, now)
+
                 # Log to IMMUTABLE ledger (the real chain!)
                 c.execute("""
                     INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason)
