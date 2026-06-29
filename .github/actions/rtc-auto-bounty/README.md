@@ -39,7 +39,7 @@ on:
 
 permissions:
   pull-requests: write
-  contents: read
+  contents: write  # required for auto-pay's Git ref mutex
 
 jobs:
   award-bounty:

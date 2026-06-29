@@ -22,7 +22,6 @@ Environment variables (set by the GitHub Action):
 import hashlib
 import os
 import re
-import subprocess
 import sys
 from datetime import datetime, timezone
 
@@ -110,26 +109,54 @@ def post_comment(repo: str, pr_number: str, body: str) -> None:
     print(f"Posted confirmation comment on PR #{pr_number}")
 
 
-def resolve_lock_sha() -> str:
-    """Return an existing commit SHA to attach the GitHub lock ref to."""
-    sha = os.environ.get("GITHUB_SHA", "").strip()
+def resolve_lock_sha(repo: str) -> str:
+    """Return a base-repository commit SHA to attach the GitHub lock ref to.
+
+    The lock ref is created in the base repository, so avoid using
+    ``GITHUB_SHA``/``git rev-parse HEAD`` from a fork checkout: that object may
+    not exist in the base repo and GitHub will reject the create-ref request
+    with a 422. The ref is only a mutex, not a code pointer, so anchoring it to
+    the base repository's default-branch tip is sufficient and always valid.
+    """
+    repo_resp = requests.get(
+        f"{GITHUB_API}/repos/{repo}",
+        headers=gh_headers(),
+        timeout=GITHUB_REQUEST_TIMEOUT_SECONDS,
+    )
+    repo_resp.raise_for_status()
+    default_branch = repo_resp.json().get("default_branch") or "main"
+
+    ref_resp = requests.get(
+        f"{GITHUB_API}/repos/{repo}/git/ref/heads/{default_branch}",
+        headers=gh_headers(),
+        timeout=GITHUB_REQUEST_TIMEOUT_SECONDS,
+    )
+    ref_resp.raise_for_status()
+    sha = ((ref_resp.json().get("object") or {}).get("sha") or "").strip()
     if re.fullmatch(r"[0-9a-fA-F]{40}", sha):
         return sha
 
-    try:
-        sha = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-    except (OSError, subprocess.CalledProcessError):
-        sha = ""
-
-    if re.fullmatch(r"[0-9a-fA-F]{40}", sha):
-        return sha
-
-    print("::error::Unable to resolve a commit SHA for the auto-pay lock ref")
+    print("::error::Unable to resolve a base-repository commit SHA for the auto-pay lock ref")
     sys.exit(1)
+
+
+def github_error_message(resp: requests.Response) -> str:
+    """Extract GitHub's error message from an API response."""
+    try:
+        payload = resp.json()
+    except ValueError:
+        return resp.text
+    message = payload.get("message", "") if isinstance(payload, dict) else ""
+    errors = payload.get("errors", []) if isinstance(payload, dict) else []
+    details = []
+    for error in errors:
+        if isinstance(error, dict):
+            details.append(" ".join(
+                str(error.get(k, "")) for k in ("resource", "field", "code") if error.get(k)
+            ))
+        else:
+            details.append(str(error))
+    return " ".join(part for part in [message, *details] if part)
 
 
 def lock_ref_name(pr_number: str, payment_key: str) -> str:
@@ -149,12 +176,16 @@ def acquire_payment_lock(repo: str, pr_number: str, payment_key: str) -> bool:
     resp = requests.post(
         url,
         headers=gh_headers(),
-        json={"ref": ref, "sha": resolve_lock_sha()},
+        json={"ref": ref, "sha": resolve_lock_sha(repo)},
         timeout=GITHUB_REQUEST_TIMEOUT_SECONDS,
     )
     if resp.status_code == 422:
-        print(f"Payment already in progress (lock ref exists: {ref}). Skipping.")
-        return False
+        message = github_error_message(resp).lower()
+        if "already exists" in message or "reference already exists" in message:
+            print(f"Payment already in progress (lock ref exists: {ref}). Skipping.")
+            return False
+        print(f"::error::GitHub rejected auto-pay lock ref creation: {github_error_message(resp)}")
+        resp.raise_for_status()
     resp.raise_for_status()
     print(f"Acquired payment lock ref: {ref}")
     return True
@@ -362,67 +393,71 @@ def main() -> None:
     if not acquire_payment_lock(repo, pr_number, payment_key):
         return
 
-    started_body = (
-        f"**RTC Auto-Pay Started**\n\n"
-        f"Preparing to pay **{payment_amount} RTC** to `{to_wallet}`.\n\n"
-        f"<!-- {PAYMENT_STARTED_MARKER} payment_key={payment_key} "
-        f"payment_comment_id={payment_comment_id} -->"
-    )
-    post_comment(repo, pr_number, started_body)
-
-    # --- Call VPS transfer API --------------------------------------------
     try:
-        result = transfer_rtc(vps_host, admin_key, to_wallet, payment_amount, memo, payment_key)
-    except requests.exceptions.ConnectionError as e:
-        release_payment_lock(repo, pr_number, payment_key)
-        print(f"::error::Cannot reach VPS at {vps_host}:{VPS_PORT} — {e}")
-        sys.exit(1)
-    except requests.exceptions.HTTPError as e:
-        release_payment_lock(repo, pr_number, payment_key)
-        print(f"::error::VPS returned error: {e.response.status_code} — {e.response.text}")
-        sys.exit(1)
-    except requests.exceptions.Timeout:
-        release_payment_lock(repo, pr_number, payment_key)
-        print("::error::VPS request timed out after 30s")
-        sys.exit(1)
-
-    ok = result.get("ok", False)
-    pending_id = result.get("pending_id", result.get("tx_id", "n/a"))
-    error = result.get("error", "")
-
-    if not ok:
-        print(f"::error::Transfer failed: {error}")
-        release_payment_lock(repo, pr_number, payment_key)
-        # Post failure notice so humans know
-        fail_body = (
-            f"**RTC Auto-Pay Failed**\n\n"
-            f"Attempted to pay **{payment_amount} RTC** to `{to_wallet}` "
-            f"but the transfer was rejected:\n\n"
-            f"```\n{error}\n```\n\n"
-            f"Please process this payment manually.\n\n"
-            f"<!-- {ALREADY_PAID_MARKER}:FAILED payment_key={payment_key} "
+        started_body = (
+            f"**RTC Auto-Pay Started**\n\n"
+            f"Preparing to pay **{payment_amount} RTC** to `{to_wallet}`.\n\n"
+            f"<!-- {PAYMENT_STARTED_MARKER} payment_key={payment_key} "
             f"payment_comment_id={payment_comment_id} -->"
         )
-        post_comment(repo, pr_number, fail_body)
-        sys.exit(1)
+        post_comment(repo, pr_number, started_body)
 
-    # --- Post confirmation comment ----------------------------------------
-    confirm_body = (
-        f"**RTC Payment Sent**\n\n"
-        f"| Field | Value |\n"
-        f"|-------|-------|\n"
-        f"| Amount | **{payment_amount} RTC** |\n"
-        f"| Recipient | `{to_wallet}` |\n"
-        f"| From | `{FROM_WALLET}` |\n"
-        f"| Memo | {memo} |\n"
-        f"| pending_id | `{pending_id}` |\n\n"
-        f"Transfer confirmed on RustChain.\n\n"
-        f"<!-- {ALREADY_PAID_MARKER} payment_key={payment_key} "
-        f"payment_comment_id={payment_comment_id} pending_id={pending_id} -->"
-    )
-    post_comment(repo, pr_number, confirm_body)
+        # --- Call VPS transfer API ----------------------------------------
+        try:
+            result = transfer_rtc(vps_host, admin_key, to_wallet, payment_amount, memo, payment_key)
+        except requests.exceptions.ConnectionError as e:
+            print(f"::error::Cannot reach VPS at {vps_host}:{VPS_PORT} — {e}")
+            sys.exit(1)
+        except requests.exceptions.HTTPError as e:
+            print(f"::error::VPS returned error: {e.response.status_code} — {e.response.text}")
+            sys.exit(1)
+        except requests.exceptions.Timeout:
+            print("::error::VPS request timed out after 30s")
+            sys.exit(1)
 
-    print(f"Payment complete: {payment_amount} RTC to {to_wallet} (pending_id={pending_id})")
+        ok = result.get("ok", False)
+        pending_id = result.get("pending_id", result.get("tx_id", "n/a"))
+        error = result.get("error", "")
+
+        if not ok:
+            print(f"::error::Transfer failed: {error}")
+            # Post failure notice so humans know
+            fail_body = (
+                f"**RTC Auto-Pay Failed**\n\n"
+                f"Attempted to pay **{payment_amount} RTC** to `{to_wallet}` "
+                f"but the transfer was rejected:\n\n"
+                f"```\n{error}\n```\n\n"
+                f"Please process this payment manually.\n\n"
+                f"<!-- {ALREADY_PAID_MARKER}:FAILED payment_key={payment_key} "
+                f"payment_comment_id={payment_comment_id} -->"
+            )
+            post_comment(repo, pr_number, fail_body)
+            sys.exit(1)
+
+        # --- Post confirmation comment ------------------------------------
+        confirm_body = (
+            f"**RTC Payment Sent**\n\n"
+            f"| Field | Value |\n"
+            f"|-------|-------|\n"
+            f"| Amount | **{payment_amount} RTC** |\n"
+            f"| Recipient | `{to_wallet}` |\n"
+            f"| From | `{FROM_WALLET}` |\n"
+            f"| Memo | {memo} |\n"
+            f"| pending_id | `{pending_id}` |\n\n"
+            f"Transfer confirmed on RustChain.\n\n"
+            f"<!-- {ALREADY_PAID_MARKER} payment_key={payment_key} "
+            f"payment_comment_id={payment_comment_id} pending_id={pending_id} -->"
+        )
+        post_comment(repo, pr_number, confirm_body)
+
+        print(f"Payment complete: {payment_amount} RTC to {to_wallet} (pending_id={pending_id})")
+    finally:
+        # The ref is an in-progress mutex only. Always release it once this run
+        # leaves the critical section so a GitHub comment outage between acquire
+        # and Started cannot strand a payout forever. Confirmed/manual/fresh
+        # Started comments plus the transfer idempotency key remain the sources
+        # of truth for duplicate suppression and recovery.
+        release_payment_lock(repo, pr_number, payment_key)
 
 
 if __name__ == "__main__":
