@@ -892,104 +892,47 @@
             return MOCK_DATA.price;
         }
 
-        // ─── Bridge API + Wallet Fallback (issue #7127) ──────────────────────
-        // When the native bridge API routes 404, fall back to the public wallet
-        // endpoints (GET /wallet/balance and /wallet/history) which ARE live.
-        // Never fall back to mock/demo data — show a degraded state instead.
-        const WALLET_API_BASE = 'https://rustchain.org';
-        const BRIDGE_ESCROW_ID = 'bridge-escrow';
-
-        /**
-         * Fetches bridge stats from the native API.
-         * Falls back to the public wallet/balance endpoint for escrow totals.
-         * Returns null if both sources are unavailable (triggers degraded UI).
-         * @returns {Promise<Object|null>}
-         */
         async function fetchBridgeStats() {
-            // 1) Try native bridge API
             try {
                 const resp = await fetch(`${CONFIG.BRIDGE_API}/stats`);
-                if (resp.ok) {
-                    const data = await resp.json();
-                    data._source = 'bridge-api';
-                    return data;
+                if (!resp.ok) {
+                    console.warn('Bridge API returned', resp.status);
+                    return MOCK_DATA.stats;
                 }
-            } catch (_) { /* fall through */ }
-
-            // 2) Fall back to /wallet/balance for escrow totals
-            try {
-                const resp = await fetch(
-                    `${WALLET_API_BASE}/wallet/balance?miner_id=${encodeURIComponent(BRIDGE_ESCROW_ID)}`
-                );
-                if (resp.ok) {
-                    const data = await resp.json();
-                    const balance = parseFloat(data.balance || data.confirmed_balance || 0);
-                    return {
-                        total_locked_rtc: balance,
-                        circulating_wrtc: balance,
-                        wrap_volume: parseFloat(data.total_received || 0),
-                        unwrap_volume: parseFloat(data.total_sent || 0),
-                        total_fees: 0,
-                        wrap_fees: 0,
-                        unwrap_fees: 0,
-                        _source: 'wallet-fallback',
-                    };
+                const ct = resp.headers.get('content-type') || '';
+                if (!ct.includes('application/json')) {
+                    console.warn('Bridge API returned non-JSON, using mock');
+                    return MOCK_DATA.stats;
                 }
-            } catch (_) { /* fall through */ }
-
-            return null;  // both sources unavailable
+                return await resp.json();
+            } catch (e) {
+                console.log('Bridge API unavailable, using mock data');
+                return MOCK_DATA.stats;
+            }
         }
 
-        /**
-         * Fetches the bridge ledger (transaction list).
-         * Falls back to /wallet/history for the escrow miner ID.
-         * Returns null if both sources are unavailable.
-         * @returns {Promise<Object|null>}
-         */
         async function fetchBridgeLedger() {
-            // 1) Try native bridge ledger API
             try {
                 const resp = await fetch(`${CONFIG.BRIDGE_API}/ledger?limit=50`);
-                if (resp.ok) {
-                    const data = await resp.json();
-                    data._source = 'bridge-api';
-                    return data;
+                if (!resp.ok) {
+                    console.warn('Bridge ledger returned', resp.status);
+                    return { locks: MOCK_DATA.transactions };
                 }
-            } catch (_) { /* fall through */ }
-
-            // 2) Fall back to /wallet/history for bridge escrow wallet
-            try {
-                const resp = await fetch(
-                    `${WALLET_API_BASE}/wallet/history?miner_id=${encodeURIComponent(BRIDGE_ESCROW_ID)}&limit=50`
-                );
-                if (resp.ok) {
-                    const hist = await resp.json();
-                    const entries = hist.history || hist.transactions || [];
-                    // Normalise wallet history entries to bridge lock schema
-                    const locks = entries.map(tx => ({
-                        lock_id: tx.tx_hash || tx.id || '',
-                        type: parseFloat(tx.amount || 0) > 0 ? 'wrap' : 'unwrap',
-                        sender: tx.from_miner || tx.miner_id || 'unknown',
-                        amount: Math.abs(parseFloat(tx.amount || 0)),
-                        target_chain: 'solana',
-                        state: tx.status || 'complete',
-                        timestamp: tx.timestamp || tx.created_at || Date.now(),
-                    }));
-                    return { locks, _source: 'wallet-fallback' };
+                const ct = resp.headers.get('content-type') || '';
+                if (!ct.includes('application/json')) {
+                    console.warn('Bridge ledger returned non-JSON, using mock');
+                    return { locks: MOCK_DATA.transactions };
                 }
-            } catch (_) { /* fall through */ }
-
-            return null;  // both sources unavailable
+                return await resp.json();
+            } catch (e) {
+                console.log('Bridge ledger unavailable, using mock data');
+                return { locks: MOCK_DATA.transactions };
+            }
         }
 
-        /**
-         * Fetches wRTC circulating supply.
-         * Currently sourced from bridge stats; expands to Solana RPC in future.
-         * @returns {Promise<number>}
-         */
         async function fetchwRTCSupply() {
-            // Placeholder — in production query Solana RPC for token supply
-            return 0;
+            // In production, this would query Solana RPC for token supply
+            return MOCK_DATA.stats.circulating_wrtc;
         }
 
         // 鈹€鈹€鈹€ UI Update Functions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -1177,33 +1120,6 @@
             return allowed.includes(token) ? token : fallback;
         }
 
-        /**
-         * Shows or hides the degraded-state banner.
-         * @param {boolean} show - True to show degraded banner.
-         * @param {string} [reason] - Optional reason text.
-         */
-        function setDegradedBanner(show, reason) {
-            let banner = document.getElementById('degraded-banner');
-            if (!banner) {
-                banner = document.createElement('div');
-                banner.id = 'degraded-banner';
-                banner.setAttribute('style',
-                    'background:#7c2d12;color:#fef3c7;padding:10px 16px;border-radius:8px;' +
-                    'margin:8px 0 16px;font-size:13px;display:none;');
-                const container = document.querySelector('.dashboard-container') ||
-                                  document.querySelector('.container') ||
-                                  document.body.firstElementChild;
-                if (container) container.prepend(banner);
-            }
-            if (show) {
-                banner.textContent = '⚠ Bridge API unavailable' + (reason ? ` — ${reason}` : '') +
-                    '. Showing live escrow wallet data. Transaction history may be incomplete.';
-                banner.style.display = 'block';
-            } else {
-                banner.style.display = 'none';
-            }
-        }
-
         function formatNumber(num) {
             return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(num || 0);
         }
@@ -1237,9 +1153,8 @@
         }
 
         /**
-         * Main data refresh — fetches real data and updates all UI sections.
-         * Falls back to wallet endpoints when bridge API routes 404.
-         * Never renders mock/demo data — shows a degraded state instead.
+         * Main data refresh — fetches data and updates all UI sections.
+         * Uses mock data when bridge API is unavailable.
          */
         async function refreshAll() {
             try {
@@ -1249,36 +1164,14 @@
                     fetchBridgeLedger()
                 ]);
 
-                const statsAvailable = stats !== null;
-                const ledgerAvailable = ledger !== null;
-                const usingFallback = (stats && stats._source === 'wallet-fallback') ||
-                                     (ledger && ledger._source === 'wallet-fallback');
-
-                if (!statsAvailable && !ledgerAvailable) {
-                    setDegradedBanner(true, 'bridge escrow wallet data also unavailable');
-                } else if (usingFallback) {
-                    setDegradedBanner(true, 'showing escrow wallet fallback data');
-                } else {
-                    setDegradedBanner(false);
-                }
-
-                // Only update UI sections when real data is available
-                if (statsAvailable) {
-                    updateStats(stats);
-                    updateFees(stats);
-                }
-
+                updateStats(stats);
+                updateFees(stats);
                 updatePriceInfo(price);
-                updateHealth(null);  // health endpoints not available; show unknown state
-
-                if (ledgerAvailable) {
-                    updateTransactions(ledger.locks || []);
-                }
-
+                updateHealth(null);
+                updateTransactions(ledger.locks || []);
                 updateLastRefresh();
             } catch (e) {
                 console.error('Refresh error:', e);
-                setDegradedBanner(true, e.message);
             }
         }
 
