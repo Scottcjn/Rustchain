@@ -47,6 +47,14 @@ MAX_OUTPUTS = 100
 MAX_DATA_INPUTS = 100
 MAX_UTXO_ADDRESS_BYTES = 256
 MAX_UTXO_METADATA_BYTES = 8_192
+# Cap JSON nesting depth in output metadata.  The byte cap above still admits a
+# "JSON bomb" — e.g. `[`*4096 + `]`*4096 is exactly 8 KiB yet parses to a list
+# nested 4096 deep.  json.loads tolerates that, but any downstream recursive
+# consumer (copy.deepcopy, the pure-Python json scanner on builds without the C
+# extension, equality, re-serialization) blows the interpreter recursion limit
+# (default 1000) with RecursionError — a cheap remote DoS on block validation.
+# Legitimate token lists / register maps are shallow (depth 1-3); 32 is roomy.
+MAX_UTXO_JSON_DEPTH = 32
 MAX_MEMPOOL_TX_ID_BYTES = 128
 MAX_TX_AGE_SECONDS = 3_600  # 1 hour mempool expiry
 MAX_TX_DATA_JSON_BYTES = 262_144  # 256KB max serialized tx size
@@ -77,6 +85,40 @@ def _utf8_len(value: str) -> Optional[int]:
         return len(value.encode('utf-8'))
     except UnicodeEncodeError:
         return None
+
+
+def _json_max_depth(text: str) -> int:
+    """Return the maximum `[`/`{` nesting depth of a JSON string.
+
+    Scans the raw text in a single O(n) pass *without* building the object, so
+    it never recurses and cannot itself be the DoS it guards against.  Brackets
+    inside string literals are ignored (escapes honoured) so a token value like
+    "[[[" cannot inflate the count.  Used to reject deeply nested payloads
+    before json.loads / downstream recursive processing can hit RecursionError.
+    """
+    depth = 0
+    max_depth = 0
+    in_string = False
+    escaped = False
+    for ch in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == '\\':
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == '[' or ch == '{':
+            depth += 1
+            if depth > max_depth:
+                max_depth = depth
+        elif ch == ']' or ch == '}':
+            if depth > 0:
+                depth -= 1
+    return max_depth
 
 
 # ---------------------------------------------------------------------------
@@ -527,6 +569,13 @@ class UtxoDB:
             if tokens_len is None or tokens_len > MAX_UTXO_METADATA_BYTES:
                 return None
             if registers_len is None or registers_len > MAX_UTXO_METADATA_BYTES:
+                return None
+            # Reject JSON bombs (deeply nested arrays/objects) before parsing:
+            # they fit under the byte cap but crash recursive downstream
+            # consumers with RecursionError (DoS).
+            if _json_max_depth(tokens_json) > MAX_UTXO_JSON_DEPTH:
+                return None
+            if _json_max_depth(registers_json) > MAX_UTXO_JSON_DEPTH:
                 return None
             try:
                 tokens = json.loads(tokens_json)
