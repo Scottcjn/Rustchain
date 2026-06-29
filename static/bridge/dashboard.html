@@ -941,7 +941,7 @@
 
             // Update price change display
             const changeEl = document.getElementById('priceChangeLarge');
-            changeEl.innerHTML = `<span class="stat-change ${change >= 0 ? 'positive' : 'negative'}">${change >= 0 ? '+' : '-'} ${Math.abs(change).toFixed(2)}%</span>`;
+            changeEl.innerHTML = `<span class="stat-change ${escapeHtml(change >= 0 ? 'positive' : 'negative')}">${escapeHtml(change >= 0 ? '+' : '-')} ${Math.abs(change).toFixed(2)}%</span>`;
 
             // Add to price history for chart
             priceHistory.push({
@@ -1073,7 +1073,7 @@
                     <td><span class="tx-amount">${escapeHtml(formatNumber(tx.amount_rtc))} ${safeClassToken(tx.type, ['wrap', 'unwrap'], 'wrap') === 'wrap' ? 'RTC' : 'wRTC'}</span></td>
                     <td><span class="chain-badge ${safeClassToken(tx.target_chain, ['solana', 'base'], 'solana')}">${escapeHtml(safeClassToken(tx.target_chain, ['solana', 'base'], 'solana').toUpperCase())}</span></td>
                     <td><span class="tx-state ${safeClassToken(tx.state, ['complete', 'pending', 'confirmed', 'requested'], 'pending')}">${escapeHtml(safeClassToken(tx.state, ['complete', 'pending', 'confirmed', 'requested'], 'pending').toUpperCase())}</span></td>
-                    <td>${formatTime(tx.created_at || tx.timestamp)}</td>
+                    <td>${escapeHtml(formatTime(tx.created_at || tx.timestamp))}</td>
                 </tr>
             `).join('');
         }
