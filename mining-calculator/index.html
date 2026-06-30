@@ -584,7 +584,7 @@
         }
         
         function performCalculations(userMultiplier, totalWeight, activeMiners) {
-            const yourShare = userMultiplier / totalWeight;
+            const yourShare = totalWeight > 0 ? userMultiplier / totalWeight : 0;
             const perEpoch = yourShare * RTC_PER_EPOCH;
             const perHour = perEpoch * EPOCHS_PER_HOUR;
             const perDay = perEpoch * EPOCHS_PER_DAY;
