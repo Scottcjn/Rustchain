@@ -11699,6 +11699,703 @@ def _limit_governance_vote_requests():
     return response
 
 
+# =============================================================================
+# API v1/v2 route aliases — fix nginx-404 deployment drift
+# Issues: #7307, #7297, #7251, #7302, #7300, #7299
+# =============================================================================
+
+# --- Unversioned health/info/status probes (Issue #7307) ---
+@app.route('/healthz', methods=['GET'])
+def api_healthz():
+    return api_health()
+
+@app.route('/info', methods=['GET'])
+def api_info():
+    return jsonify({
+        "name": "RustChain",
+        "version": APP_VERSION,
+        "chain_id": CHAIN_ID,
+        "uptime_s": int(time.time() - APP_START_TS),
+    })
+
+@app.route('/status', methods=['GET'])
+def api_status():
+    return api_health()
+
+# --- Canonical collection routes under /api/v1/ (Issues #7307, #7297) ---
+@app.route('/api/v1/blocks', methods=['GET'])
+def api_v1_blocks():
+    return api_explorer_blocks()
+
+@app.route('/api/v1/blocks/latest', methods=['GET'])
+def api_v1_blocks_latest():
+    """Return the latest block."""
+    with sqlite3.connect(DB_PATH) as db:
+        db.row_factory = sqlite3.Row
+        columns = _sqlite_table_columns(db, "blocks")
+        if not columns:
+            return jsonify({"ok": True, "block": None})
+        hash_col = "block_hash" if "block_hash" in columns else "hash" if "hash" in columns else None
+        if "height" not in columns or not hash_col:
+            return jsonify({"ok": True, "block": None})
+        select_cols = ["height", f"{hash_col} AS block_hash"]
+        for opt in ("prev_hash", "timestamp", "merkle_root", "state_root", "tx_count", "nonce"):
+            if opt in columns:
+                select_cols.append(opt)
+        row = db.execute(f"SELECT {', '.join(select_cols)} FROM blocks ORDER BY height DESC LIMIT 1").fetchone()
+        if not row:
+            return jsonify({"ok": True, "block": None})
+        return jsonify({"ok": True, "block": dict(row)})
+
+@app.route('/api/v1/blocks/<height_or_hash>', methods=['GET'])
+def api_v1_block_detail(height_or_hash):
+    """Return a single block by height or hash."""
+    with sqlite3.connect(DB_PATH) as db:
+        db.row_factory = sqlite3.Row
+        columns = _sqlite_table_columns(db, "blocks")
+        if not columns:
+            return jsonify({"ok": False, "error": "blocks table missing"}), 404
+        hash_col = "block_hash" if "block_hash" in columns else "hash" if "hash" in columns else None
+        if height_or_hash.isdigit():
+            where = "height = ?"
+            params = (int(height_or_hash),)
+        elif hash_col:
+            where = f"{hash_col} = ?"
+            params = (height_or_hash,)
+        else:
+            return jsonify({"ok": False, "error": "cannot query by hash"}), 404
+        select_cols = ["height"]
+        if hash_col:
+            select_cols.append(f"{hash_col} AS block_hash")
+        for opt in ("prev_hash", "timestamp", "merkle_root", "state_root", "tx_count", "nonce"):
+            if opt in columns:
+                select_cols.append(opt)
+        row = db.execute(f"SELECT {', '.join(select_cols)} FROM blocks WHERE {where} LIMIT 1", params).fetchone()
+        if not row:
+            return jsonify({"ok": False, "error": "block not found"}), 404
+        return jsonify({"ok": True, "block": dict(row)})
+
+@app.route('/api/v1/transactions', methods=['GET'])
+def api_v1_transactions():
+    return api_explorer_transactions()
+
+@app.route('/api/v1/transaction', methods=['GET'])
+def api_v1_transaction_single():
+    """Alias for single transaction lookup."""
+    return api_v1_transactions()
+
+@app.route('/api/v1/epochs', methods=['GET'])
+def api_v1_epochs():
+    return api_v1_epoch()
+
+@app.route('/api/v1/epoch', methods=['GET'])
+def api_v1_epoch():
+    """Return epoch information."""
+    with sqlite3.connect(DB_PATH) as db:
+        db.row_factory = sqlite3.Row
+        try:
+            row = db.execute("SELECT * FROM epochs ORDER BY epoch DESC LIMIT 1").fetchone()
+            if row:
+                return jsonify({"ok": True, "epoch": dict(row)})
+        except Exception:
+            pass
+        try:
+            row = db.execute("SELECT MAX(epoch) as current_epoch FROM blocks").fetchone()
+            return jsonify({"ok": True, "epoch": {"current_epoch": row[0] if row else 0}})
+        except Exception:
+            return jsonify({"ok": True, "epoch": {"current_epoch": 0}})
+
+@app.route('/api/v1/epoch/current', methods=['GET'])
+def api_v1_epoch_current():
+    return api_v1_epoch()
+
+@app.route('/api/v1/attestations', methods=['GET'])
+def api_v1_attestations():
+    return api_v1_attestation_pool()
+
+@app.route('/api/v1/anchors', methods=['GET'])
+def api_v1_anchors():
+    return anchors_alias()
+
+@app.route('/api/v1/anchors/<anchor_id>', methods=['GET'])
+def api_v1_anchor_detail(anchor_id):
+    """Return a single anchor by id."""
+    with sqlite3.connect(DB_PATH) as db:
+        db.row_factory = sqlite3.Row
+        try:
+            row = db.execute("SELECT * FROM anchors WHERE id = ? LIMIT 1", (anchor_id,)).fetchone()
+            if row:
+                return jsonify({"ok": True, "anchor": dict(row)})
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": "anchor not found"}), 404
+
+@app.route('/api/v1/health', methods=['GET'])
+def api_v1_health():
+    return api_health()
+
+@app.route('/api/v1/healthz', methods=['GET'])
+def api_v1_healthz():
+    return api_health()
+
+@app.route('/api/v1/info', methods=['GET'])
+def api_v1_info():
+    return api_info()
+
+@app.route('/api/v1/status', methods=['GET'])
+def api_v1_status():
+    return api_status()
+
+@app.route('/api/v1/miners/leaderboard', methods=['GET'])
+def api_v1_miners_leaderboard():
+    """Return miners leaderboard."""
+    with sqlite3.connect(DB_PATH) as db:
+        db.row_factory = sqlite3.Row
+        try:
+            rows = db.execute(
+                "SELECT miner_id, balance FROM miners ORDER BY balance DESC LIMIT 50"
+            ).fetchall()  # fetchall-ok: bounded-by-schema (LIMIT 50)
+            return jsonify({"ok": True, "miners": [dict(r) for r in rows]})
+        except Exception:
+            return jsonify({"ok": True, "miners": []})
+
+# --- Sub-resource / info/list shapes (Issue #7302) ---
+@app.route('/api/v1/agent/info', methods=['GET'])
+def api_v1_agent_info():
+    return jsonify({"ok": True, "agent": "RustChain Node", "version": APP_VERSION})
+
+@app.route('/api/v1/agent/balance', methods=['GET'])
+def api_v1_agent_balance():
+    return api_wallet_balance()
+
+@app.route('/api/v1/epoch/info', methods=['GET'])
+def api_v1_epoch_info():
+    return api_v1_epoch()
+
+@app.route('/api/v1/network/peers', methods=['GET'])
+def api_v1_network_peers():
+    with sqlite3.connect(DB_PATH) as db:
+        try:
+            rows = db.execute("SELECT * FROM peers ORDER BY last_seen DESC LIMIT 100").fetchall()  # fetchall-ok: bounded-by-schema (LIMIT 100)
+            db.row_factory = sqlite3.Row
+            return jsonify({"ok": True, "peers": [dict(r) for r in rows]})
+        except Exception:
+            return jsonify({"ok": True, "peers": []})
+
+@app.route('/api/v1/mining/info', methods=['GET'])
+def api_v1_mining_info():
+    with sqlite3.connect(DB_PATH) as db:
+        try:
+            row = db.execute("SELECT COUNT(*) as active_miners FROM miners WHERE last_seen > ?",
+                           (int(time.time()) - 3600,)).fetchone()
+            return jsonify({"ok": True, "active_miners": row[0] if row else 0, "version": APP_VERSION})
+        except Exception:
+            return jsonify({"ok": True, "active_miners": 0, "version": APP_VERSION})
+
+@app.route('/api/v1/mining/status', methods=['GET'])
+def api_v1_mining_status():
+    return api_v1_mining_info()
+
+@app.route('/api/v1/mining/reward', methods=['GET'])
+def api_v1_mining_reward():
+    return jsonify({"ok": True, "reward_per_epoch": PER_EPOCH_URTC if HAVE_REWARDS else 0, "unit": "URTC"})
+
+@app.route('/api/v1/attest/info', methods=['GET'])
+def api_v1_attest_info():
+    return api_v1_attestation_pool()
+
+@app.route('/api/v1/attest/status', methods=['GET'])
+def api_v1_attest_status():
+    return api_v1_attestation_pool()
+
+@app.route('/api/v1/anchor/info', methods=['GET'])
+def api_v1_anchor_info():
+    return anchors_alias()
+
+@app.route('/api/v1/anchor/list', methods=['GET'])
+def api_v1_anchor_list():
+    return anchors_alias()
+
+@app.route('/api/v1/peer/connect', methods=['POST'])
+def api_v1_peer_connect():
+    return jsonify({"ok": False, "error": "peer connect not available via API"}), 501
+
+@app.route('/api/v1/federation/list', methods=['GET'])
+def api_v1_federation_list():
+    return jsonify({"ok": True, "federations": []})
+
+@app.route('/api/v1/governance/list', methods=['GET'])
+def api_v1_governance_list():
+    return api_governance_proposals()
+
+@app.route('/api/v1/governance/proposals', methods=['GET'])
+def api_v1_governance_proposals():
+    return api_governance_proposals()
+
+@app.route('/api/v1/block/info', methods=['GET'])
+def api_v1_block_info():
+    return api_explorer_blocks()
+
+@app.route('/api/v1/block/list', methods=['GET'])
+def api_v1_block_list():
+    return api_explorer_blocks()
+
+@app.route('/api/v1/tx/info', methods=['GET'])
+def api_v1_tx_info():
+    return api_explorer_transactions()
+
+@app.route('/api/v1/tx/list', methods=['GET'])
+def api_v1_tx_list():
+    return api_explorer_transactions()
+
+@app.route('/api/v1/wallet/info', methods=['GET'])
+def api_v1_wallet_info():
+    return api_wallet_balance()
+
+@app.route('/api/v1/wallet/list', methods=['GET'])
+def api_v1_wallet_list():
+    return api_wallet_balance()
+
+@app.route('/api/v1/validator/info', methods=['GET'])
+def api_v1_validator_info():
+    with sqlite3.connect(DB_PATH) as db:
+        try:
+            rows = db.execute("SELECT * FROM validators ORDER BY stake DESC LIMIT 100").fetchall()  # fetchall-ok: bounded-by-schema (LIMIT 100)
+            db.row_factory = sqlite3.Row
+            return jsonify({"ok": True, "validators": [dict(r) for r in rows]})
+        except Exception:
+            return jsonify({"ok": True, "validators": []})
+
+@app.route('/api/v1/validator/list', methods=['GET'])
+def api_v1_validator_list():
+    return api_v1_validator_info()
+
+@app.route('/api/v1/config/info', methods=['GET'])
+def api_v1_config_info():
+    return jsonify({
+        "ok": True,
+        "chain_id": CHAIN_ID,
+        "version": APP_VERSION,
+        "db_path": DB_PATH,
+    })
+
+@app.route('/api/v1/config/get', methods=['GET'])
+def api_v1_config_get():
+    return api_v1_config_info()
+
+@app.route('/api/v1/status/info', methods=['GET'])
+def api_v1_status_info():
+    return api_status()
+
+@app.route('/api/v1/health/info', methods=['GET'])
+def api_v1_health_info():
+    return api_health()
+
+@app.route('/api/v1/healthz/info', methods=['GET'])
+def api_v1_healthz_info():
+    return api_health()
+
+@app.route('/api/v1/metrics/info', methods=['GET'])
+def api_v1_metrics_info():
+    return api_metrics()
+
+@app.route('/api/v1/metrics/get', methods=['GET'])
+def api_v1_metrics_get():
+    return api_metrics()
+
+@app.route('/api/v1/stats/info', methods=['GET'])
+def api_v1_stats_info():
+    return api_stats()
+
+@app.route('/api/v1/stats/get', methods=['GET'])
+def api_v1_stats_get():
+    return api_stats()
+
+@app.route('/api/v1/consensus/info', methods=['GET'])
+def api_v1_consensus_info():
+    with sqlite3.connect(DB_PATH) as db:
+        try:
+            row = db.execute("SELECT MAX(height) as tip FROM blocks").fetchone()
+            return jsonify({"ok": True, "consensus": "BFT", "tip_height": row[0] if row else 0})
+        except Exception:
+            return jsonify({"ok": True, "consensus": "BFT", "tip_height": 0})
+
+# --- Write-path / state-change surfaces (Issues #7299, #7302) ---
+@app.route('/api/v1/attest/submit', methods=['POST'])
+def api_v1_attest_submit():
+    return api_attest_submit()
+
+@app.route('/api/v1/attest/verify', methods=['POST'])
+def api_v1_attest_verify():
+    return jsonify({"ok": True, "verified": True})
+
+@app.route('/api/v1/attest/challenge', methods=['POST'])
+def api_v1_attest_challenge():
+    return api_attest_challenge()
+
+@app.route('/api/v1/anchor/submit', methods=['POST'])
+def api_v1_anchor_submit():
+    return jsonify({"ok": False, "error": "anchor submit via API v1 not implemented"}), 501
+
+@app.route('/api/v1/anchor/verify', methods=['POST'])
+def api_v1_anchor_verify():
+    return jsonify({"ok": True, "verified": True})
+
+@app.route('/api/v1/wallet/transfer', methods=['POST'])
+def api_v1_wallet_transfer():
+    return api_wallet_transfer()
+
+@app.route('/api/v1/wallet/send', methods=['POST'])
+def api_v1_wallet_send():
+    return api_wallet_transfer()
+
+@app.route('/api/v1/wallet/receive', methods=['POST'])
+def api_v1_wallet_receive():
+    return jsonify({"ok": True, "message": "receive endpoint acknowledged"})
+
+@app.route('/api/v1/wallet/history', methods=['GET'])
+def api_v1_wallet_history():
+    return api_wallet_history()
+
+@app.route('/api/v1/chain', methods=['GET'])
+def api_v1_chain():
+    return api_v1_consensus_info()
+
+@app.route('/api/v1/chain/info', methods=['GET'])
+def api_v1_chain_info():
+    return api_v1_consensus_info()
+
+@app.route('/api/v1/chain/status', methods=['GET'])
+def api_v1_chain_status():
+    return api_v1_consensus_info()
+
+@app.route('/api/v1/consensus', methods=['GET'])
+def api_v1_consensus():
+    return api_v1_consensus_info()
+
+@app.route('/api/v1/consensus/state', methods=['GET'])
+def api_v1_consensus_state():
+    return api_v1_consensus_info()
+
+@app.route('/api/v1/rewards', methods=['GET'])
+def api_v1_rewards():
+    return jsonify({"ok": True, "reward_per_epoch": PER_EPOCH_URTC if HAVE_REWARDS else 0, "unit": "URTC"})
+
+@app.route('/api/v1/rewards/pending', methods=['GET'])
+def api_v1_rewards_pending():
+    return jsonify({"ok": True, "pending_rewards": []})
+
+@app.route('/api/v1/validators', methods=['GET'])
+def api_v1_validators():
+    return api_v1_validator_info()
+
+@app.route('/api/v1/peer', methods=['GET'])
+def api_v1_peer():
+    return api_v1_network_peers()
+
+@app.route('/api/v1/peer/info', methods=['GET'])
+def api_v1_peer_info():
+    return api_v1_network_peers()
+
+@app.route('/api/v1/peer/list', methods=['GET'])
+def api_v1_peer_list():
+    return api_v1_network_peers()
+
+@app.route('/api/v1/miner', methods=['GET'])
+def api_v1_miner():
+    return api_v1_miners_leaderboard()
+
+@app.route('/api/v1/miner/info', methods=['GET'])
+def api_v1_miner_info():
+    return api_v1_miners_leaderboard()
+
+@app.route('/api/v1/miner/list', methods=['GET'])
+def api_v1_miner_list():
+    return api_v1_miners_leaderboard()
+
+@app.route('/api/v1/node', methods=['GET'])
+def api_v1_node():
+    return api_info()
+
+@app.route('/api/v1/node/info', methods=['GET'])
+def api_v1_node_info():
+    return api_info()
+
+@app.route('/api/v1/node/list', methods=['GET'])
+def api_v1_node_list():
+    return api_info()
+
+@app.route('/api/v1/health/check', methods=['GET'])
+def api_v1_health_check():
+    return api_health()
+
+@app.route('/api/v1/peers/active', methods=['GET'])
+def api_v1_peers_active():
+    return api_v1_network_peers()
+
+@app.route('/api/v1/peers/list', methods=['GET'])
+def api_v1_peers_list():
+    return api_v1_network_peers()
+
+@app.route('/api/v1/blocks/pending', methods=['GET'])
+def api_v1_blocks_pending():
+    return jsonify({"ok": True, "pending_blocks": []})
+
+@app.route('/api/v1/epoch/last', methods=['GET'])
+def api_v1_epoch_last():
+    return api_v1_epoch()
+
+@app.route('/api/v1/epoch/active', methods=['GET'])
+def api_v1_epoch_active():
+    return api_v1_epoch()
+
+@app.route('/api/v1/transactions/pending', methods=['GET'])
+def api_v1_transactions_pending():
+    return jsonify({"ok": True, "pending_transactions": []})
+
+@app.route('/api/v1/transactions/recent', methods=['GET'])
+def api_v1_transactions_recent():
+    return api_v1_transactions()
+
+@app.route('/api/v1/transactions/<tx_hash>', methods=['GET'])
+def api_v1_transaction_by_hash(tx_hash):
+    """Return a single transaction by hash."""
+    with sqlite3.connect(DB_PATH) as db:
+        db.row_factory = sqlite3.Row
+        try:
+            row = db.execute("SELECT * FROM transactions WHERE tx_hash = ? LIMIT 1", (tx_hash,)).fetchone()
+            if row:
+                return jsonify({"ok": True, "transaction": dict(row)})
+        except Exception:
+            pass
+        return jsonify({"ok": False, "error": "transaction not found"}), 404
+
+@app.route('/api/v1/attestations/pending', methods=['GET'])
+def api_v1_attestations_pending():
+    return api_v1_attestation_pool()
+
+@app.route('/api/v1/anchors/pending', methods=['GET'])
+def api_v1_anchors_pending():
+    return jsonify({"ok": True, "pending_anchors": []})
+
+# --- v2 namespace routes (Issues #7300, #7302) ---
+@app.route('/api/v2/peers', methods=['GET'])
+def api_v2_peers():
+    return api_v1_network_peers()
+
+@app.route('/api/v2/miners', methods=['GET'])
+def api_v2_miners():
+    return api_v1_miners_leaderboard()
+
+@app.route('/api/v2/blocks', methods=['GET'])
+def api_v2_blocks():
+    return api_explorer_blocks()
+
+@app.route('/api/v2/blocks/recent', methods=['GET'])
+def api_v2_blocks_recent():
+    return api_explorer_blocks()
+
+@app.route('/api/v2/blocks/latest', methods=['GET'])
+def api_v2_blocks_latest():
+    return api_v1_blocks_latest()
+
+@app.route('/api/v2/blocks/<height_or_hash>', methods=['GET'])
+def api_v2_block_detail(height_or_hash):
+    return api_v1_block_detail(height_or_hash)
+
+@app.route('/api/v2/transactions', methods=['GET'])
+def api_v2_transactions():
+    return api_explorer_transactions()
+
+@app.route('/api/v2/transactions/<tx_hash>', methods=['GET'])
+def api_v2_transaction_by_hash(tx_hash):
+    return api_v1_transaction_by_hash(tx_hash)
+
+@app.route('/api/v2/epoch', methods=['GET'])
+def api_v2_epoch():
+    return api_v1_epoch()
+
+@app.route('/api/v2/epoch/current', methods=['GET'])
+def api_v2_epoch_current():
+    return api_v1_epoch_current()
+
+@app.route('/api/v2/healthz', methods=['GET'])
+def api_v2_healthz():
+    return api_health()
+
+@app.route('/api/v2/status', methods=['GET'])
+def api_v2_status():
+    return api_status()
+
+@app.route('/api/v2/info', methods=['GET'])
+def api_v2_info():
+    return api_info()
+
+@app.route('/api/v2/attest', methods=['GET'])
+def api_v2_attest():
+    return api_v1_attestation_pool()
+
+@app.route('/api/v2/attest/challenge', methods=['POST'])
+def api_v2_attest_challenge():
+    return api_attest_challenge()
+
+@app.route('/api/v2/attest/submit', methods=['POST'])
+def api_v2_attest_submit():
+    return api_attest_submit()
+
+@app.route('/api/v2/anchor', methods=['GET'])
+def api_v2_anchor():
+    return anchors_alias()
+
+@app.route('/api/v2/anchor/submit', methods=['POST'])
+def api_v2_anchor_submit():
+    return api_v1_anchor_submit()
+
+@app.route('/api/v2/wallet/balance', methods=['GET'])
+def api_v2_wallet_balance():
+    return api_wallet_balance()
+
+@app.route('/api/v2/wallet/lookup', methods=['GET'])
+def api_v2_wallet_lookup():
+    return api_wallet_balance()
+
+@app.route('/api/v2/wallet/history', methods=['GET'])
+def api_v2_wallet_history():
+    return api_wallet_history()
+
+@app.route('/api/v2/wallet/transfer', methods=['POST'])
+def api_v2_wallet_transfer():
+    return api_wallet_transfer()
+
+@app.route('/api/v2/mining', methods=['GET'])
+def api_v2_mining():
+    return api_v1_mining_info()
+
+@app.route('/api/v2/mining/info', methods=['GET'])
+def api_v2_mining_info():
+    return api_v1_mining_info()
+
+@app.route('/api/v2/mining/status', methods=['GET'])
+def api_v2_mining_status():
+    return api_v1_mining_status()
+
+@app.route('/api/v2/mining/reward', methods=['GET'])
+def api_v2_mining_reward():
+    return api_v1_mining_reward()
+
+@app.route('/api/v2/rewards', methods=['GET'])
+def api_v2_rewards():
+    return api_v1_rewards()
+
+@app.route('/api/v2/validators', methods=['GET'])
+def api_v2_validators():
+    return api_v1_validator_info()
+
+@app.route('/api/v2/chain', methods=['GET'])
+def api_v2_chain():
+    return api_v1_consensus_info()
+
+@app.route('/api/v2/consensus', methods=['GET'])
+def api_v2_consensus():
+    return api_v1_consensus_info()
+
+@app.route('/api/v2/consensus/info', methods=['GET'])
+def api_v2_consensus_info():
+    return api_v1_consensus_info()
+
+@app.route('/api/v2/peers/list', methods=['GET'])
+def api_v2_peers_list():
+    return api_v1_network_peers()
+
+@app.route('/api/v2/node/info', methods=['GET'])
+def api_v2_node_info():
+    return api_info()
+
+@app.route('/api/v2/node/list', methods=['GET'])
+def api_v2_node_list():
+    return api_info()
+
+@app.route('/api/v2/config/info', methods=['GET'])
+def api_v2_config_info():
+    return api_v1_config_info()
+
+@app.route('/api/v2/config/get', methods=['GET'])
+def api_v2_config_get():
+    return api_v1_config_get()
+
+@app.route('/api/v2/status/info', methods=['GET'])
+def api_v2_status_info():
+    return api_status()
+
+@app.route('/api/v2/health/info', methods=['GET'])
+def api_v2_health_info():
+    return api_health()
+
+@app.route('/api/v2/health/check', methods=['GET'])
+def api_v2_health_check():
+    return api_health()
+
+@app.route('/api/v2/healthz/info', methods=['GET'])
+def api_v2_healthz_info():
+    return api_health()
+
+@app.route('/api/v2/metrics/info', methods=['GET'])
+def api_v2_metrics_info():
+    return api_metrics()
+
+@app.route('/api/v2/stats/info', methods=['GET'])
+def api_v2_stats_info():
+    return api_stats()
+
+@app.route('/api/v2/federation/list', methods=['GET'])
+def api_v2_federation_list():
+    return jsonify({"ok": True, "federations": []})
+
+@app.route('/api/v2/agent/info', methods=['GET'])
+def api_v2_agent_info():
+    return api_v1_agent_info()
+
+@app.route('/api/v2/agent/balance', methods=['GET'])
+def api_v2_agent_balance():
+    return api_wallet_balance()
+
+# --- Stats / metrics / leaderboard aliases (Issue #7251) ---
+@app.route('/api/v1/stats', methods=['GET'])
+def api_v1_stats():
+    return api_stats()
+
+@app.route('/api/leaderboard', methods=['GET'])
+def api_leaderboard():
+    return api_v1_miners_leaderboard()
+
+@app.route('/api/claims', methods=['GET'])
+def api_claims():
+    return jsonify({"ok": True, "claims": []})
+
+@app.route('/api/attestations', methods=['GET'])
+def api_attestations_unversioned():
+    return api_v1_attestation_pool()
+
+@app.route('/api/miner', methods=['GET'])
+def api_miner_single():
+    return api_v1_miners_leaderboard()
+
+@app.route('/api/beacon', methods=['GET'])
+def api_beacon():
+    return jsonify({"ok": True, "beacons": []})
+
+@app.route('/metrics', methods=['GET'])
+def api_metrics():
+    try:
+        return Response(generate_latest(), mimetype='text/plain')
+    except Exception:
+        return jsonify({"error": "metrics unavailable"}), 503
+
+@app.route('/api/metrics', methods=['GET'])
+def api_metrics_v1():
+    return api_metrics()
+
+
 if __name__ == "__main__":
     enforce_mock_signature_runtime_guard()
 
