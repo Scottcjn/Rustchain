@@ -1478,6 +1478,25 @@ if HAVE_BRIDGE:
     except Exception as e:
         print(f"[RIP-0305 Track C] Failed to register bridge endpoints: {e}")
 
+# Canonical /api/v1/* read API — binds the explorer/client read paths that
+# previously fell through to nginx 404 (#7251/#7252/#7297-#7307).
+try:
+    from api_v1 import register_api_v1
+    register_api_v1(
+        app,
+        db_path=DB_PATH,
+        current_slot=current_slot,
+        slot_to_epoch=slot_to_epoch,
+        app_version=APP_VERSION,
+        app_start_ts=APP_START_TS,
+        per_epoch_rtc=PER_EPOCH_RTC,
+        epoch_slots=EPOCH_SLOTS,
+        total_supply_rtc=TOTAL_SUPPLY_RTC,
+    )
+    print("[api/v1] Canonical read API registered")
+except Exception as e:
+    print(f"[api/v1] Failed to register canonical read API: {e}")
+
 # RIP-302 Agent Economy endpoints used by the explorer dashboard
 try:
     if REPO_ROOT not in sys.path:
