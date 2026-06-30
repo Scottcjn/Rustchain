@@ -73,7 +73,12 @@ def get_miner_info(miner_id: str) -> Optional[Dict[str, Any]]:
 
 
 def get_miners_list() -> List[Dict[str, Any]]:
-    """Get list of all active miners."""
+    """Get list of all active miners.
+
+    Handles both legacy top-level array and paginated envelope responses:
+    - Legacy: [ {...}, {...} ]
+    - Paginated: { "miners": [...], "pagination": {...} }
+    """
     try:
         response = requests.get(
             f"{RUSTCHAIN_API}/api/miners",
@@ -81,10 +86,25 @@ def get_miners_list() -> List[Dict[str, Any]]:
             timeout=10
         )
         response.raise_for_status()
-        return response.json()  # type: ignore[no-any-return]
+        payload = response.json()
+        if isinstance(payload, list):
+            return [m for m in payload if isinstance(m, dict)]
+        if isinstance(payload, dict):
+            miners = payload.get("miners") or payload.get("data") or []
+            return [m for m in miners if isinstance(m, dict)]
+        return []
     except Exception as e:
         print(f"Error getting miners list: {e}")
         return []
+
+
+def _resolve_miner_id(miner: Dict[str, Any]) -> Optional[str]:
+    """Extract miner ID from common field aliases."""
+    for key in ("miner", "miner_id", "id", "wallet"):
+        val = miner.get(key)
+        if isinstance(val, str) and val.strip():
+            return val
+    return None
 
 
 def get_epoch_info() -> Optional[Dict[str, Any]]:
@@ -262,7 +282,7 @@ def main() -> None:
             miners_list = get_miners_list()
             miner_data: Optional[Dict[str, Any]] = None
             for m in miners_list:
-                if m.get('miner') == miner_id:
+                if _resolve_miner_id(m) == miner_id:
                     miner_data = m
                     break
 
