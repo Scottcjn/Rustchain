@@ -139,6 +139,7 @@ def test_fetchall_guard_detects_stale_baseline_entries():
 def test_fetchall_guard_ignores_unrelated_line_shifts():
     current = run_guard("--print-baseline")
     assert current.returncode == 0, current.stdout
+    TMP_BASELINE.write_text(current.stdout)
     try:
         TMP_VIOLATION.write_text(
             "# unrelated line 1\n"
@@ -152,6 +153,7 @@ def test_fetchall_guard_ignores_unrelated_line_shifts():
         assert result.returncode == 0, result.stdout
     finally:
         TMP_VIOLATION.unlink(missing_ok=True)
+        TMP_BASELINE.unlink(missing_ok=True)
 
 
 def test_fetchall_guard_catches_new_distinct_call():
