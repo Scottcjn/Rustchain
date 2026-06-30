@@ -35,6 +35,7 @@ def _env_int(name: str, default: int) -> int:
 
 CHECK_INTERVAL = _env_int("RUSTCHAIN_SETTLE_INTERVAL", 300)
 SLOTS_PER_EPOCH = _env_int("RUSTCHAIN_SLOTS_PER_EPOCH", 144)
+UNSETTLED_LOOKBACK = _env_int("RUSTCHAIN_UNSETTLED_LOOKBACK", 500)
 
 
 def get_current_slot():
@@ -81,7 +82,7 @@ def get_unsettled_epochs():
                     return []
 
             unsettled = []
-            for epoch in range(max(0, current_epoch - 10), current_epoch):
+            for epoch in range(max(0, current_epoch - UNSETTLED_LOOKBACK), current_epoch):
                 headers = db.execute(
                     "SELECT COUNT(*) FROM headers WHERE slot BETWEEN ? AND ?",
                     (epoch * SLOTS_PER_EPOCH, (epoch + 1) * SLOTS_PER_EPOCH - 1)
@@ -110,9 +111,15 @@ def get_unsettled_epochs():
 def settle_epoch_via_api(epoch):
     """Settle an epoch using the node API"""
     try:
+        headers = {}
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if admin_key:
+            headers["X-Admin-Key"] = admin_key
+
         resp = requests.post(
             f"{NODE_URL}/rewards/settle",
             json={"epoch": epoch},
+            headers=headers,
             timeout=30
         )
 
@@ -126,6 +133,8 @@ def settle_epoch_via_api(epoch):
             else:
                 error = data.get("error", "unknown")
                 logger.warning("Failed to settle epoch %d: %s", epoch, error)
+        elif resp.status_code == 401:
+            logger.warning("Settlement for epoch %d rejected: admin key required (set RC_ADMIN_KEY)", epoch)
         else:
             logger.warning("HTTP error settling epoch %d: %s", epoch, resp.status_code)
 
