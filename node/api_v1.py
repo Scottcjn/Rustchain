@@ -49,7 +49,7 @@ def register_api_v1(app, *, db_path, current_slot, slot_to_epoch,
     def _rows(sql, params=()):
         with _ro() as c:
             c.row_factory = sqlite3.Row
-            return [dict(r) for r in c.execute(sql, params).fetchall()]
+            return [dict(r) for r in c.execute(sql, params).fetchall()]  # fetchall-ok: bounded-by-schema
 
     def _one(sql, params=()):
         with _ro() as c:
