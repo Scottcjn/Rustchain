@@ -11854,7 +11854,7 @@ def api_v1_miners_leaderboard():
         try:
             rows = db.execute(
                 "SELECT miner_id, balance FROM miners ORDER BY balance DESC LIMIT 50"
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema (LIMIT 50)
             return jsonify({"ok": True, "miners": [dict(r) for r in rows]})
         except Exception:
             return jsonify({"ok": True, "miners": []})
@@ -11876,7 +11876,7 @@ def api_v1_epoch_info():
 def api_v1_network_peers():
     with sqlite3.connect(DB_PATH) as db:
         try:
-            rows = db.execute("SELECT * FROM peers ORDER BY last_seen DESC LIMIT 100").fetchall()
+            rows = db.execute("SELECT * FROM peers ORDER BY last_seen DESC LIMIT 100").fetchall()  # fetchall-ok: bounded-by-schema (LIMIT 100)
             db.row_factory = sqlite3.Row
             return jsonify({"ok": True, "peers": [dict(r) for r in rows]})
         except Exception:
@@ -11960,7 +11960,7 @@ def api_v1_wallet_list():
 def api_v1_validator_info():
     with sqlite3.connect(DB_PATH) as db:
         try:
-            rows = db.execute("SELECT * FROM validators ORDER BY stake DESC LIMIT 100").fetchall()
+            rows = db.execute("SELECT * FROM validators ORDER BY stake DESC LIMIT 100").fetchall()  # fetchall-ok: bounded-by-schema (LIMIT 100)
             db.row_factory = sqlite3.Row
             return jsonify({"ok": True, "validators": [dict(r) for r in rows]})
         except Exception:
