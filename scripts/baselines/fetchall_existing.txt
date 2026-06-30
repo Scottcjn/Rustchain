@@ -27,7 +27,6 @@ node/beacon_x402.py:).fetchall()
 node/beacon_x402.py:).fetchall()
 node/beacon_x402.py:for row in cursor.fetchall()}
 node/bottube_feed_routes.py:rows = cursor_obj.fetchall()
-node/bridge_api.py:rows = cursor.execute(query, params).fetchall()
 node/claims_eligibility.py:epochs = [row[0] for row in cursor.fetchall() if row[0] >= 0]
 node/claims_settlement.py:""", (batch_id, max_claims)).fetchall()
 node/claims_settlement.py:""", (max_claims,)).fetchall()

@@ -46,9 +46,13 @@ def register_api_v1(app, *, db_path, current_slot, slot_to_epoch,
                 return jsonify({"error": "internal_error"}), 500
         return wrapper
 
-    def _rows(sql, params=()):
+    def _rows(sql, params=(), *, limit=1000):
         with _ro() as c:
             c.row_factory = sqlite3.Row
+            if "LIMIT" not in sql.upper():
+                sql = sql.rstrip().rstrip(";") + " LIMIT ?"
+                params = tuple(params) + (limit,)
+            # fetchall-ok: already-paginated
             return [dict(r) for r in c.execute(sql, params).fetchall()]
 
     def _one(sql, params=()):

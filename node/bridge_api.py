@@ -26,6 +26,8 @@ from decimal import Decimal, InvalidOperation
 from dataclasses import dataclass
 from enum import Enum
 
+from node.db_helpers import fetch_page
+
 # Import from main node module
 try:
     from rustchain_v2_integrated_v2_2_1_rip200 import (
@@ -579,10 +581,9 @@ def list_bridge_transfers(
         query += " AND direction = ?"
         params.append(direction)
     
-    query += " ORDER BY id DESC LIMIT ?"
-    params.append(min(limit, 500))
-    
-    rows = cursor.execute(query, params).fetchall()
+    query += " ORDER BY id DESC"
+    db = cursor.connection if hasattr(cursor, "connection") else cursor
+    rows = fetch_page(db, query, params, limit=min(limit, 500))
     
     return [
         {
@@ -1195,36 +1196,54 @@ def migrate_deposits_to_hard_locks(cursor):
     model) is left at source_debited=0 and logged for manual review rather than
     minting a negative balance.
     """
-    try:
-        rows = cursor.execute("""
-            SELECT id, source_address, amount_i64
-            FROM bridge_transfers
-            WHERE direction = 'deposit'
-              AND status IN ('pending', 'locked', 'confirming')
-              AND source_debited = 0
-        """).fetchall()
-    except sqlite3.OperationalError as exc:
-        # Expected only when bridge_transfers/balances aren't created yet in this
-        # init ordering. Log it so a genuine schema error can't hide here and
-        # silently leave legacy deposits un-migrated (which the completion safety
-        # net would then have to catch).
-        logger.warning("debit-on-lock migration skipped (schema not ready?): %s", exc)
-        return
+    page_size = 250
+    last_seen_id = 0
+    db = cursor.connection if hasattr(cursor, "connection") else cursor
 
-    for row_id, source, amount in rows:
-        cursor.execute(
-            "UPDATE balances SET amount_i64 = amount_i64 - ? "
-            "WHERE miner_id = ? AND amount_i64 >= ?",
-            (amount, source, amount),
-        )
-        if cursor.rowcount == 1:
-            cursor.execute(
-                "UPDATE bridge_transfers SET source_debited = 1 WHERE id = ?",
-                (row_id,),
+    while True:
+        try:
+            rows = fetch_page(
+                db,
+                """
+                SELECT id, source_address, amount_i64
+                FROM bridge_transfers
+                WHERE direction = 'deposit'
+                  AND status IN ('pending', 'locked', 'confirming')
+                  AND source_debited = 0
+                  AND id > ?
+                ORDER BY id ASC
+                """,
+                (last_seen_id,),
+                limit=page_size,
             )
-        else:
-            logger.warning(
-                "debit-on-lock migration: deposit %s source %s lacks funds to "
-                "hard-lock %s micro-RTC; left source_debited=0 for manual review",
-                row_id, source, amount,
+        except sqlite3.OperationalError as exc:
+            # Expected only when bridge_transfers/balances aren't created yet in
+            # this init ordering. Log it so a genuine schema error can't hide
+            # here and silently leave legacy deposits un-migrated.
+            logger.warning("debit-on-lock migration skipped (schema not ready?): %s", exc)
+            return
+
+        if not rows:
+            return
+
+        for row_id, source, amount in rows:
+            last_seen_id = row_id
+            balance_update = cursor.execute(
+                "UPDATE balances SET amount_i64 = amount_i64 - ? "
+                "WHERE miner_id = ? AND amount_i64 >= ?",
+                (amount, source, amount),
             )
+            if balance_update.rowcount == 1:
+                cursor.execute(
+                    "UPDATE bridge_transfers SET source_debited = 1 WHERE id = ?",
+                    (row_id,),
+                )
+            else:
+                logger.warning(
+                    "debit-on-lock migration: deposit %s source %s lacks funds to "
+                    "hard-lock %s micro-RTC; left source_debited=0 for manual review",
+                    row_id, source, amount,
+                )
+
+        if len(rows) < page_size:
+            return
