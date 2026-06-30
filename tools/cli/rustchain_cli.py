@@ -197,7 +197,7 @@ def cmd_miners(args):
         arch = miner.get('arch') or miner.get('device_arch') or miner.get('device_family') or 'N/A'
         last_attest = miner.get('last_attest', miner.get('ts_ok', 'N/A'))
         if isinstance(last_attest, (int, float)):
-            last_attest = datetime.fromtimestamp(last_attest).strftime('%Y-%m-%d %H:%M')
+            last_attest = datetime.utcfromtimestamp(last_attest).strftime('%Y-%m-%d %H:%M')
         rows.append([miner_id, arch, str(last_attest)])
     
     print(f"Active Miners ({len(miners)} total, showing 20)\n")

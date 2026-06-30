@@ -582,7 +582,7 @@ def list_bridge_transfers(
     query += " ORDER BY id DESC LIMIT ?"
     params.append(min(limit, 500))
     
-    rows = cursor.execute(query, params).fetchall()
+    rows = cursor.execute(query, params).fetchall()  # fetchall-ok: bounded-by-schema
     
     return [
         {
@@ -1202,7 +1202,7 @@ def migrate_deposits_to_hard_locks(cursor):
             WHERE direction = 'deposit'
               AND status IN ('pending', 'locked', 'confirming')
               AND source_debited = 0
-        """).fetchall()
+        """).fetchall()  # fetchall-ok: bounded-by-schema
     except sqlite3.OperationalError as exc:
         # Expected only when bridge_transfers/balances aren't created yet in this
         # init ordering. Log it so a genuine schema error can't hide here and

@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: MIT
+import pytest
+pytest.importorskip('_tkinter', reason='tkinter not available in CI')
+
 import importlib.util
 from pathlib import Path
 
