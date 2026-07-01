@@ -573,6 +573,29 @@ function escapeHtml(value) {
             return safeNumber(value).toFixed(decimals);
         }
 
+        function buildRow(cells) {
+            const tr = document.createElement('tr');
+            cells.forEach(function(c) {
+                const td = document.createElement('td');
+                if (typeof c === 'string') {
+                    td.textContent = c;
+                } else if (c instanceof Node) {
+                    td.appendChild(c);
+                } else if (c && c.html) {
+                    td.innerHTML = c.html;
+                }
+                tr.appendChild(td);
+            });
+            return tr;
+        }
+        function txt(s) { return document.createTextNode(String(s == null ? '' : s)); }
+        function wrap(tag, cls, childText) {
+            const el = document.createElement(tag);
+            if (cls) el.className = cls;
+            el.textContent = String(childText == null ? '' : childText);
+            return el;
+        }
+
         async function loadHealth() {
             const health = await fetchAPI('/health');
             if (health) {
@@ -591,29 +614,31 @@ function escapeHtml(value) {
                 document.getElementById('active-miners').textContent = minerList.length;
                 
                 const overviewTable = document.getElementById('miners-table');
-                overviewTable.innerHTML = minerList.slice(0, 10).map(miner => `
-                    <tr>
-                        <td><strong>${esc(miner.miner || miner.miner_id || 'Unknown')}</strong></td>
-                        <td><span class="arch-badge">${esc(miner.architecture || miner.device_arch || 'Unknown')}</span></td>
-                        <td><span class="multiplier">x${esc(miner.antiquity_multiplier || miner.multiplier || '1.0')}</span></td>
-                        <td><span class="badge badge-success">Online</span></td>
-                        <td>${esc(formatTime(miner.last_attestation || miner.last_seen))}</td>
-                        <td>${esc(formatNumber(miner.earnings || miner.total_earned, 2))} RTC</td>
-                    </tr>
-                `).join('');
+                overviewTable.textContent = '';
+                minerList.slice(0, 10).forEach(function(miner) {
+                    overviewTable.appendChild(buildRow([
+                        wrap('strong', null, miner.miner || miner.miner_id || 'Unknown'),
+                        wrap('span', 'arch-badge', miner.architecture || miner.device_arch || 'Unknown'),
+                        {html: '<span class="multiplier">x' + esc(miner.antiquity_multiplier || miner.multiplier || '1.0') + '</span>'},
+                        wrap('span', 'badge badge-success', 'Online'),
+                        formatTime(miner.last_attestation || miner.last_seen),
+                        formatNumber(miner.earnings || miner.total_earned, 2) + ' RTC'
+                    ]));
+                });
 
                 const allMinersTable = document.getElementById('all-miners-table');
-                allMinersTable.innerHTML = minerList.map(miner => `
-                    <tr>
-                        <td><strong>${esc(miner.miner || miner.miner_id || 'Unknown')}</strong></td>
-                        <td><span class="arch-badge">${esc(miner.architecture || miner.device_arch || 'Unknown')}</span></td>
-                        <td><span class="multiplier">x${esc(miner.antiquity_multiplier || miner.multiplier || '1.0')}</span></td>
-                        <td><span class="badge badge-success">Online</span></td>
-                        <td>${esc(formatTime(miner.last_attestation || miner.last_seen))}</td>
-                        <td><code>${esc(miner.wallet || miner.wallet_address || 'N/A')}</code></td>
-                        <td>${esc(formatNumber(miner.earnings || miner.total_earned, 2))} RTC</td>
-                    </tr>
-                `).join('');
+                allMinersTable.textContent = '';
+                minerList.forEach(function(miner) {
+                    allMinersTable.appendChild(buildRow([
+                        wrap('strong', null, miner.miner || miner.miner_id || 'Unknown'),
+                        wrap('span', 'arch-badge', miner.architecture || miner.device_arch || 'Unknown'),
+                        {html: '<span class="multiplier">x' + esc(miner.antiquity_multiplier || miner.multiplier || '1.0') + '</span>'},
+                        wrap('span', 'badge badge-success', 'Online'),
+                        formatTime(miner.last_attestation || miner.last_seen),
+                        {html: '<code>' + esc(miner.wallet || miner.wallet_address || 'N/A') + '</code>'},
+                        formatNumber(miner.earnings || miner.total_earned, 2) + ' RTC'
+                    ]));
+                });
             }
         }
 
@@ -634,26 +659,28 @@ function escapeHtml(value) {
             const transactions = await fetchAPI('/api/transactions') || { transactions: [] };
             
             const table = document.getElementById('transactions-table');
+            table.textContent = '';
             if (transactions.transactions && transactions.transactions.length > 0) {
-                table.innerHTML = transactions.transactions.slice(0, 20).map(tx => `
-                    <tr>
-                        <td><code>${esc(tx.hash || tx.tx_hash || 'N/A')}</code></td>
-                        <td><code>${esc(tx.from || 'N/A')}</code></td>
-                        <td><code>${esc(tx.to || 'N/A')}</code></td>
-                        <td>${formatNumber(safeNumber(tx.amount) / 1000000, 2)} RTC</td>
-                        <td>${formatNumber(safeNumber(tx.fee) / 1000000, 4)} RTC</td>
-                        <td>${escapeHtml(formatTime(tx.timestamp))}</td>
-                        <td><span class="badge badge-success">Confirmed</span></td>
-                    </tr>
-                `).join('');
+                transactions.transactions.slice(0, 20).forEach(function(tx) {
+                    table.appendChild(buildRow([
+                        {html: '<code>' + esc(tx.hash || tx.tx_hash || 'N/A') + '</code>'},
+                        {html: '<code>' + esc(tx.from || 'N/A') + '</code>'},
+                        {html: '<code>' + esc(tx.to || 'N/A') + '</code>'},
+                        formatNumber(safeNumber(tx.amount) / 1000000, 2) + ' RTC',
+                        formatNumber(safeNumber(tx.fee) / 1000000, 4) + ' RTC',
+                        escapeHtml(formatTime(tx.timestamp)),
+                        wrap('span', 'badge badge-success', 'Confirmed')
+                    ]));
+                });
             } else {
-                table.innerHTML = `
-                    <tr>
-                        <td colspan="7" style="text-align: center; color: var(--text-secondary);">
-                            No recent transactions or API endpoint not available
-                        </td>
-                    </tr>
-                `;
+                const tr = document.createElement('tr');
+                const td = document.createElement('td');
+                td.setAttribute('colspan', '7');
+                td.style.textAlign = 'center';
+                td.style.color = 'var(--text-secondary)';
+                td.textContent = 'No recent transactions or API endpoint not available';
+                tr.appendChild(td);
+                table.appendChild(tr);
             }
         }
 
