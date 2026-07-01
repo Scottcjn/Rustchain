@@ -18,6 +18,9 @@ from pathlib import Path
 wallet_dir = Path(__file__).parent.parent / "wallet"
 sys.path.insert(0, str(wallet_dir))
 
+import pytest
+pytest.importorskip('_tkinter', reason='tkinter not available in CI')
+
 from rustchain_wallet_secure import SecureFounderWallet
 
 
