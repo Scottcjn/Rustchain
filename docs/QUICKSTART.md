@@ -280,7 +280,7 @@ Every issue tagged with a bounty has an RTC reward listed. Rewards range from 1 
 | Micro | 1-10 RTC | Fix a typo, improve docs, add a test |
 | Standard | 20-50 RTC | New feature, refactor, integration |
 | Major | 75-100 RTC | Security fix, protocol improvement |
-| Critical | 100-200 RTC | Vulnerability discovery, consensus work |
+| Critical | 100-150 RTC | Vulnerability discovery, consensus work |
 
 ### How to Claim a Bounty
 
