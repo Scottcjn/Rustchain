@@ -134,3 +134,51 @@ def test_fetchall_guard_detects_stale_baseline_entries():
         assert "node/phantom.py" in result.stdout
     finally:
         TMP_BASELINE.unlink(missing_ok=True)
+
+
+def test_fetchall_guard_ignores_unrelated_line_shifts():
+    current = run_guard("--print-baseline")
+    assert current.returncode == 0, current.stdout
+    TMP_BASELINE.write_text(current.stdout)
+    try:
+        TMP_VIOLATION.write_text(
+            "# unrelated line 1\n"
+            "# unrelated line 2\n"
+            "# unrelated line 3\n"
+            "def schema_bounded(conn):\n"
+            "    # fetchall-ok: bounded-by-schema\n"
+            "    return conn.execute('SELECT * FROM accounts').fetchall()\n"
+        )
+        result = run_guard(env={"PATH": "/usr/bin:/bin", "FETCHALL_BASELINE": str(TMP_BASELINE)})
+        assert result.returncode == 0, result.stdout
+    finally:
+        TMP_VIOLATION.unlink(missing_ok=True)
+        TMP_BASELINE.unlink(missing_ok=True)
+
+
+def test_fetchall_guard_catches_new_distinct_call():
+    try:
+        TMP_VIOLATION.write_text(
+            "def new_leak(conn):\n"
+            "    return conn.execute('SELECT * FROM new_table').fetchall()\n"
+        )
+        result = run_guard()
+        assert result.returncode == 1
+        assert "new unannotated .fetchall()" in result.stdout
+    finally:
+        TMP_VIOLATION.unlink(missing_ok=True)
+
+
+def test_fetchall_guard_catches_duplicate_content_new_call():
+    try:
+        TMP_VIOLATION.write_text(
+            "def dup_a(conn):\n"
+            "    return conn.execute('SELECT 1').fetchall()\n"
+            "def dup_b(conn):\n"
+            "    return conn.execute('SELECT 1').fetchall()\n"
+        )
+        result = run_guard()
+        assert result.returncode == 1
+        assert "new unannotated .fetchall()" in result.stdout
+    finally:
+        TMP_VIOLATION.unlink(missing_ok=True)
