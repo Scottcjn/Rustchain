@@ -14,6 +14,7 @@ import sys
 import time
 import json
 import hashlib
+import logging
 import platform
 import threading
 import statistics
@@ -590,8 +591,10 @@ class RustChainMiner:
                 attestation["signature"] = signature
                 attestation["public_key"] = self.public_key
                 attestation["signature_type"] = "ed25519"
-            except Exception:
-                pass  # Fall through unsigned; server accepts with warning
+            except Exception as exc:
+                logging.warning(
+                    "attestation signing failed; falling through unsigned: %s", exc
+                )
         else:
             # Legacy fallback — sha512 pseudo-signature. Server accepts but
             # logs a warning. Real wallet-hijack protection requires PyNaCl.
