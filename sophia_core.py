@@ -211,13 +211,30 @@ def _rule_based_fallback(fingerprint):
             score -= 2
             reasons.append("Stability score critically low")
 
-    # Map score to verdict
-    if score >= 3:
-        verdict = "APPROVED"
-        confidence = min(0.85, 0.6 + score * 0.05)
-    elif score >= 1:
+    # Map score to verdict.
+    #
+    # SECURITY (rustchain-bounties#14571 -- "Golden Fingerprint" bypass):
+    # this rule-based fallback runs ONLY when the Ollama LLM is unavailable.
+    # Every metric it inspects is self-reported by the miner and independently
+    # forgeable in software -- the checks are additive over static ranges with
+    # no cryptographic or hardware binding. A synthetic fingerprint that simply
+    # satisfies each positive range (e.g. clock_drift_cv=0.05, ordered cache
+    # 1<2<3, any SIMD flag, cpu_temp_c=40, stability=0.9) reaches score >= 3
+    # and would previously be handed the top-trust APPROVED verdict without any
+    # legitimate hardware.
+    #
+    # Fix (fail closed): a heuristic fallback must not be able to grant the
+    # highest trust level on its own. It caps at CAUTIOUS, which routes the
+    # miner to the human spot-check review queue (see sophia_db). Full APPROVED
+    # can only come from the LLM attestation path, not from this fallback.
+    if score >= 1:
         verdict = "CAUTIOUS"
-        confidence = 0.55 + score * 0.05
+        confidence = min(0.7, 0.5 + score * 0.03)
+        if score >= 3:
+            reasons.append(
+                "Rule-based fallback caps at CAUTIOUS (no LLM); APPROVED "
+                "requires LLM attestation"
+            )
     elif score >= -2:
         verdict = "SUSPICIOUS"
         confidence = 0.5 + abs(score) * 0.05
