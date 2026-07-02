@@ -1,4 +1,38 @@
-import platform, subprocess, re, json, hashlib, os
+import platform, subprocess, re, json, hashlib, os, shutil
+
+# The hardware-attestation tools below must only ever be resolved from trusted,
+# root/Administrator-owned system directories — never from an attacker-controllable
+# PATH. RustChain's Proof-of-Antiquity treats the node operator as the adversary:
+# a VM/emulator operator wants their machine to pass as authentic physical hardware
+# (VMs receive 1 billionth of normal rewards). If `dmidecode`/`wmic`/
+# `system_profiler` were looked up via PATH, that operator could place a fake
+# binary earlier on PATH that prints attacker-chosen serial/UUID/BIOS strings,
+# forging the "difficult to spoof" hardware signature without ever touching real
+# firmware or needing root. Resolving only from trusted dirs closes that hole;
+# a normal node — where these tools live in the standard system dirs — is
+# unaffected.
+if platform.system() == 'Windows':
+    _system_root = os.environ.get('SystemRoot', r'C:\Windows')
+    _TRUSTED_BIN_DIRS = (
+        os.path.join(_system_root, 'System32'),
+        os.path.join(_system_root, 'System32', 'wbem'),  # wmic lives here
+    )
+else:
+    _TRUSTED_BIN_DIRS = (
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",  # dmidecode / system_profiler
+        "/sbin",
+        "/run/current-system/sw/bin",  # NixOS
+    )
+
+
+def _resolve_trusted(name):
+    """Return an absolute path to *name* found only in trusted, root-owned system
+    directories, or None if it is not present in any of them. Never consults the
+    ambient PATH, so an attacker-planted binary cannot shadow the real tool."""
+    return shutil.which(name, path=os.pathsep.join(_TRUSTED_BIN_DIRS))
+
 
 def detect_unique_hardware_signature():
     """
@@ -29,10 +63,12 @@ def detect_unique_hardware_signature():
             # macOS: Use system_profiler to get Hardware UUID
             # This UUID is burned into the Mac's logic board at manufacture time
             # and persists across OS reinstalls, making it ideal for hardware binding
-            output = subprocess.check_output(['system_profiler', 'SPHardwareDataType']).decode()
-            hw_uuid = re.search(r'Hardware UUID: (.*)', output)
-            if hw_uuid:
-                unique_markers['hardware_uuid'] = hw_uuid.group(1).strip()
+            system_profiler = _resolve_trusted('system_profiler')
+            if system_profiler:
+                output = subprocess.check_output([system_profiler, 'SPHardwareDataType']).decode()
+                hw_uuid = re.search(r'Hardware UUID: (.*)', output)
+                if hw_uuid:
+                    unique_markers['hardware_uuid'] = hw_uuid.group(1).strip()
 
         elif platform.system() == 'Windows':
             # Windows: Combine motherboard serial + CPU ID
@@ -40,10 +76,12 @@ def detect_unique_hardware_signature():
             # - Motherboard serial alone can be spoofed in VMs
             # - CPU ID alone changes if the CPU is replaced
             # - Together they create a strong hardware binding
-            mb_serial = subprocess.check_output(['wmic', 'baseboard', 'get', 'serialnumber']).decode().strip().split('\n')[1].strip()
-            cpu_id = subprocess.check_output(['wmic', 'cpu', 'get', 'processorid']).decode().strip().split('\n')[1].strip()
-            unique_markers['mb_serial'] = mb_serial
-            unique_markers['cpu_id'] = cpu_id
+            wmic = _resolve_trusted('wmic')
+            if wmic:
+                mb_serial = subprocess.check_output([wmic, 'baseboard', 'get', 'serialnumber']).decode().strip().split('\n')[1].strip()
+                cpu_id = subprocess.check_output([wmic, 'cpu', 'get', 'processorid']).decode().strip().split('\n')[1].strip()
+                unique_markers['mb_serial'] = mb_serial
+                unique_markers['cpu_id'] = cpu_id
 
         elif platform.system() == 'Linux':
             # Linux: Use dmidecode to read DMI/SMBIOS data
@@ -51,14 +89,16 @@ def detect_unique_hardware_signature():
             # - Some VMs fake individual DMI fields but rarely fake all of them
             # - Different hardware vendors populate different fields
             # - Multiple markers increase fingerprint uniqueness
-            for tag in ['system-serial-number', 'bios-version', 'baseboard-product-name']:
-                try:
-                    out = subprocess.check_output(['dmidecode', '-s', tag]).decode().strip()
-                    unique_markers[tag] = out
-                except:
-                    # dmidecode requires root on some systems, or the field may not exist
-                    # We continue collecting other markers rather than failing completely
-                    continue
+            dmidecode = _resolve_trusted('dmidecode')
+            if dmidecode:
+                for tag in ['system-serial-number', 'bios-version', 'baseboard-product-name']:
+                    try:
+                        out = subprocess.check_output([dmidecode, '-s', tag]).decode().strip()
+                        unique_markers[tag] = out
+                    except:
+                        # dmidecode requires root on some systems, or the field may not exist
+                        # We continue collecting other markers rather than failing completely
+                        continue
 
     except Exception as e:
         # If hardware detection fails, we record the error but don't crash
