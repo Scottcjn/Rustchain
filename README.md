@@ -406,18 +406,16 @@ Compare to Bitcoin's 21M (≈2.5x more), Ethereum's uncapped supply, and the typ
 
 Total premine: **6%** (503,316 RTC = 4 × 125,829.12, one per founder wallet). Premine wallets have a 1-year on-chain unlock delay. No VC pre-sale. No private allocation. The early miners were `pawnshop_g4_115` and `dual-g4-125`.
 
-### Emission schedule (halving)
+### Emission schedule (fixed)
 
-| Period | Block reward (per epoch) |
-|--------|--------------------------|
-| Genesis – Year 2 | 1.5 RTC |
-| Year 2 – Year 4 | 0.75 RTC |
-| Year 4 – Year 6 | 0.375 RTC |
-| Continues until minimum dust threshold | — |
+| Parameter | Value |
+|-----------|-------|
+| Block reward | 1.5 RTC per epoch, fixed |
+| Block time | 600s (10 min) |
+| Epoch duration | 144 blocks (~24 hours) |
+| Halving | None |
 
-Block time: 600s (10 min). Epoch duration: 144 blocks (~24 hours).
-
-Halving fires every 2 years OR on an **Epoch Relic Event** milestone — whichever comes first. This keeps emissions tied to either time or community-meaningful milestones, not just arbitrary block counts.
+Emission is a fixed 1.5 RTC per epoch and does not halve. It continues at that rate until the 8,388,608 RTC (2²³) supply cap is reached, consistent with RIP-0004 and the running node. This matches the "Fixed forever" cap noted above.
 
 ### Reference rate climbs as holder count grows
 
