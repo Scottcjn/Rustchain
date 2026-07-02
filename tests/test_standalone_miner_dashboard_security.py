@@ -47,3 +47,20 @@ def test_miner_dashboard_normalizes_miner_row_ids_before_lookup():
     assert 'return Object.assign({}, row, { miner: String(miner) });' in html
     assert "}).filter(Boolean);" in html
     assert 'String(m.miner || "").toLowerCase() === minerId.toLowerCase()' in html
+
+
+def test_miner_dashboard_timeline_rows_use_text_cells():
+    html = DASHBOARD_HTML.read_text(encoding="utf-8")
+
+    assert 'appendTextCell(tr, hour, "mono");' in html
+    assert 'appendTextCell(tr, hit ? "Seen" : "-");' in html
+    assert 'appendTextCell(tr, hit ? "attestation heartbeat" : "no signal");' in html
+    assert 'tr.innerHTML =' not in html
+
+
+def test_miner_dashboard_reward_rows_use_text_cells():
+    html = DASHBOARD_HTML.read_text(encoding="utf-8")
+
+    assert 'appendTextCell(tr, r.epoch, "mono");' in html
+    assert "appendTextCell(tr, fmtRtc(r.amount));" in html
+    assert "appendTextCell(tr, r.type);" in html
