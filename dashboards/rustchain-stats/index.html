@@ -580,24 +580,39 @@
 
         function updateStat(elementId, value, unit, previousValue) {
             const element = document.getElementById(elementId);
-            element.innerHTML = formatNumber(value) + (unit ? `<span class="stat-unit">${unit}</span>` : '');
+            element.replaceChildren();
+            element.appendChild(document.createTextNode(formatNumber(value)));
+            if (unit) {
+                const unitSpan = document.createElement('span');
+                unitSpan.className = 'stat-unit';
+                unitSpan.textContent = unit;
+                element.appendChild(unitSpan);
+            }
 
             // Show change indicator
             const changeElement = document.getElementById(elementId.replace('Value', 'Change'));
             if (previousValue !== undefined && previousValue !== null) {
                 const diff = value - previousValue;
+                changeElement.replaceChildren();
+                const marker = document.createElement('span');
                 if (diff > 0) {
-                    changeElement.innerHTML = `<span>▲</span> +${formatNumber(diff)}`;
+                    marker.textContent = '▲';
+                    changeElement.appendChild(marker);
+                    changeElement.appendChild(document.createTextNode(' +' + formatNumber(diff)));
                     changeElement.className = 'stat-change positive';
                 } else if (diff < 0) {
-                    changeElement.innerHTML = `<span>▼</span> ${formatNumber(diff)}`;
+                    marker.textContent = '▼';
+                    changeElement.appendChild(marker);
+                    changeElement.appendChild(document.createTextNode(' ' + formatNumber(diff)));
                     changeElement.className = 'stat-change negative';
                 } else {
-                    changeElement.innerHTML = '<span>▬</span> No change';
+                    marker.textContent = '▬';
+                    changeElement.appendChild(marker);
+                    changeElement.appendChild(document.createTextNode(' No change'));
                     changeElement.className = 'stat-change';
                 }
             } else {
-                changeElement.innerHTML = '';
+                changeElement.replaceChildren();
             }
         }
 
