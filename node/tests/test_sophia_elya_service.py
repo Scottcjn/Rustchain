@@ -136,6 +136,44 @@ def test_elya_submit_block_rejects_invalid_ticket_shape():
     assert resp.get_json()["error"] == "invalid_ticket"
 
 
+def test_elya_submit_block_rejects_missing_ticket_when_enforced():
+    # Regression: with ENFORCE on, omitting the ticket (or sending an empty /
+    # unknown ticket_id) must be rejected. The old `and ticket_id and` guard
+    # short-circuited on a falsey ticket_id, so a ticket-less block slipped
+    # through even in enforcement mode.
+    client = _client()
+    original_enforce = elya.ENFORCE
+    elya.ENFORCE = True
+    try:
+        no_ticket_resp = client.post(
+            "/api/submit_block",
+            json={
+                "header": {"prev_hash_b3": elya.LAST_HASH_B3, "slot": 0},
+                "header_ext": {},
+            },
+        )
+        empty_ticket_resp = client.post(
+            "/api/submit_block",
+            json={
+                "header": {"prev_hash_b3": elya.LAST_HASH_B3, "slot": 0},
+                "header_ext": {"ticket": {"ticket_id": ""}},
+            },
+        )
+        unknown_ticket_resp = client.post(
+            "/api/submit_block",
+            json={
+                "header": {"prev_hash_b3": elya.LAST_HASH_B3, "slot": 0},
+                "header_ext": {"ticket": {"ticket_id": "not-in-db"}},
+            },
+        )
+    finally:
+        elya.ENFORCE = original_enforce
+
+    for resp in (no_ticket_resp, empty_ticket_resp, unknown_ticket_resp):
+        assert resp.status_code == 400
+        assert resp.get_json()["error"] == "invalid_ticket"
+
+
 def test_elya_submit_block_rejects_invalid_slot():
     resp = _client().post(
         "/api/submit_block",
