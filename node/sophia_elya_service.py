@@ -563,7 +563,10 @@ def api_submit_block():
         return jsonify({"error": "invalid_ticket"}), 400
     ticket_id = ticket.get("ticket_id")
 
-    if ENFORCE and ticket_id and ticket_id not in tickets_db:
+    # When enforcement is on, a block MUST carry a valid ticket. Guarding on
+    # `ticket_id and ...` short-circuited to False for a missing/empty ticket_id,
+    # so omitting the ticket bypassed the check entirely. Fail closed instead.
+    if ENFORCE and (not ticket_id or ticket_id not in tickets_db):
         return jsonify({"error": "invalid_ticket"}), 400
 
     # Epoch rollover & accounting
