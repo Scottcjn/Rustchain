@@ -249,6 +249,42 @@
             // Step 4: Rewards
             showRewards(hw);
         }
+
+        function setStatusMessage(container, color, icon, message) {
+            container.replaceChildren();
+            const paragraph = document.createElement('p');
+            paragraph.style.color = color;
+            paragraph.style.marginTop = '15px';
+            paragraph.textContent = `${icon} ${message}`;
+            container.appendChild(paragraph);
+        }
+
+        function renderComparisonCards(container, compareData, baseReward) {
+            container.replaceChildren();
+
+            compareData.forEach(c => {
+                const card = document.createElement('div');
+                card.className = 'compare-card';
+
+                const icon = document.createElement('div');
+                icon.className = 'icon';
+                icon.textContent = c.icon;
+
+                const name = document.createElement('div');
+                name.textContent = c.name;
+
+                const multiplier = document.createElement('div');
+                multiplier.className = 'multiplier';
+                multiplier.textContent = `${c.multiplier}x`;
+
+                const earnings = document.createElement('div');
+                earnings.className = 'earnings';
+                earnings.textContent = `${(baseReward * c.multiplier).toFixed(6)} RTC`;
+
+                card.append(icon, name, multiplier, earnings);
+                container.appendChild(card);
+            });
+        }
         
         function simulateFingerprint(hw) {
             return new Promise(resolve => {
@@ -265,9 +301,19 @@
                         
                         const result = document.getElementById('fingerprint-result');
                         if (hw.real) {
-                            result.innerHTML = `<p style="color: #3fb950; margin-top: 15px;">✅ All ${checks.length} fingerprint checks passed! Your hardware is verified as real.</p>`;
+                            setStatusMessage(
+                                result,
+                                '#3fb950',
+                                '✅',
+                                `All ${checks.length} fingerprint checks passed! Your hardware is verified as real.`
+                            );
                         } else {
-                            result.innerHTML = `<p style="color: #f85149; margin-top: 15px;">❌ VM DETECTED! ${checks.length} fingerprint checks failed. Virtual machines are heavily penalized.</p>`;
+                            setStatusMessage(
+                                result,
+                                '#f85149',
+                                '❌',
+                                `VM DETECTED! ${checks.length} fingerprint checks failed. Virtual machines are heavily penalized.`
+                            );
                         }
                         
                         document.getElementById('step1-num').textContent = '✓';
@@ -293,9 +339,14 @@
                 }, null, 2);
                 
                 const result = document.getElementById('attestation-result');
-                result.innerHTML = hw.real 
-                    ? `<p style="color: #3fb950; margin-top: 15px;">✅ Attestation submitted successfully!</p>`
-                    : `<p style="color: #f85149; margin-top: 15px;">❌ Attestation REJECTED! VM signatures are invalid.</p>`;
+                setStatusMessage(
+                    result,
+                    hw.real ? '#3fb950' : '#f85149',
+                    hw.real ? '✅' : '❌',
+                    hw.real
+                        ? 'Attestation submitted successfully!'
+                        : 'Attestation REJECTED! VM signatures are invalid.'
+                );
                 
                 document.getElementById('step2-num').textContent = '✓';
                 document.getElementById('step2-num').classList.remove('pending');
@@ -309,7 +360,7 @@
                 const miners = ['Miner A', 'Miner B', hw.name, 'Miner C', 'Miner D'];
                 const yourIndex = 2;
                 
-                viz.innerHTML = '';
+                viz.replaceChildren();
                 miners.forEach((m, i) => {
                     const slot = document.createElement('div');
                     slot.className = 'epoch-slot';
@@ -331,8 +382,12 @@
                             clearInterval(interval);
                             slots[selected].classList.add('selected');
                             
-                            document.getElementById('epoch-result').innerHTML = 
-                                `<p style="color: #3fb950; margin-top: 15px;">🎯 You were selected to propose block #42!</p>`;
+                            setStatusMessage(
+                                document.getElementById('epoch-result'),
+                                '#3fb950',
+                                '🎯',
+                                'You were selected to propose block #42!'
+                            );
                             
                             document.getElementById('step3-num').textContent = '✓';
                             document.getElementById('step3-num').classList.remove('pending');
@@ -361,14 +416,7 @@
             ];
             
             const comp = document.getElementById('comparison');
-            comp.innerHTML = compareData.map(c => `
-                <div class="compare-card">
-                    <div class="icon">${c.icon}</div>
-                    <div>${c.name}</div>
-                    <div class="multiplier">${c.multiplier}x</div>
-                    <div class="earnings">${(baseReward * c.multiplier).toFixed(6)} RTC</div>
-                </div>
-            `).join('');
+            renderComparisonCards(comp, compareData, baseReward);
             
             document.getElementById('step4-num').textContent = '✓';
             document.getElementById('step4-num').classList.remove('pending');
