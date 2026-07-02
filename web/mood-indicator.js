@@ -64,6 +64,24 @@
     // Default mood
     const DEFAULT_MOOD = 'energetic';
 
+    function clearElement(element) {
+        element.replaceChildren();
+    }
+
+    function setLoadingIndicator(container) {
+        clearElement(container);
+        const indicator = document.createElement('span');
+        indicator.style.fontSize = '18px';
+        indicator.style.opacity = '0.5';
+        indicator.textContent = '⏳';
+        container.appendChild(indicator);
+    }
+
+    function renderIndicator(container, moodData) {
+        clearElement(container);
+        container.appendChild(createIndicatorElement(moodData));
+    }
+
     /**
      * Fetch mood data from API
      */
@@ -175,21 +193,19 @@
         }
 
         // Show loading state
-        container.innerHTML = '<span style="font-size: 18px; opacity: 0.5;">⏳</span>';
+        setLoadingIndicator(container);
 
         // Fetch and render
         fetchMoodData(agentId).then(moodData => {
             if (moodData) {
-                container.innerHTML = '';
-                container.appendChild(createIndicatorElement(moodData));
+                renderIndicator(container, moodData);
 
                 // Auto-refresh every 5 minutes
                 if (options.autoRefresh !== false) {
                     setInterval(() => {
                         fetchMoodData(agentId).then(newMoodData => {
                             if (newMoodData && newMoodData.current_mood !== moodData.current_mood) {
-                                container.innerHTML = '';
-                                container.appendChild(createIndicatorElement(newMoodData));
+                                renderIndicator(container, newMoodData);
                             }
                         });
                     }, 300000);  // 5 minutes
