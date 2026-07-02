@@ -5,7 +5,6 @@ updates:
       - "/cross-chain-airdrop"
       - "/miners/rust"
       - "/rips"
-      - "/rust-tools/examples/cli-wallet"
       - "/rust-tools/examples/rustchain-sdk"
       - "/rustchain-miner"
       - "/rustchain-wallet"
