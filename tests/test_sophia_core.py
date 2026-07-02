@@ -259,10 +259,34 @@ class TestSophiaDB(unittest.TestCase):
 # -- Core / Rule-based tests -----------------------------------------------
 
 class TestRuleBasedFallback(unittest.TestCase):
-    def test_approved_verdict(self):
+    def test_fallback_never_approves(self):
+        # SECURITY (rustchain-bounties#14571): the rule-based fallback is a
+        # heuristic over self-reported, forgeable metrics and must never grant
+        # the top-trust APPROVED verdict on its own. Even a strong, legitimate
+        # fingerprint degrades to CAUTIOUS (human spot-check) when the LLM is
+        # unavailable; full APPROVED can only come from the LLM path.
         result = _rule_based_fallback(_good_fingerprint())
-        self.assertEqual(result["verdict"], "APPROVED")
-        self.assertGreaterEqual(result["confidence"], 0.6)
+        self.assertEqual(result["verdict"], "CAUTIOUS")
+        self.assertNotEqual(result["verdict"], "APPROVED")
+
+    def test_golden_fingerprint_not_approved(self):
+        # The "Golden Fingerprint" from the report: a fully synthetic bundle
+        # (no real hardware) that satisfies every positive static range and
+        # previously scored >= 3 -> APPROVED. It must now be CAUTIOUS at best.
+        golden = {
+            "clock_drift_cv": 0.05,
+            "cache_hierarchy": {
+                "l1_latency_ns": 1,
+                "l2_latency_ns": 2,
+                "l3_latency_ns": 3,
+            },
+            "simd_identity": {"avx2": True},
+            "thermal": {"cpu_temp_c": 40},
+            "stability_score": 0.9,
+        }
+        result = _rule_based_fallback(golden)
+        self.assertNotEqual(result["verdict"], "APPROVED")
+        self.assertEqual(result["verdict"], "CAUTIOUS")
 
     def test_cautious_verdict(self):
         result = _rule_based_fallback(_cautious_fingerprint())
