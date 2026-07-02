@@ -41,3 +41,14 @@ Rustchain analyzes timing characteristics and low-level jitter variance to prove
    cd C:\RustChain
    .\rustchain-miner.exe --fingerprint
    
+---
+
+## 💡 Real-World Use Case Example
+
+**Scenario:** You have a 2010 Dell Inspiron laptop with an Intel Core 2 Duo processor that is no longer fast enough for daily web browsing or modern tasks. 
+
+1. Instead of sending it to e-waste, you install a lightweight Linux distribution (like Lubuntu) or keep its existing Windows 7 setup.
+2. Following this guide, you download the Rustchain miner and input your wallet destination.
+3. Because the Core 2 Duo triggers a **3.2x Antiquity Multiplier**, the laptop actively generates meaningful RTC tokens every single hour, running silently in the corner of your room on minimal power consumption. 
+4. This transforms obsolete, zero-value hardware into a passive utility worker for the network.
+
