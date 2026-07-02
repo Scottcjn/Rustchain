@@ -1,10 +1,28 @@
 version: 2
 updates:
   - package-ecosystem: "cargo"
-    directory: "/"
+    directories:
+      - "/cross-chain-airdrop"
+      - "/miners/rust"
+      - "/rips"
+      - "/rust-tools/examples/cli-wallet"
+      - "/rust-tools/examples/rustchain-sdk"
+      - "/rustchain-miner"
+      - "/rustchain-wallet"
+      - "/tools/cli-wallet"
+      - "/tools/floppy-witness"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
       - "rust"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "ci"
