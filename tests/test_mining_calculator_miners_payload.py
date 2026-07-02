@@ -17,3 +17,12 @@ def test_mining_calculator_normalizes_current_miners_envelope():
     assert "activeMiners = networkData.total;" in html
     assert "const miners = networkData?.miners || [];" in html
     assert "if (miners && miners.length > 0)" not in html
+
+
+def test_mining_calculator_sensitivity_rows_use_text_cells():
+    html = SOURCE.read_text()
+
+    assert "function appendSensitivityCell(row, text)" in html
+    assert "cell.textContent = text;" in html
+    assert "appendSensitivityCell(tr, `${size} miners`);" in html
+    assert "tr.innerHTML = `" not in html
