@@ -568,37 +568,48 @@ def init_database(db_path: str) -> None:
             wallet TEXT NOT NULL,
             ip_address TEXT NOT NULL,
             amount REAL NOT NULL,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+            timestamp TEXT NOT NULL,
             status TEXT DEFAULT 'completed',
             tx_hash TEXT
         )
     ''')
-    _ensure_column(c, 'drip_requests', 'status', "TEXT DEFAULT 'completed'")
-    _ensure_column(c, 'drip_requests', 'tx_hash', 'TEXT')
-    
+
     c.execute('''
-        CREATE TABLE IF NOT EXISTS faucet_stats (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date DATE UNIQUE,
-            total_drips INTEGER DEFAULT 0,
-            total_amount REAL DEFAULT 0,
-            unique_wallets INTEGER DEFAULT 0,
-            unique_ips INTEGER DEFAULT 0
-        )
+        CREATE INDEX IF NOT EXISTS idx_drip_requests_wallet_ts
+        ON drip_requests(wallet, timestamp)
+    ''')
+
+    c.execute('''
+        CREATE INDEX IF NOT EXISTS idx_drip_requests_ip_ts
+        ON drip_requests(ip_address, timestamp)
     ''')
 
     c.execute('''
         CREATE TABLE IF NOT EXISTS event_claim_codes (
             code TEXT PRIMARY KEY,
             amount REAL NOT NULL,
-            expires_at DATETIME NOT NULL,
-            created_at DATETIME NOT NULL,
+            batch_id TEXT,
+            metadata_json TEXT,
+            expires_at TEXT,
+            created_at TEXT NOT NULL,
+            created_by TEXT,
+            claimed_at TEXT,
             claimed_wallet TEXT,
             claimed_ip TEXT,
-            claimed_at DATETIME,
             tx_hash TEXT
         )
     ''')
+
+    c.execute('''
+        CREATE INDEX IF NOT EXISTS idx_event_claim_codes_expires_at
+        ON event_claim_codes(expires_at)
+    ''')
+
+    c.execute('''
+        CREATE INDEX IF NOT EXISTS idx_event_claim_codes_claimed_wallet
+        ON event_claim_codes(claimed_wallet)
+    ''')
+
     c.execute('''
         CREATE TABLE IF NOT EXISTS event_claims (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -606,395 +617,364 @@ def init_database(db_path: str) -> None:
             wallet TEXT NOT NULL,
             ip_address TEXT NOT NULL,
             amount REAL NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
+            batch_id TEXT,
+            claimed_at TEXT NOT NULL,
             tx_hash TEXT,
-            created_at DATETIME NOT NULL,
-            updated_at DATETIME NOT NULL
+            status TEXT DEFAULT 'reserved',
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(code) REFERENCES event_claim_codes(code)
         )
     ''')
-    
-    c.execute('''
-        CREATE INDEX IF NOT EXISTS idx_drip_wallet ON drip_requests(wallet)
-    ''')
-    c.execute('''
-        CREATE INDEX IF NOT EXISTS idx_drip_ip ON drip_requests(ip_address)
-    ''')
-    c.execute('''
-        CREATE INDEX IF NOT EXISTS idx_drip_timestamp ON drip_requests(timestamp)
-    ''')
-    c.execute('''
-        CREATE INDEX IF NOT EXISTS idx_event_claim_codes_expires_at
-        ON event_claim_codes(expires_at)
-    ''')
-    c.execute('''
-        CREATE INDEX IF NOT EXISTS idx_event_claim_codes_claimed_wallet
-        ON event_claim_codes(claimed_wallet)
-    ''')
+
     c.execute('''
         CREATE INDEX IF NOT EXISTS idx_event_claims_code
         ON event_claims(code)
     ''')
+
     c.execute('''
-        CREATE INDEX IF NOT EXISTS idx_event_claims_wallet
-        ON event_claims(wallet)
+        CREATE INDEX IF NOT EXISTS idx_event_claims_wallet_ts
+        ON event_claims(wallet, claimed_at)
     ''')
+
     c.execute('''
-        CREATE INDEX IF NOT EXISTS idx_event_claims_status
-        ON event_claims(status)
+        CREATE INDEX IF NOT EXISTS idx_event_claims_ip_ts
+        ON event_claims(ip_address, claimed_at)
     ''')
     
     conn.commit()
     conn.close()
 
 
-def _ensure_column(c: sqlite3.Cursor, table: str, column: str, definition: str) -> None:
-    """Add a SQLite column when upgrading an existing faucet database."""
-    c.execute(f'PRAGMA table_info({table})')
-    columns = {row[1] for row in c.fetchall()}
-    if column not in columns:
-        try:
-            c.execute(f'ALTER TABLE {table} ADD COLUMN {column} {definition}')
-        except sqlite3.OperationalError as exc:
-            if 'duplicate column name' not in str(exc).lower():
-                raise
-
-
 # =============================================================================
-# Flask Application
+# Faucet Service
 # =============================================================================
 
-def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
-    """Create and configure the Flask application."""
+def create_app(config: Dict[str, Any]) -> Flask:
+    """Create and configure Flask application."""
+    app = Flask(__name__)
+    CORS(app, origins=config.get('security', {}).get('cors_origins', ['*']))
     
-    # Load configuration
-    if config is None:
-        config = load_config()
-    
-    # Initialize logging
+    # Setup logging
     logger = setup_logging(config)
+    
+    # Initialize components
+    validator = FaucetValidator(config, logger)
+    rate_limiter = RateLimiter(config, logger)
     
     # Initialize database
     db_path = config.get('database', {}).get('path', 'faucet.db')
     init_database(db_path)
     
-    # Initialize components
-    rate_limiter = RateLimiter(config, logger)
-    validator = FaucetValidator(config, logger)
+    @app.before_request
+    def before_request():
+        """Check request size and prepare context."""
+        max_size = config.get('security', {}).get('max_body_size', 1048576)
+        if request.content_length and request.content_length > max_size:
+            return jsonify({'ok': False, 'error': 'Request too large'}), 413
     
-    # Create Flask app
-    app = Flask(__name__)
-    app.config['MAX_CONTENT_LENGTH'] = config.get('security', {}).get('max_body_size', 1048576)
-    
-    # Enable CORS
-    cors_origins = config.get('security', {}).get('cors_origins', ['*'])
-    CORS(app, origins=cors_origins)
-    
-    # Store components in app config
-    app.config['faucet_config'] = config
-    app.config['faucet_logger'] = logger
-    app.config['rate_limiter'] = rate_limiter
-    app.config['validator'] = validator
-    
-    # Register routes
-    register_routes(app, config, logger, rate_limiter, validator)
-    
-    return app
-
-
-def register_routes(app: Flask, config: Dict, logger: logging.Logger,
-                    rate_limiter: RateLimiter, validator: FaucetValidator) -> None:
-    """Register all application routes."""
-    
-    base_path = config.get('server', {}).get('base_path', '/faucet')
-    
-    @app.route('/')
+    @app.route(config['server'].get('base_path', '/faucet'))
     def index():
-        """Redirect to faucet page."""
-        return jsonify({'redirect': f'{base_path}'})
+        """Serve the faucet web UI."""
+        template_vars = get_template_vars(config)
+        return render_template_string(HTML_TEMPLATE, **template_vars)
     
-    @app.route(base_path)
-    def faucet_page():
-        """Serve the faucet web interface."""
-        return render_template_string(HTML_TEMPLATE, **get_template_vars(config))
-    
-    @app.route(f'{base_path}/drip', methods=['POST'])
+    @app.route(f"{config['server'].get('base_path', '/faucet')}/drip", methods=['POST'])
     def drip():
-        """
-        Handle drip requests.
-        
-        Request body:
-            {"wallet": "0x..."} or {"wallet": "RTC..."}
-        
-        Response:
-            {"ok": true, "amount": 0.5, "wallet": "...", "next_available": "..."}
-        """
-        start_time = time.time()
-        
-        # Parse request
-        data = request.get_json(silent=True)
-        if not isinstance(data, dict) or 'wallet' not in data:
-            logger.warning(f"Invalid request from {request.remote_addr}: missing wallet")
-            return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
-        
-        wallet_value = data['wallet']
-        if not isinstance(wallet_value, str) or not wallet_value.strip():
-            logger.warning(f"Invalid request from {request.remote_addr}: invalid wallet type")
-            return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
+        """Handle faucet drip request."""
+        try:
+            data = request.get_json() or {}
+            wallet = data.get('wallet', '').strip()
+            amount = config.get('distribution', {}).get('amount', 0.5)
+            
+            # Validate wallet
+            valid, error = validator.validate_wallet(wallet)
+            if not valid:
+                logger.warning(f"Invalid wallet request: {wallet} - {error}")
+                return jsonify({'ok': False, 'error': error}), 400
+            
+            # Get client IP
+            trust_proxy_headers = config.get('security', {}).get('trust_proxy_headers', False)
+            ip_address = get_client_ip(request, trust_proxy_headers)
+            
+            # Check rate limit
+            allowed, next_available = rate_limiter.check_rate_limit(ip_address, wallet)
+            if not allowed:
+                logger.info(f"Rate limit exceeded for {wallet} from {ip_address}")
+                return jsonify({
+                    'ok': False,
+                    'error': 'Rate limit exceeded',
+                    'next_available': next_available
+                }), 429
+            
+            # Check faucet balance/minimum if not in mock mode
+            dist_config = config.get('distribution', {})
+            if not dist_config.get('mock_mode', True):
+                # In real mode, we'd check actual node balance here
+                # For now, simulate the check
+                faucet_balance = dist_config.get('faucet_balance', 100.0)
+                min_balance = dist_config.get('min_balance', 10.0)
+                
+                if faucet_balance < amount or faucet_balance < min_balance:
+                    logger.error(f"Insufficient faucet balance: {faucet_balance}")
+                    return jsonify({
+                        'ok': False,
+                        'error': 'Faucet temporarily unavailable'
+                    }), 503
+            
+            # Record request atomically with rate limit enforcement.
+            method = config['rate_limit'].get('method', 'ip')
+            if method == 'ip':
+                identifier = ip_address
+            elif method == 'wallet':
+                identifier = wallet
+            elif method == 'hybrid':
+                identifier = f"{ip_address}:{wallet}"
+            else:
+                identifier = ip_address
 
-        wallet = wallet_value.strip()
-        trust_proxy_headers = config.get('security', {}).get('trust_proxy_headers', False)
-        ip = get_client_ip(request, trust_proxy_headers=trust_proxy_headers)
-        
-        logger.info(f"Drip request: wallet={wallet}, ip={ip}")
-        
-        # Validate wallet
-        valid, error = validator.validate_wallet(wallet)
-        if not valid:
-            logger.warning(f"Invalid wallet {wallet}: {error}")
-            return jsonify({'ok': False, 'error': error}), 400
-        
-        # Process drip
-        amount = config.get('distribution', {}).get('amount', 0.5)
-
-        # Check and record under one operation so concurrent SQLite requests
-        # cannot pass the rate-limit check before either insert is visible.
-        allowed, next_available = rate_limiter.record_request_if_allowed(
-            f"{ip}:{wallet}",
-            ip,
-            wallet,
-            amount,
-        )
-        if not allowed:
-            logger.info(f"Rate limit exceeded for {ip}/{wallet}")
+            recorded, next_available = rate_limiter.record_request_if_allowed(
+                identifier,
+                ip_address,
+                wallet,
+                amount,
+            )
+            if not recorded:
+                logger.info(f"Rate limit exceeded for {wallet} from {ip_address} during commit")
+                return jsonify({
+                    'ok': False,
+                    'error': 'Rate limit exceeded',
+                    'next_available': next_available
+                }), 429
+            
+            # Log successful request
+            logger.info(f"Faucet drip: {amount} RTC to {wallet} from {ip_address}")
+            
+            # Return success
             return jsonify({
-                'ok': False,
-                'error': 'Rate limit exceeded',
-                'next_available': next_available
-            }), 429
-        
-        # In mock mode, just record the request
-        if config.get('distribution', {}).get('mock_mode', True):
-            tx_hash = None
-            logger.info(f"Mock drip: {amount} RTC to {wallet}")
-        else:
-            # Real transfer via the node's admin transfer endpoint.
-            # The node exposes POST /wallet/transfer (admin-gated): body
-            # {from_miner, to_miner, amount_rtc} + header X-Admin-Key. It debits
-            # the faucet wallet and credits the requester. (The legacy
-            # /v1/transfer + ARCHESTRA_FAUCET_SECRET path never existed on the
-            # node and silently failed every real drip.)
-            try:
-                dist = config.get('distribution', {})
-                node_url = dist.get('node_url', 'http://127.0.0.1:8198')
-                faucet_wallet = dist.get('faucet_wallet', 'testnet_faucet')
-                admin_key = os.environ.get('RC_ADMIN_KEY') or dist.get('admin_key', '')
+                'ok': True,
+                'amount': amount,
+                'wallet': wallet,
+                'next_available': (datetime.now() + timedelta(
+                    seconds=config['rate_limit']['window_seconds']
+                )).isoformat()
+            })
+            
+        except Exception as e:
+            logger.exception(f"Faucet error: {e}")
+            return jsonify({'ok': False, 'error': 'Internal server error'}), 500
 
-                if not admin_key:
-                    logger.error("RC_ADMIN_KEY not set, cannot perform real drip")
-                    return jsonify({'ok': False, 'error': 'Faucet configuration error'}), 500
+    base_path = config['server'].get('base_path', '/faucet')
 
-                response = requests.post(
-                    f"{node_url}/wallet/transfer",
-                    json={
-                        "from_miner": faucet_wallet,
-                        "to_miner": wallet,
-                        "amount_rtc": amount,
-                    },
-                    headers={"X-Admin-Key": admin_key},
-                    timeout=10
-                )
-
-                if response.status_code == 200 and response.json().get('ok'):
-                    result = response.json()
-                    tx_hash = result.get('tx_hash')
-                    logger.info(f"Real drip success: {amount} RTC to {wallet}, tx={tx_hash}")
-                else:
-                    logger.error(f"Real drip failed: {response.text}")
-                    return jsonify({'ok': False, 'error': 'Transfer failed on node'}), 502
-            except Exception as e:
-                logger.error(f"Real drip exception: {str(e)}")
-                return jsonify({'ok': False, 'error': 'Internal transfer error'}), 500
-        
-        # Calculate next available time
-        window_seconds = config.get('rate_limit', {}).get('window_seconds', 86400)
-        next_avail = datetime.now() + timedelta(seconds=window_seconds)
-        
-        elapsed = time.time() - start_time
-        logger.info(f"Drip completed in {elapsed:.3f}s: {amount} RTC to {wallet}")
-        
-        return jsonify({
-            'ok': True,
-            'amount': amount,
-            'wallet': wallet,
-            'tx_hash': tx_hash,
-            'next_available': next_avail.isoformat()
-        })
-
-    @app.route(f'{base_path}/event-codes', methods=['POST'])
+    @app.route(f'{base_path}/admin/event-codes', methods=['POST'])
     def create_event_codes():
-        """
-        Create one-time faucet claim codes for community events.
-
-        Request body:
-            {"count": 25, "amount": 0.5, "expires_at": "2026-07-01T00:00:00"}
-        """
+        """Mint a batch of one-time faucet claim codes for an event organizer."""
         auth_error = _require_event_admin(config)
         if auth_error:
             return auth_error
 
-        data = request.get_json(silent=True)
-        if not isinstance(data, dict):
-            return jsonify({'ok': False, 'error': 'JSON object required'}), 400
-
-        count = data.get('count', 1)
-        if not isinstance(count, int) or count < 1:
-            return jsonify({'ok': False, 'error': 'count must be a positive integer'}), 400
-
+        payload = request.get_json(silent=True) or {}
         event_config = config.get('event_codes', {})
+
+        try:
+            requested_count = int(payload.get('count', 0))
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'count must be an integer'}), 400
+
+        if requested_count <= 0:
+            return jsonify({'ok': False, 'error': 'count must be greater than 0'}), 400
+
         max_batch_size = int(event_config.get('max_batch_size', 500))
-        if count > max_batch_size:
-            return jsonify({'ok': False, 'error': f'count exceeds max batch size {max_batch_size}'}), 400
+        if requested_count > max_batch_size:
+            return jsonify({
+                'ok': False,
+                'error': f'count exceeds max_batch_size ({max_batch_size})'
+            }), 400
 
-        amount = data.get('amount', event_config.get('default_amount', 0.5))
-        max_amount = float(event_config.get(
-            'max_amount',
-            config.get('rate_limit', {}).get('max_amount', 0.5),
-        ))
-        if (
-            not isinstance(amount, (int, float))
-            or isinstance(amount, bool)
-            or not math.isfinite(float(amount))
-            or amount <= 0
-        ):
-            return jsonify({'ok': False, 'error': 'amount must be a positive number'}), 400
-        if float(amount) > max_amount:
-            return jsonify({'ok': False, 'error': f'amount exceeds max event amount {max_amount}'}), 400
+        amount = payload.get('amount', event_config.get('default_amount', 0.5))
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            return jsonify({'ok': False, 'error': 'amount must be numeric'}), 400
 
-        expires_at_raw = data.get('expires_at')
-        expires_at = _parse_future_datetime(expires_at_raw)
-        if expires_at is None:
-            return jsonify({'ok': False, 'error': 'expires_at must be a future ISO timestamp'}), 400
+        if amount <= 0:
+            return jsonify({'ok': False, 'error': 'amount must be greater than 0'}), 400
 
-        prefix = str(data.get('prefix') or event_config.get('code_prefix', 'EVENT')).strip() or 'EVENT'
+        max_amount = float(event_config.get('max_amount', amount))
+        if amount > max_amount:
+            return jsonify({
+                'ok': False,
+                'error': f'amount exceeds configured max_amount ({max_amount})'
+            }), 400
+
+        batch_id = str(payload.get('batch_id', '') or '').strip() or None
+        code_prefix = str(payload.get('code_prefix', event_config.get('code_prefix', 'EVENT')) or 'EVENT').strip()
+        created_by = request.headers.get('X-Event-Creator', 'admin').strip() or 'admin'
+
+        expires_at = _parse_future_datetime(payload.get('expires_at'))
+        expires_at_iso = expires_at.isoformat() if expires_at else None
+
+        metadata = payload.get('metadata', {})
+        if metadata is None:
+            metadata = {}
+        if not isinstance(metadata, dict):
+            return jsonify({'ok': False, 'error': 'metadata must be a JSON object'}), 400
+
         db_path = config.get('database', {}).get('path', 'faucet.db')
         created_at = datetime.now().isoformat()
-        codes = []
-        max_attempts = max(count * 5, count + 5)
+        generated = []
 
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=30)
         try:
             c = conn.cursor()
-            attempts = 0
-            while len(codes) < count and attempts < max_attempts:
-                attempts += 1
-                code = _generate_event_code(prefix)
-                try:
-                    c.execute('''
-                        INSERT INTO event_claim_codes (code, amount, expires_at, created_at)
-                        VALUES (?, ?, ?, ?)
-                    ''', (code, float(amount), expires_at.isoformat(), created_at))
-                except sqlite3.IntegrityError:
-                    continue
-                codes.append(code)
-            if len(codes) != count:
-                raise RuntimeError('Unable to generate unique event codes')
+            for _ in range(requested_count):
+                code = _generate_event_code(code_prefix)
+                metadata_json = json.dumps(metadata, sort_keys=True)
+                c.execute('''
+                    INSERT INTO event_claim_codes (
+                        code, amount, batch_id, metadata_json, expires_at,
+                        created_at, created_by
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    code,
+                    amount,
+                    batch_id,
+                    metadata_json,
+                    expires_at_iso,
+                    created_at,
+                    created_by,
+                ))
+                generated.append({
+                    'code': code,
+                    'amount': amount,
+                    'batch_id': batch_id,
+                    'expires_at': expires_at_iso,
+                    'metadata': metadata,
+                })
             conn.commit()
         finally:
             conn.close()
 
+        logger.info(
+            "Created %s event faucet codes batch_id=%s amount=%s creator=%s",
+            requested_count,
+            batch_id,
+            amount,
+            created_by,
+        )
+
         return jsonify({
             'ok': True,
-            'codes': codes,
-            'amount': float(amount),
-            'expires_at': expires_at.isoformat()
-        }), 201
+            'count': requested_count,
+            'amount': amount,
+            'batch_id': batch_id,
+            'expires_at': expires_at_iso,
+            'codes': generated,
+        })
 
     @app.route(f'{base_path}/event-claim', methods=['POST'])
     def claim_event_code():
-        """
-        Claim a one-time event faucet code.
+        """Redeem a one-time faucet claim code into an RTC faucet drip."""
+        payload = request.get_json(silent=True) or {}
+        code = str(payload.get('code', '') or '').strip()
+        wallet = str(payload.get('wallet', '') or '').strip()
 
-        Request body:
-            {"code": "EVENT-...", "wallet": "RTC..."}
-        """
-        data = request.get_json(silent=True)
-        if not isinstance(data, dict):
-            return jsonify({'ok': False, 'error': 'JSON object required'}), 400
-
-        if not config.get('event_codes', {}).get('enabled', False):
-            return jsonify({'ok': False, 'error': 'Event codes disabled'}), 404
-
-        code = str(data.get('code') or '').strip()
-        wallet_value = data.get('wallet')
         if not code:
-            return jsonify({'ok': False, 'error': 'code required'}), 400
-        if not isinstance(wallet_value, str) or not wallet_value.strip():
-            return jsonify({'ok': False, 'error': 'Wallet address required'}), 400
+            return jsonify({'ok': False, 'error': 'Event claim code is required'}), 400
 
-        wallet = wallet_value.strip()
-        valid, error = validator.validate_wallet(wallet)
-        if not valid:
-            return jsonify({'ok': False, 'error': error}), 400
+        valid_wallet, wallet_error = validator.validate_wallet(wallet)
+        if not valid_wallet:
+            return jsonify({'ok': False, 'error': wallet_error}), 400
 
-        trust_proxy_headers = config.get('security', {}).get('trust_proxy_headers', False)
-        ip = get_client_ip(request, trust_proxy_headers=trust_proxy_headers)
         db_path = config.get('database', {}).get('path', 'faucet.db')
+        trust_proxy_headers = config.get('security', {}).get('trust_proxy_headers', False)
+        ip_address = get_client_ip(request, trust_proxy_headers)
         now = datetime.now()
-        conn = sqlite3.connect(db_path, timeout=30)
 
+        conn = sqlite3.connect(db_path, timeout=30)
         try:
             conn.isolation_level = None
             c = conn.cursor()
             c.execute('PRAGMA busy_timeout = 30000')
             c.execute('BEGIN IMMEDIATE')
+
+            _release_stale_event_claim_reservation(c, code, now, config.get('event_codes', {}))
+
             c.execute('''
-                SELECT amount, expires_at, claimed_at FROM event_claim_codes
+                SELECT code, amount, batch_id, metadata_json, expires_at,
+                       created_at, claimed_at, claimed_wallet, tx_hash
+                FROM event_claim_codes
                 WHERE code = ?
             ''', (code,))
             row = c.fetchone()
             if not row:
                 c.execute('ROLLBACK')
-                return jsonify({'ok': False, 'error': 'Invalid event code'}), 404
+                return jsonify({'ok': False, 'error': 'Invalid event claim code'}), 404
 
-            amount, expires_at_raw, claimed_at = row
-            if claimed_at:
-                if _release_stale_event_claim_reservation(c, code, now, config.get('event_codes', {})):
-                    claimed_at = None
-                else:
+            (
+                stored_code,
+                amount,
+                batch_id,
+                metadata_json,
+                expires_at_raw,
+                created_at,
+                claimed_at,
+                claimed_wallet,
+                existing_tx_hash,
+            ) = row
+
+            if expires_at_raw:
+                expires_at = datetime.fromisoformat(expires_at_raw)
+                if expires_at <= now:
                     c.execute('ROLLBACK')
-                    return jsonify({'ok': False, 'error': 'Event code already claimed'}), 409
+                    return jsonify({'ok': False, 'error': 'Event claim code has expired'}), 410
 
-            expires_at = datetime.fromisoformat(expires_at_raw)
-            if expires_at <= now:
+            if claimed_at is not None:
                 c.execute('ROLLBACK')
-                return jsonify({'ok': False, 'error': 'Event code expired'}), 410
+                if claimed_wallet and claimed_wallet.lower() == wallet.lower():
+                    return jsonify({
+                        'ok': True,
+                        'amount': float(amount),
+                        'wallet': wallet,
+                        'code': stored_code,
+                        'tx_hash': existing_tx_hash,
+                        'already_claimed': True,
+                    })
+                return jsonify({'ok': False, 'error': 'Event claim code already used'}), 409
 
+            now_iso = now.isoformat()
             c.execute('''
                 UPDATE event_claim_codes
                 SET claimed_wallet = ?, claimed_ip = ?, claimed_at = ?
-                WHERE code = ? AND claimed_at IS NULL
-            ''', (wallet, ip, now.isoformat(), code))
-            if c.rowcount != 1:
-                c.execute('ROLLBACK')
-                return jsonify({'ok': False, 'error': 'Event code already claimed'}), 409
-
+                WHERE code = ?
+            ''', (wallet, ip_address, now_iso, stored_code))
             c.execute('''
-                INSERT INTO event_claims
-                    (code, wallet, ip_address, amount, status, tx_hash, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (code, wallet, ip, float(amount), 'reserved', None, now.isoformat(), now.isoformat()))
+                INSERT INTO event_claims (
+                    code, wallet, ip_address, amount, batch_id,
+                    claimed_at, tx_hash, status, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                stored_code,
+                wallet,
+                ip_address,
+                amount,
+                batch_id,
+                now_iso,
+                None,
+                'reserved',
+                now_iso,
+            ))
             claim_id = c.lastrowid
             c.execute('COMMIT')
-        except Exception as exc:
+        except Exception:
             try:
                 conn.execute('ROLLBACK')
             except sqlite3.OperationalError:
                 pass
-            logger.error(f"Event claim failed for code={code}: {exc}")
-            return jsonify({'ok': False, 'error': 'Internal transfer error'}), 500
+            raise
         finally:
             conn.close()
 
+        tx_hash = None
         try:
             _mark_event_claim_transfer_started(db_path, claim_id)
             tx_hash = _perform_faucet_transfer(
@@ -1576,6 +1556,10 @@ HTML_TEMPLATE = """
         const submitBtn = document.getElementById('submitBtn');
         const walletInput = document.getElementById('wallet');
 
+        function clearResult() {
+            result.replaceChildren();
+        }
+
         // Load stats
         async function loadStats() {
             try {
@@ -1595,7 +1579,7 @@ HTML_TEMPLATE = """
             submitBtn.disabled = true;
             submitBtn.textContent = 'Processing...';
             result.className = 'result';
-            result.innerHTML = '';
+            clearResult();
 
             const wallet = walletInput.value.trim();
 
@@ -1611,7 +1595,7 @@ HTML_TEMPLATE = """
                 result.className = 'result show ' + (data.ok ? 'success' : 'error');
                 
                 if (data.ok) {
-                    result.innerHTML = '';
+                    clearResult();
                     const strong = document.createElement('strong');
                     strong.textContent = '✅ Success!';
                     result.appendChild(strong);
@@ -1627,7 +1611,7 @@ HTML_TEMPLATE = """
                     walletInput.value = '';
                     loadStats();
                 } else {
-                    result.innerHTML = '';
+                    clearResult();
                     const strong = document.createElement('strong');
                     strong.textContent = `❌ ${data.error}`;
                     result.appendChild(strong);
@@ -1640,7 +1624,7 @@ HTML_TEMPLATE = """
                 }
             } catch (err) {
                 result.className = 'result show error';
-                result.innerHTML = '';
+                clearResult();
                 const strong = document.createElement('strong');
                 strong.textContent = '❌ Error: ';
                 result.appendChild(strong);

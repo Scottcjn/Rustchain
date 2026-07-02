@@ -33,7 +33,7 @@ def test_static_badge_preview_uses_dom_nodes():
     html = page.read_text(encoding="utf-8")
 
     assert "previewArea.innerHTML = `" not in html
+    assert "previewArea.innerHTML = ''" not in html
     assert "document.createElement('div')" in html
     assert "document.createTextNode('Badge URL: ')" in html
-
-
+    assert "previewArea.replaceChildren()" in html
