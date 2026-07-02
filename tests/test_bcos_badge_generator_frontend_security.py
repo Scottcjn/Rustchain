@@ -37,3 +37,15 @@ def test_static_badge_preview_uses_dom_nodes():
     assert "document.createTextNode('Badge URL: ')" in html
 
 
+def test_public_bcos_badge_preview_uses_dom_nodes():
+    page = Path(__file__).resolve().parents[1] / "bcos" / "badge-generator.html"
+    html = page.read_text(encoding="utf-8")
+
+    assert "badgePreview.innerHTML = `<img src=" not in html
+    assert "onerror=\"this.parentElement.innerHTML=" not in html
+    assert "function clearBadgePreview()" in html
+    assert "badgePreview.replaceChildren()" in html
+    assert "const image = document.createElement('img');" in html
+    assert "image.src = badgeUrl;" in html
+    assert "image.addEventListener('error'" in html
+
