@@ -430,7 +430,7 @@ def main():
             evidence = result['evidence']
             print(f"\nFingerprint Hash: {evidence['attestation']['fingerprint_hash'][:32]}...")
             print(f"Device Arch: {evidence['attestation']['device_arch']}")
-            print(f"Multiplier: {evidence['profile']['multiplier']}x")
+            print(f"Multiplier: {client.multiplier}x")
             print(f"Era: {evidence['profile']['era']}")
             print(f"Bounty: {evidence['profile']['bounty']} RTC")
             

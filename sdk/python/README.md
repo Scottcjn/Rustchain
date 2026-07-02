@@ -20,7 +20,7 @@ pip install -e ".[dev]"
 
 ```python
 import asyncio
-from rustchain_sdk import RustChainClient, RustChainWallet
+from rustchain_sdk import GovernanceManager, RustChainClient, RustChainWallet
 
 async def main():
     # Connect to a RustChain node
@@ -48,6 +48,11 @@ async def main():
             fee=0,
         )
         print("TX result:", result)
+
+        # Sign and submit a governance vote from the same wallet.
+        governance = GovernanceManager(client, wallet)
+        vote = await governance.vote(proposal_id=42, vote="yes")
+        print("Vote result:", vote)
 
 asyncio.run(main())
 ```
@@ -94,6 +99,7 @@ rustchain attest <wallet_address> --seed "word1 word2 ..."
 | `beacon_submit(envelope)` | Submit beacon envelope |
 | `governance_propose(...)` | Submit governance proposal |
 | `governance_vote(...)` | Cast governance vote |
+| `GovernanceManager(client, wallet)` | Sign and submit governance votes/proposals with a wallet |
 | `explorer_blocks(limit)` | Recent blocks |
 | `explorer_transactions(address, limit)` | Transactions |
 | `get_epoch_rewards(epoch)` | Epoch rewards |
@@ -121,6 +127,31 @@ wallet.address       # RTC address
 wallet.public_key_hex
 wallet.seed_phrase   # Keep secret!
 ```
+
+### GovernanceManager
+
+```python
+from rustchain_sdk import GovernanceManager
+
+governance = GovernanceManager(client, wallet)
+
+# Dry-run/audit the exact signed payload.
+payload = governance.sign_vote(proposal_id=42, vote="abstain")
+
+# Submit a signed vote through RustChainClient.governance_vote().
+result = await governance.vote(proposal_id=42, vote="yes")
+
+# Submit proposals using the wallet address as proposer.
+proposal = await governance.propose(
+    proposal_type="param_change",
+    description="Lower testnet quorum",
+    payload={"key": "quorum", "value": 0.4},
+)
+```
+
+Vote signatures are generated over canonical JSON with the domain
+`rustchain.governance.vote.v1`, so governance signatures are not reusable as
+transfer or attestation signatures.
 
 ## Exceptions
 

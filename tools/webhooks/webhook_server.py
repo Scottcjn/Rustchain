@@ -46,12 +46,37 @@ logging.basicConfig(
 log = logging.getLogger("webhook-dispatcher")
 
 # ---------------------------------------------------------------------------
+# Safe numeric casts — guard against malformed env values at import time
+# ---------------------------------------------------------------------------
+def _safe_int(val: str, default: int) -> int:
+    """Cast *val* to int, returning *default* on malformed/empty input."""
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_float(val: str, default: float) -> float:
+    """Cast *val* to float, returning *default* on malformed/empty input."""
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return default
+
+
+# ---------------------------------------------------------------------------
 # Constants & defaults
 # ---------------------------------------------------------------------------
 DEFAULT_NODE_URL = os.getenv("RUSTCHAIN_NODE", "http://localhost:5000")
-DEFAULT_POLL_INTERVAL = int(os.getenv("WEBHOOK_POLL_INTERVAL", "10"))
-DEFAULT_LARGE_TX_THRESHOLD = float(os.getenv("LARGE_TX_THRESHOLD", "100.0"))
+DEFAULT_POLL_INTERVAL = _safe_int(os.getenv("WEBHOOK_POLL_INTERVAL", "10"), 10)
+DEFAULT_LARGE_TX_THRESHOLD = _safe_float(os.getenv("LARGE_TX_THRESHOLD", "100.0"), 100.0)
 DEFAULT_DB_PATH = os.getenv("WEBHOOK_DB", "webhooks.db")
+# Optional admin key for node endpoints (e.g. /wallet/balances/all) that
+# require X-Admin-Key. When unset, large_tx polling is skipped because
+# the live node no longer exposes the unauthenticated /api/balances path.
+DEFAULT_NODE_ADMIN_KEY = os.getenv("RUSTCHAIN_ADMIN_KEY", "")
+# Node balance endpoint that supersedes the removed /api/balances route.
+NODE_BALANCES_PATH = os.getenv("RUSTCHAIN_BALANCES_PATH", "/wallet/balances/all")
 MAX_ADMIN_BODY_BYTES = 1024 * 1024
 MAX_RETRIES = 5
 INITIAL_BACKOFF = 1.0  # seconds
@@ -332,11 +357,15 @@ class RustChainPoller:
 
     def __init__(self, node_url: str, store: SubscriberStore,
                  poll_interval: int = DEFAULT_POLL_INTERVAL,
-                 large_tx_threshold: float = DEFAULT_LARGE_TX_THRESHOLD):
+                 large_tx_threshold: float = DEFAULT_LARGE_TX_THRESHOLD,
+                 admin_key: str = DEFAULT_NODE_ADMIN_KEY,
+                 balances_path: str = NODE_BALANCES_PATH):
         self.node_url = node_url.rstrip("/")
         self.store = store
         self.poll_interval = poll_interval
         self.large_tx_threshold = large_tx_threshold
+        self.admin_key = admin_key
+        self.balances_path = balances_path
 
         # Previous-state snapshots
         self._prev_tip_slot: Optional[int] = None
@@ -345,9 +374,13 @@ class RustChainPoller:
         self._prev_balances: Dict[str, float] = {}
         self._running = False
 
-    def _get(self, path: str) -> Optional[dict]:
+    def _get(self, path: str, headers: Optional[Dict[str, str]] = None) -> Optional[dict]:
         try:
-            resp = requests.get(f"{self.node_url}{path}", timeout=15)
+            resp = requests.get(
+                f"{self.node_url}{path}",
+                timeout=15,
+                headers=headers or {},
+            )
             resp.raise_for_status()
             return resp.json()
         except Exception as exc:
@@ -446,19 +479,60 @@ class RustChainPoller:
         self._prev_miners = current_miners
 
     def _check_large_tx(self):
-        balances_data = self._get("/api/balances")
-        if balances_data is None or not isinstance(balances_data, list):
+        # FIX(#7063): the live node no longer exposes the unauthenticated
+        # /api/balances surface. The canonical replacement is
+        # /wallet/balances/all, which requires the X-Admin-Key header and
+        # returns 503 ADMIN_KEY_UNSET when RC_ADMIN_KEY is not configured
+        # on the node. Skip polling gracefully in that case so existing
+        # operators (without an admin key) don't see noisy 503/401 errors
+        # on every cycle.
+        if not self.admin_key:
+            log.debug(
+                "Skipping large_tx poll: RUSTCHAIN_ADMIN_KEY not configured "
+                "(node no longer exposes /api/balances)."
+            )
+            return
+
+        balances_data = self._get(
+            self.balances_path,
+            headers={"X-Admin-Key": self.admin_key},
+        )
+        if balances_data is None or not isinstance(balances_data, (dict, list)):
+            return
+
+        # /wallet/balances/all returns {"balances": [{miner_id, amount_i64,
+        # amount_rtc}, ...], "total_i64": ..., "total_rtc": ...}. Older
+        # deployments returned a bare list; accept both shapes.
+        raw_entries: Any
+        if isinstance(balances_data, list):
+            raw_entries = balances_data
+        elif isinstance(balances_data.get("balances"), list):
+            raw_entries = balances_data["balances"]
+        else:
             return
 
         current_balances: Dict[str, float] = {}
-        for entry in balances_data:
+        for entry in raw_entries:
+            if not isinstance(entry, dict):
+                continue
             miner_id = entry.get("miner_id") or entry.get("miner")
-            balance = entry.get("balance") or entry.get("amount", 0)
-            if miner_id is not None:
-                try:
-                    current_balances[miner_id] = float(balance)
-                except (ValueError, TypeError):
-                    continue
+            if miner_id is None:
+                continue
+            # Prefer the human-readable RTC amount when present, fall back
+            # to the integer stroop balance, then the legacy `amount` key.
+            balance: Any = (
+                entry.get("amount_rtc")
+                if entry.get("amount_rtc") is not None
+                else entry.get("amount_i64")
+                if entry.get("amount_i64") is not None
+                else entry.get("balance")
+                if entry.get("balance") is not None
+                else entry.get("amount", 0)
+            )
+            try:
+                current_balances[str(miner_id)] = float(balance)
+            except (ValueError, TypeError):
+                continue
 
         if self._prev_balances:
             for miner_id, new_bal in current_balances.items():
@@ -687,6 +761,12 @@ def main():
                         help="RTC threshold for large_tx events (default: %(default)s)")
     parser.add_argument("--db", default=DEFAULT_DB_PATH,
                         help="SQLite database path (default: %(default)s)")
+    parser.add_argument("--admin-key", default=DEFAULT_NODE_ADMIN_KEY,
+                        help="X-Admin-Key for node endpoints that require it "
+                             "(env: RUSTCHAIN_ADMIN_KEY, default: %(default)s)")
+    parser.add_argument("--balances-path", default=NODE_BALANCES_PATH,
+                        help="Node balance endpoint polled for large_tx events "
+                             "(env: RUSTCHAIN_BALANCES_PATH, default: %(default)s)")
     args = parser.parse_args()
 
     store = SubscriberStore(db_path=args.db)
@@ -697,6 +777,8 @@ def main():
         store=store,
         poll_interval=args.poll_interval,
         large_tx_threshold=args.large_tx_threshold,
+        admin_key=args.admin_key,
+        balances_path=args.balances_path,
     )
     poller_thread = threading.Thread(target=poller.run, daemon=True)
     poller_thread.start()

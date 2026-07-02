@@ -521,7 +521,7 @@
 
       const btn = document.createElement('button');
       btn.className = 'rtc-pay-btn';
-      btn.innerHTML = `${LOGO_SVG} ${escapeHtml(config.label)}`;
+      btn.innerHTML = `${escapeHtml(LOGO_SVG)} ${escapeHtml(config.label)}`;
       btn.onclick = () => this.openPaymentModal(config);
       
       el.appendChild(btn);
@@ -546,7 +546,7 @@
       overlay.innerHTML = `
         <div class="rtc-modal">
           <div class="rtc-modal-header">
-            <h2 class="rtc-modal-title">${LOGO_SVG} RustChain Payment</h2>
+            <h2 class="rtc-modal-title">${escapeHtml(LOGO_SVG)} RustChain Payment</h2>
             <button class="rtc-modal-close">&times;</button>
           </div>
           <div class="rtc-modal-body">
@@ -749,7 +749,7 @@
       const body = overlay.querySelector('.rtc-modal-body');
       body.innerHTML = `
         <div class="rtc-success">
-          <div class="rtc-success-icon">${CHECK_SVG}</div>
+          <div class="rtc-success-icon">${escapeHtml(CHECK_SVG)}</div>
           <h3 class="rtc-success-title">Payment Successful!</h3>
           <p class="rtc-success-tx">TX: ${escapeHtml(result.tx_hash)}</p>
         </div>

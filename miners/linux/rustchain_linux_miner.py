@@ -102,6 +102,17 @@ def _parse_wmic_value(output, key):
     return ""
 
 
+def _parse_ioreg_serial(output):
+    for line in str(output or "").splitlines():
+        if "IOPlatformSerialNumber" not in line:
+            continue
+        _, _, value = line.partition("=")
+        serial = value.strip().strip('"')
+        if serial and serial.lower() != "none":
+            return serial
+    return ""
+
+
 def _linux_miner_platform_warning(system):
     if system in ("Linux", "Darwin"):
         return ""
@@ -213,6 +224,33 @@ def get_linux_serial():
 
     return None
 
+
+def get_macos_serial():
+    """Get hardware serial number for macOS systems."""
+    try:
+        result = subprocess.run(
+            ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode == 0:
+            serial = _parse_ioreg_serial(result.stdout)
+            if serial:
+                return serial
+    except Exception:
+        pass
+
+    return None
+
+
+def get_hardware_serial(system=None):
+    system = system or platform.system()
+    if system == "Darwin":
+        return get_macos_serial()
+    return get_linux_serial()
+
+
 class LocalMiner:
     def __init__(self, wallet=None, wart_address=None, wart_pool=None,
                  bzminer_path=None, manage_bzminer=False, verbose=False, show_payload=False,
@@ -253,7 +291,7 @@ class LocalMiner:
                 manage_bzminer=manage_bzminer,
             )
 
-        self.serial = get_linux_serial()
+        self.serial = get_hardware_serial()
         print("="*70)
         print("RustChain Local Linux Miner")
         print("RIP-PoA Hardware Fingerprint + Serial Binding v2.0")
@@ -333,7 +371,33 @@ class LocalMiner:
     def _get_mac_addresses(self):
         """Return list of real MAC addresses present on the system."""
         macs = []
+        if platform.system() == "Darwin":
+            try:
+                output = subprocess.run(
+                    ["networksetup", "-listallhardwareports"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    timeout=5,
+                ).stdout.splitlines()
+                current_port = ""
+                stable_ports = {"ethernet", "wi-fi", "wifi"}
+                for line in output:
+                    if line.startswith("Hardware Port:"):
+                        current_port = line.split(":", 1)[1].strip().lower()
+                    elif line.startswith("Ethernet Address:") and current_port in stable_ports:
+                        mac = line.split(":", 1)[1].strip().lower()
+                        if mac and mac != "00:00:00:00:00:00" and mac not in macs:
+                            macs.append(mac)
+                if macs:
+                    return macs[:3]
+            except Exception:
+                pass
+
         # Try `ip -o link`
+        # Virtual interface prefixes that should be filtered out
+        _VIRT_PREFIXES = ("docker", "br-", "veth", "tailscale", "ts-", "virbr",
+                          "vnet", "tun", "tap", "wg", "bond", "dummy", "lo")
         try:
             output = subprocess.run(
                 ["ip", "-o", "link"],
@@ -343,6 +407,11 @@ class LocalMiner:
                 timeout=5,
             ).stdout.splitlines()
             for line in output:
+                m = re.search(r"^\d+:\s+(\S+?):", line)
+                if m:
+                    iface = m.group(1)
+                    if any(iface.startswith(p) for p in _VIRT_PREFIXES):
+                        continue
                 m = re.search(r"link/(?:ether|loopback)\s+([0-9a-f:]{17})", line, re.IGNORECASE)
                 if m:
                     mac = m.group(1).lower()
@@ -353,6 +422,9 @@ class LocalMiner:
 
         # Fallback to ifconfig
         if not macs:
+            _VIRT_PREFIXES = ("docker", "br-", "veth", "tailscale", "ts-",
+                              "virbr", "vnet", "tun", "tap", "wg", "bond",
+                              "dummy", "lo")
             try:
                 output = subprocess.run(
                     ["ifconfig", "-a"],
@@ -361,16 +433,24 @@ class LocalMiner:
                     text=True,
                     timeout=5,
                 ).stdout.splitlines()
+                current_iface = ""
                 for line in output:
-                    m = re.search(r"(?:ether|HWaddr)\s+([0-9a-f:]{17})", line, re.IGNORECASE)
+                    m = re.match(r"^(\S+?):", line)
                     if m:
-                        mac = m.group(1).lower()
-                        if mac != "00:00:00:00:00:00":
-                            macs.append(mac)
+                        current_iface = m.group(1).lower()
+                        if any(current_iface.startswith(p) for p in _VIRT_PREFIXES):
+                            current_iface = ""
+                        continue
+                    if current_iface:
+                        m = re.search(r"(?:ether|HWaddr)\s+([0-9a-f:]{17})", line, re.IGNORECASE)
+                        if m:
+                            mac = m.group(1).lower()
+                            if mac != "00:00:00:00:00:00" and mac not in macs:
+                                macs.append(mac)
             except Exception:
                 pass
 
-        return macs or ["00:00:00:00:00:01"]
+        return (macs[:3] if macs else ["00:00:00:00:00:01"])
 
     def _collect_entropy(self, cycles: int = 48, inner_loop: int = 25000):
         """
@@ -408,7 +488,7 @@ class LocalMiner:
             "hostname": socket.gethostname(),
             "family": "x86",
             "arch": "modern",  # Less than 10 years old
-            "serial": get_linux_serial(),  # Hardware serial for v2 binding
+            "serial": get_hardware_serial(system),  # Hardware serial for v2 binding
             "probe_warning": _linux_miner_platform_warning(system)
         }
 
@@ -674,7 +754,14 @@ class LocalMiner:
             "device": {
                 "family": self.hw_info["family"],
                 "arch": self.hw_info["arch"]
-            }
+            },
+            # Include the hardware fingerprint in the enrollment too. The node's
+            # per-epoch rotating-check (evaluate_rotating_fingerprint_checks)
+            # reads the fingerprint from the ENROLL body; without it active_ratio
+            # is 0 and the enrolled weight collapses to 0 even for real hardware
+            # that already passed attestation. (Node aliases simd_identity ->
+            # simd_bias itself, so no client-side rename is needed.)
+            "fingerprint": self.fingerprint_data
         }
 
         # Ed25519-sign the enrollment if we have a keypair AND a fresh epoch.

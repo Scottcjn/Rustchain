@@ -32,6 +32,22 @@ import sys
 from flask import Flask, Blueprint, jsonify, request
 from datetime import datetime
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name, str(default))
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, str(default))
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 try:
     from node.tls_config import get_ssl_context
 except ModuleNotFoundError:
@@ -51,10 +67,10 @@ except ImportError:
     print("Warning: flask-socketio not installed. Run: pip install flask-socketio")
 
 # ─── Configuration ─────────────────────────────────────────────────────────── #
-EXPLORER_PORT = int(os.environ.get('EXPLORER_PORT', 8080))
+EXPLORER_PORT = _env_int('EXPLORER_PORT', 8080)
 NODE_URL = os.environ.get('RUSTCHAIN_NODE_URL', os.environ.get('RUSTCHAIN_API_BASE', 'https://rustchain.org'))
-API_TIMEOUT = float(os.environ.get('API_TIMEOUT', '8'))
-POLL_INTERVAL = float(os.environ.get('POLL_INTERVAL', '5'))  # seconds between polls
+API_TIMEOUT = _env_float('API_TIMEOUT', 8.0)
+POLL_INTERVAL = _env_float('POLL_INTERVAL', 5.0)  # seconds between polls
 HEARTBEAT_S = 30  # ping/pong interval for connection health
 MAX_QUEUE = 100  # max buffered events per client (backpressure)
 SOCKETIO_CORS_ORIGINS = parse_socketio_cors_origins(local_port=EXPLORER_PORT)

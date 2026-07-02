@@ -69,6 +69,12 @@ This is a *continuity* signal, not an *identity* signal — it confirms persiste
 - Needs a long, constant-temperature baseline (≥30 min dwell); continuous thermal ramps destroy rate precision.
 - Any integration into `hardware_binding` must be **versioned** with a migration path (per-arch; G4/G5/POWER8/ARM have no equivalent) — changing the binding inputs invalidates every live miner's binding otherwise.
 
+The proposed `hardware_binding.continuity` contract is now captured in
+[`RIPPOA_CONTINUITY_BINDING.md`](RIPPOA_CONTINUITY_BINDING.md), with a
+non-production reference helper at `tools/rippoa_continuity_binding.py`. The
+contract keeps assigned IDs authoritative and explicitly rejects continuity
+evidence as a per-unit identity claim.
+
 ## Methodology note — measure before publish
 
 This investigation killed **six** plausible-looking results, including two of our own premature "resolved/refuted" flip-flops, **all before any publication.** The discipline that caught them:

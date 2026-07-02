@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 import importlib.util
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,6 +16,7 @@ def load_auto_pay():
     spec = importlib.util.spec_from_file_location("auto_pay_under_test", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    module.requests.delete = lambda url, headers=None, timeout=None: FakeResponse(status_code=204)
     return module
 
 
@@ -44,11 +46,16 @@ def base_env():
         "RTC_VPS_HOST": "127.0.0.1",
         "RTC_ADMIN_KEY": "redacted-admin-key",
         "REPO_OWNER": "Scottcjn",
+        "GITHUB_SHA": "0123456789abcdef0123456789abcdef01234567",
     }
 
 
 def paged_comments(comments):
     def fake_get(url, headers=None, params=None, timeout=None):
+        if url.endswith("/repos/Scottcjn/Rustchain"):
+            return FakeResponse({"default_branch": "main"})
+        if url.endswith("/git/ref/heads/main"):
+            return FakeResponse({"object": {"sha": "abcdef0123456789abcdef0123456789abcdef01"}})
         page = (params or {}).get("page", 1)
         return FakeResponse(comments if page == 1 else [])
 
@@ -77,6 +84,9 @@ def test_untrusted_confirmation_marker_does_not_suppress_owner_payment():
     comment_posts = []
 
     def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             return FakeResponse({"ok": True, "pending_id": "p1"})
@@ -102,10 +112,17 @@ def test_confirmation_comment_failure_retries_with_same_idempotency_key():
     comment_attempts = []
 
     def fake_get(url, headers=None, params=None, timeout=None):
+        if url.endswith("/repos/Scottcjn/Rustchain"):
+            return FakeResponse({"default_branch": "main"})
+        if url.endswith("/git/ref/heads/main"):
+            return FakeResponse({"object": {"sha": "abcdef0123456789abcdef0123456789abcdef01"}})
         page = (params or {}).get("page", 1)
         return FakeResponse(persisted_comments if page == 1 else [])
 
     def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             key = json["idempotency_key"]
@@ -149,10 +166,17 @@ def test_started_marker_does_not_block_retry_after_transfer_connection_failure()
     comment_posts = []
 
     def fake_get(url, headers=None, params=None, timeout=None):
+        if url.endswith("/repos/Scottcjn/Rustchain"):
+            return FakeResponse({"default_branch": "main"})
+        if url.endswith("/git/ref/heads/main"):
+            return FakeResponse({"object": {"sha": "abcdef0123456789abcdef0123456789abcdef01"}})
         page = (params or {}).get("page", 1)
         return FakeResponse(persisted_comments if page == 1 else [])
 
     def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             if len(transfer_calls) == 1:
@@ -183,6 +207,222 @@ def test_started_marker_does_not_block_retry_after_transfer_connection_failure()
     assert any("RTC-AutoPay-Confirmed" in body for body in comment_posts)
 
 
+def test_fresh_started_marker_blocks_concurrent_transfer_attempt():
+    auto_pay = load_auto_pay()
+    payment = owner_payment_comment()
+    payment_key = auto_pay.build_payment_key(
+        "Scottcjn/Rustchain",
+        "123",
+        payment["id"],
+        75.0,
+        "contributor",
+    )
+    comments = [
+        payment,
+        {
+            "id": 202,
+            "user": {"login": "github-actions[bot]"},
+            "created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "body": f"<!-- RTC-AutoPay-Started payment_key={payment_key} payment_comment_id=101 -->",
+        },
+    ]
+    transfer_calls = []
+    comment_posts = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
+        if url.endswith("/wallet/transfer"):
+            transfer_calls.append(json)
+            return FakeResponse({"ok": True, "pending_id": "p1"})
+        comment_posts.append(json["body"])
+        return FakeResponse({"id": 999})
+
+    with patch.dict(os.environ, base_env(), clear=True):
+        auto_pay.requests.get = paged_comments(comments)
+        auto_pay.requests.post = fake_post
+        auto_pay.main()
+
+    assert transfer_calls == []
+    assert comment_posts == []
+
+
+def test_atomic_lock_ref_blocks_two_runs_from_same_initial_comment_set():
+    auto_pay = load_auto_pay()
+    comments = [owner_payment_comment()]
+    created_refs = set()
+    transfer_calls = []
+    comment_posts = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
+        if url.endswith("/git/refs"):
+            ref = json["ref"]
+            if ref in created_refs:
+                return FakeResponse({"message": "Reference already exists"}, status_code=422)
+            created_refs.add(ref)
+            return FakeResponse({"ref": ref}, status_code=201)
+        if url.endswith("/wallet/transfer"):
+            transfer_calls.append(json)
+            return FakeResponse({"ok": True, "pending_id": "p1"})
+        comment_posts.append(json["body"])
+        return FakeResponse({"id": 999})
+
+    with patch.dict(os.environ, base_env(), clear=True):
+        auto_pay.requests.get = paged_comments(comments)
+        auto_pay.requests.post = fake_post
+
+        # Both invocations observe the same initial comments. The second one is
+        # stopped only by the atomic Git ref create, which mirrors the real
+        # concurrent workflow race that comment pre-seeding did not exercise.
+        auto_pay.main()
+        auto_pay.main()
+
+    assert len(created_refs) == 1
+    assert len(transfer_calls) == 1
+    assert len([body for body in comment_posts if "RTC-AutoPay-Started" in body]) == 1
+    assert len([body for body in comment_posts if "RTC-AutoPay-Confirmed" in body]) == 1
+
+
+def test_post_started_failure_releases_lock_before_raising():
+    auto_pay = load_auto_pay()
+    comments = [owner_payment_comment()]
+    released_refs = []
+    transfer_calls = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
+        if url.endswith("/wallet/transfer"):
+            transfer_calls.append(json)
+            return FakeResponse({"ok": True, "pending_id": "p1"})
+        return FakeResponse(
+            {"message": "temporary comment outage"},
+            status_code=503,
+            text="temporary comment outage",
+            raise_http=True,
+        )
+
+    def fake_delete(url, headers=None, timeout=None):
+        released_refs.append(url)
+        return FakeResponse(status_code=204)
+
+    with patch.dict(os.environ, base_env(), clear=True):
+        auto_pay.requests.get = paged_comments(comments)
+        auto_pay.requests.post = fake_post
+        auto_pay.requests.delete = fake_delete
+        with pytest.raises(HTTPError):
+            auto_pay.main()
+
+    assert transfer_calls == []
+    assert len(released_refs) == 1
+    assert "/git/refs/heads/rtc-autopay-locks/pr-123/" in released_refs[0]
+
+
+def test_lock_create_non_exists_422_is_not_treated_as_in_progress():
+    auto_pay = load_auto_pay()
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return FakeResponse(
+            {"message": "Object does not exist"},
+            status_code=422,
+            text="Object does not exist",
+            raise_http=True,
+        )
+
+    with patch.dict(os.environ, base_env(), clear=True):
+        auto_pay.requests.get = paged_comments([])
+        auto_pay.requests.post = fake_post
+        with pytest.raises(HTTPError):
+            auto_pay.acquire_payment_lock("Scottcjn/Rustchain", "123", "key")
+
+
+def test_lock_create_missing_contents_write_403_raises():
+    auto_pay = load_auto_pay()
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return FakeResponse(
+            {"message": "Resource not accessible by integration"},
+            status_code=403,
+            text="Resource not accessible by integration",
+            raise_http=True,
+        )
+
+    with patch.dict(os.environ, base_env(), clear=True):
+        auto_pay.requests.get = paged_comments([])
+        auto_pay.requests.post = fake_post
+        with pytest.raises(HTTPError):
+            auto_pay.acquire_payment_lock("Scottcjn/Rustchain", "123", "key")
+
+
+def test_resolve_lock_sha_uses_base_default_branch_not_github_sha():
+    auto_pay = load_auto_pay()
+    get_calls = []
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        get_calls.append(url)
+        if url.endswith("/repos/Scottcjn/Rustchain"):
+            return FakeResponse({"default_branch": "trunk"})
+        if url.endswith("/git/ref/heads/trunk"):
+            return FakeResponse({"object": {"sha": "abcdef0123456789abcdef0123456789abcdef01"}})
+        return FakeResponse({}, status_code=404, raise_http=True)
+
+    env = base_env()
+    env["GITHUB_SHA"] = "ffffffffffffffffffffffffffffffffffffffff"
+    with patch.dict(os.environ, env, clear=True):
+        auto_pay.requests.get = fake_get
+        assert auto_pay.resolve_lock_sha("Scottcjn/Rustchain") == "abcdef0123456789abcdef0123456789abcdef01"
+
+    assert get_calls == [
+        "https://api.github.com/repos/Scottcjn/Rustchain",
+        "https://api.github.com/repos/Scottcjn/Rustchain/git/ref/heads/trunk",
+    ]
+
+
+def test_stale_started_marker_does_not_block_retry():
+    auto_pay = load_auto_pay()
+    payment = owner_payment_comment()
+    payment_key = auto_pay.build_payment_key(
+        "Scottcjn/Rustchain",
+        "123",
+        payment["id"],
+        75.0,
+        "contributor",
+    )
+    stale_time = datetime.now(timezone.utc) - timedelta(seconds=auto_pay.STARTED_LOCK_TTL_SECONDS + 1)
+    comments = [
+        payment,
+        {
+            "id": 202,
+            "user": {"login": "github-actions[bot]"},
+            "created_at": stale_time.isoformat().replace("+00:00", "Z"),
+            "body": f"<!-- RTC-AutoPay-Started payment_key={payment_key} payment_comment_id=101 -->",
+        },
+    ]
+    transfer_calls = []
+    comment_posts = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
+        if url.endswith("/wallet/transfer"):
+            transfer_calls.append(json)
+            return FakeResponse({"ok": True, "pending_id": "p1"})
+        comment_posts.append(json["body"])
+        return FakeResponse({"id": 999})
+
+    with patch.dict(os.environ, base_env(), clear=True):
+        auto_pay.requests.get = paged_comments(comments)
+        auto_pay.requests.post = fake_post
+        auto_pay.main()
+
+    assert len(transfer_calls) == 1
+    assert any("RTC-AutoPay-Confirmed" in body for body in comment_posts)
+
+
 def test_manual_transfer_notice_does_not_block_later_auto_pay():
     auto_pay = load_auto_pay()
     persisted_comments = [owner_payment_comment()]
@@ -190,10 +430,17 @@ def test_manual_transfer_notice_does_not_block_later_auto_pay():
     comment_posts = []
 
     def fake_get(url, headers=None, params=None, timeout=None):
+        if url.endswith("/repos/Scottcjn/Rustchain"):
+            return FakeResponse({"default_branch": "main"})
+        if url.endswith("/git/ref/heads/main"):
+            return FakeResponse({"object": {"sha": "abcdef0123456789abcdef0123456789abcdef01"}})
         page = (params or {}).get("page", 1)
         return FakeResponse(persisted_comments if page == 1 else [])
 
     def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             return FakeResponse({"ok": True, "pending_id": "p1"})
@@ -246,6 +493,9 @@ def test_legacy_manual_transfer_notice_does_not_block_later_auto_pay():
     comment_posts = []
 
     def fake_post(url, headers=None, json=None, timeout=None):
+        assert json is not None
+        if url.endswith("/git/refs"):
+            return FakeResponse({"ref": json["ref"]}, status_code=201)
         if url.endswith("/wallet/transfer"):
             transfer_calls.append(json)
             return FakeResponse({"ok": True, "pending_id": "p1"})

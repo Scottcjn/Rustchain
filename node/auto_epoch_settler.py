@@ -19,9 +19,23 @@ logger = logging.getLogger("rustchain.epoch_settler")
 NODE_URL = os.environ.get("RUSTCHAIN_NODE_URL", "http://localhost:8088")
 DB_PATH = os.environ.get("RUSTCHAIN_DB_PATH", "/root/rustchain/rustchain_v2.db")
 # Module-level env config — wrap integer casts so bad env values
-# (empty string, non-numeric text) don't crash the daemon at import.
-CHECK_INTERVAL = int(os.environ.get("RUSTCHAIN_SETTLE_INTERVAL", "300") or 300)
-SLOTS_PER_EPOCH = int(os.environ.get("RUSTCHAIN_SLOTS_PER_EPOCH", "144") or 144)
+# (empty string OR non-numeric text like "abc") don't crash the daemon at
+# import time (#7327). `int(x or default)` only catches empty strings; a
+# malformed value still raises ValueError, so parse defensively.
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        logging.getLogger("rustchain.epoch_settler").warning(
+            "Invalid %s=%r — falling back to %d", name, raw, default)
+        return default
+
+CHECK_INTERVAL = _env_int("RUSTCHAIN_SETTLE_INTERVAL", 300)
+SLOTS_PER_EPOCH = _env_int("RUSTCHAIN_SLOTS_PER_EPOCH", 144)
+UNSETTLED_LOOKBACK = _env_int("RUSTCHAIN_UNSETTLED_LOOKBACK", 500)
 
 
 def get_current_slot():
@@ -68,7 +82,7 @@ def get_unsettled_epochs():
                     return []
 
             unsettled = []
-            for epoch in range(max(0, current_epoch - 10), current_epoch):
+            for epoch in range(max(0, current_epoch - UNSETTLED_LOOKBACK), current_epoch):
                 headers = db.execute(
                     "SELECT COUNT(*) FROM headers WHERE slot BETWEEN ? AND ?",
                     (epoch * SLOTS_PER_EPOCH, (epoch + 1) * SLOTS_PER_EPOCH - 1)
@@ -97,9 +111,15 @@ def get_unsettled_epochs():
 def settle_epoch_via_api(epoch):
     """Settle an epoch using the node API"""
     try:
+        headers = {}
+        admin_key = os.environ.get("RC_ADMIN_KEY", "")
+        if admin_key:
+            headers["X-Admin-Key"] = admin_key
+
         resp = requests.post(
             f"{NODE_URL}/rewards/settle",
             json={"epoch": epoch},
+            headers=headers,
             timeout=30
         )
 
@@ -113,6 +133,8 @@ def settle_epoch_via_api(epoch):
             else:
                 error = data.get("error", "unknown")
                 logger.warning("Failed to settle epoch %d: %s", epoch, error)
+        elif resp.status_code == 401:
+            logger.warning("Settlement for epoch %d rejected: admin key required (set RC_ADMIN_KEY)", epoch)
         else:
             logger.warning("HTTP error settling epoch %d: %s", epoch, resp.status_code)
 

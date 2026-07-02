@@ -1,5 +1,6 @@
 """Tests for RustChain bounties MCP miner client normalization."""
 
+import importlib
 import os
 import sys
 from unittest.mock import MagicMock
@@ -9,6 +10,7 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from rustchain_bounties_mcp.client import RustChainClient
+import rustchain_bounties_mcp.client as client_module
 
 
 class AsyncContextManager:
@@ -40,6 +42,26 @@ def client_for_response(data) -> RustChainClient:
     client._session = session
     client._owns_session = False
     return client
+
+
+def test_malformed_numeric_env_uses_safe_defaults(monkeypatch):
+    monkeypatch.setenv("RUSTCHAIN_TIMEOUT", "not-a-timeout")
+    monkeypatch.setenv("RUSTCHAIN_RETRY", "bad-retry")
+
+    module = importlib.reload(client_module)
+
+    assert module.REQUEST_TIMEOUT == 30
+    assert module.RETRY_COUNT == 2
+
+
+def test_numeric_env_overrides_are_preserved(monkeypatch):
+    monkeypatch.setenv("RUSTCHAIN_TIMEOUT", "12")
+    monkeypatch.setenv("RUSTCHAIN_RETRY", "4")
+
+    module = importlib.reload(client_module)
+
+    assert module.REQUEST_TIMEOUT == 12
+    assert module.RETRY_COUNT == 4
 
 
 @pytest.mark.asyncio

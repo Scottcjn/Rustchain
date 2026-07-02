@@ -104,7 +104,14 @@ def home():
 
 @app.route('/api/proxy/<path:path>')
 def proxy_api(path):
-    """Proxy requests to the RustChain node."""
+    """Proxy requests to the RustChain node (public endpoints only)."""
+    ALLOWED_PREFIXES = (
+        "epoch", "health", "infos", "lottery", "balance/",
+        "api/miners", "api/blocks", "api/state",
+    )
+    if not any(path.startswith(p) for p in ALLOWED_PREFIXES):
+        return jsonify({"error": "Proxy access denied for this endpoint"}), 403
+
     try:
         url = f"{NODE_API}/{path}"
         # Keep query parameters

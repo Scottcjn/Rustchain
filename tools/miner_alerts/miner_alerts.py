@@ -40,16 +40,43 @@ load_dotenv()
 RUSTCHAIN_API = os.getenv("RUSTCHAIN_API", "https://rustchain.org")
 VERIFY_SSL = os.getenv("RUSTCHAIN_VERIFY_SSL", "false").lower() == "true"
 
+
+def _safe_int(val, default: int) -> int:
+    """Cast *val* to int, returning *default* on malformed input.
+
+    Module-level numeric env casts previously crashed at import time with a
+    bare ``ValueError`` when the env var was empty or non-numeric (see #7323).
+    Falling back to the documented default keeps the daemon loadable and
+    matches the existing safe-parse pattern used by the Prometheus exporter.
+    """
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(val, default: float) -> float:
+    """Cast *val* to float, returning *default* on malformed input.
+
+    Same rationale as :func:`_safe_int` — keeps the daemon importable when
+    numeric env vars are misconfigured.
+    """
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+
 # Polling intervals (seconds)
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL", "120"))  # 2 minutes default
-OFFLINE_THRESHOLD = int(os.getenv("OFFLINE_THRESHOLD", "600"))  # 10 min no attestation
+POLL_INTERVAL = _safe_int(os.getenv("POLL_INTERVAL", "120"), 120)  # 2 minutes default
+OFFLINE_THRESHOLD = _safe_int(os.getenv("OFFLINE_THRESHOLD", "600"), 600)  # 10 min no attestation
 
 # Large transfer threshold (RTC)
-LARGE_TRANSFER_THRESHOLD = float(os.getenv("LARGE_TRANSFER_THRESHOLD", "10.0"))
+LARGE_TRANSFER_THRESHOLD = _safe_float(os.getenv("LARGE_TRANSFER_THRESHOLD", "10.0"), 10.0)
 
 # SMTP configuration
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_PORT = _safe_int(os.getenv("SMTP_PORT", "587"), 587)
 SMTP_USER = os.getenv("SMTP_USER", "")
 SMTP_PASS = os.getenv("SMTP_PASS", "")
 SMTP_FROM = os.getenv("SMTP_FROM", "")

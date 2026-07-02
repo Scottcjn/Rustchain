@@ -62,13 +62,34 @@ def test_dashboard_escapes_search_result_and_error_text():
     assert "${escapeHtml(data.weight)}" in source
     assert "${escapeHtml(data.tier)}" in source
     assert "${escapeHtml(wallet)}" in source
-    assert "err = escapeHtml(err.message || err);" in source
 
     assert "${data.wallet}" not in source
     assert "${data.balance}" not in source
     assert "${data.weight}" not in source
     assert "${data.tier}" not in source
     assert '<span class="mono">${wallet}</span>' not in source
+
+
+def test_dashboard_search_error_path_uses_textcontent_sink():
+    """The wallet-search .catch() path must build the error card via DOM nodes
+    and `textContent`, never via `innerHTML` interpolation. Regression guard
+    for issue #7146 (Harden dashboard wallet search error rendering).
+    """
+    source = _source()
+
+    # The old innerHTML error template must be gone.
+    assert "search-result').innerHTML = `<h3>❌ Error</h3>" not in source
+    assert "err = escapeHtml(err.message || err);" not in source
+
+    # The new path must clear via replaceChildren (not innerHTML = ''), build
+    # the heading and the message paragraph with createElement, and write the
+    # exception text via textContent (no template interpolation).
+    assert "resultDiv.replaceChildren();" in source
+    assert "document.createElement('h3');" in source
+    assert "document.createElement('p');" in source
+    assert "errorMsg.textContent = err && err.message ? err.message" in source
+    assert "resultDiv.appendChild(errorHeading);" in source
+    assert "resultDiv.appendChild(errorMsg);" in source
 
 
 def test_stats_api_does_not_echo_internal_exception_details(monkeypatch):

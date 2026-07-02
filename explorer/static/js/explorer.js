@@ -419,13 +419,13 @@ function renderStatusBar() {
     
     container.innerHTML = `
         <div class="status-indicator">
-            <span class="status-dot ${statusClass}"></span>
-            <span>${statusText}</span>
+            <span class="status-dot ${escapeHtml(statusClass)}"></span>
+            <span>${escapeHtml(statusText)}</span>
         </div>
         <div class="status-info mono">
             ${state.health ? `v${escapeHtml(state.health.version || '2.2.1')}` : ''}
-            ${state.health && state.health.uptime ? `| Uptime: ${formatUptime(state.health.uptime)}` : ''}
-            ${state.lastUpdate ? `| Updated: ${formatRelativeTime(state.lastUpdate)}` : ''}
+            ${state.health && state.health.uptime ? `| Uptime: ${escapeHtml(formatUptime(state.health.uptime))}` : ''}
+            ${state.lastUpdate ? `| Updated: ${escapeHtml(formatRelativeTime(state.lastUpdate))}` : ''}
         </div>
     `;
 }
@@ -468,14 +468,14 @@ function renderEpochStats() {
         </div>
         <div class="card">
             <div class="card-title">Active Miners</div>
-            <div class="card-value text-info">${state.miners.length}</div>
+            <div class="card-value text-info">${escapeHtml(state.miners.length)}</div>
             <div class="card-label">Enrolled</div>
         </div>
         <div class="card">
             <div class="card-title">Progress</div>
             <div class="card-value">${formatNumber(slot, 0)}/${formatNumber(blocksPerEpoch, 0)}</div>
             <div class="progress-bar">
-                <div class="progress-fill" style="width: ${progress}%"></div>
+                <div class="progress-fill" style="width: ${escapeHtml(progress)}%"></div>
             </div>
         </div>
     `;
@@ -658,7 +658,7 @@ function renderTransactionsTable() {
             <td class="mono" title="${escapeHtml(tx.from)}">${escapeHtml(shortenAddress(tx.from || '0x'))}</td>
             <td class="mono" title="${escapeHtml(tx.to)}">${escapeHtml(shortenAddress(tx.to || '0x'))}</td>
             <td class="text-success">${formatNumber(tx.amount || 0, 6)} RTC</td>
-            <td class="mono">${formatRelativeTime(tx.timestamp)}</td>
+            <td class="mono">${escapeHtml(formatRelativeTime(tx.timestamp))}</td>
         </tr>
     `).join('');
 }
@@ -733,7 +733,7 @@ function renderHallOfRust() {
             const profileUrl = '/hall-of-fame/machine.html?id=' + encodeURIComponent(fp);
             const machineName = escapeHtml(machine.nickname || (fp ? fp.slice(0, 14) + '…' : 'Unknown'));
             return `
-            <a href="${profileUrl}" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; margin-bottom: 8px; text-decoration: none; color: inherit; transition: background 0.15s;" onmouseover="this.style.background='var(--bg-tertiary,#1e293b)'" onmouseout="this.style.background='var(--bg-secondary)'">
+            <a href="${escapeHtml(profileUrl)}" style="display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-secondary); border-radius: 8px; margin-bottom: 8px; text-decoration: none; color: inherit; transition: background 0.15s;" onmouseover="this.style.background='var(--bg-tertiary,#1e293b)'" onmouseout="this.style.background='var(--bg-secondary)'">
                 <span style="font-size: 1.5rem; font-weight: bold; color: ${index === 0 ? '#f59e0b' : index === 1 ? '#94a3b8' : index === 2 ? '#b45309' : '#64748b'};">#${index + 1}</span>
                 <div style="flex: 1;">
                     <div class="mono" style="font-size: 0.9rem;">${machineName}</div>
@@ -778,7 +778,7 @@ function renderSearchResults() {
     
     container.innerHTML = `
         <div class="section-title" style="margin-bottom: 16px;">
-            Search Results: ${matchingMiners.length} found
+            Search Results: ${escapeHtml(matchingMiners.length)} found
         </div>
         <div class="table-container">
             <table>
@@ -798,8 +798,8 @@ function renderSearchResults() {
                         return `
                             <tr>
                                 <td class="mono" title="${escapeHtml(miner.miner_id)}">${escapeHtml(shortenAddress(miner.miner_id || 'unknown'))}</td>
-                                <td><span class="badge ${badgeClass}">${escapeHtml(miner.device_arch || 'Unknown')}</span></td>
-                                <td><span class="badge badge-${tier}">${tier.toUpperCase()}</span></td>
+                                <td><span class="badge ${escapeHtml(badgeClass)}">${escapeHtml(miner.device_arch || 'Unknown')}</span></td>
+                                <td><span class="badge badge-${escapeHtml(tier)}">${escapeHtml(tier.toUpperCase())}</span></td>
                                 <td class="text-accent">${formatNumber(miner.multiplier || 1.0, 2)}x</td>
                                 <td class="text-success">${formatNumber(miner.balance || 0, 6)} RTC</td>
                             </tr>

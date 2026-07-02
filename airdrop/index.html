@@ -420,8 +420,12 @@
     state.github = mockUser;
 
     statusBox.className = 'status-box success';
-    statusBox.innerHTML = `✅ Connected as <strong>${mockUser.login}</strong><br>
-      Stars: ${mockUser.stars} repos · PRs: ${mockUser.prs} merged · Account age: ${mockUser.age_days} days`;
+    renderStatus(statusBox, [
+      {text: '✅ Connected as '},
+      {strong: mockUser.login},
+      {br: true},
+      {text: `  Stars: ${mockUser.stars} repos · PRs: ${mockUser.prs} merged · Account age: ${mockUser.age_days} days`},
+    ]);
     btn.textContent = '✅ GitHub Connected';
 
     // Unlock step 2
@@ -483,7 +487,11 @@
 
       state.wallet = { type: 'eth', address, balance: balanceETH, age_days: 30 /* server-verified */ };
       statusBox.className = 'status-box success';
-      statusBox.innerHTML = `✅ Base wallet connected<br>${address.slice(0,6)}...${address.slice(-4)} · ${balanceETH.toFixed(4)} ETH`;
+      renderStatus(statusBox, [
+        {text: '✅ Base wallet connected'},
+        {br: true},
+        {text: `${address.slice(0,6)}...${address.slice(-4)} · ${balanceETH.toFixed(4)} ETH`},
+      ]);
 
       unlockStep(3);
     } catch (err) {
@@ -530,9 +538,13 @@
         return;
       }
 
-      state.wallet = { type: 'sol', address: pubkey, balance: balanceSOL, age_days: 30 };
+      state.wallet = { type: 'sol', address: pubkey, balance: balanceSOL, age_days: 30 /* server-verified */ };
       statusBox.className = 'status-box success';
-      statusBox.innerHTML = `✅ Solana wallet connected<br>${pubkey.slice(0,8)}...${pubkey.slice(-6)} · ${balanceSOL.toFixed(4)} SOL`;
+      renderStatus(statusBox, [
+        {text: '✅ Solana wallet connected'},
+        {br: true},
+        {text: `${pubkey.slice(0,8)}...${pubkey.slice(-6)} · ${balanceSOL.toFixed(4)} SOL`},
+      ]);
 
       unlockStep(3);
     } catch (err) {
@@ -586,14 +598,17 @@
 
     // Render
     document.getElementById('tier-label').textContent = `Tier: ${tier}`;
-    document.getElementById('check-rows').innerHTML = `
-      <div class="check-row"><span class="check-icon">${gh.stars >= 10 ? '✅' : '⬜'}</span> ${gh.stars || 0} Scottcjn repos starred</div>
-      <div class="check-row"><span class="check-icon">${gh.prs >= 1 ? '✅' : '⬜'}</span> ${gh.prs || 0} merged PRs</div>
-      <div class="check-row"><span class="check-icon">✅</span> GitHub account age: ${gh.age_days} days</div>
-    `;
-    document.getElementById('sybil-rows').innerHTML = sybilChecks.map(c =>
-      `<div class="check-row"><span class="check-icon">${c.pass ? '✅' : '❌'}</span> ${c.label}</div>`
-    ).join('');
+    const checkRowsEl = document.getElementById('check-rows');
+    checkRowsEl.textContent = '';
+    checkRowsEl.appendChild(buildCheckRow(gh.stars >= 10 ? '✅' : '⬜', ` ${gh.stars || 0} Scottcjn repos starred`));
+    checkRowsEl.appendChild(buildCheckRow(gh.prs >= 1 ? '✅' : '⬜', ` ${gh.prs || 0} merged PRs`));
+    checkRowsEl.appendChild(buildCheckRow('✅', ` GitHub account age: ${gh.age_days} days`));
+
+    const sybilRowsEl = document.getElementById('sybil-rows');
+    sybilRowsEl.textContent = '';
+    sybilChecks.forEach(c => {
+      sybilRowsEl.appendChild(buildCheckRow(c.pass ? '✅' : '❌', ` ${c.label}`));
+    });
 
     document.getElementById('allocation-display').textContent = `${total} wRTC`;
     document.getElementById('allocation-breakdown').textContent =
@@ -633,10 +648,21 @@
     state.rtcWallet = { name: nameInput, address: addr };
 
     out.className = 'status-box success';
-    out.innerHTML = `✅ RTC Wallet generated<br>
-      <strong>Name:</strong> ${nameInput}<br>
-      <strong>Address:</strong> <code style="font-size:11px;">${addr}</code><br>
-      <span style="color: var(--muted); font-size: 11px;">⚠️ Save this address — it will receive bridged RTC tokens</span>`;
+    renderStatus(out, [
+      {text: '✅ RTC Wallet generated'},
+      {br: true},
+      {text: '  '},
+      {strong: 'Name:'},
+      {text: ' '},
+      {strong: nameInput},
+      {br: true},
+      {text: '  '},
+      {strong: 'Address:'},
+      {text: ' '},
+      {code: addr, codeStyle: '11px'},
+      {br: true},
+      {span: '⚠️ Save this address — it will receive bridged RTC tokens', color: 'var(--muted)', size: '11px'},
+    ]);
   }
 
   // ==========================================
@@ -665,18 +691,79 @@
     // In production: POST /api/claim with payload + signature
     // For now, show the payload for review
     statusBox.className = 'status-box success';
-    statusBox.innerHTML = `✅ Claim submitted successfully!<br><br>
-      <strong>Claim ID:</strong> ${generateClaimId()}<br>
-      <strong>GitHub:</strong> ${payload.github}<br>
-      <strong>Wallet:</strong> ${payload.wallet_address?.slice(0,10)}...<br>
-      <strong>Allocation:</strong> ${payload.allocation} wRTC<br>
-      <strong>Tier:</strong> ${payload.tier}<br><br>
-      <span style="color: var(--muted); font-size: 12px;">📬 Tokens will be distributed within 24 hours after manual review. Check your wallet.</span>`;
+    renderStatus(statusBox, [
+      {text: '✅ Claim submitted successfully!'},
+      {br: true}, {br: true},
+      {strong: 'Claim ID:'},
+      {text: ' '},
+      {strong: generateClaimId()},
+      {br: true},
+      {strong: 'GitHub:'},
+      {text: ' '},
+      {strong: payload.github},
+      {br: true},
+      {strong: 'Wallet:'},
+      {text: ' '},
+      {strong: `${payload.wallet_address?.slice(0,10)}...`},
+      {br: true},
+      {strong: 'Allocation:'},
+      {text: ' '},
+      {strong: `${payload.allocation} wRTC`},
+      {br: true},
+      {strong: 'Tier:'},
+      {text: ' '},
+      {strong: payload.tier},
+      {br: true}, {br: true},
+      {span: '📬 Tokens will be distributed within 24 hours after manual review. Check your wallet.', color: 'var(--muted)', size: '12px'},
+    ]);
   }
 
   // ==========================================
   // UTILITIES
   // ==========================================
+
+  // Build a status container from a list of segments without using innerHTML.
+  // Each segment is an object: {text}, {strong}, {code, codeStyle}, {br}, {span, color, size}.
+  // All dynamic values are assigned via textContent so attacker-controlled strings
+  // can never be parsed as HTML. See #7214.
+  function renderStatus(container, segments) {
+    container.textContent = '';
+    segments.forEach(part => {
+      if (part.br) {
+        container.appendChild(document.createElement('br'));
+      } else if (part.strong !== undefined) {
+        const s = document.createElement('strong');
+        s.textContent = String(part.strong);
+        container.appendChild(s);
+      } else if (part.code !== undefined) {
+        const c = document.createElement('code');
+        if (part.codeStyle) c.style.fontSize = part.codeStyle;
+        c.textContent = String(part.code);
+        container.appendChild(c);
+      } else if (part.span !== undefined) {
+        const sp = document.createElement('span');
+        if (part.color) sp.style.color = part.color;
+        if (part.size) sp.style.fontSize = part.size;
+        sp.textContent = String(part.span);
+        container.appendChild(sp);
+      } else if (part.text !== undefined) {
+        container.appendChild(document.createTextNode(String(part.text)));
+      }
+    });
+  }
+
+  // Build a .check-row element without innerHTML. Each row is an icon span + text.
+  function buildCheckRow(icon, text) {
+    const row = document.createElement('div');
+    row.className = 'check-row';
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'check-icon';
+    iconSpan.textContent = icon;
+    row.appendChild(iconSpan);
+    row.appendChild(document.createTextNode(text));
+    return row;
+  }
+
   function unlockStep(n) {
     const num = document.getElementById(`step${n}-num`);
     const content = document.getElementById(`step${n}-content`);

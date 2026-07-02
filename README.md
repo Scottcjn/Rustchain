@@ -20,9 +20,11 @@
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
 
-[Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/WHITEPAPER.md) · [Hire Us](CONSULTING.md)
+> ⭐ **Help us reach 512 stars** — the 2⁹ binary milestone (our supply is 2²³). If Proof-of-Antiquity is your kind of weird, [a star](https://github.com/Scottcjn/Rustchain/stargazers) helps more old machines get found. [Why 512?](https://github.com/Scottcjn/Rustchain/issues/7540)
 
-Languages: [English](README.md) · [简体中文](docs/zh-CN/README.md) · [繁體中文](README_ZH-TW.md) · [Español](README_ES.md) · [Deutsch](README_DE.md) · [日本語](README_JA.md) · [Русский](README_RU.md) · [Tiếng Việt](README.vi.md) · [Português (BR)](README.pt-BR.md) · [हिन्दी](README_HI.md) · [Italiano](docs/it-IT/README.md) · [한국어](docs/ko-KR/README.md) · [中文 API 快速参考](docs/zh-CN/API.md)
+[Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Hardware Requirements](docs/HARDWARE_REQUIREMENTS.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/WHITEPAPER.md) · [Hire Us](CONSULTING.md)
+
+Languages: [English](README.md) · [简体中文](docs/zh-CN/README.md) · [简体中文 (根目录)](README_ZH.md) · [繁體中文](README_ZH-TW.md) · [Español](README_ES.md) · [Deutsch](README_DE.md) · [日本語](README_JA.md) · [Русский](README_RU.md) · [Tiếng Việt](README.vi.md) · [Português (BR)](README.pt-BR.md) · [हिन्दी](README_HI.md) · [Italiano](docs/it-IT/README.md) · [한국어](docs/ko-KR/README.md) · [中文 API 快速参考](docs/zh-CN/API.md)
 
 </div>
 
@@ -45,6 +47,20 @@ While the rest of crypto chased speculation, we went back to the original thesis
 | Proof of nothing useful | Proof of real, verified hardware |
 | Disposable — mine and dump | Preservation — keep old machines alive |
 | AI-hostile | AI-augmented consensus and verification |
+
+### More than a token — and not "just another AI chain"
+
+The token is the least interesting thing here. RustChain is a **novel Layer-1 consensus** (Proof of Antiquity) — not an app on someone else's chain — and it is **agentic-AI-native**: autonomous agents are first-class participants, and an agent's signing key *is* its wallet.
+
+It's built by people who have done this before. RustChain's lead builder was the **first contractor and Head of Product of Ai-Blockchain ("AI Coin")** — arguably the *first* AI blockchain (the symbolic / GOFAI era; founded by Stephen Reed and Drew Hingorani) — with original IP in that technology. RustChain is the agentic-era successor.
+
+| "AI chain" | What it actually is | vs. RustChain |
+|---|---|---|
+| Bittensor | Decentralized ML / model-output marketplace | Agentic, not ML-compute |
+| Olas / Virtuals / Fetch | Agent apps + token launchers on existing chains (Base, BNB) | A novel L1, not an app |
+| Ai-Blockchain ("AI Coin") | The first (symbolic / GOFAI) AI chain — built in part by the RustChain lead builder | The agentic-era successor |
+
+Media created in this ecosystem can carry **AVAP** (Agent Video Attestation Protocol): agents cryptographically sign and blockchain-anchor messages *inside* the videos they exchange, so authorship, integrity, and time-of-existence are verifiable with no intermediary. ([agent-video-attestation](https://github.com/Scottcjn/agent-video-attestation))
 
 ---
 
@@ -192,6 +208,7 @@ This isn't a roadmap. This is deployed and running:
 | **Bounties** | Agent-assisted contributions — AI helps humans earn RTC for real code | Live, 64,000+ RTC paid ([live](https://rustchain.org/payouts.json)) |
 | **Certification** | [BCOS](https://rustchain.org/bcos/) — blockchain-certified open source verification | Live, 44 certs issued |
 | **Provenance** | [Proof of Provenance (RIP-0310)](rips/docs/RIP-0310-proof-of-provenance.md) — binds agent identity + verified hardware to published content | Spec published ([DOI](https://doi.org/10.5281/zenodo.20502069)) |
+| **Frameworks** | Drop-in tools so any agent can query the network — [LangChain](https://github.com/Scottcjn/langchain-rustchain) (`pip install langchain-rustchain-tools`), plus CrewAI / AutoGen / Agno / smolagents in [`integrations/`](integrations/) | Live |
 
 ### Why Hardware Verification Matters for Agents
 
@@ -540,23 +557,23 @@ Please read the [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and the [Bount
 
 Run the miner with --dry-run first to verify connectivity without submitting work:
 
-`ash
+```bash
 ./clawrtc-miner --dry-run
-`
+```
 
 Check node health:
-`ash
+```bash
 curl -fsS https://rustchain.org/health
-`
+```
 </details>
 
 <details>
 <summary><b>Balance check returns 0 or error</b></summary>
 
 Verify your miner name is correct:
-`ash
+```bash
 curl -fsS "https://rustchain.org/wallet/balance?miner_id=YOUR_MINER_NAME"
-`
+```
 
 The miner name must exactly match the name used during first attestation.
 </details>
@@ -565,29 +582,35 @@ The miner name must exactly match the name used during first attestation.
 <summary><b>Miner service won't start (systemd / launchd)</b></summary>
 
 Linux (systemd):
-`ash
+```bash
 sudo systemctl status clawrtc-miner
 sudo journalctl -u clawrtc-miner --no-pager -n 50
-`
+```
 
 macOS (launchd):
-`ash
+```bash
 launchctl list | grep clawrtc
-`
+```
 </details>
 
 <details>
 <summary><b>Transfer stuck in "pending" state</b></summary>
 
 Check the pending ledger:
-`ash
-curl -fsS "https://rustchain.org/pending/list?miner_id=YOUR_MINER_NAME"
-`
+```bash
+curl -fsS "https://rustchain.org/wallet/history?miner_id=YOUR_MINER_NAME&limit=20"
+```
+
+Node operators can inspect the admin-only pending ledger with:
+
+```bash
+python tools/pending_ops.py --node https://rustchain.org --admin-key "$RC_ADMIN_KEY" list
+```
 
 Transitions require epoch settlement - check current epoch:
-`ash
+```bash
 curl -fsS https://rustchain.org/epoch
-`
+```
 </details>
 
 <details>

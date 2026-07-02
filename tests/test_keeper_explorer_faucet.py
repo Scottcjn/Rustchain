@@ -96,7 +96,7 @@ def test_proxy_hides_internal_connection_errors(tmp_path, monkeypatch):
 
     monkeypatch.setattr(keeper.requests, "get", fail_request)
 
-    response = keeper.app.test_client().get("/api/proxy/blocks/latest")
+    response = keeper.app.test_client().get("/api/proxy/api/blocks/latest")
 
     assert response.status_code == 502
     body = response.get_json()

@@ -297,6 +297,17 @@ DEFAULT_HEADERS = {
 }
 
 
+def _sanitize_csv_cell(value: Any) -> Any:
+    """Neutralize spreadsheet formula injection in CSV output cells.
+
+    Values beginning with =, +, -, @, tab, carriage return, or newline are
+    prefixed with a single quote so spreadsheet applications treat them as text.
+    """
+    if isinstance(value, str) and value and value[0] in "=+-\t\r\n@":
+        return "'" + value
+    return value
+
+
 def write_csv(path: Path, rows: list[dict[str, Any]], default_headers: list[str] | None = None) -> None:
     if rows:
         fieldnames = sorted({key for row in rows for key in row.keys()})
@@ -306,7 +317,9 @@ def write_csv(path: Path, rows: list[dict[str, Any]], default_headers: list[str]
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         if fieldnames:
             writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(
+            {k: _sanitize_csv_cell(v) for k, v in row.items()} for row in rows
+        )
 
 
 def write_json(path: Path, rows: list[dict[str, Any]]) -> None:

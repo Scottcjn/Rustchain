@@ -13,7 +13,7 @@ on:
     types: [closed]
 
 permissions:
-  contents: read
+  contents: write  # required for auto-pay's Git ref mutex
   issues: write
   pull-requests: write
 

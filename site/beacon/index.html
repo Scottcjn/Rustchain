@@ -19,6 +19,13 @@
   <meta name="twitter:image" content="https://rustchain.org/wrtc/og.png">
 
   <script type="application/ld+json">
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
+
   {
     "@context": "https://schema.org",
     "@type": "WebPage",
@@ -215,7 +222,7 @@
         if (mnr) parts.push(`${mnr}M`);
         if (h) parts.push(`${h}H`);
         if (parts.length) tag += ` (${parts.join('+')})`;
-        hudEl.innerHTML = `AGENTS: <span>${tag}</span> | CITIES: <span>${CITIES.length}</span> | CONTRACTS: <span>${CONTRACTS.length}</span>`;
+        hudEl.innerHTML = `AGENTS: <span>${escapeHtml(tag)}</span> | CITIES: <span>${escapeHtml(CITIES.length)}</span> | CONTRACTS: <span>${escapeHtml(CONTRACTS.length)}</span>`;
       }
 
       // HUD buttons
