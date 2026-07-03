@@ -20,8 +20,8 @@ def test_get_miners_accepts_envelope_payloads(monkeypatch):
 
     monkeypatch.setattr(
         client,
-        "_get",
-        lambda endpoint: {
+        "_get_public",
+        lambda endpoint, params=None: {
             "items": [
                 {"miner": "alice", "hardware_type": "PowerPC G4"},
                 {"miner": "bob", "hardware_type": "x86-64"},
@@ -40,7 +40,7 @@ def test_get_miners_returns_empty_list_for_unexpected_payload(monkeypatch):
     module = load_client_module()
     client = module.RustChainClient(base_url="https://node.example")
 
-    monkeypatch.setattr(client, "_get", lambda endpoint: {"pagination": {"total": 0}})
+    monkeypatch.setattr(client, "_get_public", lambda endpoint, params=None: {"pagination": {"total": 0}})
 
     assert client.get_miners() == []
 
@@ -199,7 +199,8 @@ def test_request_with_admin_key_sends_header(monkeypatch):
 
     result = client._request("POST", "/api/submit", data={"key": "val"})
     assert result == {"ok": True}
-    assert captured_headers.get("X-Admin-Key") == "secret-admin-key-123"
+    headers_lower = {k.lower(): v for k, v in captured_headers.items()}
+    assert headers_lower.get("x-admin-key") == "secret-admin-key-123"
 
 
 def test_read_methods_use_public_no_admin_key(monkeypatch):
