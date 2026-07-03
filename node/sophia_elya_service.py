@@ -494,6 +494,18 @@ def attest_submit():
     data, error = _json_object_body()
     if error:
         return error
+
+    # FIX #6889: Validate signature/public_key types BEFORE any processing.
+    # A numeric signature (e.g. 123.456) must not cause a 500.
+    for field_name in ("signature", "public_key", "signature_type"):
+        val = data.get(field_name)
+        if val is not None and not isinstance(val, str):
+            return jsonify({
+                "error": "invalid_request",
+                "message": f"Field '{field_name}' must be a string if provided",
+                "code": "INVALID_SIGNATURE_TYPE",
+            }), 400
+
     report = data.get("report", {})
     if not isinstance(report, dict):
         return jsonify({"error": "invalid_report"}), 400
