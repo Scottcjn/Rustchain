@@ -1,0 +1,23 @@
+{
+  "machine_name": "lequangsang01-dev-node",
+  "model": "Developer Workstation",
+  "model_identifier": "macOS-arm64",
+  "year_manufactured": 2024,
+  "architecture": "ARM64 (Apple Silicon)",
+  "cpu_cores": "8+",
+  "memory_gb": 16,
+  "power_draw_watts": 30,
+  "usage": [
+    "RustChain bounty work",
+    "Documentation contributions",
+    "Code review and testing",
+    "Community engagement"
+  ],
+  "description": "Developer workstation running macOS for RustChain bounty contributions, documentation, and community engagement. Registered Beacon ID for verified contributor status on the RustChain network.",
+  "wallet_name": "lequangsang01",
+  "wallet_address": "",
+  "beacon_id": "beacon-bdcc69a57aeda40f",
+  "beacon_pubkey": "b3a98e49b79334bfd46555d3f74d949006abdfd0d4035ce473e60da55a1b75e4",
+  "contributor": "lequangsang01",
+  "added_date": "2026-07-03"
+}
