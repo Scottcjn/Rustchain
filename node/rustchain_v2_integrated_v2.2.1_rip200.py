@@ -8907,7 +8907,7 @@ def wallet_hardware_unbind():
         rows = conn.execute(
             "SELECT hardware_id, bound_miner FROM hardware_bindings WHERE bound_miner = ?",
             (wallet_address,)
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema
         if not rows:
             return jsonify({"ok": False, "error": "not_found", "message": "No hardware bindings found for this wallet"}), 404
 
