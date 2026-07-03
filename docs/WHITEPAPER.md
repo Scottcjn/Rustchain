@@ -582,12 +582,11 @@ TOTAL                      7.5×         100%      0.90 RTC
 
 ### 6.3 Emission Schedule
 
-**Halving Events:**
-- Every 2 years OR upon "Epoch Relic Event" milestone
-- Initial: 1.5 RTC per epoch
-- Year 2: 0.75 RTC per epoch
-- Year 4: 0.375 RTC per epoch
-- (Continues until minimum dust threshold)
+**Fixed emission (no halving):**
+- 1.5 RTC per epoch, constant
+- Epoch = 144 blocks (~24 hours) at 600s block time
+- Emission continues at the fixed rate until the 8,388,608 RTC (2^23) supply cap is reached
+- Per RIP-0004; the running node emits a fixed 1.5 RTC/epoch, with no halving schedule
 
 **Burn Mechanisms (Optional):**
 - Unused validator capacity
