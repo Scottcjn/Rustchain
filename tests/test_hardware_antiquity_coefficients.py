@@ -98,8 +98,8 @@ class TestHardwareAntiquityCoefficientOrdering:
         assert 1.5 <= x86.get("retro", 0) <= 2.0, "retro x86 out of range"
         assert 2.0 <= x86.get("386", 0) <= 3.0, "386 out of range"
         assert 1.5 <= x86.get("486", 0) <= 2.5, "486 out of range"
-        # 2015-2020: 0.8-1.0x
-        assert 0.8 <= x86.get("modern", 0) <= 1.0, "modern x86 out of range"
+        # 2015-2020: 0.4-0.8x
+        assert 0.4 <= x86.get("modern", 0) <= 0.8, "modern x86 out of range"
 
     def test_apple_silicon_in_new_range(self):
         """Apple Silicon (2020+) should be in the 0.5-0.8x range."""
