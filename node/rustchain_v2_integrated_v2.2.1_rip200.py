@@ -2065,7 +2065,8 @@ HARDWARE_WEIGHTS = {
     # PowerPC — vintage computing royalty
     "PowerPC": {"G4": 2.5, "G5": 2.0, "G3": 1.8, "power8": 2.0, "POWER8": 2.0, "power9": 1.5, "default": 1.5},
     # Apple Silicon — efficient modern chips (also detected as ARM/aarch64)
-    "Apple Silicon": {"M1": 1.2, "M2": 1.2, "M3": 1.1, "M4": 1.05, "default": 1.2},
+    # Lower coefficients for newer hardware; older hardware gets higher rewards.
+    "Apple Silicon": {"M1": 0.7, "M2": 0.6, "M3": 0.55, "M4": 0.5, "default": 0.65},
     # ARM — includes Apple Silicon when detected as ARM/aarch64 by derive_verified_device
     # aarch64 on macOS = Apple Silicon, aarch64 on Linux = NAS/SBC (penalized)
     "ARM": {
@@ -2080,10 +2081,12 @@ HARDWARE_WEIGHTS = {
         "default": 0.0005,
     },
     # x86 — modern and vintage tiers
+    # Older hardware gets higher coefficients (pre-2010: 1.5-2.0, 2010-2015: 1.0-1.5,
+    # 2015-2020: 0.8-1.0, 2020+: 0.5-0.8)
     "x86": {
-        "retro": 1.4, "core2": 1.3, "core2duo": 1.3, "nehalem": 1.2,
-        "sandy_bridge": 1.1, "sandybridge": 1.1, "ivy_bridge": 1.1, "ivybridge": 1.1,
-        "haswell": 1.05, "broadwell": 1.05,
+        "retro": 2.0, "core2": 1.8, "core2duo": 1.8, "nehalem": 1.5,
+        "sandy_bridge": 1.3, "sandybridge": 1.3, "ivy_bridge": 1.2, "ivybridge": 1.2,
+        "haswell": 1.0, "broadwell": 0.9,
         # Pentium M family (mirrors ANTIQUITY_MULTIPLIERS — see rip_200_round_robin_1cpu1vote.py).
         # `derive_verified_device` resolves Pentium M brand strings to these arch keys;
         # without them here, enroll_epoch's HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight)
@@ -2092,15 +2095,15 @@ HARDWARE_WEIGHTS = {
         # Earlier Pentium tiers also covered by `_detect_x86_vintage`.
         "pentium_iii": 2.0, "pentium_ii": 2.2, "pentium_pro": 2.3, "pentium_mmx": 2.4,
         "pentium": 1.5, "pentium4": 1.5, "pentium_d": 1.5, "486": 2.0, "386": 2.5,
-        "modern": 0.8, "default": 1.0,
+        "modern": 0.6, "default": 1.0,
     },
-    "x86_64": {"modern": 0.8, "default": 0.8},
+    "x86_64": {"modern": 0.6, "default": 0.8},
     # Windows — same as x86, map by CPU brand
     "Windows": {
-        "default": 0.8,
-        "Intel64 Family 6 Model 42": 1.1,  # Sandy Bridge
-        "Intel64 Family 6 Model 58": 1.1,  # Ivy Bridge
-        "Intel64 Family 6 Model 60": 1.05, # Haswell
+        "default": 0.6,
+        "Intel64 Family 6 Model 42": 1.3,  # Sandy Bridge
+        "Intel64 Family 6 Model 58": 1.2,  # Ivy Bridge
+        "Intel64 Family 6 Model 60": 1.0,  # Haswell
     },
     # Console hardware — retro gaming
     "console": {"nes_6502": 2.8, "snes_65c816": 2.7, "n64_mips": 2.5,
