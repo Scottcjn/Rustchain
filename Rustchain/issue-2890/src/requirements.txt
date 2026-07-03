@@ -1,0 +1,12 @@
+# AgentFolio ↔ Beacon Integration
+# No additional runtime deps beyond what the repo already uses.
+# All imports are stdlib or optional crypto libraries.
+
+# Optional: for creating attestations (signing)
+# pynacl>=1.5.0
+
+# Optional: for verifying attestations (alternative to pynacl)
+# cryptography>=41.0.0
+
+# The bridge and folio modules use only stdlib + the existing
+# rustchain.agent_economy SDK (which depends on requests).
