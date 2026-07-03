@@ -1595,7 +1595,7 @@ HTML_TEMPLATE = """
             submitBtn.disabled = true;
             submitBtn.textContent = 'Processing...';
             result.className = 'result';
-            result.innerHTML = '';
+            result.textContent = '';
 
             const wallet = walletInput.value.trim();
 
@@ -1611,7 +1611,7 @@ HTML_TEMPLATE = """
                 result.className = 'result show ' + (data.ok ? 'success' : 'error');
                 
                 if (data.ok) {
-                    result.innerHTML = '';
+                    result.textContent = '';
                     const strong = document.createElement('strong');
                     strong.textContent = '✅ Success!';
                     result.appendChild(strong);
@@ -1627,7 +1627,7 @@ HTML_TEMPLATE = """
                     walletInput.value = '';
                     loadStats();
                 } else {
-                    result.innerHTML = '';
+                    result.textContent = '';
                     const strong = document.createElement('strong');
                     strong.textContent = `❌ ${data.error}`;
                     result.appendChild(strong);
@@ -1640,7 +1640,7 @@ HTML_TEMPLATE = """
                 }
             } catch (err) {
                 result.className = 'result show error';
-                result.innerHTML = '';
+                result.textContent = '';
                 const strong = document.createElement('strong');
                 strong.textContent = '❌ Error: ';
                 result.appendChild(strong);
