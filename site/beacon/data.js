@@ -586,7 +586,8 @@ export async function fetchAllAgents(apiBase) {
   try {
     const resp = await fetch(`${apiBase}/beacon/atlas`);
     if (resp.ok) {
-      const relays = await resp.json();
+      const atlasData = await resp.json();
+      const relays = atlasData.agents || atlasData;
       for (const ra of relays) {
         const canonicalId = resolveFromAliasMap(aliasMap, ra.name, ra.model_id, ra.agent_id);
         if (canonicalId && agentMap.has(canonicalId)) {

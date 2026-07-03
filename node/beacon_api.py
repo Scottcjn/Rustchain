@@ -1368,9 +1368,11 @@ def chat():
 
 @beacon_api.route('/relay/discover', methods=['GET'])
 def relay_discover():
-    """Discover relay agents (for 3D visualization)."""
-    # In production, query the relay registry
-    # For demo, return empty array
+    """Discover relay agents (for 3D visualization).
+
+    .. deprecated::
+        Use /beacon/atlas instead. This endpoint returns an empty array.
+    """
     return jsonify([])
 
 
