@@ -28,6 +28,7 @@ class RustChainClient:
     def __init__(
         self,
         base_url: str = DEFAULT_BASE_URL,
+        admin_key: Optional[str] = None,
         verify_ssl: bool = False,
         timeout: int = 30,
         retry_count: int = 3,
@@ -38,12 +39,14 @@ class RustChainClient:
 
         Args:
             base_url: Base URL of the RustChain API
+            admin_key: Admin authentication key (used only for write operations)
             verify_ssl: Enable SSL verification (default: False for self-signed certs)
             timeout: Request timeout in seconds
             retry_count: Number of retries on failure
             retry_delay: Delay between retries (seconds)
         """
         self.base_url = base_url.rstrip("/")
+        self.admin_key = admin_key
         self.verify_ssl = verify_ssl
         self.timeout = timeout
         self.retry_count = retry_count
@@ -60,7 +63,17 @@ class RustChainClient:
         self._known_miners = {}
 
     def _get_headers(self) -> Dict[str, str]:
-        """Get request headers"""
+        """Get request headers (includes admin key for write operations)"""
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "vintage-ai-video-pipeline/1.0.0",
+        }
+        if self.admin_key:
+            headers["X-Admin-Key"] = self.admin_key
+        return headers
+
+    def _get_public_headers(self) -> Dict[str, str]:
+        """Get request headers WITHOUT admin key (for read-only operations)"""
         return {
             "Accept": "application/json",
             "User-Agent": "vintage-ai-video-pipeline/1.0.0",
@@ -124,6 +137,62 @@ class RustChainClient:
 
         raise Exception("Max retries exceeded")
 
+    def _request_public(
+        self,
+        method: str,
+        endpoint: str,
+    ) -> Dict[str, Any]:
+        """Make an HTTP request WITHOUT the admin key header (read-only operations).
+
+        This ensures that read operations (GET requests for balances, miner lists,
+        etc.) never send admin credentials, following the principle of least privilege.
+        """
+        url = f"{self.base_url}{endpoint}"
+        headers = self._get_public_headers()
+
+        for attempt in range(self.retry_count):
+            try:
+                req = Request(url, headers=headers, method=method)
+
+                with urllib.request.urlopen(
+                    req,
+                    context=self._ctx,
+                    timeout=self.timeout
+                ) as response:
+                    raw = response.read()
+                    response_data = raw.decode("utf-8").strip() if raw else ""
+                    if not response_data:
+                        return {}
+                    return json.loads(response_data)
+
+            except HTTPError as e:
+                error_body = e.read().decode("utf-8") if e.fp else ""
+                if attempt == self.retry_count - 1:
+                    raise Exception(
+                        f"HTTP Error {e.code}: {e.reason} - {error_body}"
+                    )
+            except URLError as e:
+                if attempt == self.retry_count - 1:
+                    raise Exception(f"Connection Error: {e.reason}")
+            except json.JSONDecodeError as e:
+                if attempt == self.retry_count - 1:
+                    raise Exception(f"Invalid JSON response: {str(e)}")
+            except Exception:
+                if attempt == self.retry_count - 1:
+                    raise
+
+            if attempt < self.retry_count - 1:
+                time.sleep(self.retry_delay * (attempt + 1))
+
+        raise Exception("Max retries exceeded")
+
+    def _get_public(self, endpoint: str, params: Optional[Dict] = None) -> Dict[str, Any]:
+        """GET request without admin key (read-only operations)"""
+        if params:
+            query = urllib.parse.urlencode(params)
+            endpoint = f"{endpoint}?{query}"
+        return self._request_public("GET", endpoint)
+
     def _get(self, endpoint: str, params: Optional[Dict] = None) -> Dict[str, Any]:
         """GET request with query parameters"""
         if params:
@@ -132,21 +201,21 @@ class RustChainClient:
         return self._request("GET", endpoint)
 
     def health(self) -> Dict[str, Any]:
-        """Check node health"""
-        return self._get("/health")
+        """Check node health (public, no admin key)"""
+        return self._get_public("/health")
 
     def get_epoch(self) -> Dict[str, Any]:
-        """Get current epoch information"""
-        return self._get("/epoch")
+        """Get current epoch information (public, no admin key)"""
+        return self._get_public("/epoch")
 
     def get_miners(self) -> List[Dict[str, Any]]:
         """
-        List all active miners
-        
+        List all active miners (public, no admin key)
+
         Returns:
             List of miner information dictionaries
         """
-        data = self._get("/api/miners")
+        data = self._get_public("/api/miners")
         if isinstance(data, list):
             return data
         if isinstance(data, dict):
@@ -157,24 +226,24 @@ class RustChainClient:
         return []
 
     def get_miner_eligibility(self, miner_id: str) -> Dict[str, Any]:
-        """Check miner's epoch eligibility"""
-        return self._get("/lottery/eligibility", params={"miner_id": miner_id})
+        """Check miner's epoch eligibility (public, no admin key)"""
+        return self._get_public("/lottery/eligibility", params={"miner_id": miner_id})
 
     def get_wallet_balance(self, miner_id: str) -> Dict[str, Any]:
-        """Get wallet balance for a miner"""
-        return self._get("/wallet/balance", params={"miner_id": miner_id})
+        """Get wallet balance for a miner (public, no admin key)"""
+        return self._get_public("/wallet/balance", params={"miner_id": miner_id})
 
     def get_wallet_history(self, miner_id: str, limit: int = 10) -> Dict[str, Any]:
-        """Get transaction history for a miner"""
-        return self._get("/wallet/history", params={"miner_id": miner_id, "limit": limit})
+        """Get transaction history for a miner (public, no admin key)"""
+        return self._get_public("/wallet/history", params={"miner_id": miner_id, "limit": limit})
 
     def get_stats(self) -> Dict[str, Any]:
-        """Get network statistics"""
-        return self._get("/api/stats")
+        """Get network statistics (public, no admin key)"""
+        return self._get_public("/api/stats")
 
     def get_hall_of_fame(self) -> Dict[str, Any]:
-        """Get Hall of Fame leaderboard"""
-        return self._get("/api/hall_of_fame")
+        """Get Hall of Fame leaderboard (public, no admin key)"""
+        return self._get_public("/api/hall_of_fame")
 
     def monitor_attestations(
         self,

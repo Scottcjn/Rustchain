@@ -138,3 +138,160 @@ def _make_fake_response(body: bytes):
             return body
 
     return FakeResp()
+
+
+# --- Issue #6624: _request_public must NOT include admin key headers ---
+
+
+def test_request_public_uses_public_headers(monkeypatch):
+    """_request_public must use _get_public_headers (no admin key)."""
+    module = load_client_module()
+    client = module.RustChainClient(
+        base_url="https://node.example", admin_key="secret-admin-key-123"
+    )
+
+    captured_headers = {}
+
+    class FakeResp:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def read(self):
+            return b'{"ok": true}'
+
+    def fake_urlopen(req, **kwargs):
+        captured_headers.update(req.headers)
+        return FakeResp()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    result = client._request_public("GET", "/health")
+    assert result == {"ok": True}
+    assert "X-Admin-Key" not in captured_headers, (
+        f"_request_public must not send admin key; got headers: {captured_headers}"
+    )
+    assert captured_headers.get("Accept") == "application/json"
+
+
+def test_request_with_admin_key_sends_header(monkeypatch):
+    """_request (authenticated) must include X-Admin-Key when configured."""
+    module = load_client_module()
+    client = module.RustChainClient(
+        base_url="https://node.example", admin_key="secret-admin-key-123"
+    )
+
+    captured_headers = {}
+
+    class FakeResp:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def read(self):
+            return b'{"ok": true}'
+
+    def fake_urlopen(req, **kwargs):
+        captured_headers.update(req.headers)
+        return FakeResp()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    result = client._request("POST", "/api/submit", data={"key": "val"})
+    assert result == {"ok": True}
+    assert captured_headers.get("X-Admin-Key") == "secret-admin-key-123"
+
+
+def test_read_methods_use_public_no_admin_key(monkeypatch):
+    """Read methods (health, get_epoch, get_miners, etc.) must not send admin key."""
+    module = load_client_module()
+    client = module.RustChainClient(
+        base_url="https://node.example", admin_key="secret-admin-key-123"
+    )
+
+    captured_headers = {}
+
+    class FakeResp:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def read(self):
+            return b'{"result": "ok"}'
+
+    def fake_urlopen(req, **kwargs):
+        captured_headers.clear()
+        captured_headers.update(req.headers)
+        return FakeResp()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    read_endpoints = [
+        lambda: client.health(),
+        lambda: client.get_epoch(),
+        lambda: client.get_wallet_balance("miner_123"),
+        lambda: client.get_wallet_history("miner_123"),
+        lambda: client.get_stats(),
+        lambda: client.get_hall_of_fame(),
+        lambda: client.get_miner_eligibility("miner_123"),
+    ]
+
+    for call in read_endpoints:
+        call()
+        assert "X-Admin-Key" not in captured_headers, (
+            f"Read method must not send admin key; got: {captured_headers}"
+        )
+
+
+def test_admin_key_not_set_no_header_sent(monkeypatch):
+    """When admin_key is None, no X-Admin-Key header is sent even on write requests."""
+    module = load_client_module()
+    client = module.RustChainClient(base_url="https://node.example")
+
+    captured_headers = {}
+
+    class FakeResp:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def read(self):
+            return b'{"ok": true}'
+
+    def fake_urlopen(req, **kwargs):
+        captured_headers.update(req.headers)
+        return FakeResp()
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+    client._request("POST", "/api/submit", data={"key": "val"})
+    assert "X-Admin-Key" not in captured_headers
+
+
+def test_get_public_headers_never_includes_admin_key():
+    """_get_public_headers() must never include admin key regardless of config."""
+    module = load_client_module()
+    client = module.RustChainClient(
+        base_url="https://node.example", admin_key="super-secret"
+    )
+    headers = client._get_public_headers()
+    assert "X-Admin-Key" not in headers
+    assert "Accept" in headers
+
+
+def test_get_headers_includes_admin_key_when_set():
+    """_get_headers() includes admin key when configured."""
+    module = load_client_module()
+    client = module.RustChainClient(
+        base_url="https://node.example", admin_key="my-admin-key"
+    )
+    headers = client._get_headers()
+    assert headers["X-Admin-Key"] == "my-admin-key"
+
+
+def test_get_headers_no_admin_key_when_unset():
+    """_get_headers() omits admin key when not configured."""
+    module = load_client_module()
+    client = module.RustChainClient(base_url="https://node.example")
+    headers = client._get_headers()
+    assert "X-Admin-Key" not in headers
