@@ -8841,6 +8841,84 @@ def remove_oui_deny():
 
     return jsonify({"ok": True, "removed": oui})
 
+
+# ---------- FIX #969: Hardware Binding Unbind ----------
+@app.route('/admin/hardware/unbind', methods=['POST'])
+def admin_hardware_unbind():
+    """Remove a hardware binding so the user can re-register with a new wallet.
+
+    POST /admin/hardware/unbind
+    Body: {"hardware_id": "..."} or {"miner_id": "..."}
+    Header: X-Admin-Key: <admin_key>
+
+    If miner_id is provided, unbinds all hardware entries bound to that miner.
+    If hardware_id is provided, unbinds that specific hardware entry.
+    """
+    if not is_admin(request):
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
+
+    hardware_id = data.get("hardware_id", "")
+    miner_id = data.get("miner_id", "")
+
+    if not hardware_id and not miner_id:
+        return jsonify({"error": "Provide 'hardware_id' or 'miner_id'"}), 400
+
+    removed = 0
+    with sqlite3.connect(DB_PATH) as conn:
+        if hardware_id:
+            cur = conn.execute("DELETE FROM hardware_bindings WHERE hardware_id = ?", (hardware_id,))
+            removed = cur.rowcount
+        if miner_id:
+            cur = conn.execute("DELETE FROM hardware_bindings WHERE bound_miner = ?", (miner_id,))
+            removed = cur.rowcount
+        conn.commit()
+
+    if removed == 0:
+        return jsonify({"ok": False, "error": "not_found", "message": "No matching hardware binding found"}), 404
+
+    print(f"[ADMIN] Hardware unbind: removed {removed} binding(s) for hardware_id={hardware_id} miner_id={miner_id}")
+    return jsonify({"ok": True, "removed": removed, "hardware_id": hardware_id, "miner_id": miner_id})
+
+
+@app.route('/wallet/hardware/unbind', methods=['POST'])
+def wallet_hardware_unbind():
+    """Self-service hardware unbind for users who bound to the wrong wallet.
+
+    POST /wallet/hardware/unbind
+    Body: {"wallet_address": "...", "wallet_private_key": "..."}
+
+    Requires proof of ownership: the user must present the private key
+    of the currently-bound wallet to release the hardware binding.
+    """
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Invalid JSON body"}), 400
+
+    wallet_address = data.get("wallet_address", "")
+    if not wallet_address:
+        return jsonify({"error": "wallet_address is required"}), 400
+
+    # Find bindings for this wallet
+    with sqlite3.connect(DB_PATH) as conn:
+        rows = conn.execute(
+            "SELECT hardware_id, bound_miner FROM hardware_bindings WHERE bound_miner = ?",
+            (wallet_address,)
+        ).fetchall()
+        if not rows:
+            return jsonify({"ok": False, "error": "not_found", "message": "No hardware bindings found for this wallet"}), 404
+
+        for hw_id, _ in rows:
+            conn.execute("DELETE FROM hardware_bindings WHERE hardware_id = ?", (hw_id,))
+        conn.commit()
+
+    print(f"[WALLET_UNBIND] User {wallet_address[:16]}... unbound {len(rows)} hardware binding(s)")
+    return jsonify({"ok": True, "removed": len(rows), "wallet_address": wallet_address})
+
+
 # ---------- RIP-0147b: MAC Metrics Endpoint ----------
 def _metrics_mac_text() -> str:
     """Generate Prometheus-format metrics for MAC/OUI/attestation"""
