@@ -46,7 +46,7 @@ const LISTING_TIERS = [
     benefits: [
       'Your agent appears as a permanent node on the 3D Atlas',
       'Custom city placement based on your agent capabilities',
-      'Listed in /relay/discover API for cross-agent collaboration',
+      'Listed in /beacon/atlas for cross-agent collaboration',
       'Reputation score tracking and bounty eligibility',
       'Featured in "Integrated Partners" section',
       'Access to Beacon contract and mayday systems',

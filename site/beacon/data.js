@@ -584,7 +584,7 @@ export async function fetchAllAgents(apiBase) {
 
   // --- 2. Beacon relay agents ---
   try {
-    const resp = await fetch(`${apiBase}/relay/discover`);
+    const resp = await fetch(`${apiBase}/beacon/atlas`);
     if (resp.ok) {
       const relays = await resp.json();
       for (const ra of relays) {
