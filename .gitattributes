@@ -57,6 +57,14 @@ docs/media/*.mp3 -diff
 *.rar binary
 
 # =============================================================================
+# Encoding
+# =============================================================================
+
+# Ensure all markdown files are treated as UTF-8 to prevent mojibake
+# on systems with legacy code pages (e.g. Windows cp850/cp1252).
+*.md text eol=lf encoding=utf-8
+
+# =============================================================================
 # Line ending normalization
 # =============================================================================
 
@@ -73,7 +81,6 @@ docs/media/*.mp3 -diff
 *.html text eol=lf
 *.css text eol=lf
 *.scss text eol=lf
-*.md text eol=lf
 *.json text eol=lf
 *.yaml text eol=lf
 *.yml text eol=lf
