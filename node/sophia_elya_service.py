@@ -203,8 +203,15 @@ def enroll_epoch(epoch, miner_pk, weight):
     distortion vector where an attacker could overwrite a legitimate
     miner's weight via repeated enroll calls.
     """
+    weight = float(weight)
+    # Backstop: never persist a non-positive / non-finite weight. A negative
+    # weight shrinks the epoch's total weight (sum_w) at settlement and
+    # amplifies every other miner's pro-rata share. Callers validate first;
+    # this guard protects any internal enrollment path as well.
+    if not math.isfinite(weight) or weight <= 0:
+        return
     with sqlite3.connect(DB_PATH) as c:
-        c.execute("INSERT OR IGNORE INTO epoch_enroll(epoch, miner_pk, weight) VALUES (?,?,?)", (epoch, miner_pk, float(weight)))
+        c.execute("INSERT OR IGNORE INTO epoch_enroll(epoch, miner_pk, weight) VALUES (?,?,?)", (epoch, miner_pk, weight))
 
 def finalize_epoch(epoch, per_block_rtc):
     """Finalize epoch and distribute rewards"""
@@ -244,6 +251,14 @@ def finalize_epoch(epoch, per_block_rtc):
         try:
             total_reward = per_block_rtc * blocks
             miners = list(c.execute("SELECT miner_pk, weight FROM epoch_enroll WHERE epoch=?", (epoch,)))
+            # Exclude non-positive / non-finite weights before computing sum_w.
+            # A poisoned legacy row (e.g. a negative weight enrolled before this
+            # guard existed) must not shrink sum_w and inflate other payouts.
+            miners = [
+                (pk, w)
+                for pk, w in miners
+                if isinstance(w, (int, float)) and math.isfinite(w) and w > 0
+            ]
             sum_w = sum(w for _, w in miners) or 0.0
             payouts = []
 
@@ -409,10 +424,18 @@ def epoch_enroll():
     # Calculate weight = temporal × rtc × hardware
     temporal = _finite_float(weights.get("temporal", 1.0))
     rtc = _finite_float(weights.get("rtc", 1.0))
-    if temporal is None or rtc is None:
+    # Reject negative factors up front. A negative temporal/rtc weight (or a
+    # product that lands at <= 0) shrinks the epoch's total weight (sum_w) at
+    # settlement, amplifying every other miner's pro-rata payout and enabling
+    # reward theft / denial-of-weight. Every other enrollment path in the node
+    # already excludes non-positive weights (rip0202_enrollment,
+    # rustchain_block_producer); this endpoint was the last one that did not.
+    if temporal is None or rtc is None or temporal < 0 or rtc < 0:
         return jsonify({"ok": False, "reason": "invalid_weights"}), 400
     hw = get_hardware_weight(device)
     total_weight = temporal * rtc * hw
+    if not (total_weight > 0):
+        return jsonify({"ok": False, "reason": "invalid_weights"}), 400
 
     # Enroll
     # Consume ticket after all request validation so malformed requests do not
