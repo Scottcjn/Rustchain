@@ -53,6 +53,21 @@ def _get_admin_key():
     return os.environ.get("RC_ADMIN_KEY", "")
 
 
+def _node_epoch_slot():
+    """Current (epoch, slot) from the node's own /epoch endpoint; (0, 0) on
+    error. The main module is not importable (its filename contains dots) and
+    rip_200_round_robin_1cpu1vote has no current_slot, so we ask the running
+    node over localhost rather than duplicate its genesis/time constants."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen(
+                "http://127.0.0.1:8099/epoch", timeout=5) as r:
+            ej = json.loads(r.read().decode())
+            return int(ej.get("epoch", 0)), int(ej.get("slot", 0))
+    except Exception:
+        return 0, 0
+
+
 def _bcos_public_url(path: str) -> str:
     """Build certificate-valid public BCOS URLs for API responses."""
     base_url = (
@@ -176,6 +191,7 @@ def init_bcos_table(conn):
             report_json TEXT NOT NULL,
             signature TEXT,
             signer_pubkey TEXT,
+            attested_epoch INTEGER,
             anchored_epoch INTEGER,
             anchor_tx TEXT,
             created_at INTEGER NOT NULL
@@ -334,25 +350,22 @@ def bcos_attest():
     now = int(time.time())
     try:
         with sqlite3.connect(_DB_PATH) as conn:
-            # Calculate current epoch for anchoring
-            epoch = None
-            try:
-                from rip_200_round_robin_1cpu1vote import current_slot
-                epoch = current_slot()
-            except Exception:
-                pass
+            # Record the epoch this attestation was created in. anchored_epoch
+            # stays NULL here: it is set only when the cert is written to the
+            # ledger via /api/v1/bcos/anchor.
+            attested_epoch, _slot = _node_epoch_slot()
 
             conn.execute("""
                 INSERT OR REPLACE INTO bcos_attestations
                 (cert_id, commitment, repo, commit_sha, tier, trust_score,
                  reviewer, report_json, signature, signer_pubkey,
-                 anchored_epoch, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 attested_epoch, anchored_epoch, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 cert_id, commitment, repo, commit_sha, tier, trust_score,
                 reviewer, report_json_str,
                 signature or None, signer_pubkey or None,
-                epoch, now,
+                attested_epoch, None, now,
             ))
             conn.commit()
 
@@ -363,7 +376,8 @@ def bcos_attest():
             "repo": repo,
             "tier": tier,
             "trust_score": trust_score,
-            "anchored_epoch": epoch,
+            "attested_epoch": attested_epoch,
+            "anchored_epoch": None,
             "verify_url": _bcos_public_url(f"/bcos/verify/{cert_id}"),
             "badge_url": _bcos_public_url(f"/bcos/badge/{cert_id}.svg"),
         })
@@ -422,6 +436,7 @@ def bcos_verify(cert_id):
             "trust_score": row["trust_score"],
             "tier_met": row["trust_score"] >= {"L0": 40, "L1": 60, "L2": 80}.get(row["tier"], 60),
             "reviewer": row["reviewer"],
+            "attested_epoch": (row["attested_epoch"] if "attested_epoch" in row.keys() else None),
             "anchored_epoch": row["anchored_epoch"],
             "anchor_tx": (row["anchor_tx"] if "anchor_tx" in row.keys() else None),
             "created_at": row["created_at"],
@@ -623,19 +638,8 @@ def bcos_anchor():
             commitment = row["commitment"]
             repo = row["repo"]
             now = int(time.time())
-            # Authoritative epoch/slot from the node's own /epoch computation
-            # (the main module is not importable: its filename contains dots).
-            epoch = 0
-            slot = 0
-            try:
-                import urllib.request
-                with urllib.request.urlopen(
-                        "http://127.0.0.1:8099/epoch", timeout=5) as _r:
-                    _ej = json.loads(_r.read().decode())
-                    epoch = int(_ej.get("epoch", 0))
-                    slot = int(_ej.get("slot", 0))
-            except Exception:
-                pass
+            # Authoritative epoch/slot from the node's own /epoch computation.
+            epoch, slot = _node_epoch_slot()
 
             reason = json.dumps({
                 "kind": "bcos_anchor",
@@ -687,20 +691,25 @@ def bcos_anchor():
 
 # ── Registration ──────────────────────────────────────────────────
 
-def _ensure_anchor_column(db_path: str):
-    """Add the anchor_tx column to bcos_attestations if it is not present.
-    Idempotent: a duplicate-column error from a prior run is ignored."""
-    try:
-        with sqlite3.connect(db_path) as conn:
-            conn.execute("ALTER TABLE bcos_attestations ADD COLUMN anchor_tx TEXT")
-            conn.commit()
-    except sqlite3.OperationalError:
-        pass  # column already exists (or table not yet created; init handles that)
+def _ensure_columns(db_path: str):
+    """Add newer bcos_attestations columns if an existing table predates them.
+    Each ALTER is idempotent: a duplicate-column error (or a not-yet-created
+    table, which init_bcos_table handles) is ignored."""
+    for ddl in (
+        "ALTER TABLE bcos_attestations ADD COLUMN attested_epoch INTEGER",
+        "ALTER TABLE bcos_attestations ADD COLUMN anchor_tx TEXT",
+    ):
+        try:
+            with sqlite3.connect(db_path) as conn:
+                conn.execute(ddl)
+                conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
 
 def register_bcos_routes(app, db_path: str):
     """Register BCOS blueprint with the Flask app."""
     global _DB_PATH
     _DB_PATH = db_path
-    _ensure_anchor_column(db_path)
+    _ensure_columns(db_path)
     app.register_blueprint(bcos_bp)
