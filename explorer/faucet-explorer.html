@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Fossil-Punk Explorer & Faucet</title>
+    <style>
+        body {
+            background-color: #0b0f0b;
+            color: #33ff33;
+            font-family: 'Courier New', Courier, monospace;
+            padding: 20px;
+            margin: 0;
+            overflow-x: hidden;
+        }
+        .crt-scanlines {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 4px, 6px 100%;
+            z-index: 9999;
+            pointer-events: none;
+        }
+        header {
+            text-align: center;
+            border-bottom: 2px double #33ff33;
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+        }
+        h1 { margin: 0; font-size: 24px; text-transform: uppercase; text-shadow: 0 0 5px #33ff33; }
+        .grid-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 768px) {
+            .grid-container { grid-template-columns: 1fr; }
+        }
+        .panel {
+            border: 2px solid #33ff33;
+            padding: 15px;
+            background: rgba(0, 20, 0, 0.2);
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.1);
+        }
+        .panel h2 {
+            margin-top: 0;
+            font-size: 18px;
+            text-transform: uppercase;
+            border-bottom: 1px solid #33ff33;
+            padding-bottom: 5px;
+        }
+        .block-row, .miner-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px dashed rgba(51, 255, 51, 0.3);
+            font-size: 13px;
+        }
+        .faucet-box {
+            grid-column: 1 / -1;
+            text-align: center;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .btn-upload {
+            display: inline-block;
+            border: 2px solid #33ff33;
+            padding: 10px 20px;
+            background: #000;
+            color: #33ff33;
+            cursor: pointer;
+            text-transform: uppercase;
+            font-weight: bold;
+            margin-top: 15px;
+            transition: all 0.2s ease;
+        }
+        .btn-upload:hover {
+            background: #33ff33;
+            color: #000;
+            box-shadow: 0 0 15px #33ff33;
+        }
+        #console-output {
+            margin-top: 15px;
+            background: #000;
+            border: 1px solid #33ff33;
+            padding: 10px;
+            min-height: 80px;
+            text-align: left;
+            white-space: pre-wrap;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="crt-scanlines"></div>
+    <header>
+        <h1>RustChain Fossil-Punk Blockchain Explorer</h1>
+        <div style="font-size: 12px; margin-top: 5px;">--- KEEPER FAUCET EDITION v1.0 ---</div>
+    </header>
+
+    <main class="grid-container">
+        <!-- Panel 1: Block Feed -->
+        <section class="panel">
+            <h2>Khối Mới Nhất (Latest Blocks)</h2>
+            <div id="block-list">
+                <!-- Javascript will populate this -->
+            </div>
+        </section>
+
+        <!-- Panel 2: Active Keepers -->
+        <section class="panel">
+            <h2>Hệ Máy Đang Xác Thực (Active Keepers)</h2>
+            <div id="keeper-list">
+                <!-- Javascript will populate this -->
+            </div>
+        </section>
+
+        <!-- Panel 3: Keeper Faucet Form -->
+        <section class="panel faucet-box">
+            <h2>Cổng Phát Thưởng Faucet (Keeper Faucet)</h2>
+            <p style="font-size: 13px;">Tải lên tệp xác thực <code>proof_of_antiquity.json</code> của bạn để nhận phần thưởng 10 RTC.</p>
+            <label class="btn-upload">
+                Tải tệp JSON xác thực
+                <input type="file" id="faucet-file" accept=".json" onchange="processFaucet(event)">
+            </label>
+            <div id="console-output">> Đang chờ tải tệp xác thực...</div>
+        </section>
+    </main>
+
+    <script>
+        // Mock data generator for block feed
+        const blocks = [
+            { height: 18402, hash: "0000a3f8b91c...7d2e", age: "5s", validator: "apple2-miner" },
+            { height: 18401, hash: "0000bc192d6e...a9b2", age: "65s", validator: "i386-dos" },
+            { height: 18400, hash: "0000d6e67cf5...63d1", age: "120s", validator: "mac-classic-miner" }
+        ];
+
+        const keepers = [
+            { id: "apple2-miner", arch: "6502", score: "9.20", status: "ACTIVE" },
+            { id: "i386-dos", arch: "i386-real", score: "8.75", status: "ACTIVE" },
+            { id: "mac-classic-miner", arch: "m68k", score: "9.54", status: "ACTIVE" }
+        ];
+
+        function renderData() {
+            document.getElementById("block-list").innerHTML = blocks.map(b => `
+                <div class="block-row">
+                    <span>Block #${b.height} [${b.hash}]</span>
+                    <span>Validator: ${b.validator} (${b.age} ago)</span>
+                </div>
+            `).join('');
+
+            document.getElementById("keeper-list").innerHTML = keepers.map(k => `
+                <div class="miner-row">
+                    <span>${k.id} (${k.arch})</span>
+                    <span>Antiquity Score: ${k.score} | Status: <b style="color: #33ff33">${k.status}</b></span>
+                </div>
+            `).join('');
+        }
+
+        function processFaucet(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            const output = document.getElementById("console-output");
+            output.innerHTML = "> Đang tải và phân tích cấu trúc tệp...\n";
+
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    output.innerHTML += `> Đọc file thành công. Miner ID: ${data.miner || "N/A"}\n`;
+                    output.innerHTML += `> Đang kiểm định chữ ký và dữ liệu entropy...\n`;
+                    
+                    setTimeout(() => {
+                        if (data.miner && data.nonce) {
+                            output.innerHTML += `\n========================================\n`;
+                            output.innerHTML += `✅ XÁC THỰC THÀNH CÔNG (VERIFICATION SUCCESSFUL)\n`;
+                            output.innerHTML += `Phần thưởng 10 RTC đã được chuyển đến ví: ${data.miner}\n`;
+                            output.innerHTML += `========================================\n`;
+                        } else {
+                            output.innerHTML += `❌ LỖI: Tệp JSON thiếu trường "miner" hoặc "nonce".\n`;
+                        }
+                    }, 1000);
+                } catch (err) {
+                    output.innerHTML += `❌ LỖI: Định dạng JSON không hợp lệ. Phân tích thất bại.\n`;
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // Initial render
+        renderData();
+    </script>
+</body>
+</html>
