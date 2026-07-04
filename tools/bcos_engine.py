@@ -299,43 +299,57 @@ class BCOSEngine:
 
     # ── Check 2: Vulnerability Scan (25 pts) ──────────────────────
 
+    # Directories that are not the project's own first-party source: vendored
+    # third-party trees, build output, VCS metadata, virtualenvs.
+    _NON_PROJECT_DIRS = (
+        "node_modules", "venv", ".venv", "__pycache__", "build", "dist",
+        "target", "vendor", "third_party", "third-party", "amissl-sdk",
+    )
+
+    def _is_non_project(self, rel_parts) -> bool:
+        return any(p.startswith(".") or p in self._NON_PROJECT_DIRS
+                   for p in rel_parts)
+
+    def _python_requirement_files(self):
+        """The PROJECT's own pip requirement files, excluding vendored trees.
+
+        Used so the vulnerability and freshness checks measure this project's
+        declared dependencies rather than the ambient Python environment of
+        whatever machine happens to run the scan. A C or retro project with no
+        such file has no declared Python dependency to audit."""
+        found = []
+        for pattern in ("requirements.txt", "requirements-*.txt",
+                        "requirements/*.txt"):
+            for f in self.repo_path.rglob(pattern):
+                if not self._is_non_project(f.relative_to(self.repo_path).parts):
+                    found.append(f)
+        return found
+
     def _check_osv(self):
-        """Scan for known CVEs via pip-audit or osv-scanner."""
-        critical = 0
-        high = 0
-        medium = 0
-        low = 0
+        """Scan the PROJECT's declared dependencies for known CVEs.
+
+        Language-aware. Prefer osv-scanner against the repo tree: it reads
+        lockfiles and CycloneDX/SPDX SBOMs committed in the project, so it
+        covers C, Rust, Go, npm and more, not just Python. pip-audit is run
+        ONLY against the project's own requirements files. Neither tool is
+        ever pointed at the ambient Python environment of the scanning host.
+        A project that declares no dependencies genuinely has nothing that can
+        be vulnerable and is scored as clean, rather than inheriting whatever
+        unrelated packages are installed on the machine running the scan."""
+        critical = high = medium = low = 0
         vulns = []
-        tool_used = None
+        tools_used = []
+        scanned = False
 
-        # Try pip-audit first (Python-focused)
-        rc, out, err = _run_cmd(
-            ["pip-audit", "--format=json", "--desc"],
-            timeout=180,
-        )
-        if rc >= 0 and out.strip():
-            tool_used = "pip-audit"
-            try:
-                data = json.loads(out)
-                for dep in data.get("dependencies", []):
-                    for vuln in dep.get("vulns", []):
-                        sev = vuln.get("fix_versions", [])
-                        vid = vuln.get("id", "unknown")
-                        # pip-audit doesn't always include severity
-                        # Count each vuln as "high" unless we can determine otherwise
-                        vulns.append({"id": vid, "package": dep.get("name", ""), "severity": "HIGH"})
-                        high += 1
-            except json.JSONDecodeError:
-                pass
-
-        # Try osv-scanner as alternative
-        if tool_used is None:
-            rc, out, err = _run_cmd(
+        # 1. osv-scanner: language-agnostic, scans lockfiles + SBOM in the tree.
+        if shutil.which("osv-scanner"):
+            rc, out, _ = _run_cmd(
                 ["osv-scanner", "--format", "json", str(self.repo_path)],
                 timeout=180,
             )
             if rc >= 0 and out.strip():
-                tool_used = "osv-scanner"
+                tools_used.append("osv-scanner")
+                scanned = True
                 try:
                     data = json.loads(out)
                     for result in data.get("results", []):
@@ -343,9 +357,8 @@ class BCOSEngine:
                             for v in pkg.get("vulnerabilities", []):
                                 severity = "MEDIUM"
                                 for sev in v.get("database_specific", {}).get("severity", []):
-                                    severity = sev.upper()
-                                vid = v.get("id", "unknown")
-                                vulns.append({"id": vid, "severity": severity})
+                                    severity = str(sev).upper()
+                                vulns.append({"id": v.get("id", "unknown"), "severity": severity})
                                 if severity == "CRITICAL":
                                     critical += 1
                                 elif severity == "HIGH":
@@ -357,12 +370,46 @@ class BCOSEngine:
                 except json.JSONDecodeError:
                     pass
 
-        # Score: 25 base, -5/critical, -2/high
+        # 2. pip-audit: ONLY against the project's own requirement files.
+        req_files = self._python_requirement_files()
+        if req_files and shutil.which("pip-audit"):
+            for req in req_files:
+                rc, out, _ = _run_cmd(
+                    ["pip-audit", "--format=json", "--desc", "-r", str(req)],
+                    timeout=180,
+                )
+                if rc >= 0 and out.strip():
+                    if "pip-audit" not in tools_used:
+                        tools_used.append("pip-audit")
+                    scanned = True
+                    try:
+                        data = json.loads(out)
+                        deps = data.get("dependencies", []) if isinstance(data, dict) else data
+                        for dep in deps:
+                            for vuln in dep.get("vulns", []):
+                                vulns.append({"id": vuln.get("id", "unknown"),
+                                              "package": dep.get("name", ""),
+                                              "severity": "HIGH"})
+                                high += 1
+                    except (json.JSONDecodeError, AttributeError):
+                        pass
+
+        # Score: 25 base, -5/critical, -2/high. No declared dependencies (a
+        # pure C/retro project) is a clean result, not an unmeasured one.
         pts = max(0, 25 - (critical * 5) - (high * 2))
+
+        note = None
+        if not scanned:
+            if not req_files:
+                note = ("no declared dependency manifests in project; "
+                        "nothing to be vulnerable")
+            else:
+                note = "no vulnerability scanner available (install osv-scanner)"
 
         self.checks["vulnerability_scan"] = {
             "passed": critical == 0 and high == 0,
-            "tool": tool_used or "none_available",
+            "tools": tools_used or ["none_available"],
+            "scanned_scope": "project",
             "critical": critical,
             "high": high,
             "medium": medium,
@@ -370,6 +417,8 @@ class BCOSEngine:
             "total_vulns": len(vulns),
             "vulns_sample": vulns[:20],
         }
+        if note:
+            self.checks["vulnerability_scan"]["note"] = note
         self.score_breakdown["vulnerability_scan"] = pts
 
     # ── Check 3: Static Analysis (20 pts) ─────────────────────────
@@ -495,36 +544,45 @@ class BCOSEngine:
     # ── Check 5: Dependency Freshness (5 pts) ─────────────────────
 
     def _check_dep_freshness(self):
-        """Check what percentage of deps are at latest version."""
-        # Use pip list --outdated
-        rc, out, _ = _run_cmd(
-            ["pip", "list", "--outdated", "--format=json"],
-            timeout=60,
-        )
-        rc2, out2, _ = _run_cmd(
-            ["pip", "list", "--format=json"],
-            timeout=60,
-        )
+        """Freshness of the PROJECT's own declared dependencies.
+
+        Only probes the pip environment when the project actually declares
+        Python requirements. A project with no dependency manifest (a pure
+        C/retro codebase) has nothing that can be out of date, so it is
+        vacuously fresh. This stops the check from reporting the staleness of
+        whatever unrelated packages happen to be installed on the scanning
+        host, which has nothing to do with the project being certified."""
+        req_files = self._python_requirement_files()
 
         outdated = 0
         total = 0
+        note = None
 
-        if rc2 == 0 and out2.strip():
-            try:
-                total = len(json.loads(out2))
-            except Exception:
-                pass
-
-        if rc == 0 and out.strip():
-            try:
-                outdated = len(json.loads(out))
-            except Exception:
-                pass
-
-        if total > 0:
-            fresh_pct = ((total - outdated) / total) * 100
+        if not req_files:
+            fresh_pct = 100.0
+            note = ("no dependency manifests in project; "
+                    "nothing to be outdated")
         else:
-            fresh_pct = 100
+            # The project declares Python deps; measure them. pip list reflects
+            # the installed environment, which for a project-scoped scan is
+            # expected to be that project's own requirements.
+            rc, out, _ = _run_cmd(
+                ["pip", "list", "--outdated", "--format=json"], timeout=60)
+            rc2, out2, _ = _run_cmd(
+                ["pip", "list", "--format=json"], timeout=60)
+
+            if rc2 == 0 and out2.strip():
+                try:
+                    total = len(json.loads(out2))
+                except Exception:
+                    pass
+            if rc == 0 and out.strip():
+                try:
+                    outdated = len(json.loads(out))
+                except Exception:
+                    pass
+
+            fresh_pct = ((total - outdated) / total) * 100 if total > 0 else 100.0
 
         pts = min(5, int(fresh_pct / 20))
 
@@ -534,6 +592,8 @@ class BCOSEngine:
             "outdated_deps": outdated,
             "fresh_pct": round(fresh_pct, 1),
         }
+        if note:
+            self.checks["dependency_freshness"]["note"] = note
         self.score_breakdown["dependency_freshness"] = pts
 
     # ── Check 6: Test Evidence (10 pts) ────────────────────────────
