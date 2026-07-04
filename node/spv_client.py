@@ -121,9 +121,11 @@ class BloomFilter:
     @classmethod
     def from_hex(cls, value: str, size_bits: int = 2048, hash_count: int = 7) -> "BloomFilter":
         bloom = cls(size_bits=size_bits, hash_count=hash_count)
-        bits = int.from_bytes(bytes.fromhex(value), "big")
-        if bits.bit_length() > bloom.size_bits:
+        raw = bytes.fromhex(value)
+        expected_bytes = (size_bits + 7) // 8
+        if len(raw) > expected_bytes:
             raise ValueError("serialized bloom filter exceeds configured size")
+        bits = int.from_bytes(raw, "big")
         bloom._bits = bits
         return bloom
 

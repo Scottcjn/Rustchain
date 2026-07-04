@@ -110,3 +110,8 @@ def test_bloom_filter_matches_watched_items_and_round_trips():
 def test_bloom_filter_rejects_oversized_serialized_bits():
     with pytest.raises(ValueError, match="exceeds configured size"):
         BloomFilter.from_hex("ffff", size_bits=8, hash_count=1)
+
+
+def test_bloom_filter_rejects_oversized_hex_with_leading_zeros():
+    with pytest.raises(ValueError, match="exceeds configured size"):
+        BloomFilter.from_hex("00ff", size_bits=8, hash_count=1)
