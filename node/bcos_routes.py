@@ -177,6 +177,7 @@ def init_bcos_table(conn):
             signature TEXT,
             signer_pubkey TEXT,
             anchored_epoch INTEGER,
+            anchor_tx TEXT,
             created_at INTEGER NOT NULL
         )
     """)
@@ -422,6 +423,7 @@ def bcos_verify(cert_id):
             "tier_met": row["trust_score"] >= {"L0": 40, "L1": 60, "L2": 80}.get(row["tier"], 60),
             "reviewer": row["reviewer"],
             "anchored_epoch": row["anchored_epoch"],
+            "anchor_tx": (row["anchor_tx"] if "anchor_tx" in row.keys() else None),
             "created_at": row["created_at"],
             "score_breakdown": report.get("score_breakdown", {}),
             "checks": report.get("checks", {}),
@@ -574,10 +576,131 @@ def bcos_directory():
         return jsonify({"error": "internal_error"}), 500
 
 
+@bcos_bp.route("/api/v1/bcos/anchor", methods=["POST"])
+def bcos_anchor():
+    """Anchor an existing BCOS attestation to the RustChain ledger.
+
+    Records the certificate commitment as a zero-value memo entry in the
+    RustChain ledger (the chain's transaction history the explorer reads) and
+    stamps the attestation with the resulting tx hash and epoch. No RTC moves;
+    delta is zero. Admin-gated, and idempotent: a cert that is already anchored
+    returns its existing tx hash rather than writing a second ledger row.
+    """
+    admin_key = request.headers.get("X-Admin-Key", "")
+    if not (admin_key and hmac.compare_digest(admin_key, _get_admin_key() or "")):
+        return jsonify({
+            "error": "unauthorized",
+            "hint": "X-Admin-Key header matching RC_ADMIN_KEY required",
+        }), 401
+
+    data = request.get_json(silent=True) or {}
+    cert_id = data.get("cert_id", "")
+    if not cert_id or not isinstance(cert_id, str) or len(cert_id) > MAX_CERT_ID_LENGTH:
+        return jsonify({"error": "cert_id required"}), 400
+
+    try:
+        with sqlite3.connect(_DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT cert_id, commitment, repo, commit_sha, tier, trust_score, "
+                "anchored_epoch, anchor_tx FROM bcos_attestations WHERE cert_id = ?",
+                (cert_id,),
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "unknown_cert", "cert_id": cert_id}), 404
+
+            if row["anchor_tx"]:
+                return jsonify({
+                    "ok": True,
+                    "already_anchored": True,
+                    "cert_id": cert_id,
+                    "commitment": row["commitment"],
+                    "tx_hash": row["anchor_tx"],
+                    "anchored_epoch": row["anchored_epoch"],
+                    "ledger": "rustchain",
+                })
+
+            commitment = row["commitment"]
+            repo = row["repo"]
+            now = int(time.time())
+            # Authoritative epoch/slot from the node's own /epoch computation
+            # (the main module is not importable: its filename contains dots).
+            epoch = 0
+            slot = 0
+            try:
+                import urllib.request
+                with urllib.request.urlopen(
+                        "http://127.0.0.1:8099/epoch", timeout=5) as _r:
+                    _ej = json.loads(_r.read().decode())
+                    epoch = int(_ej.get("epoch", 0))
+                    slot = int(_ej.get("slot", 0))
+            except Exception:
+                pass
+
+            reason = json.dumps({
+                "kind": "bcos_anchor",
+                "cert_id": cert_id,
+                "commitment": commitment,
+                "repo": repo,
+                "commit_sha": row["commit_sha"],
+                "tier": row["tier"],
+                "trust_score": row["trust_score"],
+                "epoch": epoch,
+            }, separators=(",", ":"))
+            tx_hash = blake2b(
+                ("bcos_anchor|" + cert_id + "|" + commitment + "|"
+                 + str(epoch) + "|" + str(now)).encode(),
+                digest_size=32,
+            ).hexdigest()
+
+            # Zero-value memo entry: records the anchor in the ledger without
+            # moving RTC or affecting any balance (delta_i64 = 0). The ledger
+            # epoch column stores the slot, matching the other ledger rows.
+            conn.execute(
+                "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (now, slot, "bcos_registry", 0, reason),
+            )
+            conn.execute(
+                "UPDATE bcos_attestations SET anchored_epoch = ?, anchor_tx = ? "
+                "WHERE cert_id = ?",
+                (epoch, tx_hash, cert_id),
+            )
+            conn.commit()
+
+        return jsonify({
+            "ok": True,
+            "cert_id": cert_id,
+            "commitment": commitment,
+            "repo": repo,
+            "tx_hash": tx_hash,
+            "anchored_epoch": epoch,
+            "amount_rtc": 0,
+            "ledger": "rustchain",
+            "verify_url": _bcos_public_url(f"/bcos/verify/{cert_id}"),
+        })
+    except Exception:
+        import logging
+        logging.exception("bcos_anchor failed")
+        return jsonify({"error": "internal_error"}), 500
+
+
 # ── Registration ──────────────────────────────────────────────────
+
+def _ensure_anchor_column(db_path: str):
+    """Add the anchor_tx column to bcos_attestations if it is not present.
+    Idempotent: a duplicate-column error from a prior run is ignored."""
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("ALTER TABLE bcos_attestations ADD COLUMN anchor_tx TEXT")
+            conn.commit()
+    except sqlite3.OperationalError:
+        pass  # column already exists (or table not yet created; init handles that)
+
 
 def register_bcos_routes(app, db_path: str):
     """Register BCOS blueprint with the Flask app."""
     global _DB_PATH
     _DB_PATH = db_path
+    _ensure_anchor_column(db_path)
     app.register_blueprint(bcos_bp)
