@@ -975,8 +975,10 @@ def main(argv=None):
     parser.add_argument("--show-payload", action="store_true", help="Show request payload in dry-run mode")
     args = parser.parse_args(argv)
 
+    wallet = args.wallet or os.environ.get("WALLET_NAME")
+
     miner = LocalMiner(
-        wallet=args.wallet,
+        wallet=wallet,
         wart_address=args.wart_address,
         wart_pool=args.wart_pool,
         bzminer_path=args.bzminer_path,
