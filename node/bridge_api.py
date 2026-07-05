@@ -385,20 +385,39 @@ def create_bridge_transfer(
         # check-and-debit is atomic (no TOCTOU) and can never go negative.
         if request.direction == "deposit":
             cursor.execute("BEGIN IMMEDIATE")
+            # Deposit-create is a raw-balance debit gate, so it must honour the
+            # same in-flight reservations the withdrawal path does. Subtract
+            # encumbered funds (pending_ledger transfers + other not-yet-debited
+            # deposits) inside this BEGIN IMMEDIATE before hard-debiting, or a
+            # deposit could drain balance a pending operation is counting on. The
+            # row we are about to insert is not in bridge_transfers yet, so it
+            # cannot count itself.
+            from available_balance import encumbered_i64
+            try:
+                enc_i64 = encumbered_i64(cursor, request.source_address)
+            except sqlite3.OperationalError:
+                # encumbered_i64 fails closed on a real DB error (locked/busy/IO).
+                # Never debit on doubt — roll back and ask the caller to retry.
+                db_conn.rollback()
+                logger.warning(
+                    "deposit encumbrance read failed for %s", request.source_address
+                )
+                return False, {"error": "Service temporarily unavailable, please retry"}
             cursor.execute(
                 "UPDATE balances SET amount_i64 = amount_i64 - ? "
                 "WHERE miner_id = ? AND amount_i64 >= ?",
-                (amount_i64, request.source_address, amount_i64),
+                (amount_i64, request.source_address, amount_i64 + enc_i64),
             )
             if cursor.rowcount != 1:
-                # No balance row, or insufficient funds — cannot hard-lock funds
-                # that do not exist on the RustChain ledger.
+                # No balance row, or funds are short once reservations are
+                # honoured — cannot hard-lock funds that are not truly available.
                 bal_row = cursor.execute(
                     "SELECT amount_i64 FROM balances WHERE miner_id = ?",
                     (request.source_address,),
                 ).fetchone()
                 db_conn.rollback()
-                available = bal_row[0] if bal_row else 0
+                total = bal_row[0] if bal_row else 0
+                available = total - enc_i64
                 return False, {
                     "error": "Insufficient available balance",
                     "available_rtc": available / BRIDGE_UNIT,
@@ -582,7 +601,7 @@ def list_bridge_transfers(
     query += " ORDER BY id DESC LIMIT ?"
     params.append(min(limit, 500))
     
-    rows = cursor.execute(query, params).fetchall()  # fetchall-ok: bounded-by-schema
+    rows = cursor.execute(query, params).fetchall()
     
     return [
         {
@@ -832,29 +851,49 @@ def update_external_confirmation(
                     "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
                     (transfer["amount_i64"], transfer["dest_address"]),
                 )
-            elif transfer["direction"] == "deposit" and not transfer.get("source_debited"):
-                # Safety net: a deposit that was NOT hard-debited at create — a
-                # legacy reservation-model row the migration could not settle
-                # (source drained at migration time). Debit fail-closed NOW so
-                # completion can never let funds leave externally while remaining
-                # spendable on the RustChain ledger (the inflation case).
-                cursor.execute(
-                    "UPDATE balances SET amount_i64 = amount_i64 - ? "
-                    "WHERE miner_id = ? AND amount_i64 >= ?",
-                    (transfer["amount_i64"], transfer["source_address"], transfer["amount_i64"]),
-                )
-                if cursor.rowcount != 1:
-                    db_conn.rollback()
-                    return False, {
-                        "error": "Cannot complete deposit: source lacks funds to settle",
-                        "source_address": transfer["source_address"],
-                    }
-                cursor.execute(
-                    "UPDATE bridge_transfers SET source_debited = 1 WHERE id = ?",
+            elif transfer["direction"] == "deposit":
+                # `transfer` was read at the top of this function, BEFORE the
+                # BEGIN IMMEDIATE above, so its source_debited can be stale — a
+                # concurrent debit-on-lock migration or void may have changed it.
+                # Re-read the flag under the write lock before deciding to settle;
+                # a stale source_debited=0 would double-debit the source here.
+                sd_row = cursor.execute(
+                    "SELECT source_debited FROM bridge_transfers WHERE id = ?",
                     (transfer["id"],),
-                )
-            # Deposit with source_debited=1: already debited at create under the
-            # debit-on-lock model — completion makes no further balance change.
+                ).fetchone()
+                if not (sd_row and sd_row[0]):
+                    # Safety net: a deposit NOT hard-debited at create — a legacy
+                    # reservation-model row the migration could not settle. Debit
+                    # fail-closed NOW so completion can never let funds leave
+                    # externally while remaining spendable on the ledger.
+                    cursor.execute(
+                        "UPDATE balances SET amount_i64 = amount_i64 - ? "
+                        "WHERE miner_id = ? AND amount_i64 >= ?",
+                        (transfer["amount_i64"], transfer["source_address"], transfer["amount_i64"]),
+                    )
+                    if cursor.rowcount != 1:
+                        db_conn.rollback()
+                        return False, {
+                            "error": "Cannot complete deposit: source lacks funds to settle",
+                            "source_address": transfer["source_address"],
+                        }
+                    cursor.execute(
+                        "UPDATE bridge_transfers SET source_debited = 1 "
+                        "WHERE id = ? AND source_debited = 0",
+                        (transfer["id"],),
+                    )
+                    if cursor.rowcount != 1:
+                        # We re-read source_debited=0 and debited under the lock,
+                        # so the flip must apply. If it did not, the row changed
+                        # underneath us — fail closed rather than leave a debited
+                        # row unflagged (which a later settle would debit again).
+                        db_conn.rollback()
+                        return False, {
+                            "error": "Cannot complete deposit: settlement state changed, retry",
+                            "source_address": transfer["source_address"],
+                        }
+                # else: already hard-debited (at create, or by a racing migration)
+                # — completion makes no further balance change.
 
         db_conn.commit()
         
@@ -1202,7 +1241,7 @@ def migrate_deposits_to_hard_locks(cursor):
             WHERE direction = 'deposit'
               AND status IN ('pending', 'locked', 'confirming')
               AND source_debited = 0
-        """).fetchall()  # fetchall-ok: bounded-by-schema
+        """).fetchall()
     except sqlite3.OperationalError as exc:
         # Expected only when bridge_transfers/balances aren't created yet in this
         # init ordering. Log it so a genuine schema error can't hide here and
@@ -1211,20 +1250,51 @@ def migrate_deposits_to_hard_locks(cursor):
         logger.warning("debit-on-lock migration skipped (schema not ready?): %s", exc)
         return
 
-    for row_id, source, amount in rows:
-        cursor.execute(
-            "UPDATE balances SET amount_i64 = amount_i64 - ? "
-            "WHERE miner_id = ? AND amount_i64 >= ?",
-            (amount, source, amount),
-        )
-        if cursor.rowcount == 1:
+    if not rows:
+        return
+
+    # Make the whole migration all-or-nothing: a SAVEPOINT nests safely whether or
+    # not the caller already holds a transaction, so a mid-loop error rolls back
+    # every partial debit rather than leaving a debited-but-unflagged row that a
+    # re-run would debit a second time. Durability comes from the caller's commit.
+    cursor.execute("SAVEPOINT migrate_debit_on_lock")
+    try:
+        for row_id, source, amount in rows:
+            # Guard the debit on the row still being un-settled: if a concurrent
+            # completion/void already hard-debited it, EXISTS is false and we skip.
             cursor.execute(
-                "UPDATE bridge_transfers SET source_debited = 1 WHERE id = ?",
-                (row_id,),
+                "UPDATE balances SET amount_i64 = amount_i64 - ? "
+                "WHERE miner_id = ? AND amount_i64 >= ? AND EXISTS ("
+                "  SELECT 1 FROM bridge_transfers WHERE id = ? AND source_debited = 0"
+                "  AND status IN ('pending', 'locked', 'confirming'))",
+                (amount, source, amount, row_id),
             )
-        else:
-            logger.warning(
-                "debit-on-lock migration: deposit %s source %s lacks funds to "
-                "hard-lock %s micro-RTC; left source_debited=0 for manual review",
-                row_id, source, amount,
-            )
+            if cursor.rowcount == 1:
+                # Flag-flip guarded on source_debited=0 so it and the debit move
+                # together and a re-run can never double-flip.
+                cursor.execute(
+                    "UPDATE bridge_transfers SET source_debited = 1 "
+                    "WHERE id = ? AND source_debited = 0",
+                    (row_id,),
+                )
+                if cursor.rowcount != 1:
+                    # Debit applied but the flag did not flip — an integrity
+                    # violation. Unwind the whole migration (SAVEPOINT) rather
+                    # than leave a debited-but-unflagged row a re-run would debit
+                    # again. IntegrityError is caught below and rolled back.
+                    raise sqlite3.IntegrityError(
+                        "debit-on-lock migration: row %s debited but flag flip "
+                        "missed" % row_id
+                    )
+            else:
+                logger.warning(
+                    "debit-on-lock migration: deposit %s source %s lacks funds to "
+                    "hard-lock %s micro-RTC; left source_debited=0 for manual review",
+                    row_id, source, amount,
+                )
+        cursor.execute("RELEASE migrate_debit_on_lock")
+    except sqlite3.Error:
+        cursor.execute("ROLLBACK TO migrate_debit_on_lock")
+        cursor.execute("RELEASE migrate_debit_on_lock")
+        logger.exception("debit-on-lock migration failed; rolled back partial debits")
+        raise
