@@ -1668,6 +1668,52 @@ def _migrate_miner_header_keys_composite(c):
     logging.info("[migrate] miner_header_keys upgraded to composite (miner_id, pubkey_hex) PK; preserved columns: %s" % _mhk_names)
 
 
+def migrate_lequangsang_balances(c):
+    """
+    Merge balances of 'lequangsang01' (30.0 RTC) and truncated 
+    'RTCfe13452d122263caf633ab1876bd9631133b68b' (20.0 RTC) into the 
+    actual correct address 'RTCfe13452d122263caf633ab1876bd9631133b68b1'.
+    """
+    target = "RTCfe13452d122263caf633ab1876bd9631133b68b1"
+    sources = ["lequangsang01", "RTCfe13452d122263caf633ab1876bd9631133b68b"]
+    
+    try:
+        # Check if balances table exists
+        row = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='balances'").fetchone()
+        if not row:
+            return
+            
+        has_amount_i64 = False
+        try:
+            c.execute("SELECT amount_i64 FROM balances LIMIT 1")
+            has_amount_i64 = True
+        except sqlite3.OperationalError:
+            pass
+
+        if has_amount_i64:
+            total_to_add = 0
+            for src in sources:
+                res = c.execute("SELECT amount_i64 FROM balances WHERE miner_id=?", (src,)).fetchone()
+                if res and res[0] > 0:
+                    total_to_add += res[0]
+                    c.execute("UPDATE balances SET amount_i64 = 0 WHERE miner_id=?", (src,))
+            if total_to_add > 0:
+                c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (target,))
+                c.execute("UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id=?", (total_to_add, target))
+        else:
+            total_to_add = 0
+            for src in sources:
+                res = c.execute("SELECT balance_rtc FROM balances WHERE miner_pk=?", (src,)).fetchone()
+                if res and res[0] > 0:
+                    total_to_add += res[0]
+                    c.execute("UPDATE balances SET balance_rtc = 0.0 WHERE miner_pk=?", (src,))
+            if total_to_add > 0:
+                c.execute("INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0.0)", (target,))
+                c.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk=?", (total_to_add, target))
+    except Exception as e:
+        logging.error(f"[migrate] migrate_lequangsang_balances failed: {e!r}")
+
+
 def init_db():
     """Initialize all database tables"""
     with closing(sqlite3.connect(DB_PATH)) as c:
@@ -2044,6 +2090,9 @@ def init_db():
         if HAVE_BRIDGE:
             init_bridge_schema(c)
             init_lock_ledger_schema(c)
+
+        # Merge lequangsang01 and truncated wallets to correct address
+        migrate_lequangsang_balances(c)
 
         c.commit()
 
