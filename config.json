@@ -1,0 +1,15 @@
+{
+  "miner": {
+    "first_attestation": 10,
+    "real_hardware": 5,
+    "vintage_hardware": 10
+  },
+  "developer": {
+    "first_pr_merged": 25,
+    "first_bounty_completed": 10
+  },
+  "referral": {
+    "refer_miner": 10,
+    "refer_dev": 15
+  }
+}
