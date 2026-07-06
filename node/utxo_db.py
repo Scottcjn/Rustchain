@@ -1468,6 +1468,11 @@ class UtxoDB:
                 else:
                     input_set = set(input_ids)
                     data_input_set = set(data_inputs)
+                    # Data inputs are read-only witnesses: they may be reused
+                    # by multiple block-template candidates.  Only reject
+                    # candidates where a box is both spent and witnessed across
+                    # the selected set, or where two candidates spend the same
+                    # box.
                     if (
                         input_set & selected_spend_inputs
                         or input_set & selected_data_inputs
