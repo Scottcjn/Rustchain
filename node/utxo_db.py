@@ -1469,7 +1469,8 @@ class UtxoDB:
                     input_set = set(input_ids)
                     data_input_set = set(data_inputs)
                     if (
-                        input_set & selected_data_inputs
+                        input_set & selected_spend_inputs
+                        or input_set & selected_data_inputs
                         or data_input_set & selected_spend_inputs
                     ):
                         continue
