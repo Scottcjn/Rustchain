@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustChain Bounty Claim</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 0 20px; }
+        label { display: block; margin-top: 15px; }
+        input, textarea { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; }
+        button { margin-top: 20px; padding: 10px 20px; background-color: #4CAF50; color: white; border: none; cursor: pointer; }
+        button:hover { background-color: #45a049; }
+        .error { color: red; margin-top: 10px; }
+        .success { color: green; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Claim Your 3 RTC Bounty</h1>
+    <p>Step 1: Star <a href="https://github.com/Scottcjn/Rustchain" target="_blank">this repo</a>.</p>
+    <p>Step 2: Post about it publicly on any platform.</p>
+    <p>Step 3: Fill out the form below.</p>
+    <form id="claimForm">
+        <label for="postLink">Link to Your Post:</label>
+        <input type="url" id="postLink" name="postLink" required>
+        
+        <label for="reviewLink">What You Reviewed (link to file/PR/feature/doc):</label>
+        <input type="url" id="reviewLink" name="reviewLink" required>
+        
+        <label for="reason">Specific Reason You Liked It:</label>
+        <textarea id="reason" name="reason" rows="3" required placeholder="e.g., I loved the Proof of Antiquity concept because..."></textarea>
+        
+        <label for="wallet">Your RTC Wallet Address (or leave blank to have one created):</label>
+        <input type="text" id="wallet" name="wallet">
+        
+        <label>
+            <input type="checkbox" id="disclosure" required>
+            I received RTC compensation for this post (as per FTC guidelines).
+        </label>
+        
+        <label for="username">GitHub Username (to verify star):</label>
+        <input type="text" id="username" name="username" required>
+        
+        <button type="submit">Submit Claim</button>
+    </form>
+    <div id="message"></div>
+    <script>
+        document.getElementById('claimForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData.entries());
+            const msgDiv = document.getElementById('message');
+            msgDiv.className = '';
+            msgDiv.textContent = 'Submitting...';
+            try {
+                const response = await fetch('/api/claim', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    msgDiv.className = 'success';
+                    msgDiv.textContent = result.message || 'Claim submitted successfully!';
+                } else {
+                    msgDiv.className = 'error';
+                    msgDiv.textContent = result.error || 'An error occurred.';
+                }
+            } catch (err) {
+                msgDiv.className = 'error';
+                msgDiv.textContent = 'Network error: ' + err.message;
+            }
+        });
+    </script>
+</body>
+</html>
