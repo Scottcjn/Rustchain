@@ -7,6 +7,14 @@ Loads settings from environment variables with sensible defaults.
 import os
 from dataclasses import dataclass
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name, str(default))
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 
 @dataclass
 class BotConfig:
@@ -36,7 +44,7 @@ class BotConfig:
             rustchain_node_url=os.getenv(
                 "RUSTCHAIN_NODE_URL", "https://rustchain.org"
             ),
-            api_timeout=float(os.getenv("RUSTCHAIN_API_TIMEOUT", "10.0")),
+            api_timeout=_env_float("RUSTCHAIN_API_TIMEOUT", 10.0),
             prefix=os.getenv("BOT_PREFIX", "!"),
             owner_id=os.getenv("BOT_OWNER_ID", ""),
             log_level=os.getenv("LOG_LEVEL", "INFO"),

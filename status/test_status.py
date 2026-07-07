@@ -2,6 +2,7 @@
 """Unit tests for RustChain Multi-Node Health Dashboard."""
 
 import json
+import os
 import pytest
 from unittest.mock import patch, MagicMock
 from status_server import app, check_node, poll_all, NODES, node_status, history, incidents
@@ -197,17 +198,71 @@ class TestAPI:
         resp = client.get("/")
         html = resp.data.decode("utf-8")
 
+        # escapeHtml helper still present for legacy callers
         assert "function escapeHtml(value)" in html
-        assert "${escapeHtml(node.name)}" in html
-        assert "${escapeHtml(node.location || '—')}" in html
-        assert "${escapeHtml(node.response_ms || 0)}ms" in html
-        assert "${escapeHtml(node.version || '—')}" in html
-        assert "${escapeHtml(i.node)}" in html
-        assert "${escapeHtml(i.event)}" in html
-        assert "escapeHtml(i.detail)" in html
+        # Class-name whitelist helper to prevent attribute breakout
+        assert "function safeClass(value" in html
+        assert "ALLOWED_STATUS_CLASSES" in html
+        # No raw template interpolation of untrusted fields into innerHTML
         assert "${node.name}" not in html
-        assert "${node.version||'—'}" not in html
         assert "${i.detail?' · '+i.detail:''}" not in html
+        # Nodes must be built via safe DOM construction, not innerHTML
+        assert "card.innerHTML" not in html
+        assert "nameSpan.textContent = node.name" in html
+        assert "badge.textContent = node.up ? 'Operational' : 'Down'" in html
+        # Incident rows must be built with createElement/textContent
+        assert "evt.textContent = " in html
+        assert "incEl.innerHTML" not in html
+        # Uptime bar must use safeClass, not direct interpolation
+        assert "tick ${safeClass(s)}" in html
+
+
+class TestStaticDashboardFiles:
+    """Static-file checks for the GitHub Pages health dashboard surface.
+
+    These files are not served by the Flask app at runtime but are published
+    from the repository itself, so any unsafe interpolation in them is a
+    shipped XSS sink on the public status page.
+    """
+
+    @staticmethod
+    def _read(rel_path):
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, rel_path), "r", encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_status_index_html_escapes_node_and_incident_fields(self):
+        html = self._read("index.html")
+
+        # Class-name whitelist helper to prevent attribute breakout
+        assert "function safeClass(value" in html
+        assert 'STATUS_WHITELIST' in html
+        # No innerHTML assignments that interpolate untrusted node fields.
+        assert "${result.node.name}" not in html
+        assert "${result.node.location}" not in html
+        assert "${result.node.origin}" not in html
+        # Untrusted fields must flow through textContent / className.
+        assert 'title.textContent = result.node.name' in html
+        assert 'loc.textContent = result.node.location' in html
+        assert 'originSpan.textContent = result.node.origin' in html
+        assert 'strong.textContent = result.node.name' in html
+        # No `result.node.X` interpolated into a class attribute.
+        assert 'class="${result.node.' not in html
+
+    def test_network_status_html_escapes_base_and_message(self):
+        # website/static/ is the canonical copy; docs/ mirrors it.
+        for rel_path in (
+            "../website/static/network-status.html",
+            "../docs/network-status.html",
+        ):
+            html = self._read(rel_path)
+
+            # No template-string innerHTML that interpolates the URL base
+            assert '<div class="font-mono text-xs break-all">${base}</div>' not in html
+            assert 'row.innerHTML = `' not in html
+            # base must be assigned through textContent
+            assert 'urlSpan.textContent = base' in html
+            assert 'upVal.textContent = uptimePct(base)' in html
 
 
 class TestHistoryTrimming:

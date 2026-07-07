@@ -124,7 +124,7 @@ def get_available_agents() -> List[str]:
     # Preference order: msgoogletoggle first (it's our best solver host),
     # then sophia, boris, janitor, bottube, oneo
     preferred = ["msgoogletoggle", "sophia", "boris", "janitor", "bottube", "oneo"]
-    return [a for a in preferred if a in AGENTS and a not in suspended]
+    return [a for a in preferred if a in AGENTS and a not in suspended and get_agent_key(a) is not None]
 
 
 def get_agent_key(agent: str) -> Optional[str]:

@@ -28,6 +28,14 @@ import httpx
 from discord import app_commands
 from discord.ext import commands
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name, str(default))
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -42,7 +50,7 @@ log = logging.getLogger("rustchain-bot")
 
 RUSTCHAIN_URL = os.getenv("RUSTCHAIN_NODE_URL", "https://rustchain.org").rstrip("/")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
-API_TIMEOUT = float(os.getenv("API_TIMEOUT", "10"))
+API_TIMEOUT = _env_float("API_TIMEOUT", 10.0)
 
 
 def _format_uptime(value) -> str:

@@ -11,6 +11,30 @@ MODULE_PATH = os.path.join(NODE_DIR, "rustchain_v2_integrated_v2.2.1_rip200.py")
 ADMIN_KEY = "0123456789abcdef0123456789abcdef"
 
 
+def _make_disclosure_side_effect(ledger=(), rewards=(), pending=()):
+    """Build a side_effect for ``db.execute`` that dispatches on the FROM
+    clause so each of the three live-route queries returns the right rows.
+
+    Live route, in order: ``ledger``, ``epoch_rewards`` (LEFT JOIN
+    ``epoch_state``), ``pending_ledger``.
+    """
+
+    def _execute(sql, *args, **kwargs):
+        cursor = MagicMock()
+        sql_lower = (sql or "").lower()
+        if "from ledger" in sql_lower and "pending_ledger" not in sql_lower:
+            cursor.fetchall.return_value = list(ledger)
+        elif "from epoch_rewards" in sql_lower:
+            cursor.fetchall.return_value = list(rewards)
+        elif "from pending_ledger" in sql_lower:
+            cursor.fetchall.return_value = list(pending)
+        else:
+            cursor.fetchall.return_value = []
+        return cursor
+
+    return _execute
+
+
 class TestPublicApiDisclosure(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -202,84 +226,65 @@ class TestPublicApiDisclosure(unittest.TestCase):
             },
         )
 
-    def test_wallet_history_public_formats_pending_confirmed_and_failed_rows(self):
+    def test_wallet_history_public_returns_unified_envelope_with_confirmed_reward_and_pending(self):
+        """Envelope {ok, miner_id, transactions, total} with one of each kind."""
+        ledger_rows = [
+            (1700001000, 200, "alice", 2500000, "transfer_in:bob:tx_pending_alias"),
+        ]
+        reward_rows = [
+            (201, 1250000, 1),
+        ]
+        pending_rows = [
+            (1700000500, "alice", "bob", 2500000, None, "pending", "tx_pending", 1700000500),
+        ]
+        side_effect = MagicMock(side_effect=_make_disclosure_side_effect(
+            ledger=ledger_rows, rewards=reward_rows, pending=pending_rows,
+        ))
         with patch.object(self.mod.sqlite3, "connect") as mock_connect:
             mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = [
-                (
-                    12,
-                    1700001000,
-                    "alice",
-                    "bob",
-                    2500000,
-                    "signed_transfer:coffee",
-                    "pending",
-                    1700001000,
-                    1700087400,
-                    None,
-                    "tx_pending",
-                    None,
-                ),
-                (
-                    11,
-                    1700000000,
-                    "carol",
-                    "alice",
-                    1250000,
-                    "signed_transfer:thanks",
-                    "confirmed",
-                    1700000000,
-                    1700086400,
-                    1700086500,
-                    "tx_confirmed",
-                    None,
-                ),
-                (
-                    10,
-                    1699999000,
-                    "alice",
-                    "mallory",
-                    500000,
-                    "manual_review",
-                    "voided",
-                    1699999000,
-                    1700085400,
-                    None,
-                    "tx_failed",
-                    "admin_void",
-                ),
-            ]
-
+            mock_conn.execute = side_effect
             resp = self.client.get("/wallet/history?miner_id=alice&limit=3")
             self.assertEqual(resp.status_code, 200)
             body = resp.get_json()
 
-            self.assertEqual(len(body), 3)
-            self.assertEqual(body[0]["tx_id"], "tx_pending")
-            self.assertEqual(body[0]["direction"], "sent")
-            self.assertEqual(body[0]["counterparty"], "bob")
-            self.assertEqual(body[0]["memo"], "coffee")
-            self.assertEqual(body[0]["status"], "pending")
-            self.assertEqual(body[0]["amount_i64"], 2500000)
+            self.assertTrue(body["ok"])
+            self.assertEqual(body["miner_id"], "alice")
+            self.assertEqual(body["total"], 3)
+            txs = body["transactions"]
+            self.assertEqual(len(txs), 3)
+            by_hash = {t.get("tx_hash"): t for t in txs}
 
-            self.assertEqual(body[1]["direction"], "received")
-            self.assertEqual(body[1]["counterparty"], "carol")
-            self.assertEqual(body[1]["status"], "confirmed")
-            self.assertEqual(body[1]["confirmations"], 1)
-            self.assertEqual(body[1]["memo"], "thanks")
+            # Confirmed ledger row surfaces as transfer_in with from=bob
+            conf = by_hash.get("tx_pending_alias")
+            self.assertIsNotNone(conf)
+            self.assertEqual(conf["type"], "transfer_in")
+            self.assertEqual(conf["from"], "bob")
+            self.assertEqual(conf["amount"], 2.5)
+            self.assertEqual(conf["epoch"], 200)
+            self.assertNotIn("status", conf)
 
-            self.assertEqual(body[2]["status"], "failed")
-            self.assertEqual(body[2]["raw_status"], "voided")
-            self.assertEqual(body[2]["status_reason"], "admin_void")
+            # Reward row surfaces as type=reward
+            reward = next((t for t in txs if t["type"] == "reward"), None)
+            self.assertIsNotNone(reward)
+            self.assertEqual(reward["epoch"], 201)
+            self.assertEqual(reward["amount"], 1.25)
+
+            # Pending row surfaces as transfer_out with status=pending
+            pend = by_hash.get("tx_pending")
+            self.assertIsNotNone(pend)
+            self.assertEqual(pend["type"], "transfer_out")
+            self.assertEqual(pend["to"], "bob")
+            self.assertEqual(pend["status"], "pending")
 
     def test_wallet_history_public_accepts_address_alias(self):
         with patch.object(self.mod.sqlite3, "connect") as mock_connect:
             mock_conn = mock_connect.return_value.__enter__.return_value
-            mock_conn.execute.return_value.fetchall.return_value = []
-
+            mock_conn.execute = MagicMock(side_effect=_make_disclosure_side_effect())
             resp = self.client.get("/wallet/history?address=alice")
             self.assertEqual(resp.status_code, 200)
-            self.assertEqual(resp.get_json(), [])
+            body = resp.get_json()
+            self.assertEqual(body["miner_id"], "alice")
+            self.assertEqual(body["total"], 0)
 
     def test_wallet_history_requires_identifier(self):
         resp = self.client.get("/wallet/history")
@@ -301,6 +306,24 @@ class TestPublicApiDisclosure(unittest.TestCase):
         resp = self.client.get("/wallet/history?miner_id=alice&limit=abc")
         self.assertEqual(resp.status_code, 400)
         self.assertEqual(resp.get_json(), {"ok": False, "error": "limit must be an integer"})
+
+    def test_wallet_history_envelope_does_not_leak_legacy_flat_array(self):
+        """Regression guard: the body must never be a bare JSON array.
+        The pre-#997 contract returned ``[{...}, ...]`` directly; the unified
+        contract returns ``{ok, miner_id, transactions, total}``."""
+        ledger_rows = [
+            (1700000000, 200, "alice", 100, "transfer_in:bob:tx1"),
+        ]
+        with patch.object(self.mod.sqlite3, "connect") as mock_connect:
+            mock_conn = mock_connect.return_value.__enter__.return_value
+            mock_conn.execute = MagicMock(side_effect=_make_disclosure_side_effect(
+                ledger=ledger_rows,
+            ))
+            body = self.client.get("/wallet/history?miner_id=alice").get_json()
+            self.assertIsInstance(body, dict)
+            self.assertNotIsInstance(body, list)
+            self.assertIn("transactions", body)
+            self.assertIsInstance(body["transactions"], list)
 
 
 if __name__ == "__main__":

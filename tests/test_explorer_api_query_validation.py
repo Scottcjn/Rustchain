@@ -19,6 +19,30 @@ def load_explorer_api():
     return module
 
 
+def test_malformed_numeric_env_uses_safe_defaults(monkeypatch):
+    monkeypatch.setenv("EXPLORER_PORT", "not-a-port")
+    monkeypatch.setenv("CACHE_TTL", "bad-ttl")
+    monkeypatch.setenv("REQUEST_TIMEOUT", "bad-timeout")
+
+    explorer_api = load_explorer_api()
+
+    assert explorer_api.EXPLORER_PORT == 6100
+    assert explorer_api.CACHE_TTL == 15
+    assert explorer_api.REQUEST_TIMEOUT == 10.0
+
+
+def test_numeric_env_overrides_are_preserved(monkeypatch):
+    monkeypatch.setenv("EXPLORER_PORT", "6200")
+    monkeypatch.setenv("CACHE_TTL", "30")
+    monkeypatch.setenv("REQUEST_TIMEOUT", "2.5")
+
+    explorer_api = load_explorer_api()
+
+    assert explorer_api.EXPLORER_PORT == 6200
+    assert explorer_api.CACHE_TTL == 30
+    assert explorer_api.REQUEST_TIMEOUT == 2.5
+
+
 def test_blocks_rejects_non_integer_pagination_params():
     explorer_api = load_explorer_api()
 

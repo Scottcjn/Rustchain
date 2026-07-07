@@ -53,12 +53,16 @@ try:
         DUST_THRESHOLD as UTXO_DUST_THRESHOLD,
         MAX_OUTPUTS as UTXO_MAX_OUTPUTS,
         UtxoDB,
+        address_to_proposition as utxo_address_to_proposition,
+        compute_box_id as utxo_compute_box_id,
     )
     HAVE_UTXO = True
 except ImportError:
     UTXO_DUST_THRESHOLD = 1_000
     UTXO_MAX_OUTPUTS = 100
     HAVE_UTXO = False
+    utxo_address_to_proposition = None
+    utxo_compute_box_id = None
     if UTXO_DUAL_WRITE:
         print("[WARN] utxo_db.py not found but UTXO_DUAL_WRITE=1 — disabling")
         UTXO_DUAL_WRITE = False
@@ -316,6 +320,7 @@ def _attest_mapping(value):
 
 
 _ATTEST_MINER_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_SOLANA_WALLET_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 _ED25519_PUBKEY_HEX_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 
 
@@ -334,6 +339,12 @@ def _attest_valid_miner(value):
     if text and _ATTEST_MINER_RE.fullmatch(text):
         return text
     return None
+
+
+def _attest_looks_like_solana_wallet(value):
+    """Return True for raw Solana/base58 public keys accidentally used as miner IDs."""
+    text = _attest_text(value)
+    return bool(text and not text.startswith("RTC") and _SOLANA_WALLET_RE.fullmatch(text))
 
 
 def _valid_ed25519_pubkey_hex(value):
@@ -482,6 +493,11 @@ def _validate_attestation_payload_shape(data):
     for field_name in ("miner", "miner_id"):
         if field_name in data and data[field_name] is not None and not isinstance(data[field_name], str):
             return _attest_field_error("INVALID_MINER", f"Field '{field_name}' must be a non-empty string")
+        if field_name in data and _attest_looks_like_solana_wallet(data[field_name]):
+            return _attest_field_error(
+                "INVALID_MINER_WALLET_FORMAT",
+                "Solana-format wallet addresses cannot be used as RustChain miner IDs; create or use a native RTC wallet address",
+            )
         if field_name in data and _attest_text(data[field_name]) and not _attest_valid_miner(data[field_name]):
             return _attest_field_error(
                 "INVALID_MINER",
@@ -1461,6 +1477,25 @@ if HAVE_BRIDGE:
         print("[FEDERATION] Bridge reconciliation endpoints registered")
     except Exception as e:
         print(f"[RIP-0305 Track C] Failed to register bridge endpoints: {e}")
+
+# Canonical /api/v1/* read API — binds the explorer/client read paths that
+# previously fell through to nginx 404 (#7251/#7252/#7297-#7307).
+try:
+    from api_v1 import register_api_v1
+    register_api_v1(
+        app,
+        db_path=DB_PATH,
+        current_slot=current_slot,
+        slot_to_epoch=slot_to_epoch,
+        app_version=APP_VERSION,
+        app_start_ts=APP_START_TS,
+        per_epoch_rtc=PER_EPOCH_RTC,
+        epoch_slots=EPOCH_SLOTS,
+        total_supply_rtc=TOTAL_SUPPLY_RTC,
+    )
+    print("[api/v1] Canonical read API registered")
+except Exception as e:
+    print(f"[api/v1] Failed to register canonical read API: {e}")
 
 # RIP-302 Agent Economy endpoints used by the explorer dashboard
 try:
@@ -4276,6 +4311,14 @@ def get_challenge():
         }), 400
     requested_miner = None
     if isinstance(body, dict):
+        for field_name in ("miner", "miner_id"):
+            if _attest_looks_like_solana_wallet(body.get(field_name)):
+                return jsonify({
+                    "ok": False,
+                    "error": "invalid_miner_wallet_format",
+                    "code": "INVALID_MINER_WALLET_FORMAT",
+                    "message": "Solana-format wallet addresses cannot request RustChain attestation challenges; create or use a native RTC wallet address",
+                }), 400
         # Extract identity in the SAME order the submit path resolves `miner`
         # (_submit_attestation_impl: data.get('miner') or data.get('miner_id')) so a
         # client where miner != miner_id binds to exactly the identity that will be
@@ -5531,6 +5574,15 @@ def ingest_signed_header():
     if header_miner and header_miner != miner_id:
         return jsonify({"ok":False,"error":"miner_mismatch"}), 400
 
+    canonical_msg = None
+    if header:
+        try:
+            canonical_msg = canonical_header_bytes(header)
+        except Exception:
+            return jsonify({"ok":False,"error":"bad header for canonicalization"}), 400
+        if msg_hex and msg_hex != bytes_to_hex(canonical_msg):
+            return jsonify({"ok":False,"error":"message_header_mismatch"}), 400
+
     # Resolve candidate public key(s). A wallet identity may have several enrolled
     # devices, each with its own header key (composite miner_header_keys PK), so we
     # collect every registered key and accept the header if its signature matches ANY.
@@ -5554,10 +5606,7 @@ def ingest_signed_header():
             return jsonify({"ok":False,"error":"bad message hex"}), 400
     else:
         # build canonical message from header
-        try:
-            msg = canonical_header_bytes(header)
-        except Exception:
-            return jsonify({"ok":False,"error":"bad header for canonicalization"}), 400
+        msg = canonical_msg if canonical_msg is not None else canonical_header_bytes(header)
         msg_hex = bytes_to_hex(msg)
 
     # Mock acceptance (TESTNET ONLY)
@@ -6486,10 +6535,32 @@ def request_withdrawal():
             fee_i64 = int(round(WITHDRAWAL_FEE * ACCOUNT_UNIT))
             total_needed_i64 = amount_i64 + fee_i64
             balance_i64 = _balance_i64_for_wallet(c, miner_pk)
-
-            if balance_i64 < total_needed_i64:
+            # Subtract funds reserved by in-flight ops (pending transfers, not-yet
+            # debited bridge deposits) so a withdrawal cannot drain balance that a
+            # pending operation is counting on. Read inside this BEGIN IMMEDIATE
+            # txn for a consistent snapshot.
+            from available_balance import encumbered_i64
+            try:
+                available_i64 = balance_i64 - encumbered_i64(c, miner_pk)
+            except sqlite3.OperationalError as exc:
+                # encumbered_i64 fails closed on a real DB error (locked/busy/IO)
+                # rather than under-counting. Turn that into a graceful, retryable
+                # 503 instead of an unhandled 500 — and never debit on doubt.
+                logging.warning("withdrawal encumbrance read failed for %s: %s", miner_pk, exc)
                 withdrawal_failed.inc()
-                return rollback_json({"error": "Insufficient balance", "balance": balance_i64 / ACCOUNT_UNIT}, 400)
+                return rollback_json(
+                    {"error": "Service temporarily unavailable, please retry"}, 503
+                )
+
+            if available_i64 < total_needed_i64:
+                withdrawal_failed.inc()
+                # Keep the legacy "Insufficient balance" string (clients match on
+                # it); add `available` so the reservation shortfall is visible.
+                return rollback_json({
+                    "error": "Insufficient balance",
+                    "balance": balance_i64 / ACCOUNT_UNIT,
+                    "available": available_i64 / ACCOUNT_UNIT,
+                }, 400)
 
             # Check daily limit
             today = datetime.now().strftime("%Y-%m-%d")
@@ -7425,6 +7496,37 @@ def get_stats():
         "pending_withdrawals": pending_withdrawals,
         "features": ["RIP-0005", "RIP-0008", "RIP-0009", "RIP-0142", "RIP-0143", "RIP-0144"],
         "security": ["no_mock_sigs", "mandatory_admin_key", "replay_protection", "validated_json"]
+    })
+
+
+@app.route('/network/info', methods=['GET'])
+def get_network_info():
+    """Get network information for wallet clients"""
+    # Get current block height safely
+    block_height = 0
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            row = db.execute("SELECT MAX(height) FROM blocks").fetchone()
+            block_height = row[0] if (row and row[0] is not None) else 0
+    except Exception:
+        pass
+
+    # Get peer count safely
+    peer_count = 0
+    try:
+        if 'peer_manager' in globals() and peer_manager is not None:
+            stats = peer_manager.get_network_stats()
+            peer_count = stats.get('active_peers', 0)
+    except Exception:
+        pass
+
+    return jsonify({
+        "chain_id": CHAIN_ID,
+        "network": "testnet" if "testnet" in CHAIN_ID.lower() else "mainnet",
+        "block_height": block_height,
+        "peer_count": peer_count,
+        "min_fee": 1000,
+        "version": "2.2.1-security-hardened"
     })
 
 
@@ -9196,6 +9298,180 @@ def api_wallet_lookup(miner_id):
     })
 
 
+_WALLET_TX_HASH_RE = re.compile(r"^[0-9a-fA-F]{32}$")
+
+
+def _wallet_tx_status_response(tx_hash: str, status: str, block_height=None,
+                               confirmations: int = 0):
+    body = {
+        "ok": True,
+        "tx_hash": tx_hash,
+        "status": status,
+        "confirmations": confirmations,
+        "block_height": block_height,
+    }
+    return jsonify(body)
+
+
+def _wallet_tx_has_table(db, table_name: str) -> bool:
+    try:
+        row = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            (table_name,),
+        ).fetchone()
+    except sqlite3.Error:
+        return False
+    return row is not None
+
+
+def _wallet_tx_parse_ledger_transfer(row):
+    reason = str(row["reason"] or "")
+    direction, sep, rest = reason.partition(":")
+    if not sep or direction not in ("transfer_in", "transfer_out"):
+        return None
+    counterparty, sep, tx_hash = rest.rpartition(":")
+    if not sep or not counterparty or not _WALLET_TX_HASH_RE.fullmatch(tx_hash):
+        return None
+    delta = int(row["delta_i64"])
+    if direction == "transfer_out" and delta >= 0:
+        return None
+    if direction == "transfer_in" and delta <= 0:
+        return None
+    return {
+        "direction": direction,
+        "wallet": str(row["miner_id"]),
+        "counterparty": counterparty,
+        "amount_i64": abs(delta),
+        "epoch": row["epoch"],
+        "tx_hash": tx_hash.lower(),
+    }
+
+
+def _wallet_tx_verified_ledger_height(db, tx_hash: str):
+    if not _wallet_tx_has_table(db, "ledger"):
+        return None
+
+    rows = db.execute(
+        """
+        SELECT ts, epoch, miner_id, delta_i64, reason
+        FROM ledger
+        WHERE reason LIKE ?
+        ORDER BY ts DESC, rowid DESC
+        LIMIT 8
+        """,
+        (f"%:{tx_hash}",),
+    ).fetchall()
+    parsed = [
+        item for item in (_wallet_tx_parse_ledger_transfer(row) for row in rows)
+        if item and item["tx_hash"] == tx_hash
+    ]
+
+    outs = [item for item in parsed if item["direction"] == "transfer_out"]
+    ins = [item for item in parsed if item["direction"] == "transfer_in"]
+    matches = []
+    for out_row in outs:
+        for in_row in ins:
+            if (
+                out_row["wallet"] == in_row["counterparty"]
+                and out_row["counterparty"] == in_row["wallet"]
+                and out_row["amount_i64"] == in_row["amount_i64"]
+            ):
+                matches.append((out_row, in_row))
+
+    if len(matches) != 1:
+        return None
+
+    out_row, in_row = matches[0]
+    if out_row["epoch"] == in_row["epoch"] and out_row["epoch"] is not None:
+        try:
+            return int(out_row["epoch"])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _wallet_tx_pending_row_status(db, tx_hash: str):
+    if not _wallet_tx_has_table(db, "pending_ledger"):
+        return None, None
+
+    rows = db.execute(
+        """
+        SELECT id, epoch, status, confirmed_at, created_at, ts
+        FROM pending_ledger
+        WHERE tx_hash = ?
+        ORDER BY COALESCE(confirmed_at, created_at, ts, 0) DESC, id DESC
+        LIMIT 2
+        """,
+        (tx_hash,),
+    ).fetchall()
+    if not rows:
+        return None, None
+    if len(rows) > 1:
+        return "ambiguous", None
+
+    row = rows[0]
+    raw_status = str(row["status"] or "pending").lower()
+    if raw_status == "confirmed":
+        block_height = _wallet_tx_verified_ledger_height(db, tx_hash)
+        if block_height is not None:
+            return "confirmed", block_height
+        return "pending", None
+    if raw_status in {"voided", "failed", "rejected", "cancelled", "expired"}:
+        return "failed", None
+    return "pending", None
+
+
+@app.route('/wallet/tx/<tx_hash>', methods=['GET'])
+def api_wallet_tx_status(tx_hash: str):
+    """Return a status-only transaction lookup for wallet clients.
+
+    The route is intentionally public but does not expose participants, amounts,
+    pending IDs, internal reasons, or void details. A transaction is reported as
+    confirmed only after matching both immutable ledger entries for the hash.
+    """
+    tx_hash = str(tx_hash or "").strip().lower()
+    if not _WALLET_TX_HASH_RE.fullmatch(tx_hash):
+        return jsonify({
+            "ok": False,
+            "error": "tx_hash must be exactly 32 hexadecimal characters",
+        }), 400
+
+    try:
+        with sqlite3.connect(DB_PATH) as db:
+            db.row_factory = sqlite3.Row
+            status, block_height = _wallet_tx_pending_row_status(db, tx_hash)
+            if status == "ambiguous":
+                return jsonify({
+                    "ok": False,
+                    "error": "ambiguous_transaction",
+                }), 409
+            if status:
+                return _wallet_tx_status_response(
+                    tx_hash,
+                    status,
+                    block_height=block_height,
+                    confirmations=1 if status == "confirmed" else 0,
+                )
+
+            block_height = _wallet_tx_verified_ledger_height(db, tx_hash)
+            if block_height is not None:
+                return _wallet_tx_status_response(
+                    tx_hash,
+                    "confirmed",
+                    block_height=block_height,
+                    confirmations=1,
+                )
+    except sqlite3.Error:
+        return jsonify({"ok": False, "error": "transaction_lookup_unavailable"}), 503
+
+    return jsonify({
+        "ok": False,
+        "tx_hash": tx_hash,
+        "status": "not_found",
+        "error": "transaction_not_found",
+    }), 404
+
+
 @app.route('/wallet/history', methods=['GET'])
 def api_wallet_history():
     """Get unified transaction history for a wallet (fixes #775, #886).
@@ -9351,6 +9627,98 @@ def api_wallet_history():
         "transactions": page,
         "total": total,
     })
+
+@app.route('/wallet/tx/<tx_hash>', methods=['GET'])
+def api_wallet_tx_lookup(tx_hash):
+    """Look up a single transaction by hash.
+
+    Searches ``pending_ledger`` (in-flight) and ``ledger`` (immutable) for a
+    row matching the given ``tx_hash``.  Returns a bounded JSON response that
+    matches the mobile-wallet ``TransactionResponse`` schema.
+    """
+    tx_hash = (tx_hash or "").strip()
+    if not tx_hash:
+        return jsonify({"ok": False, "error": "tx_hash required"}), 400
+
+    with sqlite3.connect(DB_PATH) as db:
+        # --- Pending ledger (in-flight) ---
+        try:
+            row = db.execute(
+                """
+                SELECT ts, from_miner, to_miner, amount_i64, reason,
+                       status, tx_hash, COALESCE(created_at, ts) as created
+                FROM pending_ledger
+                WHERE tx_hash = ?
+                LIMIT 1
+                """,
+                (tx_hash,),
+            ).fetchone()
+        except Exception:
+            row = None
+
+        if row:
+            ts, from_m, to_m, amt, reason, status, _tx, created = row
+            is_transfer_out = from_m is not None
+            return jsonify({
+                "ok": True,
+                "tx_hash": _tx,
+                "status": status or "pending",
+                "verified": False,
+                "confirmations": 0,
+                "block_height": None,
+                "amount": abs(int(amt)) / UNIT if amt else 0,
+                "from": from_m if is_transfer_out else None,
+                "to": to_m if is_transfer_out else from_m,
+                "timestamp": int(created or ts or 0),
+                "reason": reason or None,
+            })
+
+        # --- Immutable ledger (confirmed transfers) ---
+        # Escape SQL LIKE wildcards so a tx_hash containing '%' or '_'
+        # cannot match unrelated rows.
+        escaped = tx_hash.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        try:
+            row = db.execute(
+                """
+                SELECT ts, epoch, miner_id, delta_i64, reason
+                FROM ledger
+                WHERE reason LIKE ? ESCAPE '\\'
+                ORDER BY ts DESC
+                LIMIT 1
+                """,
+                (f"%:{escaped}",),
+            ).fetchone()
+        except Exception:
+            row = None
+
+        if row:
+            ts, epoch, _mid, delta_i64, reason = row
+            reason_str = str(reason or "")
+            tx_type = "unknown"
+            if reason_str.startswith("transfer_in:"):
+                tx_type = "transfer_in"
+            elif reason_str.startswith("transfer_out:"):
+                tx_type = "transfer_out"
+            return jsonify({
+                "ok": True,
+                "tx_hash": tx_hash,
+                "status": "confirmed",
+                "verified": True,
+                "confirmations": 1,
+                "block_height": int(epoch) if epoch else None,
+                "amount": abs(int(delta_i64)) / UNIT if delta_i64 else 0,
+                "timestamp": int(ts) if ts else 0,
+                "type": tx_type,
+                "reason": reason_str,
+            })
+
+    return jsonify({
+        "ok": False,
+        "tx_hash": tx_hash,
+        "status": "not_found",
+        "message": "transaction not found",
+    }), 404
+
 
 # =============================================================================
 # 2-PHASE COMMIT PENDING LEDGER SYSTEM
@@ -9767,6 +10135,189 @@ def void_pending():
         conn.close()
 
 
+# Account balances are micro-RTC; UTXO box values are nano-RTC (100x).
+_UTXO_PER_ACCOUNT = UTXO_UNIT // ACCOUNT_UNIT
+
+
+def _ensure_and_backfill_account_mirror(c):
+    """Create + backfill the mirror-provenance table (run ONCE per confirm pass,
+    outside the per-row savepoint).
+
+    ``account_mirror_boxes`` is the *discriminator* for the account/UTXO
+    cross-model double-spend (bounty #2819): it records exactly which boxes
+    represent account-model funds and for whom. It is deliberately an explicit
+    table rather than a ``registers_json`` marker match — a JSON marker is lost
+    on change boxes from partial spends, and "any box the sender owns" would
+    wrongly burn independently-earned UTXOs. The table is *maintained* across
+    change/receiver boxes so it stays complete after partial transfers.
+
+    Backfill makes the discriminator complete even on a DB whose genesis
+    migration ran *before* this provenance tracking existed: any unspent box
+    still carrying the migration register but missing a provenance row is
+    adopted here (idempotent). New migrations populate the table directly.
+    """
+    if not HAVE_UTXO:
+        return
+    if not c.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='utxo_boxes'"
+    ).fetchone():
+        return
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS account_mirror_boxes (
+               box_id TEXT PRIMARY KEY,
+               account_wallet TEXT NOT NULL,
+               value_nrtc INTEGER NOT NULL,
+               created_epoch INTEGER NOT NULL
+           )"""
+    )
+    c.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mirror_wallet "
+        "ON account_mirror_boxes(account_wallet)"
+    )
+    c.execute(
+        """INSERT OR IGNORE INTO account_mirror_boxes
+               (box_id, account_wallet, value_nrtc, created_epoch)
+           SELECT b.box_id, b.owner_address, b.value_nrtc, b.creation_height
+             FROM utxo_boxes b
+            WHERE b.spent_at IS NULL
+              AND json_extract(b.registers_json, '$.R4')
+                  IN ('genesis', 'account_migration_mirror')
+              AND NOT EXISTS (
+                  SELECT 1 FROM account_mirror_boxes m WHERE m.box_id = b.box_id
+              )"""
+    )
+
+
+def _settle_account_transfer_in_utxo(c, from_m, to_m, amount_i64, epoch, tx_hash, now):
+    """Keep the UTXO mirror consistent when an account pending-transfer confirms.
+
+    Without this, ``/pending/confirm`` debits the sender's account balance but
+    leaves their matching migrated UTXO box spendable, so the same funds move
+    once via account confirm and again via the UTXO path (bounty #2819 — a
+    Critical double-spend).
+
+    Properties (the synthesis of the two candidate fixes #7511/#7512):
+      * Robust discriminator — consumes only the sender's *mirror* boxes (via the
+        ``account_mirror_boxes`` provenance table), never independently-earned
+        boxes, and not dependent on a fragile registers_json match.
+      * Cannot strand a valid transfer — consumes only as much mirror value as
+        exists, up to the amount; an unmirrored remainder is account-only and
+        carries no double-spend risk, so this path never raises on "insufficient
+        UTXO" for an otherwise-valid account confirm.
+      * Mirrors the moved value to the receiver and returns change to the sender,
+        recording both in the provenance table so the set stays complete.
+      * Uses the pending row's ``epoch`` for box height (not wall-clock).
+      * Gated on HAVE_UTXO, independent of UTXO_DUAL_WRITE: a migrated box must be
+        reconciled whenever it exists. No-op for pure-account DBs and
+        non-migrated senders.
+    """
+    if not HAVE_UTXO or utxo_compute_box_id is None or utxo_address_to_proposition is None:
+        return
+    if amount_i64 <= 0:
+        return
+    # Pure-account DB (no UTXO model present): nothing to reconcile. The mirror
+    # table is created + backfilled once per pass by the caller before the loop.
+    if not c.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_mirror_boxes'"
+    ).fetchone():
+        return
+
+    target_nrtc = int(amount_i64) * _UTXO_PER_ACCOUNT
+    spend_tx = f"account_confirm:{tx_hash}"
+    # Deterministic synthetic tx id for the reconciliation outputs (valid hex
+    # for compute_box_id, which does bytes.fromhex on the tx id).
+    base = f"acctmirror:{tx_hash}:{from_m}:{to_m}:{int(amount_i64)}"
+    recon_tx_id = hashlib.sha256(base.encode()).hexdigest()
+
+    def _spend_wallet_mirror(wallet):
+        """Spend ALL of `wallet`'s unspent mirror boxes; return the nrtc actually
+        marked spent. Counts only rowcount==1 updates, so a concurrent spend
+        between the SELECT snapshot and the UPDATE can't inflate the total. The
+        per-wallet set is bounded — consolidation below keeps it to <=1 box."""
+        rows = c.execute(
+            "SELECT b.box_id, b.value_nrtc FROM utxo_boxes b "
+            "JOIN account_mirror_boxes m ON m.box_id = b.box_id "
+            "WHERE m.account_wallet = ? AND b.spent_at IS NULL",
+            (wallet,),
+        ).fetchall()  # fetchall-ok: bounded-by-schema (one wallet's mirror boxes; consolidation keeps it <=1)
+        total = 0
+        for box_id, value_nrtc in rows:
+            res = c.execute(
+                "UPDATE utxo_boxes SET spent_at = ?, spent_by_tx = ? "
+                "WHERE box_id = ? AND spent_at IS NULL",
+                (now, spend_tx, box_id),
+            )
+            if res.rowcount != 1:
+                continue
+            c.execute("DELETE FROM account_mirror_boxes WHERE box_id = ?", (box_id,))
+            total += int(value_nrtc)
+        return total
+
+    def _credit_wallet_mirror(wallet, value_nrtc, out_idx):
+        """Create ONE consolidated mirror box of `value_nrtc` for `wallet`, so
+        every wallet holds at most one mirror box (bounds the fetch to O(1) and
+        keeps mirror == balance exact)."""
+        if value_nrtc <= 0:
+            return
+        prop = utxo_address_to_proposition(wallet)
+        box_id = utxo_compute_box_id(int(value_nrtc), prop, int(epoch), recon_tx_id, out_idx)
+        c.execute(
+            """INSERT OR IGNORE INTO utxo_boxes
+                   (box_id, value_nrtc, proposition, owner_address,
+                    creation_height, transaction_id, output_index,
+                    tokens_json, registers_json, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (box_id, int(value_nrtc), prop, wallet, int(epoch), recon_tx_id,
+             out_idx, '[]', json.dumps({'R4': 'account_migration_mirror'}), now),
+        )
+        c.execute(
+            "INSERT OR REPLACE INTO account_mirror_boxes "
+            "(box_id, account_wallet, value_nrtc, created_epoch) VALUES (?,?,?,?)",
+            (box_id, wallet, int(value_nrtc), int(epoch)),
+        )
+
+    # Consume the sender's whole mirror, move up to the transfer amount onto the
+    # receiver (folding the receiver's existing mirror so it stays one box), and
+    # return any change to the sender.
+    sender_mirror = _spend_wallet_mirror(from_m)
+    if sender_mirror <= 0:
+        return  # non-migrated sender: nothing mirrors this balance; move stands
+    moved_nrtc = min(sender_mirror, target_nrtc)
+    sender_change = sender_mirror - moved_nrtc
+    recv_existing = _spend_wallet_mirror(to_m)
+    _credit_wallet_mirror(to_m, recv_existing + moved_nrtc, 0)
+    _credit_wallet_mirror(from_m, sender_change, 1)
+
+    # Consensus invariant (bounty #2819): a wallet's mirrored UTXO must never
+    # exceed its account balance. mirror > balance is *exactly* the double-spend
+    # condition this fix prevents — the same funds counted in both models. The
+    # reconcile maintains mirror <= balance by construction (equal for a
+    # fully-mirrored wallet), so this can only trip on an unforeseen path; when
+    # it does we fail the confirm (rollback → transfer stays pending) rather than
+    # commit money that exists twice.
+    for _w in (from_m, to_m):
+        _mirror_nrtc = c.execute(
+            "SELECT COALESCE(SUM(b.value_nrtc), 0) FROM utxo_boxes b "
+            "JOIN account_mirror_boxes m ON m.box_id = b.box_id "
+            "WHERE m.account_wallet = ? AND b.spent_at IS NULL",
+            (_w,),
+        ).fetchone()[0]
+        _bal_nrtc = int(_balance_i64_for_wallet(c, _w)) * _UTXO_PER_ACCOUNT
+        if int(_mirror_nrtc) > _bal_nrtc:
+            try:
+                send_sophiacheck_alert(
+                    "critical",
+                    "account/UTXO mirror invariant violated on pending confirm",
+                    {"wallet": _w, "mirror_nrtc": int(_mirror_nrtc),
+                     "balance_nrtc": _bal_nrtc, "tx_hash": tx_hash},
+                )
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"mirror_exceeds_balance:{_w}:mirror={int(_mirror_nrtc)}:bal={_bal_nrtc}"
+            )
+
+
 @app.route('/pending/confirm', methods=['POST'])
 def confirm_pending():
     """Worker: Confirm pending transfers that have passed the delay period"""
@@ -9798,6 +10349,9 @@ def confirm_pending():
     try:
         c = conn.cursor()
         _ensure_transfer_ledger_table(c)
+        # Create + backfill the UTXO mirror provenance once per pass, before the
+        # per-row savepoints (avoids DDL inside a savepoint).
+        _ensure_and_backfill_account_mirror(c)
         balance_cols = _balance_columns(c)
         before_stats = _pending_overdue_stats(c, now)
 
@@ -9845,7 +10399,12 @@ def confirm_pending():
                 # Execute the actual transfer
                 _apply_wallet_balance_delta(c, from_m, -amount, balance_cols)
                 _apply_wallet_balance_delta(c, to_m, amount, balance_cols)
-                
+
+                # Reconcile the UTXO mirror in the same savepoint so the account
+                # and UTXO models move atomically — closes the cross-model
+                # double-spend where a migrated box stayed spendable (#2819).
+                _settle_account_transfer_in_utxo(c, from_m, to_m, amount, epoch, tx_hash, now)
+
                 # Log to IMMUTABLE ledger (the real chain!)
                 c.execute("""
                     INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason)
@@ -11020,11 +11579,23 @@ def beacon_submit():
     data = request.get_json(silent=True)
     if not isinstance(data, dict) or not data:
         return jsonify({"ok": False, "error": "invalid_json"}), 400
-    agent_id = data.get("agent_id", "")
-    kind = data.get("kind", "")
-    nonce = data.get("nonce", "")
-    sig = data.get("sig", "")
-    pubkey = data.get("pubkey", "")
+    fields = {}
+    for field_name in ("agent_id", "kind", "nonce", "sig", "pubkey"):
+        raw_value = data.get(field_name, "")
+        if raw_value is None:
+            fields[field_name] = ""
+            continue
+        if not isinstance(raw_value, str):
+            return jsonify({
+                "ok": False,
+                "error": f"invalid_field_type:{field_name}",
+            }), 400
+        fields[field_name] = raw_value.strip()
+    agent_id = fields["agent_id"]
+    kind = fields["kind"]
+    nonce = fields["nonce"]
+    sig = fields["sig"]
+    pubkey = fields["pubkey"]
     if not all([agent_id, kind, nonce, sig, pubkey]):
         return jsonify({"ok": False, "error": "missing_fields"}), 400
     if kind not in VALID_KINDS:

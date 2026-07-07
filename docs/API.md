@@ -153,108 +153,146 @@ curl -fsS "https://rustchain.org/wallet/balance?miner_id=eafc6f14eab6d5c5362fe65
 
 ### `GET /wallet/history`
 
-Read recent transfer history for a wallet. This is a public, wallet-scoped view
-over the pending transfer ledger and includes pending, confirmed, and voided
-transfers. Returns an empty array for wallets with no history.
+Read recent transaction history for a wallet. This is a public, wallet-scoped
+view that merges the immutable ``ledger``, the ``epoch_rewards`` payout table,
+and the ``pending_ledger`` 2-phase-commit log into a single time-sorted
+response.
 
-Canonical query parameter is `miner_id`. The endpoint also accepts `address`
-as a compatibility alias for older callers.
+Canonical query parameter is ``miner_id``. The endpoint also accepts
+``address`` as a compatibility alias for older callers.
+
+**Unified response envelope (authoritative since #908 / #997):**
+
+```json
+{
+  "ok": true,
+  "miner_id": "aliceRTC",
+  "transactions": [
+    {
+      "type": "transfer_in",
+      "amount": 5.0,
+      "epoch": 200,
+      "timestamp": 1772848800,
+      "tx_hash": "6df5d4d25b6deef8f0b2e0fa726cecf1",
+      "from": "aliceRTC"
+    },
+    {
+      "type": "transfer_out",
+      "amount": 1.25,
+      "epoch": 201,
+      "timestamp": 1772849000,
+      "tx_hash": "abc123def456...",
+      "to": "bobRTC",
+      "status": "pending"
+    },
+    {
+      "type": "reward",
+      "amount": 0.5,
+      "epoch": 201,
+      "timestamp": 1772850000,
+      "tx_hash": null
+    },
+    {
+      "type": "ledger",
+      "amount": 0.1,
+      "epoch": 202,
+      "timestamp": 1772851000,
+      "tx_hash": null,
+      "reason": "manual_adjustment"
+    }
+  ],
+  "total": 4
+}
+```
+
+**Envelope fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `ok` | bool | Always `true` on success |
+| `miner_id` | string | Resolved wallet identifier |
+| `transactions` | array | Page of unified transaction entries (see below) |
+| `total` | integer | Total number of transactions before pagination |
+
+**Transaction entry types** -- every entry has the common shape
+``{type, amount, epoch, timestamp, tx_hash}`` plus type-specific extras:
+
+| `type` | Extra fields | Source |
+|--------|--------------|--------|
+| `transfer_in` | `from` (sender address) | `ledger` rows whose `reason` starts with `transfer_in:` |
+| `transfer_out` | `to` (recipient address); `status` when pending | `ledger` (`transfer_out:` reason) and unconfirmed `pending_ledger` rows |
+| `reward` | -- | `epoch_rewards` mining payouts |
+| `ledger` | `reason` (raw ledger reason string) | `ledger` rows without a `transfer_*:` reason prefix |
+
+**Per-field reference:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | string | One of `transfer_in`, `transfer_out`, `reward`, `ledger` |
+| `amount` | float | Amount in RTC (human-readable). Always non-negative. |
+| `epoch` | integer\|null | Epoch number, when known (null for pending) |
+| `timestamp` | integer | Unix timestamp used for sorting (DESC) |
+| `tx_hash` | string\|null | Transaction hash, or null for reward / non-transfer rows |
+| `from` | string | (transfer_in only) Sender wallet address |
+| `to` | string | (transfer_out only) Recipient wallet address |
+| `status` | string | (pending rows only) Raw `pending_ledger.status` |
+| `reason` | string\|null | (ledger type only) Raw `reason` field from `ledger` |
+
+**Migration from the legacy flat-array contract (pre-#997):**
+
+The pre-#997 contract returned ``[{...}, ...]`` directly with aliases
+``tx_id`` / ``from_addr`` / ``to_addr`` / ``counterparty`` / ``direction``
+/ ``confirmations`` / ``memo`` / ``raw_status`` / ``status_reason``. These
+fields are removed in the unified contract. Consumers should:
+
+* Replace ``body[i]`` with ``body["transactions"][i]``
+* Replace ``tx_id`` with ``tx_hash``
+* Replace ``from_addr`` with ``from`` (and only present on ``transfer_in``)
+* Replace ``to_addr`` with ``to`` (and only present on ``transfer_out``)
+* Derive direction by checking whether ``type`` is ``transfer_in`` or
+  ``transfer_out``; the counterparty is the value of ``from`` / ``to``
+* Check ``status`` for in-flight transactions; ``confirmations`` is no
+  longer surfaced (the row exists in the immutable ledger iff confirmed)
+
+**Notes:**
+
+- Transactions ordered by `timestamp DESC` (newest first)
+- Confirmed rows come from `ledger`; pending rows from `pending_ledger`;
+  mining payouts from `epoch_rewards`
+- A `pending_ledger` row whose status is `confirmed` is deduped (already
+  represented in `ledger`)
+- Empty result: `{"ok": true, "miner_id": "...", "transactions": [], "total": 0}`
 
 **Request:**
+
 ```bash
 curl -fsS "https://rustchain.org/wallet/history?miner_id=eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC&limit=10" | jq .
 ```
 
 **Parameters:**
+
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `miner_id` | string | Yes* | Wallet identifier (canonical) |
 | `address` | string | Yes* | Backward-compatible alias for `miner_id` |
 | `limit` | integer | No | Max records (1-200, default: 50) |
+| `offset` | integer | No | Records to skip for pagination (0-9800, default: 0) |
 
 *Either `miner_id` or `address` is required.
-
-**Response:**
-```json
-[
-  {
-    "tx_id": "6df5d4d25b6deef8f0b2e0fa726cecf1",
-    "tx_hash": "6df5d4d25b6deef8f0b2e0fa726cecf1",
-    "from_addr": "aliceRTC",
-    "to_addr": "bobRTC",
-    "amount": 1.25,
-    "amount_i64": 1250000,
-    "amount_rtc": 1.25,
-    "timestamp": 1772848800,
-    "created_at": 1772848800,
-    "confirmed_at": null,
-    "confirms_at": 1772935200,
-    "status": "pending",
-    "raw_status": "pending",
-    "status_reason": null,
-    "confirmations": 0,
-    "direction": "sent",
-    "counterparty": "bobRTC",
-    "reason": "signed_transfer:payment",
-    "memo": "payment"
-  },
-  {
-    "tx_id": "abc123def456...",
-    "tx_hash": "abc123def456...",
-    "from_addr": "carolRTC",
-    "to_addr": "aliceRTC",
-    "amount": 5.0,
-    "amount_i64": 5000000,
-    "amount_rtc": 5.0,
-    "timestamp": 1772762400,
-    "created_at": 1772762400,
-    "confirmed_at": 1772848800,
-    "confirms_at": 1772848800,
-    "status": "confirmed",
-    "raw_status": "confirmed",
-    "status_reason": null,
-    "confirmations": 1,
-    "direction": "received",
-    "counterparty": "carolRTC",
-    "reason": null,
-    "memo": null
-  }
-]
-```
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `tx_id` | string | Transaction hash, or `pending_{id}` for pending |
-| `tx_hash` | string | Same as `tx_id` (alias) |
-| `from_addr` | string | Sender wallet address |
-| `to_addr` | string | Recipient wallet address |
-| `amount` | float | Amount in RTC (human-readable) |
-| `amount_i64` | integer | Amount in micro-RTC (6 decimals) |
-| `amount_rtc` | float | Same as `amount` (alias) |
-| `timestamp` | integer | Transfer creation Unix timestamp |
-| `created_at` | integer | Same as `timestamp` (alias) |
-| `confirmed_at` | integer\|null | Confirmation timestamp (null if pending) |
-| `confirms_at` | integer\|null | Scheduled confirmation time |
-| `status` | string | `pending`, `confirmed`, or `failed` |
-| `raw_status` | string | Raw DB status (`pending`, `confirmed`, `voided`) |
-| `status_reason` | string\|null | Reason for failure/void |
-| `confirmations` | integer | 1 if confirmed, 0 otherwise |
-| `direction` | string | `sent` or `received` (relative to queried wallet) |
-| `counterparty` | string | Other wallet in the transfer |
-| `reason` | string\|null | Raw reason field from ledger |
-| `memo` | string\|null | Extracted memo from `signed_transfer:` prefix |
-
-**Notes:**
-- Transactions ordered by `created_at DESC, id DESC` (newest first)
-- `memo` extracted from `reason` when it starts with `signed_transfer:`
-- Pending transfers use `pending_{id}` as `tx_id` until confirmed
-- Empty array `[]` returned for wallets with no history
-- Status normalized: `pending`→`pending`, `confirmed`→`confirmed`, others→`failed`
 
 **Pagination:**
 - Default limit: 50 records
 - Clamped to range 1-200
-- Invalid limit (non-integer) returns 400 error
+- Invalid limit or offset (non-integer) returns 400 error
+
+**Errors:**
+
+| HTTP | `error` | Cause |
+|------|---------|-------|
+| 400 | `miner_id or address required` | Neither parameter supplied |
+| 400 | `miner_id and address must match when both are provided` | Alias conflict |
+| 400 | `limit must be an integer` | `limit` not parseable as int |
+| 400 | `offset must be an integer` | `offset` not parseable as int |
 ```
 
 | Field | Type | Description |

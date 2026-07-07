@@ -70,7 +70,7 @@ function render(list) {
       <div class="name">${escapeHtml(p.name || String(p.machine_id || '').substring(0,12)+'...')}</div>
       <div class="arch">${escapeHtml(p.architecture || 'Unknown')} &middot; ${escapeHtml(p.manufacture_year || '?')}</div>
       <div class="meta">
-        <span class="tier-badge tier-${safeTier(p.tier)}">${escapeHtml(p.tier || 'modern')}</span>
+        <span class="tier-badge tier-${escapeHtml(safeTier(p.tier))}">${escapeHtml(p.tier || 'modern')}</span>
         &middot; ${escapeHtml(p.total_epochs || 0)} epochs &middot; ${escapeHtml(p.total_rtc || 0)} RTC earned
       </div>
     </div>

@@ -22,10 +22,18 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, str(default))
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
 DEFAULT_NODE_URL = os.getenv("RUSTCHAIN_NODE_URL", "https://rustchain.org").rstrip("/")
 DEFAULT_DB_PATH = Path(os.getenv("SYNC_COMMITTEE_DB", "sync_committee_history.db"))
-DEFAULT_COMMITTEE_SIZE = int(os.getenv("SYNC_COMMITTEE_SIZE", "8"))
-DEFAULT_ROTATION_EPOCHS = int(os.getenv("SYNC_COMMITTEE_ROTATION_EPOCHS", "1"))
+DEFAULT_COMMITTEE_SIZE = _env_int("SYNC_COMMITTEE_SIZE", 8)
+DEFAULT_ROTATION_EPOCHS = _env_int("SYNC_COMMITTEE_ROTATION_EPOCHS", 1)
 
 
 @dataclass(frozen=True)

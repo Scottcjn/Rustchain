@@ -442,6 +442,13 @@
     </footer>
 
     <script>
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
+
     const NODE = 'https://50.28.86.131';
     let currentStatus = 'all';
     let allJobs = [];
@@ -712,7 +719,7 @@
                         </div>
                     </div>
                     <div style="text-align:right;">
-                        <span class="badge badge-${safeStatus(j.status)}">${esc(safeStatus(j.status))}</span>
+                        <span class="badge badge-${escapeHtml(safeStatus(j.status))}">${esc(safeStatus(j.status))}</span>
                         <div style="color:var(--gold); font-family:monospace; font-size:14px; font-weight:600;">
                             ${esc(safeNumber(j.reward_rtc).toFixed(1))} RTC
                         </div>
@@ -821,13 +828,13 @@
                     <div>
                         <div style="color:var(--text3); font-size:12px;">Avg Reward</div>
                         <div style="font-size:20px; font-weight:700; color:var(--gold); font-family:monospace;">
-                            ${avgReward.toFixed(1)} RTC
+                            ${escapeHtml(avgReward.toFixed(1))} RTC
                         </div>
                     </div>
                     <div>
                         <div style="color:var(--text3); font-size:12px;">Completion Rate</div>
                         <div style="font-size:20px; font-weight:700; color:var(--green); font-family:monospace;">
-                            ${(completedJobs / Math.max(totalJobs, 1) * 100).toFixed(0)}%
+                            ${escapeHtml((completedJobs / Math.max(totalJobs, 1) * 100).toFixed(0))}%
                         </div>
                     </div>
                     <div>
@@ -839,7 +846,7 @@
                     <div>
                         <div style="color:var(--text3); font-size:12px;">Est. USD Volume</div>
                         <div style="font-size:20px; font-weight:700; color:var(--cyan); font-family:monospace;">
-                            $${(totalVolume * 0.10).toFixed(0)}
+                            $${escapeHtml((totalVolume * 0.10).toFixed(0))}
                         </div>
                     </div>
                 </div>

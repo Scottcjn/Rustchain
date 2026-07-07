@@ -18,6 +18,7 @@ except ImportError:
     _HAS_REPLAY = False
 
 CORPUS_DIR = Path(__file__).parent / "attestation_corpus"
+SOLANA_FORMAT_WALLET = "8niYNmFMPQSoySjti2HdxfDeT9GVf7oTdBtpf8KC5xMH"
 
 
 def _init_attestation_db(db_path: Path) -> None:
@@ -216,6 +217,7 @@ def test_attest_submit_rejects_malformed_payload_shapes(client, file_name, expec
         ({"miner": "   ", "device": {"cores": 8}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "MISSING_MINER"),
         ({"miner": "fuzz\u200bminer", "device": {"cores": 8}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "INVALID_MINER"),
         ({"miner": "'; DROP TABLE balances; --", "device": {"cores": 8}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "INVALID_MINER"),
+        ({"miner": SOLANA_FORMAT_WALLET, "device": {"cores": 8}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "INVALID_MINER_WALLET_FORMAT"),
         ({"miner": "f" * 129, "device": {"cores": 8}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "INVALID_MINER"),
         ({"miner": "fuzz-miner", "device": {"cores": "999999999999999999999999"}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "INVALID_DEVICE_CORES"),
         ({"miner": "fuzz-miner", "device": {"cores": []}, "signals": {"macs": ["AA:BB:CC:DD:EE:10"]}, "report": {}}, "INVALID_DEVICE_CORES"),
@@ -252,6 +254,23 @@ def test_attest_submit_rejects_invalid_miner_id_even_when_miner_is_valid(client)
 
     assert response.status_code == 400
     assert response.get_json()["code"] == "INVALID_MINER"
+
+
+def test_attest_submit_rejects_solana_wallet_before_hardware_binding(client):
+    payload = _base_payload()
+    payload["miner"] = SOLANA_FORMAT_WALLET
+
+    response = client.post("/attest/submit", json=payload)
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "INVALID_MINER_WALLET_FORMAT"
+
+
+def test_attest_challenge_rejects_solana_wallet_binding_identity(client):
+    response = client.post("/attest/challenge", json={"miner": SOLANA_FORMAT_WALLET})
+
+    assert response.status_code == 400
+    assert response.get_json()["code"] == "INVALID_MINER_WALLET_FORMAT"
 
 
 def test_validate_fingerprint_data_rejects_non_dict_input():

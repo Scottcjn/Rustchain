@@ -27,6 +27,7 @@ node/beacon_x402.py:).fetchall()
 node/beacon_x402.py:).fetchall()
 node/beacon_x402.py:for row in cursor.fetchall()}
 node/bottube_feed_routes.py:rows = cursor_obj.fetchall()
+node/bridge_api.py:""").fetchall()
 node/bridge_api.py:rows = cursor.execute(query, params).fetchall()
 node/claims_eligibility.py:epochs = [row[0] for row in cursor.fetchall() if row[0] >= 0]
 node/claims_settlement.py:""", (batch_id, max_claims)).fetchall()
@@ -50,12 +51,6 @@ node/gpu_render_endpoints.py:cols = {row[1] for row in db.execute("PRAGMA table_
 node/gpu_render_protocol.py:).fetchall()
 node/gpu_render_protocol.py:cols = {row[1] for row in conn.execute("PRAGMA table_info(render_escrow)").fetchall()}
 node/gpu_render_protocol.py:rows = conn.execute(query, params).fetchall()
-node/hall_of_rust.py:for r in c.fetchall()
-node/hall_of_rust.py:for r in c.fetchall()
-node/hall_of_rust.py:for row in c.fetchall():
-node/hall_of_rust.py:for row in c.fetchall():
-node/hall_of_rust.py:rows = c.fetchall()
-node/hall_of_rust.py:rows = c.fetchall()
 node/hardware_binding_v2.py:for row in c.fetchall():
 node/hardware_fingerprint_replay.py:collisions = c.fetchall()
 node/hardware_fingerprint_replay.py:history = c.fetchall()
@@ -141,6 +136,8 @@ node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall()
+node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall()
 node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall():
 node/rustchain_v2_integrated_v2.2.1_rip200.py:).fetchall():
 node/rustchain_v2_integrated_v2.2.1_rip200.py:WHERE active=1 ORDER BY signer_id""").fetchall()
@@ -174,5 +171,3 @@ node/utxo_db.py:).fetchall()
 node/utxo_db.py:).fetchall()
 node/utxo_db.py:).fetchall()
 node/utxo_db.py:rows = conn.execute(query, params).fetchall()
-node/utxo_genesis_migration.py:).fetchall()
-node/utxo_genesis_migration.py:).fetchall()

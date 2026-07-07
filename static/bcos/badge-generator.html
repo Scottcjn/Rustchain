@@ -811,6 +811,13 @@
 </footer>
 
 <script>
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value == null ? '' : String(value);
+  return div.innerHTML;
+}
+
+
 /* ─── State ────────────────────────────────────────────────────── */
 const NODE = window.location.origin && (window.location.origin.includes('127.0.0.1') || window.location.origin.includes('localhost'))
     ? window.location.origin
@@ -872,7 +879,7 @@ function renderDirectory() {
         <div class="dir-card" data-cert-id="${escAttr(c.cert_id)}" title="${escAttr(c.cert_id)}">
             <div class="dir-card-repo">${escHtml(c.repo)}</div>
             <div class="dir-card-meta">
-                <span class="tier-badge ${tierClass(c.tier)}">${escHtml(normalizeTier(c.tier))}</span>
+                <span class="tier-badge ${escapeHtml(tierClass(c.tier))}">${escHtml(normalizeTier(c.tier))}</span>
                 <span>${escHtml(formatTrustScore(c.trust_score))}/100</span>
             </div>
         </div>
@@ -944,7 +951,7 @@ function renderAC(listId, items, renderFn, onSelect) {
     const list = document.getElementById(listId);
     if (!items.length) { closeAC(listId); return; }
     list.innerHTML = items.map((item, i) => `
-        <div class="autocomplete-item" data-i="${i}">${renderFn(item)}</div>
+        <div class="autocomplete-item" data-i="${escapeHtml(i)}">${escapeHtml(renderFn(item))}</div>
     `).join('');
     list.querySelectorAll('.autocomplete-item').forEach((el, i) => {
         el.addEventListener('mousedown', e => { e.preventDefault(); onSelect(items[i]); });
@@ -1095,7 +1102,7 @@ function renderOutput(cert, certId) {
         <div class="cert-field"><span class="cert-key">tier</span><span class="cert-val amber">${escHtml(tier)}</span></div>
         <div class="cert-field"><span class="cert-key">trust_score</span><span class="cert-val">${escHtml(scoreLabel)}/100</span></div>
         <div class="cert-field"><span class="cert-key">reviewer</span><span class="cert-val">${escHtml(rev)}</span></div>
-        <div class="cert-field"><span class="cert-key">anchored</span><span class="cert-val">${ts}</span></div>
+        <div class="cert-field"><span class="cert-key">anchored</span><span class="cert-val">${escapeHtml(ts)}</span></div>
         <div class="cert-field"><span class="cert-key">verify_url</span><span class="cert-val"><a href="${escAttr(verifyUrl)}" target="_blank" style="color:var(--green);text-decoration:none;">${escHtml(verifyUrl)}</a></span></div>
     `;
 

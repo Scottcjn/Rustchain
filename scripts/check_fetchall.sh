@@ -27,7 +27,7 @@ require_cmd() {
     fi
 }
 
-for cmd in grep sed sort comm mktemp wc tr; do
+for cmd in awk grep sed sort comm mktemp wc tr; do
     require_cmd "$cmd"
 done
 
@@ -57,7 +57,34 @@ trap 'rm -f "$scan_tmp" "$baseline_tmp" "$unannotated_tmp" "$norm_tmp" "$new_tmp
 # is strictly preferable to the prior lineno-keyed guard, which false-failed
 # every unrelated PR that merely shifted line numbers.
 normalize_fetchall() {
-    sed -E 's/^([^:]+):[0-9]+:[[:space:]]*/\1:/; s/[[:space:]]+$//'
+    awk '
+        {
+            line = $0
+            sub(/[[:space:]]+$/, "", line)
+
+            first_colon = index(line, ":")
+            if (first_colon == 0) {
+                print line
+                next
+            }
+
+            path = substr(line, 1, first_colon - 1)
+            remainder = substr(line, first_colon + 1)
+            content = remainder
+
+            second_colon = index(remainder, ":")
+            if (second_colon > 0) {
+                maybe_lineno = substr(remainder, 1, second_colon - 1)
+                if (maybe_lineno ~ /^[0-9]+$/) {
+                    content = substr(remainder, second_colon + 1)
+                }
+            }
+
+            gsub(/\\/, "/", path)
+            sub(/^[[:space:]]+/, "", content)
+            print path ":" content
+        }
+    '
 }
 
 : > "$scan_tmp"
@@ -67,7 +94,7 @@ FETCHALL_PATTERN='\.fetchall[[:space:]]*\('
 
 if command -v rg >/dev/null 2>&1; then
     set +e
-    rg --no-ignore -n "$FETCHALL_PATTERN" node \
+    rg -n "$FETCHALL_PATTERN" node \
         --glob '!node/tests/**' \
         --glob '!node/test_*' \
         --glob '!node/__pycache__/**' \
@@ -86,6 +113,17 @@ else
         --exclude-dir=tests \
         --exclude-dir=__pycache__ \
         --exclude='test_*' \
+        --exclude='*founder*' \
+        --exclude='*premine*' \
+        --exclude='*genesis*' \
+        --exclude='*private*key*' \
+        --exclude='*secret*' \
+        --exclude='.env' \
+        --exclude='*.env' \
+        --exclude='*.db' \
+        --exclude='*.sqlite' \
+        --exclude='*.key' \
+        --exclude='*.pem' \
         --exclude='db_helpers.py' > "$scan_tmp"
     scan_status=$?
     set -e

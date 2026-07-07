@@ -41,6 +41,7 @@ __author__ = "kuanglaodi2-sudo"
 
 from .client import RustChainClient
 from .wallet import RustChainWallet
+from .governance import GovernanceManager
 from .exceptions import (
     RustChainError,
     AuthenticationError,
@@ -59,6 +60,8 @@ __all__ = [
     "RustChainClient",
     # Wallet
     "RustChainWallet",
+    # Governance
+    "GovernanceManager",
     # Exceptions
     "RustChainError",
     "AuthenticationError",

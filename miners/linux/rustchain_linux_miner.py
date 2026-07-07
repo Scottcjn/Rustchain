@@ -395,6 +395,9 @@ class LocalMiner:
                 pass
 
         # Try `ip -o link`
+        # Virtual interface prefixes that should be filtered out
+        _VIRT_PREFIXES = ("docker", "br-", "veth", "tailscale", "ts-", "virbr",
+                          "vnet", "tun", "tap", "wg", "bond", "dummy", "lo")
         try:
             output = subprocess.run(
                 ["ip", "-o", "link"],
@@ -404,6 +407,11 @@ class LocalMiner:
                 timeout=5,
             ).stdout.splitlines()
             for line in output:
+                m = re.search(r"^\d+:\s+(\S+?):", line)
+                if m:
+                    iface = m.group(1)
+                    if any(iface.startswith(p) for p in _VIRT_PREFIXES):
+                        continue
                 m = re.search(r"link/(?:ether|loopback)\s+([0-9a-f:]{17})", line, re.IGNORECASE)
                 if m:
                     mac = m.group(1).lower()
@@ -414,6 +422,9 @@ class LocalMiner:
 
         # Fallback to ifconfig
         if not macs:
+            _VIRT_PREFIXES = ("docker", "br-", "veth", "tailscale", "ts-",
+                              "virbr", "vnet", "tun", "tap", "wg", "bond",
+                              "dummy", "lo")
             try:
                 output = subprocess.run(
                     ["ifconfig", "-a"],
@@ -422,12 +433,20 @@ class LocalMiner:
                     text=True,
                     timeout=5,
                 ).stdout.splitlines()
+                current_iface = ""
                 for line in output:
-                    m = re.search(r"(?:ether|HWaddr)\s+([0-9a-f:]{17})", line, re.IGNORECASE)
+                    m = re.match(r"^(\S+?):", line)
                     if m:
-                        mac = m.group(1).lower()
-                        if mac != "00:00:00:00:00:00" and mac not in macs:
-                            macs.append(mac)
+                        current_iface = m.group(1).lower()
+                        if any(current_iface.startswith(p) for p in _VIRT_PREFIXES):
+                            current_iface = ""
+                        continue
+                    if current_iface:
+                        m = re.search(r"(?:ether|HWaddr)\s+([0-9a-f:]{17})", line, re.IGNORECASE)
+                        if m:
+                            mac = m.group(1).lower()
+                            if mac != "00:00:00:00:00:00" and mac not in macs:
+                                macs.append(mac)
             except Exception:
                 pass
 

@@ -9,7 +9,7 @@ A step-by-step guide for first-time users. Every command is copy-paste ready.
 RustChain is a blockchain that rewards you for keeping old computers alive. Instead of
 rewarding the fastest machine (like Bitcoin), RustChain rewards the *oldest* machine.
 A PowerBook G4 from 2003 earns 2.5x more than a brand-new gaming PC. The token is called
-**RTC** (RustChain Token), and it has real value -- 1 RTC is roughly $0.15 USD. Over 260
+**RTC** (RustChain Token), and it has real value -- 1 RTC trades at roughly $0.15 USD (subject to market conditions). Over 260
 contributors have earned 25,000+ RTC through mining and code bounties.
 
 ---
@@ -258,8 +258,8 @@ PowerPC G5 (2.0x):       0.24 RTC/epoch
 Modern x86 PC (0.8x):    0.12 RTC/epoch
 ```
 
-Over 24 hours (144 epochs), a G4 Mac earns roughly **43 RTC** ($4.30) while a modern
-PC earns roughly **17 RTC** ($1.70). More miners on the network means smaller individual
+Over 24 hours (144 epochs), a G4 Mac earns roughly **43 RTC** (~$4.30 at $0.15/RTC) while a modern
+PC earns roughly **17 RTC** (~$1.70 at $0.15/RTC). Actual USD value fluctuates with the RTC market price. More miners on the network means smaller individual
 slices, but also means a healthier network.
 
 ---
@@ -280,7 +280,7 @@ Every issue tagged with a bounty has an RTC reward listed. Rewards range from 1 
 | Micro | 1-10 RTC | Fix a typo, improve docs, add a test |
 | Standard | 20-50 RTC | New feature, refactor, integration |
 | Major | 75-100 RTC | Security fix, protocol improvement |
-| Critical | 100-200 RTC | Vulnerability discovery, consensus work |
+| Critical | 100-150 RTC | Vulnerability discovery, consensus work |
 
 ### How to Claim a Bounty
 
@@ -445,7 +445,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 | Term | Meaning |
 |------|---------|
-| **RTC** | RustChain Token -- the cryptocurrency you earn by mining. 1 RTC is roughly $0.15 USD. |
+| **RTC** | RustChain Token -- the cryptocurrency you earn by mining. 1 RTC trades at roughly $0.15 USD (market price may vary). |
 | **Epoch** | A 10-minute window. At the end of each epoch, 1.5 RTC is distributed to all active miners. |
 | **Attestation** | The process where your miner proves its hardware is real by running 6 fingerprint checks. |
 | **Antiquity Multiplier** | A bonus based on how old your hardware is. Older CPUs get higher multipliers. |

@@ -24,9 +24,10 @@ Each block contains:
 
 ## Token Emission
 
-- 5 RUST / block → validator
-- NFT badge may alter payout (e.g., “Paw Paw” adds retro bonus)
-- Halving every 2 years or “epoch milestone”
+- 1.5 RTC per epoch to validators (fixed, no halving)
+- Epoch = 144 blocks (~24 hours); pool split by antiquity weight
+- NFT badge may alter an individual payout (e.g., "Paw Paw" adds a retro bonus)
+- Fixed emission until the 8,388,608 RTC (2^23) cap, per RIP-0004
 
 ## External Integration
 

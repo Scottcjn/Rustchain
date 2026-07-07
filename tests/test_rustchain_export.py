@@ -156,6 +156,47 @@ class RustChainExportTests(unittest.TestCase):
         self.assertEqual(exporter.balance_amount_rtc({"balance_urtc": 999_999}), 0.999999)
         self.assertEqual(exporter.balance_amount_rtc({"balance_rtc": 0.5}), 0.5)
 
+    def test_csv_sanitize_neutralizes_formula_injection(self):
+        dangerous = [
+            "=SUM(A1:A10)",
+            "+1+2",
+            "-1+2",
+            "@SUM(A1)",
+            "\t=cmd",
+            "\r=cmd",
+            "\n=cmd",
+            "normal",
+            "",
+            "123",
+        ]
+        sanitized = [exporter._sanitize_csv_cell(v) for v in dangerous]
+        self.assertEqual(sanitized[0], "'=SUM(A1:A10)")
+        self.assertEqual(sanitized[1], "'+1+2")
+        self.assertEqual(sanitized[2], "'-1+2")
+        self.assertEqual(sanitized[3], "'@SUM(A1)")
+        self.assertEqual(sanitized[4], "'\t=cmd")
+        self.assertEqual(sanitized[5], "'\r=cmd")
+        self.assertEqual(sanitized[6], "'\n=cmd")
+        self.assertEqual(sanitized[7], "normal")
+        self.assertEqual(sanitized[8], "")
+        self.assertEqual(sanitized[9], "123")
+
+    def test_csv_write_sanitizes_malicious_miner_id(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "malicious.csv"
+            rows = [
+                {"miner_id": "=cmd|'/c calc'!A0", "device_arch": "x86"},
+                {"miner_id": "safeRTC", "device_arch": "G4"},
+            ]
+            exporter.write_csv(path, rows)
+            with path.open(newline="", encoding="utf-8") as handle:
+                reader = csv.DictReader(handle)
+                result = list(reader)
+            # CSV reader preserves the leading single-quote sanitizer prefix
+            # when the value itself contains a quote character
+            self.assertEqual(result[0]["miner_id"], "'=cmd|'/c calc'!A0")
+            self.assertEqual(result[1]["miner_id"], "safeRTC")
+
 
 if __name__ == "__main__":
     unittest.main()

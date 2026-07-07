@@ -117,10 +117,11 @@ def setup_test_db(tmp_path):
             voided_by TEXT,
             voided_reason TEXT,
             failure_reason TEXT,
-            memo TEXT
+            memo TEXT,
+            source_debited INTEGER NOT NULL DEFAULT 0
         )
     """)
-    
+
     # Create lock_ledger table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS lock_ledger (
@@ -438,11 +439,17 @@ class TestBridgeTransferCreation:
         
         conn.close()
     
-    def test_admin_bypasses_balance_check(self, setup_test_db):
-        """Test admin-initiated transfer bypasses balance check."""
+    def test_admin_deposit_still_requires_funds(self, setup_test_db):
+        """Under debit-on-lock, even admin-initiated deposits must hard-debit a
+        funded source — you cannot lock RTC that isn't on the ledger.
+
+        (Behavior change: the legacy reservation model let admin bypass the
+        balance check entirely. Debit-on-lock makes that unsafe — bridging out
+        funds that don't exist would be minting.)
+        """
         bridge_api = setup_test_db["bridge_api"]
         conn = sqlite3.connect(setup_test_db["db_path"])
-        
+
         req = bridge_api.BridgeTransferRequest(
             direction="deposit",
             source_chain="rustchain",
@@ -451,12 +458,12 @@ class TestBridgeTransferCreation:
             dest_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
             amount_rtc=1000.0
         )
-        
+
         success, result = bridge_api.create_bridge_transfer(conn, req, admin_initiated=True)
-        
-        assert success is True
-        assert result["ok"] is True
-        
+
+        assert success is False
+        assert "Insufficient available balance" in result.get("error", "")
+
         conn.close()
 
     def test_database_errors_do_not_leak_details(self, setup_test_db):
@@ -1094,7 +1101,235 @@ class TestIntegration:
         locks = lock_ledger.get_locks_by_miner(conn, funded_miner)
         assert len(locks) == 1
         assert locks[0].status == "released"
-        
+
+        conn.close()
+
+    def test_deposit_create_hard_debits_source(self, setup_test_db, funded_miner):
+        """Debit-on-lock: an outbound deposit debits the source AT CREATE, and
+        completion makes no further balance change (it's already gone)."""
+        bridge_api = setup_test_db["bridge_api"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+
+        def source_balance():
+            return conn.execute(
+                "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+                (funded_miner,),
+            ).fetchone()[0]
+
+        start_balance = source_balance()  # 100 RTC
+        amount_i64 = bridge_api.parse_bridge_amount_i64(10.0)
+
+        req = bridge_api.BridgeTransferRequest(
+            direction="deposit",
+            source_chain="rustchain",
+            dest_chain="solana",
+            source_address=funded_miner,
+            dest_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            amount_rtc=10.0,
+        )
+        success, result = bridge_api.create_bridge_transfer(conn, req)
+        assert success is True
+        tx_hash = result["tx_hash"]
+
+        # Hard-debited immediately at create.
+        assert source_balance() == start_balance - amount_i64
+
+        success, result = bridge_api.update_external_confirmation(
+            conn, tx_hash, external_tx_hash="ext_tx_debit", confirmations=12
+        )
+        assert success is True
+        assert result["status"] == "completed"
+
+        # Completion is a no-op for balance — funds already left at create.
+        assert source_balance() == start_balance - amount_i64
+
+        conn.close()
+
+    def test_deposit_lock_self_enforces_against_raw_balance_gate(self, setup_test_db, funded_miner):
+        """The whole point of debit-on-lock: any gate that reads raw amount_i64
+        (withdrawal, governance, transfers) automatically sees the locked funds
+        gone — no per-gate reservation check needed. We simulate such a gate by
+        reading the raw balance the same way they do."""
+        bridge_api = setup_test_db["bridge_api"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+
+        def raw_spendable():
+            # Exactly what withdrawal/governance read: balances.amount_i64.
+            return conn.execute(
+                "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+                (funded_miner,),
+            ).fetchone()[0]
+
+        assert raw_spendable() == 100 * 1000000
+
+        req = bridge_api.BridgeTransferRequest(
+            direction="deposit", source_chain="rustchain", dest_chain="solana",
+            source_address=funded_miner,
+            dest_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            amount_rtc=80.0,
+        )
+        success, _ = bridge_api.create_bridge_transfer(conn, req)
+        assert success is True
+
+        # A withdrawal/governance gate reading raw balance now sees only 20 RTC
+        # — it cannot drain the 80 RTC locked for the pending bridge deposit.
+        assert raw_spendable() == 20 * 1000000
+        conn.close()
+
+    def test_deposit_create_rejects_insufficient_source(self, setup_test_db):
+        """Cannot hard-lock funds that don't exist: create fails closed and never
+        drives the source negative."""
+        bridge_api = setup_test_db["bridge_api"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+
+        source = "RTC0123456789abcdef0123456789abcdef0123dead"
+        conn.execute(
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            (source, 5 * 1000000),  # only 5 RTC
+        )
+        conn.commit()
+
+        req = bridge_api.BridgeTransferRequest(
+            direction="deposit", source_chain="rustchain", dest_chain="solana",
+            source_address=source,
+            dest_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            amount_rtc=10.0,  # exceeds 5 RTC
+        )
+        success, result = bridge_api.create_bridge_transfer(conn, req, admin_initiated=True)
+        assert success is False
+        assert "Insufficient available balance" in result.get("error", "")
+        bal = conn.execute(
+            "SELECT amount_i64 FROM balances WHERE miner_id = ?", (source,)
+        ).fetchone()[0]
+        assert bal == 5 * 1000000  # untouched
+        conn.close()
+
+    def test_deposit_void_refunds_source(self, setup_test_db, funded_miner):
+        """Voiding a hard-debited deposit must refund the source exactly once."""
+        bridge_api = setup_test_db["bridge_api"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+
+        def source_balance():
+            return conn.execute(
+                "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+                (funded_miner,),
+            ).fetchone()[0]
+
+        start = source_balance()
+        amount_i64 = bridge_api.parse_bridge_amount_i64(30.0)
+
+        req = bridge_api.BridgeTransferRequest(
+            direction="deposit", source_chain="rustchain", dest_chain="solana",
+            source_address=funded_miner,
+            dest_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            amount_rtc=30.0,
+        )
+        success, result = bridge_api.create_bridge_transfer(conn, req)
+        assert success is True
+        tx_hash = result["tx_hash"]
+        assert source_balance() == start - amount_i64
+
+        ok, _ = bridge_api.void_bridge_transfer(conn, tx_hash, "test", "tester")
+        assert ok is True
+        assert source_balance() == start  # fully refunded
+
+        # Cannot void again (status guard) — no double refund.
+        ok, _ = bridge_api.void_bridge_transfer(conn, tx_hash, "test", "tester")
+        assert ok is False
+        assert source_balance() == start
+
+        conn.close()
+
+    def test_migration_debits_legacy_pending_deposit(self, setup_test_db, funded_miner):
+        """A deposit left from the legacy reservation model (source_debited=0)
+        gets hard-debited exactly once by the migration; re-running is a no-op."""
+        bridge_api = setup_test_db["bridge_api"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+        cur = conn.cursor()
+
+        amount_i64 = 40 * 1000000
+        # Simulate a legacy pending deposit that was never debited.
+        cur.execute("""
+            INSERT INTO bridge_transfers (
+                direction, source_chain, dest_chain, source_address, dest_address,
+                amount_i64, amount_rtc, bridge_type, status, lock_epoch,
+                created_at, updated_at, tx_hash, source_debited
+            ) VALUES ('deposit','rustchain','solana',?,?,?,?, 'bottube','locked',0,
+                      0,0,?,0)
+        """, (funded_miner, "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXq", amount_i64, 40.0,
+              "legacy_tx_hash_1"))
+        conn.commit()
+
+        start = conn.execute("SELECT amount_i64 FROM balances WHERE miner_id=?",
+                             (funded_miner,)).fetchone()[0]
+
+        bridge_api.migrate_deposits_to_hard_locks(cur)
+        conn.commit()
+        after = conn.execute("SELECT amount_i64 FROM balances WHERE miner_id=?",
+                             (funded_miner,)).fetchone()[0]
+        assert after == start - amount_i64
+        assert cur.execute(
+            "SELECT source_debited FROM bridge_transfers WHERE tx_hash='legacy_tx_hash_1'"
+        ).fetchone()[0] == 1
+
+        # Idempotent: a second run debits nothing further.
+        bridge_api.migrate_deposits_to_hard_locks(cur)
+        conn.commit()
+        assert conn.execute("SELECT amount_i64 FROM balances WHERE miner_id=?",
+                            (funded_miner,)).fetchone()[0] == after
+
+        conn.close()
+
+    def _insert_legacy_undebited_deposit(self, conn, source, amount_i64, tx_hash):
+        """A deposit row the migration could NOT debit — source_debited stays 0."""
+        conn.execute("""
+            INSERT INTO bridge_transfers (
+                direction, source_chain, dest_chain, source_address, dest_address,
+                amount_i64, amount_rtc, bridge_type, status, lock_epoch,
+                created_at, updated_at, expires_at, tx_hash, source_debited
+            ) VALUES ('deposit','rustchain','solana',?,?,?,?, 'bottube','confirming',0,
+                      0,0,?,?,0)
+        """, (source, "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXq", amount_i64, amount_i64 / 1000000,
+              int(time.time()) + 3600, tx_hash))
+        conn.commit()
+
+    def test_completion_safety_net_debits_undebited_deposit(self, setup_test_db, funded_miner):
+        """A deposit that reaches completion still source_debited=0 (migration
+        couldn't settle it) must be debited at completion, never completed free."""
+        bridge_api = setup_test_db["bridge_api"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+        amount_i64 = 25 * 1000000
+        self._insert_legacy_undebited_deposit(conn, funded_miner, amount_i64, "legacy_complete_1")
+        start = conn.execute("SELECT amount_i64 FROM balances WHERE miner_id=?",
+                             (funded_miner,)).fetchone()[0]
+
+        ok, result = bridge_api.update_external_confirmation(
+            conn, "legacy_complete_1", external_tx_hash="ext1", confirmations=12
+        )
+        assert ok is True and result["status"] == "completed"
+        # Debited at completion by the safety net.
+        assert conn.execute("SELECT amount_i64 FROM balances WHERE miner_id=?",
+                            (funded_miner,)).fetchone()[0] == start - amount_i64
+        conn.close()
+
+    def test_completion_safety_net_fails_closed_when_source_drained(self, setup_test_db):
+        """If an undebited deposit's source can't cover settlement at completion,
+        fail closed — do NOT complete, do NOT mint a negative balance."""
+        bridge_api = setup_test_db["bridge_api"]
+        conn = sqlite3.connect(setup_test_db["db_path"])
+        source = "RTC0123456789abcdef0123456789abcdef0123dead"
+        conn.execute("INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+                     (source, 5 * 1000000))
+        self._insert_legacy_undebited_deposit(conn, source, 30 * 1000000, "legacy_complete_2")
+
+        ok, result = bridge_api.update_external_confirmation(
+            conn, "legacy_complete_2", external_tx_hash="ext2", confirmations=12
+        )
+        assert ok is False
+        assert conn.execute("SELECT amount_i64 FROM balances WHERE miner_id=?",
+                            (source,)).fetchone()[0] == 5 * 1000000  # untouched
+        transfer = bridge_api.get_bridge_transfer_by_hash(conn, "legacy_complete_2")
+        assert transfer["status"] != "completed"
         conn.close()
 
     def test_external_confirmation_rejects_lowered_required_threshold(self, setup_test_db, funded_miner):

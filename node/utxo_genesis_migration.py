@@ -233,6 +233,24 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
                     ),
                 )
 
+                # Provenance: record that this box mirrors `miner_id`'s account
+                # balance, so /pending/confirm can reconcile (and not leave it
+                # spendable) without relying on a fragile registers_json match
+                # or burning independently-earned UTXOs (bounty #2819).
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS account_mirror_boxes (
+                           box_id TEXT PRIMARY KEY,
+                           account_wallet TEXT NOT NULL,
+                           value_nrtc INTEGER NOT NULL,
+                           created_epoch INTEGER NOT NULL
+                       )"""
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO account_mirror_boxes "
+                    "(box_id, account_wallet, value_nrtc, created_epoch) VALUES (?,?,?,?)",
+                    (box_id, miner_id, amount_nrtc, GENESIS_HEIGHT),
+                )
+
                 # Record transaction
                 conn.execute(
                     """INSERT INTO utxo_transactions

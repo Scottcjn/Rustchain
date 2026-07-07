@@ -20,9 +20,11 @@
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
 
+> ⭐ **Help us reach 512 stars** — the 2⁹ binary milestone (our supply is 2²³). If Proof-of-Antiquity is your kind of weird, [a star](https://github.com/Scottcjn/Rustchain/stargazers) helps more old machines get found. [Why 512?](https://github.com/Scottcjn/Rustchain/issues/7540)
+
 [Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [Hardware Requirements](docs/HARDWARE_REQUIREMENTS.md) · [Manifesto](https://rustchain.org/manifesto.html) · [Whitepaper](docs/WHITEPAPER.md) · [Hire Us](CONSULTING.md)
 
-Languages: [English](README.md) · [简体中文](docs/zh-CN/README.md) · [繁體中文](README_ZH-TW.md) · [Español](README_ES.md) · [Deutsch](README_DE.md) · [日本語](README_JA.md) · [Русский](README_RU.md) · [Tiếng Việt](README.vi.md) · [Português (BR)](README.pt-BR.md) · [हिन्दी](README_HI.md) · [Italiano](docs/it-IT/README.md) · [한국어](docs/ko-KR/README.md) · [中文 API 快速参考](docs/zh-CN/API.md)
+Languages: [English](README.md) · [简体中文](docs/zh-CN/README.md) · [简体中文 (根目录)](README_ZH.md) · [繁體中文](README_ZH-TW.md) · [Español](README_ES.md) · [Deutsch](README_DE.md) · [日本語](README_JA.md) · [Русский](README_RU.md) · [Tiếng Việt](README.vi.md) · [Português (BR)](README.pt-BR.md) · [हिन्दी](README_HI.md) · [Italiano](docs/it-IT/README.md) · [한국어](docs/ko-KR/README.md) · [中文 API 快速参考](docs/zh-CN/API.md)
 
 </div>
 
@@ -404,18 +406,16 @@ Compare to Bitcoin's 21M (≈2.5x more), Ethereum's uncapped supply, and the typ
 
 Total premine: **6%** (503,316 RTC = 4 × 125,829.12, one per founder wallet). Premine wallets have a 1-year on-chain unlock delay. No VC pre-sale. No private allocation. The early miners were `pawnshop_g4_115` and `dual-g4-125`.
 
-### Emission schedule (halving)
+### Emission schedule (fixed)
 
-| Period | Block reward (per epoch) |
-|--------|--------------------------|
-| Genesis – Year 2 | 1.5 RTC |
-| Year 2 – Year 4 | 0.75 RTC |
-| Year 4 – Year 6 | 0.375 RTC |
-| Continues until minimum dust threshold | — |
+| Parameter | Value |
+|-----------|-------|
+| Block reward | 1.5 RTC per epoch, fixed |
+| Block time | 600s (10 min) |
+| Epoch duration | 144 blocks (~24 hours) |
+| Halving | None |
 
-Block time: 600s (10 min). Epoch duration: 144 blocks (~24 hours).
-
-Halving fires every 2 years OR on an **Epoch Relic Event** milestone — whichever comes first. This keeps emissions tied to either time or community-meaningful milestones, not just arbitrary block counts.
+Emission is a fixed 1.5 RTC per epoch and does not halve. It continues at that rate until the 8,388,608 RTC (2²³) supply cap is reached, consistent with RIP-0004 and the running node. This matches the "Fixed forever" cap noted above.
 
 ### Reference rate climbs as holder count grows
 

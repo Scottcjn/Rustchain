@@ -242,6 +242,60 @@ class TestExplorerApiRoutes(unittest.TestCase):
         self.assertEqual(tx_resp.status_code, 400)
         self.assertEqual(tx_resp.get_json(), {"ok": False, "error": "offset must be an integer"})
 
+    def test_network_info_endpoint(self):
+        # Create blocks table and insert a block to mock block height
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS blocks (
+                    height INTEGER PRIMARY KEY,
+                    block_hash TEXT NOT NULL,
+                    prev_hash TEXT NOT NULL,
+                    timestamp INTEGER NOT NULL,
+                    merkle_root TEXT NOT NULL,
+                    state_root TEXT NOT NULL,
+                    producer TEXT NOT NULL,
+                    tx_count INTEGER NOT NULL,
+                    body_json TEXT NOT NULL,
+                    created_at INTEGER NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO blocks
+                (height, block_hash, prev_hash, timestamp, merkle_root, state_root,
+                 producer, tx_count, body_json, created_at)
+                VALUES (5, 'hash5', 'prev4', 500, 'm5', 's5', 'miner5', 1, '{"tx_count": 1}', 510)
+                """
+            )
+
+        resp = self.client.get("/network/info")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertEqual(body["block_height"], 5)
+        self.assertEqual(body["chain_id"], self.mod.CHAIN_ID)
+        self.assertEqual(body["network"], "testnet" if "testnet" in self.mod.CHAIN_ID.lower() else "mainnet")
+        self.assertEqual(body["min_fee"], 1000)
+        self.assertEqual(body["version"], "2.2.1-security-hardened")
+
+    def test_network_info_endpoint_missing_table(self):
+        import tempfile
+        import os
+        fd, db_path = tempfile.mkstemp()
+        os.close(fd)
+        try:
+            old_db_path = self.mod.DB_PATH
+            self.mod.DB_PATH = db_path
+            resp = self.client.get("/network/info")
+            self.assertEqual(resp.status_code, 200)
+            body = resp.get_json()
+            self.assertEqual(body["block_height"], 0)
+        finally:
+            self.mod.DB_PATH = old_db_path
+            if os.path.exists(db_path):
+                os.remove(db_path)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -192,6 +192,38 @@ class TestIngestRoundRobinAuthorization(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(stored_pubkey, expected_pubkey)
 
+    def test_supplied_message_must_match_submitted_header(self):
+        self._prepare_consensus_state(slot=100)
+        signing_key = nacl.signing.SigningKey.generate()
+        pubkey_hex = signing_key.verify_key.encode().hex()
+        header = {"slot": 100, "miner": "attacker", "timestamp": int(time.time())}
+        signed_message = b"not-the-submitted-header"
+        payload = {
+            "miner_id": "attacker",
+            "header": header,
+            "message": signed_message.hex(),
+            "signature": signing_key.sign(signed_message).signature.hex(),
+        }
+
+        with sqlite3.connect(self.mod.DB_PATH) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO miner_header_keys(miner_id, pubkey_hex) VALUES (?, ?)",
+                ("attacker", pubkey_hex),
+            )
+            conn.commit()
+
+        with self.mod.app.test_client() as client:
+            response = client.post("/headers/ingest_signed", json=payload)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "message_header_mismatch")
+        with sqlite3.connect(self.mod.DB_PATH) as conn:
+            stored = conn.execute(
+                "SELECT 1 FROM headers WHERE slot = ?",
+                (100,),
+            ).fetchone()
+        self.assertIsNone(stored)
+
 
 if __name__ == "__main__":
     unittest.main()
