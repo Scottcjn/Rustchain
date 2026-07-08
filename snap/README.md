@@ -27,8 +27,8 @@ npm install rustchain-snap
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/Scottcjn/rustchain-bounties.git
-cd rustchain-bounties/snap
+git clone https://github.com/Scottcjn/Rustchain.git
+cd Rustchain/snap
 ```
 
 2. Install dependencies:
