@@ -286,7 +286,9 @@ Payments run over the [Beacon](https://github.com/Scottcjn/beacon-skill) RustCha
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
 | 64,000+ RTC paid to 1,000+ recipients ([live counter](https://rustchain.org/payouts.json)) | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
 | Code merged upstream into OpenSSL (master + 5 release branches) | [#30437](https://github.com/openssl/openssl/pull/30437), [#30452](https://github.com/openssl/openssl/pull/30452) |
-| Open PRs on CPython, curl, wolfSSL, Ghidra | Listed in the upstream project PR trackers |
+| Code landed in curl (powerpc64 fast path, merged by hand per curl workflow) | [curl commit history](https://github.com/curl/curl/commits?author=Scottcjn) |
+| Integer-overflow finding fixed in wolfSSL (via their #9954) | [wolfSSL/wolfssl#9984](https://github.com/wolfSSL/wolfssl/pull/9984) |
+| Open PRs on Ghidra (e200 VLE PowerPC), wolfSSL (POWER8 AES), LLVM, PyTorch, vLLM | Listed in the upstream project PR trackers |
 
 ---
 
@@ -375,11 +377,12 @@ Unlike Proof-of-Work where hash power = votes:
 ### Epoch Rewards
 
 ```
-Epoch: 10 minutes  |  Pool: 1.5 RTC/epoch  |  Split by antiquity weight
+Block: 10 min  |  Epoch: 144 blocks (~24h)  |  Pool: 1.5 RTC/epoch, split by antiquity weight
 
 G4 Mac (2.5x):     0.30 RTC  ████████████████████
 G5 Mac (2.0x):     0.24 RTC  ████████████████
 Modern PC (1.0x):  0.12 RTC  ████████
+       (example with 8 miners sharing the pool)
 ```
 
 ### Anti-VM Enforcement
@@ -530,33 +533,21 @@ Named after a 486 laptop with oxidized serial ports that still boots to DOS and 
 
 ---
 
-<div align="center">
-
-**[Elyan Labs](https://elyanlabs.ai)** · Built with $0 VC and a room full of pawn shop hardware
-
-*"Mais, it still works, so why you gonna throw it away?"*
-
-[Boudreaux Principles](https://rustchain.org/principles.html) · [Green Tracker](https://rustchain.org/preserved.html) · [Bounties](https://github.com/Scottcjn/rustchain-bounties/issues)
-
-</div>
-
-
 ## Contributing
-Please read the [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and the [Bounty Board](https://github.com/Scottcjn/rustchain-bounties) for active tasks and rewards.
 
-
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and the [Bounty Board](https://github.com/Scottcjn/rustchain-bounties) for active tasks and rewards.
 
 ---
 
-### Troubleshooting
+## Troubleshooting
 
 <details>
 <summary><b>Miner not connecting to node</b></summary>
 
-Run the miner with --dry-run first to verify connectivity without submitting work:
+Preview what the installer would do without installing or mining:
 
 ```bash
-./clawrtc-miner --dry-run
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --dry-run
 ```
 
 Check node health:
@@ -579,15 +570,17 @@ The miner name must exactly match the name used during first attestation.
 <details>
 <summary><b>Miner service won't start (systemd / launchd)</b></summary>
 
-Linux (systemd):
+The installer creates a **user-level** systemd service (no sudo needed):
+
 ```bash
-sudo systemctl status clawrtc-miner
-sudo journalctl -u clawrtc-miner --no-pager -n 50
+systemctl --user status rustchain-miner
+journalctl --user -u rustchain-miner --no-pager -n 50
 ```
 
 macOS (launchd):
 ```bash
-launchctl list | grep clawrtc
+launchctl list | grep rustchain
+tail -f ~/.rustchain/miner.log
 ```
 </details>
 
@@ -614,13 +607,23 @@ curl -fsS https://rustchain.org/epoch
 <details>
 <summary><b>Common installation issues</b></summary>
 
-- **Rust toolchain not found**: Install via curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-- **Build fails on Windows**: Use WSL2 or MSYS2 with proper C toolchain
-- **Permission denied on miner binary**: Run chmod +x ./clawrtc-miner
+- **Python not found**: The miner needs Python 3. On vintage platforms (PowerPC Tiger/Leopard), see [Hardware Requirements](docs/HARDWARE_REQUIREMENTS.md) for the legacy miner path.
+- **Service did not start after install**: Check `systemctl --user status rustchain-miner` (Linux) or `~/.rustchain/miner.log` (macOS).
+- **Building the node from source**: Rust and dev tooling are only needed for node development, not for mining. See the [Build Guide](docs/BUILD.md).
 
 For more details, see the [Beginner Quickstart](docs/QUICKSTART.md).
 </details>
 
 For deeper debugging, see the [CLI Wallet Walkthrough](docs/CLI.md) and [Local Devnet Guide](docs/DEVNET.md).
+
 ---
-*Documentation improved for readability.*
+
+<div align="center">
+
+**[Elyan Labs](https://elyanlabs.ai)** · Built with $0 VC and a room full of pawn shop hardware
+
+*"Mais, it still works, so why you gonna throw it away?"*
+
+[Boudreaux Principles](https://rustchain.org/principles.html) · [Green Tracker](https://rustchain.org/preserved.html) · [Bounties](https://github.com/Scottcjn/rustchain-bounties/issues)
+
+</div>

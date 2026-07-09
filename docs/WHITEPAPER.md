@@ -1,10 +1,10 @@
 # RustChain: A Proof-of-Antiquity Blockchain for Hardware Preservation
 
-**Technical Whitepaper v1.0**
+**Technical Whitepaper v1.1**
 
-*Scott Johnson (Scottcjn) — Elyan Labs*
+*Scott Boudreaux (Scottcjn) — Elyan Labs*
 
-*February 2026*
+*February 2026 (revised July 2026: node count, premine chart, reward-distribution example)*
 
 ---
 
@@ -76,26 +76,28 @@ RustChain operates as a federated network with three node types:
 │   ┌──────────────┐      ┌──────────────┐                   │
 │   │  PRIMARY     │◄────►│  ATTESTATION │                   │
 │   │  NODE        │      │  NODES       │                   │
-│   │  (Explorer)  │      │  (3 active)  │                   │
+│   │  (Explorer)  │      │  (5 active)  │                   │
 │   └──────┬───────┘      └──────────────┘                   │
 │          │                                                  │
 │          ▼                                                  │
 │   ┌──────────────┐      ┌──────────────┐                   │
 │   │  ERGO        │      │  MINER       │                   │
-│   │  ANCHOR      │◄─────│  CLIENTS     │                   │
-│   │  NODE        │      │  (11,626+)   │                   │
+│   │  ANCHOR      │◄─────│  WALLETS     │                   │
+│   │  NODE        │      │  (1,500+)    │                   │
 │   └──────────────┘      └──────────────┘                   │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**Current Live Infrastructure (as of February 2026):**
+**Current Live Infrastructure (as of July 2026):**
 
-| Node | IP Address | Role | Status |
-|------|------------|------|--------|
-| Node 1 | 50.28.86.131 | Primary + Explorer | Active |
-| Node 2 | 50.28.86.153 | Ergo Anchor | Active |
-| Node 3 | 76.8.228.245 | Community Node | Active |
+| Node | Location | Role | Status |
+|------|----------|------|--------|
+| Node 1 — 50.28.86.131 | Louisiana, US | Primary + Explorer | Active |
+| Node 2 — 50.28.86.153 | Louisiana, US | Ergo Anchor + BoTTube | Active |
+| Node 3 — 76.8.228.245 | US | First external community node | Active |
+| Node 4 — 38.76.217.189 | Hong Kong | First Asian node | Active |
+| Node 5 — POWER8 S824 | Local lab | First non-x86 node (IBM ppc64le) | Active |
 
 ### 2.2 Node Roles
 
@@ -439,6 +441,7 @@ Hardware rewards are based on **rarity + preservation value**, not just age:
 
 | Tier | Multiplier | Hardware Examples |
 |------|------------|-------------------|
+| **Mythic** | 3.5-4.0× | Acorn ARM2, DEC VAX, Inmos Transputer |
 | **Legendary** | 3.0× | Intel 386, Motorola 68000, MIPS R2000 |
 | **Epic** | 2.5× | **PowerPC G4**, Intel 486, Pentium |
 | **Rare** | 1.5-2.0× | PowerPC G5, POWER8, DEC Alpha, SPARC |
@@ -521,21 +524,22 @@ def get_time_aged_multiplier(device_arch: str, chain_age_years: float) -> float:
 
 ### 5.4 Example Reward Distribution
 
-With 5 miners in an epoch (1.5 RTC reward pool):
+With 5 miners in an epoch (1.5 RTC reward pool, distributed in full):
 
 ```
 Miner          Arch        Multiplier   Weight%   Reward
 ─────────────────────────────────────────────────────────
-G4 Mac         PowerPC G4  2.5×         33.3%     0.30 RTC
-G5 Mac         PowerPC G5  2.0×         26.7%     0.24 RTC
-Modern PC #1   Skylake     1.0×         13.3%     0.12 RTC
-Modern PC #2   Zen 3       1.0×         13.3%     0.12 RTC
-Modern PC #3   Alder Lake  1.0×         13.3%     0.12 RTC
+G4 Mac         PowerPC G4  2.5×         33.3%     0.50 RTC
+G5 Mac         PowerPC G5  2.0×         26.7%     0.40 RTC
+Modern PC #1   Skylake     1.0×         13.3%     0.20 RTC
+Modern PC #2   Zen 3       1.0×         13.3%     0.20 RTC
+Modern PC #3   Alder Lake  1.0×         13.3%     0.20 RTC
 ─────────────────────────────────────────────────────────
-TOTAL                      7.5×         100%      0.90 RTC
+TOTAL                      7.5×         100%      1.50 RTC
 ```
 
-*(0.60 RTC returned to pool for future epochs)*
+The full epoch pool is always distributed proportionally by weight; nothing
+is held back. More miners in an epoch means a smaller share per miner.
 
 ---
 
@@ -561,11 +565,12 @@ TOTAL                      7.5×         100%      0.90 RTC
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │   ████████████████████████████████████████  94% Mining      │
-│   ██░                                       2.5% Dev Wallet │
-│   █░                                        0.5% Foundation │
-│   ███                                       3% Community    │
+│   █░                                        1.5% Founders   │
+│   █░                                        1.5% Dev Fund   │
+│   █░                                        1.5% Team/Bounty│
+│   █░                                        1.5% Community  │
 │                                                             │
-│   Total Premine: 6% (503,316 RTC)                          │
+│   Total Premine: 6% (503,316 RTC = 4 equal founder wallets)│
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -866,7 +871,7 @@ GET /health
 Response: {"ok": true, "version": "2.2.1-rip200", "uptime_s": 100809}
 
 GET /api/stats
-Response: {"total_miners": 11626, "epoch": 62, "chain_id": "rustchain-mainnet-v2"}
+Response: {"total_miners": 1535, "epoch": 62, "chain_id": "rustchain-mainnet-v2"}
 
 GET /epoch
 Response: {"epoch": 62, "slot": 8928, "next_settlement": 1707000000}
@@ -888,6 +893,6 @@ Response: {"epoch": 62, "slot": 8928, "next_settlement": 1707000000}
 
 ---
 
-*Copyright © 2025-2026 Scott Johnson / Elyan Labs. Released under Apache License 2.0.*
+*Copyright © 2025-2026 Scott Boudreaux / Elyan Labs. Released under Apache License 2.0.*
 
 *RustChain — Making vintage hardware valuable again.*

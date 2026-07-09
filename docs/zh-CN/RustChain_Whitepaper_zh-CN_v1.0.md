@@ -2,7 +2,7 @@
 
 **技术白皮书 v1.0**
 
-*Scott Johnson (Scottcjn) — Elyan Labs*
+*Scott Boudreaux (Scottcjn) — Elyan Labs*
 
 *2026 年 2 月*
 
@@ -82,7 +82,7 @@ RustChain 作为联合网络运行，包含三种节点类型：
 │   ┌──────────────┐      ┌──────────────┐                   │
 │   │  ERGO        │      │  挖矿        │                   │
 │   │  锚定        │◄─────│  客户端      │                   │
-│   │  节点        │      │  (11,626+)   │                   │
+│   │  节点        │      │  (1,500+)    │                   │
 │   └──────────────┘      └──────────────┘                   │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
@@ -866,7 +866,7 @@ GET /health
 响应：{"ok": true, "version": "2.2.1-rip200", "uptime_s": 100809}
 
 GET /api/stats
-响应：{"total_miners": 11626, "epoch": 62, "chain_id": "rustchain-mainnet-v2"}
+响应：{"total_miners": 1535, "epoch": 62, "chain_id": "rustchain-mainnet-v2"}
 
 GET /epoch
 响应：{"epoch": 62, "slot": 8928, "next_settlement": 1707000000}
@@ -888,6 +888,6 @@ GET /epoch
 
 ---
 
-*版权所有 © 2025-2026 Scott Johnson / Elyan Labs。根据 Apache License 2.0 许可证发布。*
+*版权所有 © 2025-2026 Scott Boudreaux / Elyan Labs。根据 Apache License 2.0 许可证发布。*
 
 *RustChain — 让复古硬件再次变得有价值。*
