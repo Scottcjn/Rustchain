@@ -511,10 +511,9 @@
         const hit = Number.isFinite(last) && last >= hourStart && last < hourEnd;
 
         const tr = document.createElement("tr");
-        tr.innerHTML =
-          "<td class=\"mono\">" + hour + "</td>" +
-          "<td>" + (hit ? "Seen" : "-") + "</td>" +
-          "<td>" + (hit ? "attestation heartbeat" : "no signal") + "</td>";
+        appendTextCell(tr, hour, "mono");
+        appendTextCell(tr, hit ? "Seen" : "-");
+        appendTextCell(tr, hit ? "attestation heartbeat" : "no signal");
         tbody.appendChild(tr);
       }
 
@@ -563,10 +562,9 @@
       tbody.innerHTML = "";
       for (const r of rows) {
         const tr = document.createElement("tr");
-        tr.innerHTML =
-          "<td class=\"mono\">" + r.epoch + "</td>" +
-          "<td>" + fmtRtc(r.amount) + "</td>" +
-          "<td>" + r.type + "</td>";
+        appendTextCell(tr, r.epoch, "mono");
+        appendTextCell(tr, fmtRtc(r.amount));
+        appendTextCell(tr, r.type);
         tbody.appendChild(tr);
       }
       state.rewardRows = rows;
