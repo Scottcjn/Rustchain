@@ -19,3 +19,13 @@ def test_rustchain_stats_dashboard_uses_normalized_miners_fallback():
     assert "updateStat('minersValue', enrolledMiners, '', previousStats?.minersCount);" in html
     assert "minersCount: enrolledMiners" in html
     assert "updateStat('minersValue', epoch.enrolled_miners || 0, '', previousStats?.epoch?.enrolled_miners);" not in html
+
+
+def test_rustchain_stats_dashboard_uses_dom_nodes_for_stat_markup():
+    html = DASHBOARD_HTML.read_text(encoding="utf-8")
+
+    assert "element.replaceChildren();" in html
+    assert "const unitSpan = document.createElement('span');" in html
+    assert "changeElement.replaceChildren();" in html
+    assert "const marker = document.createElement('span');" in html
+    assert "changeElement.innerHTML =" not in html
