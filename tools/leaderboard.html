@@ -225,7 +225,7 @@
 
         function renderErrorRow(err) {
             const tbody = document.getElementById('leaderboard-body');
-            tbody.innerHTML = '';
+            tbody.replaceChildren();
             const row = tbody.insertRow();
             const cell = row.insertCell();
             cell.colSpan = 5;
@@ -249,7 +249,7 @@
             miners.sort((a, b) => Number(b.antiquity_multiplier || 0) - Number(a.antiquity_multiplier || 0));
 
             const tbody = document.getElementById('leaderboard-body');
-            tbody.innerHTML = '';
+            tbody.replaceChildren();
 
             miners.forEach((m, i) => {
                 const tr = document.createElement('tr');
@@ -298,12 +298,12 @@
                     x = rows[i].getElementsByTagName("TD")[n];
                     y = rows[i + 1].getElementsByTagName("TD")[n];
                     if (dir == "asc") {
-                        if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
+                        if (x.textContent.toLowerCase() > y.textContent.toLowerCase()) {
                             shouldSwitch = true;
                             break;
                         }
                     } else if (dir == "desc") {
-                        if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {
+                        if (x.textContent.toLowerCase() < y.textContent.toLowerCase()) {
                             shouldSwitch = true;
                             break;
                         }

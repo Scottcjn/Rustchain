@@ -40,3 +40,19 @@ def test_leaderboard_error_row_uses_text_content():
     assert "cell.textContent = `Error: ${err.message}." in html
     assert "renderErrorRow(err);" in html
     assert 'class="error">Error: ${err.message}' not in html
+
+
+def test_leaderboard_sorting_uses_text_content():
+    html = LEADERBOARD_HTML.read_text(encoding="utf-8")
+
+    assert "x.textContent.toLowerCase()" in html
+    assert "y.textContent.toLowerCase()" in html
+    assert "x.innerHTML.toLowerCase()" not in html
+    assert "y.innerHTML.toLowerCase()" not in html
+
+
+def test_leaderboard_clears_rows_with_replace_children():
+    html = LEADERBOARD_HTML.read_text(encoding="utf-8")
+
+    assert "tbody.replaceChildren();" in html
+    assert "tbody.innerHTML = ''" not in html
