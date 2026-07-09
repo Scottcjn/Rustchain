@@ -38,7 +38,7 @@ rand = "0.8"
 uuid = { version = "1.6", features = ["v4"] }
 
 # Hashing
-sha2 = "0.10"
+sha2 = "0.11"
 hex = "0.4"
 
 # Cryptographic signing
