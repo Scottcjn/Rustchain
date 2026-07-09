@@ -635,14 +635,18 @@
                 const perMonth = perDay * 30;
                 
                 const tr = document.createElement('tr');
-                tr.innerHTML = `
-                    <td>${size} miners</td>
-                    <td>${perDay.toFixed(2)} RTC</td>
-                    <td>${perMonth.toFixed(2)} RTC</td>
-                    <td>$${(perMonth * USD_RATE).toFixed(2)}</td>
-                `;
+                appendSensitivityCell(tr, `${size} miners`);
+                appendSensitivityCell(tr, `${perDay.toFixed(2)} RTC`);
+                appendSensitivityCell(tr, `${perMonth.toFixed(2)} RTC`);
+                appendSensitivityCell(tr, `$${(perMonth * USD_RATE).toFixed(2)}`);
                 tbody.appendChild(tr);
             });
+        }
+
+        function appendSensitivityCell(row, text) {
+            const cell = document.createElement('td');
+            cell.textContent = text;
+            row.appendChild(cell);
         }
         
         function showError(message) {
