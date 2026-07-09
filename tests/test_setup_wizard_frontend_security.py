@@ -50,14 +50,13 @@ def test_python_check_failure_escapes_pasted_output():
     html = WIZARD_HTML.read_text(encoding="utf-8")
 
     assert "Python 3.8+ required. Found: '+(input||'unknown')+'" not in html
-    assert "Python 3.8+ required. Found: '+esc(input||'unknown')+'" in html
+    assert 'setStatusPill(result,"bg-err","✗ Python 3.8+ required. Found: "+(input||"unknown"))' in html
 
 
 def test_python_check_success_still_escapes_pasted_output():
     html = WIZARD_HTML.read_text(encoding="utf-8")
 
-    assert "Python '+m[1]+'.'+m[2]+' detected" in html
-    assert "&#10003; '+esc(input)+'" in html
+    assert 'setStatusPill(result,"bg-ok","✓ "+input+" — Python "+m[1]+"."+m[2]+" detected")' in html
 
 
 def test_setup_wizard_renders_connection_check():
@@ -81,6 +80,26 @@ def test_attestation_step_escapes_wallet_commands():
 
     assert 'var minerCmd="~/.rustchain/venv/bin/python ~/.rustchain/rustchain_miner.py --wallet "+esc(wName);' in html
     assert 'monitor your balance with <code>curl -sk https://rustchain.org/wallet/balance?miner_id=\'+esc(wName)+\'</code>' in html
+
+
+def test_status_helpers_present_for_dynamic_results():
+    html = WIZARD_HTML.read_text(encoding="utf-8")
+
+    assert "function makeStatusPill(cls,text)" in html
+    assert "function setStatusPill(el,cls,text)" in html
+    assert "function setLoadingStatus(el,text)" in html
+    assert ".textContent=text" in html
+    assert 'result.innerHTML=\'<span class="bg bg-ok">' not in html
+    assert 'result.innerHTML=\'<span class="bg bg-err">' not in html
+
+
+def test_network_and_miner_results_use_dom_status_helpers():
+    html = WIZARD_HTML.read_text(encoding="utf-8")
+
+    assert 'setLoadingStatus(el,"Testing node connectivity...")' in html
+    assert 'setStatusPillWithLoading(el,"bg-ok","✓ Node ONLINE — network is reachable!","Testing attestation system...")' in html
+    assert 'setLoadingStatus(result,"Fetching active miners...")' in html
+    assert 'setStatusPill(result,"bg-ok","✓ Miner FOUND on network! ID: "+String(match.miner_id||match.name||JSON.stringify(match)))' in html
 
 
 def test_attestation_esc_shield_for_shell_metacharacters():
@@ -132,5 +151,4 @@ def test_esc_function_runtime_escaping():
     assert ">" not in output
     assert "&amp;" in output
     assert "&lt;script&gt;" in output
-
 
