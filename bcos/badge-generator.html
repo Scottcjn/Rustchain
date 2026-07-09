@@ -458,20 +458,46 @@
             return `${baseUrl}${certId}.svg${styleParam}`;
         }
 
+        function clearBadgePreview() {
+            badgePreview.replaceChildren();
+        }
+
+        function setPreviewPlaceholder(message, color = null) {
+            clearBadgePreview();
+            const span = document.createElement('span');
+            span.className = 'preview-placeholder';
+            if (color) {
+                span.style.color = color;
+            }
+            span.textContent = message;
+            badgePreview.appendChild(span);
+        }
+
+        function setBadgePreviewImage(badgeUrl) {
+            clearBadgePreview();
+            const image = document.createElement('img');
+            image.src = badgeUrl;
+            image.alt = 'BCOS Badge';
+            image.addEventListener('error', () => {
+                setPreviewPlaceholder('Badge not found - verify this repo first', 'var(--yellow)');
+            }, { once: true });
+            badgePreview.appendChild(image);
+        }
+
         // Update preview and code
         function updateOutput() {
             const input = repoInput.value.trim();
             const style = document.querySelector('input[name="badgeStyle"]:checked').value;
 
             if (!input) {
-                badgePreview.innerHTML = '<span class="preview-placeholder">Enter a repo URL or certificate ID to preview</span>';
+                setPreviewPlaceholder('Enter a repo URL or certificate ID to preview');
                 codeOutput.textContent = '[![BCOS](https://50.28.86.131/bcos/badge/BCOS-xxx.svg)](https://rustchain.org/bcos/verify/BCOS-xxx)';
                 return;
             }
 
             currentCertId = extractCertId(input);
             if (!currentCertId) {
-                badgePreview.innerHTML = '<span class="preview-placeholder" style="color: var(--red);">Invalid format. Use BCOS-xxx or a GitHub URL.</span>';
+                setPreviewPlaceholder('Invalid format. Use BCOS-xxx or a GitHub URL.', 'var(--red)');
                 return;
             }
 
@@ -479,7 +505,7 @@
             const verifyUrl = `https://rustchain.org/bcos/verify/${currentCertId}`;
 
             // Update preview
-            badgePreview.innerHTML = `<img src="${badgeUrl}" alt="BCOS Badge" onerror="this.parentElement.innerHTML='<span style=\\'color: var(--yellow);\\'>Badge not found - verify this repo first</span>'">`;
+            setBadgePreviewImage(badgeUrl);
 
             // Update code output
             updateCodeOutput(badgeUrl, verifyUrl);
