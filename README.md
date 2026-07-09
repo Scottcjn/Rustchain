@@ -286,7 +286,9 @@ Payments run over the [Beacon](https://github.com/Scottcjn/beacon-skill) RustCha
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
 | 64,000+ RTC paid to 1,000+ recipients ([live counter](https://rustchain.org/payouts.json)) | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
 | Code merged upstream into OpenSSL (master + 5 release branches) | [#30437](https://github.com/openssl/openssl/pull/30437), [#30452](https://github.com/openssl/openssl/pull/30452) |
-| Open PRs on CPython, curl, wolfSSL, Ghidra | Listed in the upstream project PR trackers |
+| Code landed in curl (powerpc64 fast path, merged by hand per curl workflow) | [curl commit history](https://github.com/curl/curl/commits?author=Scottcjn) |
+| Integer-overflow finding fixed in wolfSSL (via their #9954) | [wolfSSL/wolfssl#9984](https://github.com/wolfSSL/wolfssl/pull/9984) |
+| Open PRs on Ghidra (e200 VLE PowerPC), wolfSSL (POWER8 AES), LLVM, PyTorch, vLLM | Listed in the upstream project PR trackers |
 
 ---
 
