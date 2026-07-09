@@ -55,6 +55,15 @@ except ImportError as e:
 except Exception as e:
     print(f"[RIP-306] SophiaCore init failed: {e}")
 
+# /api/tokenomics — read-only reference-rate endpoint (2026-07-09).
+# Registered here (not in the versioned main module) so it survives
+# main-file version swaps. Fail-safe: never blocks node startup.
+try:
+    from tokenomics_route import register_tokenomics
+    register_tokenomics(app, DB_PATH)
+except Exception as _tok_err:
+    print(f"[tokenomics] route registration failed: {_tok_err}")
+
 # Expose the app for gunicorn
 application = app
 
