@@ -21,6 +21,13 @@
 
   // --- Helpers ---
 
+  function setSpinner(target) {
+    target.replaceChildren();
+    const spinner = document.createElement("span");
+    spinner.className = "spinner";
+    target.appendChild(spinner);
+  }
+
   function formatUptime(seconds) {
     const d = Math.floor(seconds / 86400);
     const h = Math.floor((seconds % 86400) / 3600);
@@ -82,7 +89,7 @@
       balanceCard.classList.add("hidden");
       return;
     }
-    balanceValue.innerHTML = '<span class="spinner"></span>';
+    setSpinner(balanceValue);
     balanceCard.classList.remove("hidden");
 
     try {
