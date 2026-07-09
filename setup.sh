@@ -398,7 +398,7 @@ summary() {
   echo -e "  cd $INSTALL_DIR && $PYTHON -u $MINER_SCRIPT --wallet $WALLET_NAME"
   echo ""
   echo -e "  ${BOLD}Check your balance:${NC}"
-  echo -e "  curl -sk '$NODE_URL/wallet/balance?miner_id=$WALLET_NAME' | python3 -m json.tool"
+  echo -e "  curl -sk '$NODE_URL/api/wallet/$WALLET_NAME' | python3 -m json.tool"
   echo ""
   echo -e "  ${BOLD}Join the community:${NC}"
   echo -e "  Discord: https://discord.gg/rustchain"
