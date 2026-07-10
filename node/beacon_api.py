@@ -1383,7 +1383,14 @@ def chat():
 # RELAY DISCOVERY ENDPOINT
 # ============================================================
 
+# Both paths resolve under the blueprint's /beacon prefix, i.e.
+#   /beacon/relay/discover      (canonical, used by site/beacon/data.js)
+#   /beacon/api/relay/discover  (compat alias for onboarding/bounty docs
+#                                that still reference the /api/ form)
+# Keeping the alias means the documented verification command returns 200
+# instead of 404 regardless of which form a newcomer copies.
 @beacon_api.route('/relay/discover', methods=['GET'])
+@beacon_api.route('/api/relay/discover', methods=['GET'])
 def relay_discover():
     """Discover relay agents (for 3D visualization)."""
     # In production, query the relay registry
