@@ -587,10 +587,12 @@ class UtxoDB:
             if not isinstance(registers, dict):
                 return None
 
-            record = dict(out)
-            record['tokens_json'] = tokens_json
-            record['registers_json'] = registers_json
-            normalized.append(record)
+            normalized.append({
+                'address': address,
+                'value_nrtc': val,
+                'tokens_json': tokens_json,
+                'registers_json': registers_json,
+            })
 
         return normalized
 
@@ -1269,7 +1271,25 @@ class UtxoDB:
             # With IGNORE, a duplicate tx_id silently skips the insert but
             # execution continues to claim inputs — creating orphan entries
             # that lock UTXOs with no corresponding mempool transaction.
-            tx_data_json = json.dumps(tx)
+            # Store only the normalized transaction intent.  Persisting the
+            # caller's raw dict lets arbitrary fields, internal flags, and
+            # giant spending proofs bloat tx_data_json and confuse block
+            # candidate consumers; apply_transaction only needs box IDs.
+            tx_for_mempool = {
+                'tx_id': tx_id,
+                'tx_type': tx_type,
+                'inputs': [{'box_id': inp['box_id']} for inp in inputs],
+                'outputs': outputs,
+                'fee_nrtc': fee,
+                'timestamp': timestamp,
+            }
+            if data_inputs:
+                tx_for_mempool['data_inputs'] = data_inputs
+            tx_data_json = json.dumps(
+                tx_for_mempool,
+                sort_keys=True,
+                separators=(',', ':'),
+            )
             if len(tx_data_json) > MAX_TX_DATA_JSON_BYTES:
                 if manage_tx:
                     conn.execute("ROLLBACK")

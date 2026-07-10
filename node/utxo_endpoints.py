@@ -41,6 +41,7 @@ _BOXES_MAX_LIMIT = 500
 # Cursor values are bound to SQLite's signed 64-bit integer range; values past it
 # would raise OverflowError at parameter binding (a 500) instead of a clean 400.
 _INT64_MAX = (1 << 63) - 1
+_NONCE_MAX_DIGITS = len(str(_INT64_MAX))
 
 
 def _parse_rtc_amount(raw) -> Decimal:
@@ -233,12 +234,16 @@ def _parse_transfer_nonce(nonce_raw):
         nonce_text = nonce_raw.strip()
         if not nonce_text.isdigit():
             raise ValueError('nonce must be an integer greater than or equal to 0')
+        if len(nonce_text) > _NONCE_MAX_DIGITS:
+            raise ValueError('nonce exceeds signed 64-bit integer range')
         nonce_int = int(nonce_text)
     else:
         raise ValueError('nonce must be an integer greater than or equal to 0')
 
     if nonce_int < 0:
         raise ValueError('nonce must be an integer greater than or equal to 0')
+    if nonce_int > _INT64_MAX:
+        raise ValueError('nonce exceeds signed 64-bit integer range')
 
     return str(nonce_int), nonce_int
 
@@ -735,6 +740,48 @@ def utxo_transfer():
             conn.rollback()
             return jsonify({'error': 'UTXO transaction failed (race condition or validation)'}), 500
 
+        if _dual_write:
+            amount_i64 = amount_i64_for_dual_write
+            fee_i64 = effective_fee_i64_for_dual_write
+            debit_i64 = amount_i64 + fee_i64
+
+            # Keep the UTXO state transition and shadow account write atomic.
+            # If the shadow model cannot mirror the spend, roll back the UTXO
+            # application too; otherwise /utxo/integrity reports success-path
+            # divergence while the endpoint still returns ok=True.
+            shadow_row = conn.execute(
+                "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+                (from_address,),
+            ).fetchone()
+            shadow_balance = shadow_row[0] if shadow_row else 0
+            if shadow_balance < debit_i64:
+                conn.rollback()
+                return jsonify({
+                    'error': 'Insufficient dual-write shadow balance',
+                    'code': 'DUAL_WRITE_SHADOW_BALANCE',
+                    'shadow_balance_i64': shadow_balance,
+                    'required_i64': debit_i64,
+                }), 409
+
+            conn.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+                         (to_address,))
+            conn.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
+                         (debit_i64, from_address))
+            conn.execute("UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+                         (amount_i64, to_address))
+            now = int(time.time())
+            slot = _current_slot_fn()
+            conn.execute(
+                "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
+                (now, slot, from_address, -debit_i64,
+                 f"utxo_transfer_out:{to_address[:20]}:fee={fee_i64}:{memo[:30]}")
+            )
+            conn.execute(
+                "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
+                (now, slot, to_address, amount_i64,
+                 f"utxo_transfer_in:{from_address[:20]}:{memo[:30]}")
+            )
+
         conn.commit()
     except Exception:
         try:
@@ -744,55 +791,6 @@ def utxo_transfer():
         raise
     finally:
         conn.close()
-
-    # --- dual-write to account model ----------------------------------------
-
-    if _dual_write:
-        try:
-            conn = sqlite3.connect(_db_path)
-            c = conn.cursor()
-            amount_i64 = amount_i64_for_dual_write
-            fee_i64 = effective_fee_i64_for_dual_write
-            debit_i64 = amount_i64 + fee_i64
-
-            # Re-check sender shadow-balance before debit (security: prevent
-            # negative-balance minting when account-model diverges from UTXO
-            # due to non-UTXO writes, prior dual-write failures, or races).
-            c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?",
-                      (from_address,))
-            shadow_row = c.fetchone()
-            shadow_balance = shadow_row[0] if shadow_row else 0
-            if shadow_balance < debit_i64:
-                conn.close()
-                print(
-                    f"[UTXO] WARNING: dual-write skipped — insufficient "
-                    f"shadow balance for {from_address[:20]}... "
-                    f"(have {shadow_balance}, need {debit_i64})"
-                )
-            else:
-                c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
-                          (to_address,))
-                c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
-                          (debit_i64, from_address))
-                c.execute("UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
-                          (amount_i64, to_address))
-                now = int(time.time())
-                slot = _current_slot_fn()
-                c.execute(
-                    "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
-                    (now, slot, from_address, -debit_i64,
-                     f"utxo_transfer_out:{to_address[:20]}:fee={fee_i64}:{memo[:30]}")
-                )
-                c.execute(
-                    "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?,?,?,?,?)",
-                    (now, slot, to_address, amount_i64,
-                     f"utxo_transfer_in:{from_address[:20]}:{memo[:30]}")
-                )
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            # Log but don't fail — UTXO is primary, account is shadow
-            print(f"[UTXO] WARNING: dual-write to account model failed: {e}")
 
     # --- response -----------------------------------------------------------
 
