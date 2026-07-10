@@ -75,6 +75,9 @@ class BotConfig:
     # Dry run mode (no actual sends)
     dry_run: bool = False
 
+    # GitHub Actions job-summary fallback channel (always available in CI, no secret needed)
+    github_step_summary: str = ""
+
     def __post_init__(self):
         if self.digest_recipients is None:
             self.digest_recipients = []
@@ -124,6 +127,7 @@ class BotConfig:
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             log_file=os.getenv("LOG_FILE", ""),
             dry_run=os.getenv("DRY_RUN", "false").lower() == "true",
+            github_step_summary=os.getenv("GITHUB_STEP_SUMMARY", ""),
         )
 
     def validate(self) -> List[str]:
@@ -143,6 +147,7 @@ class BotConfig:
                 self.discord_bot_token,
                 self.telegram_bot_token,
                 (self.smtp_host and self.smtp_user and self.digest_recipients),
+                self.github_step_summary,
             ]
         )
 
@@ -195,3 +200,7 @@ class BotConfig:
         return bool(
             self.smtp_host and self.smtp_user and self.digest_recipients
         )
+
+    def has_summary(self) -> bool:
+        """Check if the GitHub Actions job-summary channel is available."""
+        return bool(self.github_step_summary)

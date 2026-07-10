@@ -101,6 +101,22 @@ class TestBotConfig(unittest.TestCase):
         config.digest_recipients = ["recipient@example.com"]
         self.assertTrue(config.has_email())
 
+    def test_job_summary_counts_as_delivery(self):
+        """A GITHUB_STEP_SUMMARY target satisfies validation with no other channel."""
+        config = BotConfig(github_step_summary="/tmp/does-not-need-to-exist")
+        self.assertTrue(config.has_summary())
+        errors = config.validate()
+        self.assertFalse(
+            any("delivery method" in e.lower() for e in errors),
+            f"job summary should satisfy delivery validation, got: {errors}",
+        )
+
+    def test_no_channel_still_fails_validation(self):
+        """With no channel at all (and not dry-run), validation still errors."""
+        config = BotConfig()
+        errors = config.validate()
+        self.assertTrue(any("delivery method" in e.lower() for e in errors))
+
 
 class TestDigestContent(unittest.TestCase):
     """Test digest content data structure."""

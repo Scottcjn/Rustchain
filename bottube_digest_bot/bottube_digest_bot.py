@@ -716,7 +716,27 @@ class DigestSender:
             subject = DigestFormatter.format_email_subject(content)
             results["email"] = self.send_email(html, subject)
 
+        # GitHub Actions job summary (always available in CI, needs no secret)
+        if self.config.has_summary():
+            message = DigestFormatter.format_discord(content, self.config)
+            results["job_summary"] = self.write_job_summary(message)
+
         return results
+
+    def write_job_summary(self, message: str) -> bool:
+        """Append the digest to the GitHub Actions job summary page."""
+        if self.config.dry_run:
+            logger.info("[DRY RUN] Would write digest to job summary")
+            return True
+        try:
+            with open(self.config.github_step_summary, "a", encoding="utf-8") as f:
+                f.write(message)
+                f.write("\n")
+            logger.info("Digest written to GitHub Actions job summary")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to write job summary: {e}")
+            return False
 
 
 async def run_digest_bot(config: BotConfig) -> bool:
