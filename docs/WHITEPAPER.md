@@ -502,8 +502,12 @@ def get_time_aged_multiplier(device_arch: str, chain_age_years: float) -> float:
     """
     base_multiplier = ANTIQUITY_MULTIPLIERS.get(device_arch.lower(), 1.0)
     
-    # Modern hardware doesn't decay
-    if base_multiplier <= 1.0:
+    # Penalty multipliers (sub-1.0) are anti-farm penalties — return as-is
+    if base_multiplier < 1.0:
+        return base_multiplier
+
+    # Baseline hardware (exactly 1.0) has no vintage bonus to decay
+    if base_multiplier == 1.0:
         return 1.0
     
     # Calculate decayed bonus
