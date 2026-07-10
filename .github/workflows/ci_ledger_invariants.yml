@@ -22,7 +22,7 @@ jobs:
     name: Ledger Invariant Test Suite
     
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
