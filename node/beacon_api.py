@@ -1121,13 +1121,30 @@ def claim_bounty(bounty_id):
             return field_error, status
 
         db = get_db()
+
+        # Verify bounty exists and is in a claimable state. Without these guards
+        # the blind UPDATE below would silently revert an already-completed bounty
+        # back to 'claimed' and let one agent overwrite another agent's claim.
+        bounty = db.execute(
+            "SELECT state, claimant_agent FROM beacon_bounties WHERE id = ?",
+            (bounty_id,)
+        ).fetchone()
+        if not bounty:
+            return jsonify({'error': 'Bounty not found'}), 404
+        if bounty['state'] == 'completed':
+            return jsonify({'error': 'Bounty already completed'}), 409
+        existing_claimant = bounty['claimant_agent']
+        if existing_claimant and existing_claimant != agent_id:
+            return jsonify({'error': 'Bounty already claimed by another agent'}), 409
+
         now = int(time.time())
         cursor = db.execute(
-            "UPDATE beacon_bounties SET state = 'claimed', claimant_agent = ?, updated_at = ? WHERE id = ?",
-            (agent_id, now, bounty_id)
+            "UPDATE beacon_bounties SET state = 'claimed', claimant_agent = ?, updated_at = ? "
+            "WHERE id = ? AND state != 'completed' AND (claimant_agent IS NULL OR claimant_agent = ?)",
+            (agent_id, now, bounty_id, agent_id)
         )
         if cursor.rowcount == 0:
-            return jsonify({'error': 'Bounty not found'}), 404
+            return jsonify({'error': 'Bounty state changed; retry claim'}), 409
         db.commit()
 
         return jsonify({'ok': True, 'bounty_id': bounty_id, 'claimant': agent_id})
