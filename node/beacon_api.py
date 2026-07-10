@@ -24,6 +24,11 @@ beacon_api = Blueprint('beacon_api', __name__)
 DB_PATH = 'rustchain_v2.db'
 BEACON_AUTH_WINDOW_SECONDS = 300
 
+# Statuses an administrator uses to bar an agent. A rejoin via /beacon/join
+# must never silently lift one of these — otherwise any holder of the
+# (immutable) pubkey can self-unban by re-sending the join request.
+BEACON_PROTECTED_STATUSES = frozenset({'banned', 'suspended', 'revoked'})
+
 # In-memory cache for bounties (synced from GitHub)
 bounty_cache = {
     'data': [],
@@ -586,7 +591,7 @@ def beacon_join():
         # Check if agent already exists
         db = get_db()
         existing = db.execute(
-            "SELECT pubkey_hex, coinbase_address FROM relay_agents WHERE agent_id = ?",
+            "SELECT pubkey_hex, coinbase_address, status FROM relay_agents WHERE agent_id = ?",
             (agent_id,)
         ).fetchone()
 
@@ -609,16 +614,28 @@ def beacon_join():
                              'payment address is immutable after registration'
                 }), 403
 
-            # Update mutable fields only
+            # Update mutable fields only.
+            # SECURITY: a rejoin must never re-activate an agent an admin has
+            # barred. If the current status is protected (banned/suspended/
+            # revoked) keep it; otherwise a rejoin brings the agent back
+            # 'active' as before. Without this guard a banned agent could
+            # self-unban simply by POSTing /beacon/join with its own pubkey.
+            current_status = (existing['status'] or 'active')
+            new_status = (
+                current_status
+                if current_status in BEACON_PROTECTED_STATUSES
+                else 'active'
+            )
             db.execute("""
                 UPDATE relay_agents
                 SET name = COALESCE(?, name),
-                    status = 'active',
+                    status = ?,
                     updated_at = ?
                 WHERE agent_id = ?
-            """, (name, now, agent_id))
+            """, (name, new_status, now, agent_id))
         else:
             # New agent — insert with pubkey_hex
+            new_status = 'active'
             db.execute("""
                 INSERT INTO relay_agents (agent_id, pubkey_hex, name, status, coinbase_address, created_at, updated_at)
                 VALUES (?, ?, ?, 'active', ?, ?, ?)
@@ -631,7 +648,7 @@ def beacon_join():
             'agent_id': agent_id,
             'pubkey_hex': pubkey_hex,
             'name': name,
-            'status': 'active',
+            'status': new_status,
             'timestamp': now,
         })
 
