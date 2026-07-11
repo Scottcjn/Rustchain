@@ -46,6 +46,7 @@ from claims_settlement import (
     process_claims_batch,
     get_settlement_stats,
     settlement_batch_conditions_met,
+    URTC_PER_RTC,
 )
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -714,6 +715,9 @@ class TestGetSettlementStats:
         stats = get_settlement_stats(db, days=7)
         assert stats["settled_claims"] == 5
         assert stats["settled_amount_urtc"] == 15000  # 1000+2000+3000+4000+5000
+        # 15000 uRTC == 0.015 RTC (URTC_PER_RTC = 1_000_000), not 0.00015.
+        assert stats["settled_amount_rtc"] == 15000 / 1_000_000
+        assert stats["settled_amount_rtc"] == stats["settled_amount_urtc"] / URTC_PER_RTC
 
     def test_mixed_status_counts(self, tmp_path):
         db = str(tmp_path / "test.db")
@@ -921,7 +925,11 @@ class TestProcessClaimsBatch:
         assert result["success_count"] == 1
         assert result["transaction_hash"] == "0xsuccess"
         assert result["total_amount_urtc"] == 1500
-        assert result["total_amount_rtc"] == 1500 / 100_000_000
+        # reward_urtc is micro-RTC: 1 RTC = 1_000_000 uRTC (canonical
+        # URTC_PER_RTC, same factor as claims_eligibility / claims_submission
+        # apply to this identical field). 1500 uRTC == 0.0015 RTC.
+        assert result["total_amount_rtc"] == 1500 / 1_000_000
+        assert result["total_amount_rtc"] == result["total_amount_urtc"] / URTC_PER_RTC
         assert result["error"] is None
 
     def test_stale_verifying_claims_flagged(self, tmp_path, capsys):

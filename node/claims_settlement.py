@@ -34,6 +34,11 @@ except ImportError:
         return None
 
 
+# uRTC per 1 RTC — canonical denomination used across the claims modules
+# (matches claims_eligibility.URTC_PER_RTC and rewards_implementation_rip200.UNIT).
+URTC_PER_RTC = 1_000_000
+
+
 class SettlementError(Exception):
     """Base exception for settlement errors"""
     pass
@@ -735,7 +740,7 @@ def process_claims_batch(
         result["processed"] = True
         result["claims_count"] = len(claims_to_process)
         result["total_amount_urtc"] = total_amount
-        result["total_amount_rtc"] = total_amount / 100_000_000
+        result["total_amount_rtc"] = total_amount / URTC_PER_RTC
         result["error"] = "Dry run - no actual processing"
         return result
     
@@ -833,13 +838,13 @@ def process_claims_batch(
     result["processed"] = True
     result["claims_count"] = len(claims_to_process)
     result["total_amount_urtc"] = total_amount
-    result["total_amount_rtc"] = total_amount / 100_000_000
+    result["total_amount_rtc"] = total_amount / URTC_PER_RTC
     result["transaction_hash"] = tx_hash
     result["success_count"] = settled_count
     
     print(f"[SETTLEMENT] Batch {batch_id} processed:")
     print(f"  Claims: {settled_count}")
-    print(f"  Total: {total_amount / 100_000_000:.6f} RTC")
+    print(f"  Total: {total_amount / URTC_PER_RTC:.6f} RTC")
     print(f"  TX Hash: {tx_hash}")
     
     return result
@@ -904,7 +909,7 @@ def get_settlement_stats(
                 "period_days": days,
                 "settled_claims": settled_count,
                 "settled_amount_urtc": settled_amount,
-                "settled_amount_rtc": settled_amount / 100_000_000,
+                "settled_amount_rtc": settled_amount / URTC_PER_RTC,
                 "failed_claims": failed_count,
                 "success_rate": settled_count / max(1, settled_count + failed_count),
                 "avg_settlement_time_seconds": avg_time,
