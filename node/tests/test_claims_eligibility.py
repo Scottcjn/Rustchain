@@ -30,6 +30,7 @@ from claims_eligibility import (
     check_epoch_participation,
     get_wallet_address,
     check_pending_claim,
+    check_already_claimed,
     is_epoch_settled,
     calculate_epoch_reward,
     check_claim_eligibility,
@@ -498,6 +499,35 @@ class TestCheckClaimEligibility(unittest.TestCase):
         if not result["eligible"]:
             self.assertIn(result["reason"],
                           ["epoch_not_settled", "no_epoch_participation"])
+
+    def test_settled_claim_blocks_reclaim(self):
+        """A reward that was already claimed and settled must not be claimable
+        again — check_pending_claim only tracks in-flight statuses, so the
+        terminal 'settled' status needs its own guard."""
+        epoch = max(0, self.current_epoch - 1)
+
+        # Baseline: test-miner-g5 is fully eligible for this epoch.
+        before = check_claim_eligibility(
+            self.db_path, "test-miner-g5", epoch,
+            self.current_slot, self.now)
+        self.assertTrue(before["eligible"])
+
+        # Record a settled (paid-out) claim for that miner/epoch.
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("""
+                INSERT INTO claims (claim_id, miner_id, epoch, status, submitted_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, ("claim-g5-settled", "test-miner-g5", epoch,
+                   "settled", self.now - 3600))
+            conn.commit()
+
+        # The already-settled epoch must now be rejected as claimable.
+        self.assertTrue(check_already_claimed(self.db_path, "test-miner-g5", epoch))
+        after = check_claim_eligibility(
+            self.db_path, "test-miner-g5", epoch,
+            self.current_slot, self.now)
+        self.assertFalse(after["eligible"])
+        self.assertEqual(after["reason"], "already_claimed")
 
 
 class TestGetEligibleEpochs(unittest.TestCase):
