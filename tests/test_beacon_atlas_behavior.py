@@ -384,6 +384,67 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
         self.assertEqual(row['state'], 'claimed')
         self.assertEqual(row['claimant_agent'], 'bcn_claimer')
 
+    def test_claim_does_not_revert_completed_bounty(self):
+        """A completed bounty must not be reset back to 'claimed' by a later claim."""
+        created_at = int(time.time())
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute("""
+                INSERT INTO beacon_bounties
+                (id, title, reward_rtc, difficulty, state, claimant_agent, completed_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                'gh_done_bounty', 'Done bounty (10 RTC)', 10.0, 'EASY',
+                'completed', 'bcn_worker', 'bcn_worker', created_at,
+            ))
+            conn.commit()
+
+        resp = self.client.post(
+            '/api/bounties/gh_done_bounty/claim',
+            data=json.dumps({'agent_id': 'bcn_other'}),
+            content_type='application/json',
+            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
+        )
+        self.assertEqual(resp.status_code, 409)
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT state, claimant_agent FROM beacon_bounties WHERE id = ?",
+                ('gh_done_bounty',),
+            ).fetchone()
+        self.assertEqual(row['state'], 'completed')
+        self.assertEqual(row['claimant_agent'], 'bcn_worker')
+
+    def test_claim_does_not_overwrite_other_agents_claim(self):
+        """A bounty claimed by one agent must not be silently stolen by another."""
+        created_at = int(time.time())
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute("""
+                INSERT INTO beacon_bounties
+                (id, title, reward_rtc, difficulty, state, claimant_agent, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                'gh_taken_bounty', 'Taken bounty (10 RTC)', 10.0, 'EASY',
+                'claimed', 'bcn_first', created_at,
+            ))
+            conn.commit()
+
+        resp = self.client.post(
+            '/api/bounties/gh_taken_bounty/claim',
+            data=json.dumps({'agent_id': 'bcn_second'}),
+            content_type='application/json',
+            headers={'X-Admin-Key': os.environ['RC_ADMIN_KEY']},
+        )
+        self.assertEqual(resp.status_code, 409)
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT claimant_agent FROM beacon_bounties WHERE id = ?",
+                ('gh_taken_bounty',),
+            ).fetchone()
+        self.assertEqual(row['claimant_agent'], 'bcn_first')
+
     def test_bounty_complete_rejects_non_string_agent_id(self):
         """Admin bounty completion route rejects non-string agent IDs."""
         response = self.client.post(
