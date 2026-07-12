@@ -685,7 +685,13 @@ class RelationshipEngine:
         new_state = self._determine_state_transition(rel, EventType.COLLABORATION)
         if new_state:
             rel.state = new_state
-        
+            # Leaving a beef (e.g. BEEF -> RIVALS) must clear the beef start
+            # time, like every other beef exit does. Otherwise a later,
+            # brand-new beef inherits this stale timestamp and is treated as
+            # already expired the moment it starts.
+            if new_state != RelationshipState.BEEF:
+                rel.beef_start_time = None
+
         event = RelationshipEvent(
             event_id=self._generate_event_id(),
             timestamp=now,

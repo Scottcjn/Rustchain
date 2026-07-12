@@ -263,6 +263,44 @@ class TestRelationshipEngine(unittest.TestCase):
         self.assertEqual(rel["state"], "neutral")
         self.assertIsNone(rel["beef_start_time"])
     
+    def test_beef_start_time_cleared_when_beef_ends_via_collaboration(self):
+        """Leaving a beef through collaboration must clear beef_start_time.
+
+        Every other beef exit (reconciliation, admin intervention, duration
+        auto-resolve, expiration pass) resets beef_start_time. Collaboration
+        must too, otherwise a later brand-new beef inherits the old episode's
+        start time and is treated as already-expired.
+        """
+        self.engine.initialize_relationship("agent_a", "agent_b")
+
+        for i in range(10):
+            self.engine.record_disagreement(
+                "agent_a", "agent_b", f"topic{i}", f"Disagreement {i}"
+            )
+        rel = self.engine.get_relationship("agent_a", "agent_b")
+        self.assertEqual(rel["state"], "beef")
+        self.assertIsNotNone(rel["beef_start_time"])
+
+        # Backdate the beef so a leftover start time would look long-expired.
+        with self.engine._get_connection() as conn:
+            conn.execute(
+                "UPDATE relationships SET beef_start_time = ? "
+                "WHERE agent_a = ? AND agent_b = ?",
+                (time.time() - 20 * 86400, rel["agent_a"], rel["agent_b"]),
+            )
+            conn.commit()
+
+        # Reconcile via collaborations until the pair leaves the beef state.
+        for _ in range(10):
+            self.engine.record_collaboration("agent_a", "agent_b", "made up")
+            if self.engine.get_relationship("agent_a", "agent_b")["state"] != "beef":
+                break
+
+        rel = self.engine.get_relationship("agent_a", "agent_b")
+        self.assertNotEqual(rel["state"], "beef")
+        # The stale start time from the finished beef must be gone.
+        self.assertIsNone(rel["beef_start_time"])
+
     def test_get_active_beefs(self):
         """Test retrieving active beef relationships."""
         self.engine.initialize_relationship("agent_a", "agent_b")
