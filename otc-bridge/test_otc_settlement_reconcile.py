@@ -106,6 +106,34 @@ class ReconcileSettlementsTest(unittest.TestCase):
         self.assertEqual(self._status("o5"), "completed")
         self.assertEqual(self._trade_count("o5"), 1)
 
+    @patch.object(otc_bridge, "_lookup_worker_payout_status", return_value="missing")
+    def test_freshly_settling_is_left_in_grace_window(self, _lk):
+        # An order created long ago on the open book (created_at old) but matched
+        # only seconds ago is 'settling' with its confirm handler still in-flight.
+        # The grace window must keep it untouched: matched_at is the recency signal
+        # for when settling began; created_at predates the match and must not gate
+        # the window (else a healthy settlement is force-routed to recovery and a
+        # critical alert fires, racing the live handler).
+        now = int(time.time())
+        conn = sqlite3.connect(self.db)
+        conn.execute(
+            """INSERT INTO orders
+               (order_id, side, pair, maker_wallet, amount_micro_rtc,
+                price_per_rtc_nano_quote, total_quote_nano, status, escrow_job_id,
+                htlc_hash, htlc_secret, taker_wallet, settlement_tx,
+                created_at, matched_at, expires_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            ("o_fresh", "sell", "RTC/USDC", "rtc_maker", 10_000_000, 1_000_000_000,
+             10_000_000_000, "settling", "job-1", "h", "secret", "rtc_taker",
+             "quote-tx", now - 10_000, now - 5, now + 3600),
+        )
+        conn.commit()
+        conn.close()
+        s = reconcile_settlements()
+        self.assertEqual(self._status("o_fresh"), "settling")  # untouched, no recovery
+        self.assertEqual(s["left"], 1)
+        self.assertEqual(_lk.call_count, 0)  # not even probed inside the grace window
+
     # --- settlement_recovery rescue (no silent trade loss) -----------------
     @patch.object(otc_bridge, "_lookup_worker_payout_status", return_value="confirmed")
     def test_settlement_recovery_confirmed_is_rescued_with_trade(self, _m):
