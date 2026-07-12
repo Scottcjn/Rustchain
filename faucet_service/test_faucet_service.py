@@ -52,19 +52,28 @@ class FakeAtomicRedis:
         self.ttls = {}
         self.lock = threading.Lock()
 
-    def eval(self, _script, _numkeys, count_key, marker_key, max_requests, window_seconds, now_iso):
+    def eval(self, _script, _numkeys, ip_count_key, ip_marker_key,
+             wallet_count_key, wallet_marker_key, max_requests, window_seconds, now_iso):
         with self.lock:
             max_requests = int(max_requests)
             window_seconds = int(window_seconds)
-            current = int(self.values.get(count_key, 0))
+            ip_count = int(self.values.get(ip_count_key, 0))
+            wallet_count = int(self.values.get(wallet_count_key, 0))
 
-            if current >= max_requests:
-                return [0, self.ttls.get(marker_key, self.ttls.get(count_key, window_seconds))]
+            if ip_count >= max_requests or wallet_count >= max_requests:
+                ttl = 0
+                if ip_count >= max_requests:
+                    ttl = max(ttl, self.ttls.get(ip_marker_key, self.ttls.get(ip_count_key, window_seconds)))
+                if wallet_count >= max_requests:
+                    ttl = max(ttl, self.ttls.get(wallet_marker_key, self.ttls.get(wallet_count_key, window_seconds)))
+                return [0, ttl]
 
-            self.values[count_key] = current + 1
-            self.values[marker_key] = now_iso
-            self.ttls[count_key] = window_seconds
-            self.ttls[marker_key] = window_seconds
+            for count_key, marker_key in ((ip_count_key, ip_marker_key),
+                                          (wallet_count_key, wallet_marker_key)):
+                self.values[count_key] = int(self.values.get(count_key, 0)) + 1
+                self.values[marker_key] = now_iso
+                self.ttls[count_key] = window_seconds
+                self.ttls[marker_key] = window_seconds
             return [1, window_seconds]
 
 
@@ -356,10 +365,55 @@ class TestRateLimiter(unittest.TestCase):
         self.assertEqual(results.count(False), 7)
         count_keys = [
             key for key in self.rate_limiter.redis_client.values
-            if key.startswith('rustchain_faucet:count:192.168.1.10:0xwallet-redis-race:')
+            if key.startswith('rustchain_faucet:count:ip:192.168.1.10:')
         ]
         self.assertEqual(len(count_keys), 1)
         self.assertEqual(self.rate_limiter.redis_client.values[count_keys[0]], 1)
+
+    def test_redis_rate_limit_blocks_wallet_rotation_from_one_ip(self):
+        """A single IP must not bypass the faucet limit by rotating wallets.
+
+        RTC wallet addresses are free and unlimited to generate, so the Redis
+        rate-limit bucket must not be keyed on the wallet. This mirrors the
+        SQLite backend's "IP OR wallet" accounting; without it one machine can
+        drain the faucet by supplying a fresh wallet on every request.
+        """
+        self.config['rate_limit']['window_seconds'] = 86400
+        self.config['rate_limit']['max_requests'] = 1
+        self.config['rate_limit']['redis']['enabled'] = True
+        self.rate_limiter.redis_client = FakeAtomicRedis()
+
+        results = []
+        with patch('faucet_service.REDIS_AVAILABLE', True):
+            for n in range(3):
+                wallet = f'0xwallet-rotation-{n}'
+                allowed, _ = self.rate_limiter.record_request_if_allowed(
+                    f'203.0.113.7:{wallet}', '203.0.113.7', wallet, 0.5,
+                )
+                results.append(allowed)
+
+        self.assertEqual(results, [True, False, False])
+
+    def test_redis_rate_limit_blocks_ip_rotation_for_one_wallet(self):
+        """A single wallet must not bypass the limit by rotating source IPs.
+
+        Parity with SQLite's "IP OR wallet" check from the wallet side.
+        """
+        self.config['rate_limit']['window_seconds'] = 86400
+        self.config['rate_limit']['max_requests'] = 1
+        self.config['rate_limit']['redis']['enabled'] = True
+        self.rate_limiter.redis_client = FakeAtomicRedis()
+
+        results = []
+        with patch('faucet_service.REDIS_AVAILABLE', True):
+            for n in range(3):
+                ip = f'198.51.100.{n}'
+                allowed, _ = self.rate_limiter.record_request_if_allowed(
+                    f'{ip}:0xwallet-fixed', ip, '0xwallet-fixed', 0.5,
+                )
+                results.append(allowed)
+
+        self.assertEqual(results, [True, False, False])
 
 
 class TestDatabase(unittest.TestCase):
