@@ -427,7 +427,7 @@ class RustChainWallet:
             "to": to_address,
             "amount": amount,
             "fee": fee,
-            "timestamp": nonce,
+            "timestamp": nonce_value,
             "from_address": self._address,
             "to_address": to_address,
             "amount_rtc": amount_for_sig,

@@ -163,6 +163,25 @@ class TestRustChainWalletTransfer:
         after = int(time.time() * 1000)
         assert before <= transfer["nonce"] <= after
 
+    def test_sign_transfer_timestamp_matches_resolved_nonce(self):
+        """The timestamp field echoes the resolved nonce, not the raw arg.
+
+        With no explicit nonce, sign_transfer defaults it to the current unix
+        ms. The returned "timestamp" must carry that resolved value (like the
+        sibling "nonce" field) rather than the raw None argument.
+        """
+        wallet = RustChainWallet.create(strength=128)
+        transfer = wallet.sign_transfer("RTCrecipient123", 500, fee=0)
+        assert transfer["timestamp"] is not None
+        assert transfer["timestamp"] == transfer["nonce"]
+
+    def test_sign_transfer_explicit_nonce_in_timestamp(self):
+        """An explicit nonce is reflected in both nonce and timestamp fields."""
+        wallet = RustChainWallet.create(strength=128)
+        transfer = wallet.sign_transfer("RTCrecipient123", 500, fee=0, nonce=1700000000)
+        assert transfer["nonce"] == 1700000000
+        assert transfer["timestamp"] == 1700000000
+
 
 class TestRustChainWalletExportImport:
     """Test wallet export and import."""
