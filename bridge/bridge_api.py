@@ -571,9 +571,21 @@ def refund_lock():
 
             if not row:
                 return jsonify({"error": "lock not found"}), 404
-            if row["state"] not in (STATE_CONFIRMED, STATE_RELEASING):
+            # A funded lock (confirmed_at > 0) that expired before release is the
+            # exact case this recovery path exists for. Because _sweep_expired_locks
+            # runs on every ledger/status/stats read and transitions such locks to
+            # STATE_FAILED, a plain "must be confirmed or releasing" guard makes the
+            # refund unreachable the moment anyone reads the lock. Accept an expired
+            # funded lock that was swept to FAILED as well, while still rejecting
+            # never-funded requested/pending locks (confirmed_at == 0).
+            was_funded = bool(row["confirmed_at"]) and row["confirmed_at"] > 0
+            refundable = (
+                row["state"] in (STATE_CONFIRMED, STATE_RELEASING)
+                or (row["state"] == STATE_FAILED and was_funded)
+            )
+            if not refundable:
                 return jsonify({
-                    "error": f"cannot refund lock in state '{row['state']}', must be confirmed or releasing"
+                    "error": f"cannot refund lock in state '{row['state']}', must be a funded lock that is confirmed, releasing, or expired"
                 }), 409
             if row["expires_at"] > now:
                 return jsonify({

@@ -1003,6 +1003,50 @@ class TestBridgeAutoSweepExpiry:
             event = conn.execute("SELECT event_type FROM bridge_events WHERE lock_id = ? AND event_type = ?", (lock_id, "failed")).fetchone()
             assert event is not None
 
+    def test_refund_reachable_after_sweep_flips_confirmed_to_failed(self, client):
+        """A funded, expired lock must stay refundable even after an auto-sweep
+        (triggered by any ledger/status/stats read) transitions it to 'failed'."""
+        lock_id = "lock_refund_after_sweep_777"
+        now = int(time.time())
+        with bridge_api.get_db() as conn:
+            conn.execute(
+                "INSERT INTO bridge_locks (lock_id, sender_wallet, amount_rtc, target_chain, target_wallet, state, tx_hash, proof_ref, confirmed_at, created_at, updated_at, expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (lock_id, "refund-sender", 100_000_000, "solana",
+                 "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+                 STATE_CONFIRMED, "tx-refund-777", "receipt:tx-refund-777",
+                 now - 4000, now - 4000, now - 4000, now - 3600)
+            )
+            conn.commit()
+
+        # An operator reading status first triggers the sweep -> state becomes 'failed'.
+        assert client.get(f"/bridge/status/{lock_id}").get_json()["state"] == "failed"
+
+        # The refund recovery path must still succeed for this funded, expired lock.
+        resp = client.post("/bridge/refund", json={"lock_id": lock_id},
+                           headers={"X-Admin-Key": "test-admin-key-12345"})
+        assert resp.status_code == 200
+        assert resp.get_json()["state"] == "refunded"
+
+    def test_never_funded_lock_swept_to_failed_is_not_refundable(self, client):
+        """A never-funded lock (confirmed_at == 0) swept to 'failed' has nothing to
+        refund and must be rejected."""
+        lock_id = "lock_unfunded_failed_778"
+        now = int(time.time())
+        with bridge_api.get_db() as conn:
+            conn.execute(
+                "INSERT INTO bridge_locks (lock_id, sender_wallet, amount_rtc, target_chain, target_wallet, state, tx_hash, confirmed_at, created_at, updated_at, expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (lock_id, "unfunded-sender", 100_000_000, "solana",
+                 "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+                 "failed", "tx-unfunded-778", 0, now - 4000, now - 4000, now - 3600)
+            )
+            conn.commit()
+
+        resp = client.post("/bridge/refund", json={"lock_id": lock_id},
+                           headers={"X-Admin-Key": "test-admin-key-12345"})
+        assert resp.status_code == 409
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
