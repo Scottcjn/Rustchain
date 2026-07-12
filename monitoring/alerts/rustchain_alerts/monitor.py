@@ -114,14 +114,23 @@ class MinerMonitor:
                 self._check_balance_changes(miner.miner, prev["balance_rtc"], balance.amount_rtc)
             )
 
-        # persist updated state
+        # persist updated state. Derive offline_alerted from this poll's events so
+        # a back_online transition (which cleared the flag via set_offline_alerted)
+        # is not silently re-set to True from `prev`. Otherwise the flag stays
+        # stuck: back_online alerts spam every poll and a genuine later offline is
+        # suppressed by the still-true was_alerted guard.
+        if any(e.alert_type == "offline" for e in events):
+            offline_alerted = True
+        elif any(e.alert_type == "back_online" for e in events):
+            offline_alerted = False
+        else:
+            offline_alerted = bool(prev.get("offline_alerted")) if prev else False
+
         self.db.upsert_miner(
             miner_id=miner.miner,
             last_attest=miner.last_attest,
             balance_rtc=balance.amount_rtc if balance else (prev or {}).get("balance_rtc"),
-            offline_alerted=any(e.alert_type == "offline" for e in events)
-            if any(e.alert_type == "offline" for e in events)
-            else (bool(prev.get("offline_alerted")) if prev else False),
+            offline_alerted=offline_alerted,
         )
 
         for event in events:
