@@ -112,6 +112,9 @@ export function initUI() {
   // HUD stats
   updateHUD();
 
+  // City Teleport
+  initTeleport();
+
   // Click handlers
   setClickHandler(onObjectClick);
   setMissHandler(closePanel);
@@ -135,6 +138,63 @@ export function initUI() {
   // Deep-link support: auto-select agent/city from URL hash
   handleDeepLink();
   window.addEventListener('hashchange', handleDeepLink);
+}
+
+// --- City Teleport ---
+function initTeleport() {
+  const teleportBtn = document.getElementById('hud-teleport');
+  const dropdown = document.getElementById('teleport-dropdown');
+  const list = document.getElementById('teleport-list');
+  const closeBtn = document.getElementById('teleport-close');
+
+  if (!teleportBtn || !dropdown || !list) return;
+
+  // Build city list grouped by region
+  const regionMap = {};
+  for (const city of CITIES) {
+    const reg = city.region.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    if (!regionMap[reg]) regionMap[reg] = [];
+    regionMap[reg].push(city);
+  }
+
+  let html = '';
+  for (const [region, cities] of Object.entries(regionMap)) {
+    html += `<div class="teleport-region">${region}</div>`;
+    for (const city of cities) {
+      html += `<div class="teleport-city" data-city-id="${city.id}">${city.name}</div>`;
+    }
+  }
+  list.innerHTML = html;
+
+  // Toggle dropdown
+  teleportBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdown.classList.toggle('hidden');
+  });
+
+  // Close button
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => dropdown.classList.add('hidden'));
+  }
+
+  // City selection
+  list.addEventListener('click', (e) => {
+    const cityEl = e.target.closest('.teleport-city');
+    if (!cityEl) return;
+    const cityId = cityEl.dataset.cityId;
+    const center = getCityCenter(cityId);
+    if (center) {
+      lerpCameraTo(center, 60);
+    }
+    dropdown.classList.add('hidden');
+  });
+
+  // Close on outside click
+  document.addEventListener('click', (e) => {
+    if (!dropdown.contains(e.target) && e.target.id !== 'hud-teleport') {
+      dropdown.classList.add('hidden');
+    }
+  });
 }
 
 function updateHUD() {

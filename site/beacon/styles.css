@@ -616,6 +616,77 @@ html, body {
   color: #ffc833;
 }
 
+/* --- City Teleport Dropdown --- */
+.teleport-dropdown {
+  position: fixed;
+  top: 80px;
+  left: 16px;
+  z-index: 1000;
+  background: var(--bg-panel);
+  border: 1px solid var(--green-dim);
+  box-shadow: 0 0 20px var(--green-glow), inset 0 0 10px rgba(0, 255, 0, 0.03);
+  min-width: 220px;
+  max-height: 420px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.teleport-dropdown.hidden { display: none; }
+
+.teleport-header {
+  background: rgba(0, 20, 0, 0.8);
+  padding: 8px 12px;
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: var(--green);
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.teleport-close {
+  cursor: pointer;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1;
+}
+.teleport-close:hover { color: var(--red); }
+
+.teleport-list {
+  padding: 4px 0;
+}
+
+.teleport-region {
+  padding: 5px 12px 2px;
+  font-size: 10px;
+  color: var(--amber);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  border-top: 1px solid var(--border);
+}
+.teleport-region:first-child { border-top: none; }
+
+.teleport-city {
+  padding: 6px 14px;
+  color: var(--green);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.teleport-city:hover {
+  background: rgba(51, 255, 51, 0.08);
+  color: #88ff88;
+  text-shadow: 0 0 6px var(--green-glow);
+}
+
+/* Scrollbar for teleport dropdown */
+.teleport-dropdown::-webkit-scrollbar { width: 6px; }
+.teleport-dropdown::-webkit-scrollbar-track { background: var(--bg-dark); }
+.teleport-dropdown::-webkit-scrollbar-thumb { background: var(--green-dim); border-radius: 3px; }
+
 /* --- Bounty cards --- */
 .bounty-card {
   background: rgba(0, 20, 0, 0.6);
