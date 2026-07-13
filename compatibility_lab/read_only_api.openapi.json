@@ -1,0 +1,543 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "RustChain Read-Only API Contract",
+    "version": "1.0.0",
+    "description": "Canonical compatibility contract for the stable public RustChain health, epoch, active-miner, and wallet-balance reads. It reflects the production Flask handlers and intentionally excludes unregistered or write-capable routes."
+  },
+  "security": [],
+  "x-rustchain-compatibility": {
+    "probe_method": "GET",
+    "sends_credentials": false,
+    "fixtures_directory": "compatibility_lab/fixtures",
+    "generated_reference": "docs/READ_ONLY_API_CONTRACT.md",
+    "link_check_files": [
+      "README.md",
+      "compatibility_lab/README.md",
+      "docs/READ_ONLY_API_CONTRACT.md",
+      "docs/api/README.md"
+    ],
+    "documentation_route_check": {
+      "files": [
+        "README.md",
+        "compatibility_lab/README.md",
+        "docs/READ_ONLY_API_CONTRACT.md"
+      ],
+      "authoritative_sources": [
+        "node/rustchain_v2_integrated_v2.2.1_rip200.py"
+      ],
+      "public_hosts": [
+        "rustchain.org"
+      ],
+      "route_prefixes": [
+        "/api/",
+        "/wallet/"
+      ],
+      "exact_routes": [
+        "/health",
+        "/epoch"
+      ]
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "getHealth",
+        "summary": "Read node health",
+        "description": "Returns process uptime, database availability, backup age, and tip freshness. An unhealthy node returns the same body schema with HTTP 503.",
+        "security": [],
+        "x-rustchain-implementation": {
+          "file": "node/rustchain_v2_integrated_v2.2.1_rip200.py",
+          "handler": "api_health"
+        },
+        "x-rustchain-fixtures": [
+          "health-200.json",
+          "health-503.json"
+        ],
+        "responses": {
+          "200": {
+            "description": "The node reports healthy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The database or backup freshness check reports unhealthy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/epoch": {
+      "get": {
+        "operationId": "getEpoch",
+        "summary": "Read current epoch state",
+        "description": "Returns the current absolute slot and epoch plus the configured reward pot, epoch size, enrollment count, and fixed RTC supply.",
+        "security": [],
+        "x-rustchain-implementation": {
+          "file": "node/rustchain_v2_integrated_v2.2.1_rip200.py",
+          "handler": "get_epoch"
+        },
+        "x-rustchain-fixtures": [
+          "epoch-200.json"
+        ],
+        "responses": {
+          "200": {
+            "description": "Current epoch state.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpochResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/miners": {
+      "get": {
+        "operationId": "listActiveMiners",
+        "summary": "List recently attested miners",
+        "description": "Returns miners whose latest accepted attestation is less than one hour old, with bounded pagination and current-epoch enrollment metadata.",
+        "security": [],
+        "x-rustchain-implementation": {
+          "file": "node/rustchain_v2_integrated_v2.2.1_rip200.py",
+          "handler": "api_miners"
+        },
+        "x-rustchain-probe": {
+          "query": {
+            "limit": "2"
+          }
+        },
+        "x-rustchain-fixtures": [
+          "miners-200.json",
+          "miners-400.json",
+          "miners-429.json"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum miners returned.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000,
+              "default": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Zero-based result offset.",
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of active miners and pagination metadata.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MinersResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "A pagination parameter is malformed or outside its accepted range.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The per-client miner-list rate limit has been reached.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/wallet/balance": {
+      "get": {
+        "operationId": "getWalletBalance",
+        "summary": "Read a miner wallet balance",
+        "description": "Returns a valid miner identifier and its balance in integer micro-RTC and decimal RTC. A valid unknown identifier returns a zero balance.",
+        "security": [],
+        "x-rustchain-implementation": {
+          "file": "node/rustchain_v2_integrated_v2.2.1_rip200.py",
+          "handler": "api_wallet_balance"
+        },
+        "x-rustchain-probe": {
+          "query": {
+            "miner_id": "$miner_id"
+          }
+        },
+        "x-rustchain-fixtures": [
+          "wallet-balance-200.json",
+          "wallet-balance-400.json"
+        ],
+        "parameters": [
+          {
+            "name": "miner_id",
+            "in": "query",
+            "required": true,
+            "description": "Canonical miner or wallet identifier. The endpoint also implements address as a legacy alias, but this contract standardizes miner_id.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80,
+              "pattern": "^[A-Za-z0-9._:-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The wallet balance, including zero for a valid unknown identifier.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WalletBalanceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The miner identifier is missing, malformed, or conflicts with the legacy address alias.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HealthResponse": {
+        "type": "object",
+        "description": "Health body returned for both healthy and unhealthy status codes.",
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "version",
+          "uptime_s",
+          "db_rw",
+          "backup_age_hours",
+          "tip_age_slots"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "description": "Combined database and backup-freshness result."
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Running node application version."
+          },
+          "uptime_s": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Whole seconds since this process started."
+          },
+          "db_rw": {
+            "type": "boolean",
+            "description": "Whether the node database quick check completed."
+          },
+          "backup_age_hours": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Age of the newest known backup, or null when no backup timestamp is available."
+          },
+          "tip_age_slots": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Tip freshness indicator, or null when no header can be read. The current implementation reports zero when a header exists."
+          }
+        }
+      },
+      "EpochResponse": {
+        "type": "object",
+        "description": "Current epoch and immutable/configured emission values.",
+        "additionalProperties": false,
+        "required": [
+          "epoch",
+          "slot",
+          "epoch_pot",
+          "enrolled_miners",
+          "blocks_per_epoch",
+          "total_supply_rtc"
+        ],
+        "properties": {
+          "epoch": {
+            "type": "integer",
+            "description": "Current epoch number derived from the absolute slot."
+          },
+          "slot": {
+            "type": "integer",
+            "description": "Absolute slot number derived from genesis time."
+          },
+          "epoch_pot": {
+            "type": "number",
+            "minimum": 0,
+            "description": "RTC distributed across an epoch."
+          },
+          "enrolled_miners": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows enrolled for the current epoch."
+          },
+          "blocks_per_epoch": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Configured slots per epoch."
+          },
+          "total_supply_rtc": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Fixed total RTC supply configured by the node."
+          }
+        }
+      },
+      "MinerInfo": {
+        "type": "object",
+        "description": "One miner with an accepted attestation in the active one-hour window.",
+        "additionalProperties": false,
+        "required": [
+          "miner",
+          "last_attest",
+          "first_attest",
+          "device_family",
+          "device_arch",
+          "hardware_type",
+          "entropy_score",
+          "antiquity_multiplier"
+        ],
+        "properties": {
+          "miner": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Miner wallet identifier."
+          },
+          "last_attest": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Unix timestamp of the latest accepted attestation."
+          },
+          "first_attest": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "description": "Unix timestamp of the first retained attestation, or null when absent."
+          },
+          "device_family": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Attested device family as stored by the node."
+          },
+          "device_arch": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Attested device architecture as stored by the node."
+          },
+          "hardware_type": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Display classification derived by the node."
+          },
+          "entropy_score": {
+            "type": "number",
+            "description": "Stored hardware entropy score, defaulting to zero when falsey."
+          },
+          "antiquity_multiplier": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Reward multiplier selected from the hardware weight table."
+          }
+        }
+      },
+      "MinersPagination": {
+        "type": "object",
+        "description": "Pagination and enrollment metadata for an active-miner page.",
+        "additionalProperties": false,
+        "required": [
+          "total",
+          "total_enrolled",
+          "limit",
+          "offset",
+          "count"
+        ],
+        "properties": {
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total miners in the active one-hour window."
+          },
+          "total_enrolled": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Miner enrollments in the current epoch."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Applied page size."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Applied zero-based offset."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000,
+            "description": "Number of miners in this response page."
+          }
+        }
+      },
+      "MinersResponse": {
+        "type": "object",
+        "description": "Paginated active-miner response envelope.",
+        "additionalProperties": false,
+        "required": [
+          "miners",
+          "pagination"
+        ],
+        "properties": {
+          "miners": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MinerInfo"
+            },
+            "description": "Miners ordered by latest attestation descending."
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/MinersPagination",
+            "description": "Page and epoch-enrollment metadata."
+          }
+        }
+      },
+      "WalletBalanceResponse": {
+        "type": "object",
+        "description": "Balance for a canonical miner identifier. Success intentionally has no ok field.",
+        "additionalProperties": false,
+        "required": [
+          "miner_id",
+          "amount_i64",
+          "amount_rtc"
+        ],
+        "properties": {
+          "miner_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9._:-]+$",
+            "description": "The validated identifier supplied by the caller."
+          },
+          "amount_i64": {
+            "type": "integer",
+            "description": "Balance in integer micro-RTC."
+          },
+          "amount_rtc": {
+            "type": "number",
+            "description": "Balance expressed in RTC."
+          }
+        }
+      },
+      "ValidationErrorResponse": {
+        "type": "object",
+        "description": "Public input-validation error used by miner pagination and wallet lookup.",
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "error"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": false,
+            "description": "Always false for this error body."
+          },
+          "error": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Stable human-readable validation reason."
+          }
+        }
+      },
+      "RateLimitResponse": {
+        "type": "object",
+        "description": "Rate-limit body returned by the active-miner endpoint.",
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "error",
+          "limit"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": false,
+            "description": "Always false for this error body."
+          },
+          "error": {
+            "type": "string",
+            "const": "rate_limited",
+            "description": "Stable rate-limit error code."
+          },
+          "limit": {
+            "type": "string",
+            "pattern": "^[0-9]+/[0-9]+s$",
+            "description": "Configured request count and window, such as 30/60s."
+          }
+        }
+      }
+    }
+  }
+}
