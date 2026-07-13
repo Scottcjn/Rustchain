@@ -1522,7 +1522,15 @@ class UtxoDB:
             conn.close()
 
     def mempool_clear_expired(self) -> int:
-        """Remove expired transactions from mempool. Returns count removed."""
+        """Remove expired transactions from mempool. Returns count removed.
+
+        Uses BEGIN IMMEDIATE to ensure atomicity of the paired DELETE
+        operations for each expired transaction.  Without the transaction
+        wrapper, a crash between the two DELETEs can leave orphan
+        utxo_mempool_inputs rows or prematurely release UTXO locks
+        while the mempool transaction still references the stale inputs.
+        (see issue #2819 audit finding #1).
+        """
         conn = self._conn()
         try:
             now = int(time.time())
@@ -1536,6 +1544,9 @@ class UtxoDB:
                     return 0
                 raise
             else:
+                if not expired:
+                    return 0
+                conn.execute("BEGIN IMMEDIATE")
                 count = 0
                 for row in expired:
                     conn.execute(
