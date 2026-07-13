@@ -123,8 +123,11 @@ def calculate_rust_score(machine):
         score += RUST_WEIGHTS['first_attestation']
     
     # Architecture bonuses
+    # NOTE: keys must be lower-case — `arch` below is lower-cased before the
+    # substring match, so upper-case keys (e.g. 'G4') could never match and the
+    # PowerPC bonus was silently dropped. Mirrors the node sibling fix (#7956).
     arch_bonus = {
-        'G3': 80, 'G4': 70, 'G5': 60,
+        'g3': 80, 'g4': 70, 'g5': 60,
         '486': 150, 'pentium': 100, 'pentium4': 50,
         'retro': 40, 'apple_silicon': 5, 'modern': 0
     }
