@@ -66,8 +66,15 @@ function escapeHtml(value) {
     <div class="hud-chain" id="hud-chain" style="font-size:10px;color:#888;margin-top:4px"></div>
     <div class="hud-actions">
       <div class="hud-action" id="hud-new-contract">[NEW CONTRACT]</div>
+      <div class="hud-action" id="hud-teleport">[TELEPORT]</div>
       <div class="hud-action" id="hud-bounties" style="color:#ffd700">[BOUNTIES]</div>
     </div>
+  </div>
+
+  <!-- City Teleport Dropdown -->
+  <div id="teleport-dropdown" class="teleport-dropdown hidden">
+    <div class="teleport-header">[SELECT DESTINATION]<span id="teleport-close" class="teleport-close">✕</span></div>
+    <div class="teleport-list" id="teleport-list"></div>
   </div>
 
   <!-- Controls hint (bottom-left) -->
