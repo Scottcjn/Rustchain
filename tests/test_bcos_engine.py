@@ -79,6 +79,27 @@ def test_repo_name_detection_parses_github_remotes(bcos_engine_module, tmp_path,
     assert engine._detect_repo_name() == tmp_path.name
 
 
+def test_repo_name_detection_preserves_names_ending_in_git_charset(
+    bcos_engine_module, tmp_path, monkeypatch
+):
+    # Repos whose names end in '.', 'g', 'i' or 't' were mangled by
+    # rstrip(".git") (a character SET, not a suffix): "audit" -> "aud".
+    # The corrupted name is hashed into the on-chain commitment / cert_id,
+    # so the attestation would certify the wrong repository.
+    engine = bcos_engine_module.BCOSEngine(str(tmp_path), commit_sha="abc123")
+
+    cases = {
+        "https://github.com/acme/audit.git\n": "acme/audit",
+        "https://github.com/scottcjn/rustkit.git\n": "scottcjn/rustkit",
+        "git@github.com:acme/my-bot.git\n": "acme/my-bot",
+        "https://github.com/acme/rustchain-client\n": "acme/rustchain-client",
+        "https://github.com/acme/toolkit\n": "acme/toolkit",
+    }
+    for remote, expected in cases.items():
+        monkeypatch.setattr(bcos_engine_module, "_run_cmd", lambda _cmd, r=remote: (0, r, ""))
+        assert engine._detect_repo_name() == expected
+
+
 def test_tier_met_uses_thresholds_and_requires_l2_reviewer(
     bcos_engine_module,
     tmp_path,
