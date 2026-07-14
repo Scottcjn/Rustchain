@@ -56,15 +56,19 @@ class PriceFetcher:
             if len(pairs) > 0:
                 pair = pairs[0]
                 price_usd = float(pair.get("priceUsd", 0))
+                # DexScreener returns numbers as strings, so priceNative has to be
+                # coerced before it can be divided by -- and "0" is truthy, so the
+                # zero check has to happen after the cast, not on the raw value.
+                price_sol = float(pair.get("priceNative", 0) or 0)
                 liquidity = float(pair.get("liquidity", {}).get("usd", 0))
                 change_24h = float(pair.get("priceChange", {}).get("h24", 0))
 
                 return {
                     "price_usd": price_usd,
-                    "price_sol": float(pair.get("priceNative", 0)),
+                    "price_sol": price_sol,
                     "change_24h": change_24h,
                     "liquidity": liquidity,
-                    "sol_price_usd": price_usd / pair.get("priceNative", 1) if pair.get("priceNative") else 0,
+                    "sol_price_usd": price_usd / price_sol if price_sol else 0,
                     "source": "dexscreener",
                 }
         except Exception as e:
