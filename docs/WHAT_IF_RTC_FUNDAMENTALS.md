@@ -44,11 +44,10 @@ inflated, or conservative?**
 ## What-if #1: effective supply
 
 "Fully diluted" assumes all 8.39M RTC exist. At the code-pinned emission rate
-(≤548 RTC/year, falling with halvings), issuing the 7.88M mining allocation takes
+(≤548 RTC/year, fixed per RIP-0004), issuing the 7.88M mining allocation takes
 **millennia**. Over any 5-year horizon, effective supply is ~448K RTC — issued
 supply plus rounding. Annual dilution of issued supply: **~0.12%**, versus 2–10%
-for typical chains. Whichever emission schedule governs (fixed 1.5 or halving —
-see WHITEPAPER §6 vs node code), the conclusion only gets *stronger* under halving.
+for typical chains.
 
 ## What-if #2: replacement cost of the code
 
