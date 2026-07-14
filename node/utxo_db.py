@@ -1231,7 +1231,7 @@ class UtxoDB:
             fee = tx.get('fee_nrtc', 0)
             if not _is_nonnegative_int64(fee):
                 if manage_tx:
-                        conn.execute("ROLLBACK")
+                    conn.execute("ROLLBACK")
                 return False
 
             # MEDIUM FIX: Reject empty outputs to prevent DoS
@@ -1239,16 +1239,16 @@ class UtxoDB:
             outputs = self._normalize_outputs(outputs)
             if outputs is None:
                 if manage_tx:
-                        conn.execute("ROLLBACK")
+                    conn.execute("ROLLBACK")
                 return False
             if not outputs and tx_type not in MINTING_TX_TYPES:
                 if manage_tx:
-                        conn.execute("ROLLBACK")
+                    conn.execute("ROLLBACK")
                 return False
             # FIX(#9273): Reject transactions with too many outputs (UTXO bloat).
             if len(outputs) > MAX_OUTPUTS:
                 if manage_tx:
-                        conn.execute("ROLLBACK")
+                    conn.execute("ROLLBACK")
                 return False
 
             input_total = 0
@@ -1263,7 +1263,7 @@ class UtxoDB:
             output_total = sum(o['value_nrtc'] for o in outputs)
             if inputs and (output_total + fee) != input_total:
                 if manage_tx:
-                        conn.execute("ROLLBACK")
+                    conn.execute("ROLLBACK")
                 return False
 
             # Insert into mempool
@@ -1319,7 +1319,7 @@ class UtxoDB:
         except Exception:
             try:
                 if manage_tx:
-                        conn.execute("ROLLBACK")
+                    conn.execute("ROLLBACK")
             except Exception:
                 pass
             return False
