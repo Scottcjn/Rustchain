@@ -42,11 +42,11 @@ def test_get_multiplier_for_tier_returns_configured_and_fallback_values():
     assert chain_params.get_multiplier_for_tier("unknown") == 0.5
 
 
-def test_calculate_block_reward_halving_boundaries_and_tail_emission():
-    interval = chain_params.HALVING_INTERVAL_BLOCKS
+def test_calculate_block_reward_is_fixed_no_halving():
+    # RIP-0004: fixed 1.5 RTC/epoch emission, no halving, at every height.
     assert chain_params.calculate_block_reward(0) == Decimal("1.5")
-    assert chain_params.calculate_block_reward(interval - 1) == Decimal("1.5")
-    assert chain_params.calculate_block_reward(interval) == Decimal("0.75")
-    assert chain_params.calculate_block_reward(interval * 2) == Decimal("0.375")
-    assert chain_params.calculate_block_reward(interval * 4) == Decimal("0.09375")
-    assert chain_params.calculate_block_reward(interval * 5) == Decimal("0.09375")
+    assert chain_params.calculate_block_reward(209_999) == Decimal("1.5")
+    assert chain_params.calculate_block_reward(210_000) == Decimal("1.5")
+    assert chain_params.calculate_block_reward(420_000) == Decimal("1.5")
+    assert chain_params.calculate_block_reward(840_000) == Decimal("1.5")
+    assert chain_params.calculate_block_reward(1_050_000) == Decimal("1.5")
