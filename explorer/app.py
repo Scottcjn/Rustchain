@@ -27,16 +27,32 @@ def _upstream_node_unavailable(include_miners=False):
     return jsonify(payload), 500
 
 
-def _miner_is_online(miner):
-    """Return True if the miner was seen within the last 5 minutes.
+def _miner_last_seen_ts(miner):
+    """Return the miner's freshness timestamp, or None if it can't be read.
 
-    The raw node payload from /api/miners does not carry a 'status' field —
-    it is derived from last_seen in get_miners(). Network stats must derive it
-    the same way instead of reading a key the node never sends.
+    The node's /api/miners payload calls this field 'last_attest'; 'last_seen'
+    is checked first for any other producer that uses that name. Reading only
+    'last_seen' means the real node payload never matches.
     """
-    try:
-        last_seen = float(miner['last_seen'])
-    except (KeyError, TypeError, ValueError):
+    for key in ('last_seen', 'last_attest'):
+        if key not in miner:
+            continue
+        try:
+            return float(miner[key])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _miner_is_online(miner):
+    """Return True if the miner attested within the last 5 minutes.
+
+    The raw node payload carries no 'status' field — it is derived here and in
+    get_miners(). Network stats must derive it the same way instead of reading
+    a key the node never sends.
+    """
+    last_seen = _miner_last_seen_ts(miner)
+    if last_seen is None:
         return False
     return (datetime.now().timestamp() - last_seen) < 300
 
@@ -57,18 +73,18 @@ def get_miners():
                 if 'uptime' in miner:
                     miner['uptime_percentage'] = min(100, (miner['uptime'] / 86400) * 100)
                 
+                last_seen = _miner_last_seen_ts(miner)
+
                 # Format last seen timestamp
-                if 'last_seen' in miner:
+                if last_seen is not None:
                     try:
-                        timestamp = datetime.fromtimestamp(miner['last_seen'])
+                        timestamp = datetime.fromtimestamp(last_seen)
                         miner['last_seen_formatted'] = timestamp.strftime('%Y-%m-%d %H:%M:%S')
                     except (TypeError, ValueError, OSError, OverflowError):
                         miner['last_seen_formatted'] = 'Unknown'
-                
+
                 # Set status based on last seen
-                try:
-                    last_seen = float(miner['last_seen'])
-                except (KeyError, TypeError, ValueError):
+                if last_seen is None:
                     miner['status'] = 'unknown'
                 else:
                     time_diff = datetime.now().timestamp() - last_seen
