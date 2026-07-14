@@ -26,6 +26,20 @@ def _upstream_node_unavailable(include_miners=False):
         payload["miners"] = []
     return jsonify(payload), 500
 
+
+def _miner_is_online(miner):
+    """Return True if the miner was seen within the last 5 minutes.
+
+    The raw node payload from /api/miners does not carry a 'status' field —
+    it is derived from last_seen in get_miners(). Network stats must derive it
+    the same way instead of reading a key the node never sends.
+    """
+    try:
+        last_seen = float(miner['last_seen'])
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (datetime.now().timestamp() - last_seen) < 300
+
 @app.route('/')
 def dashboard():
     return render_template('dashboard.html')
@@ -81,7 +95,7 @@ def get_network_stats():
             
             # Calculate network statistics
             total_miners = len(miners)
-            active_miners = len([m for m in miners if m.get('status') == 'online'])
+            active_miners = len([m for m in miners if _miner_is_online(m)])
             total_hashrate = sum([m.get('hashrate', 0) for m in miners])
             
             # Calculate average block time (mock data for now)
