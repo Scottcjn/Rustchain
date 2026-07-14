@@ -66,6 +66,11 @@ MIN_ETH_BALANCE_WEI = int(0.01 * 1e18)  # 0.01 ETH
 MIN_WALLET_AGE_DAYS = 7
 MIN_GITHUB_AGE_DAYS = 30
 GITHUB_USERNAME_RE = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$")
+# EVM addresses are case-insensitive: mixed case is only an EIP-55 display
+# checksum over the same 20 bytes. Solana addresses are base58 and ARE
+# case-sensitive, so they must never be folded.
+EVM_ADDRESS_RE = re.compile(r"0x[0-9a-fA-F]{40}")
+EVM_CHAINS = frozenset({"base"})
 MAX_BRIDGE_ADDRESS_LENGTH = 128
 MAX_BRIDGE_TX_LENGTH = 256
 
@@ -322,6 +327,22 @@ class AirdropV2:
     def _is_valid_github_username(github_username: str) -> bool:
         return bool(GITHUB_USERNAME_RE.fullmatch(github_username))
 
+    @staticmethod
+    def _normalize_wallet_address(wallet_address: str, chain: str) -> str:
+        """Canonicalize a wallet address for uniqueness comparison.
+
+        EVM (Base) addresses are case-insensitive — the mixed-case form is
+        only an EIP-55 checksum over the same 20 bytes — so they are folded
+        to lowercase. Without this, the same Base wallet can claim the
+        airdrop once per casing variant, defeating the "one claim per
+        GitHub/wallet" anti-Sybil rule. Solana addresses are base58 and are
+        case-sensitive, so they are left byte-exact.
+        """
+        address = (wallet_address or "").strip()
+        if chain in EVM_CHAINS and EVM_ADDRESS_RE.fullmatch(address):
+            return address.lower()
+        return address
+
     def check_eligibility(
         self,
         github_username: str,
@@ -355,6 +376,7 @@ class AirdropV2:
                 eligible=False,
                 reason=f"Unsupported chain: {chain}. Must be 'solana' or 'base'",
             )
+        wallet_address = self._normalize_wallet_address(wallet_address, chain_lower)
 
         checks = {}
 
@@ -695,6 +717,7 @@ class AirdropV2:
     ) -> bool:
         """Check if a GitHub account or wallet already claimed an airdrop."""
         github_username = self._normalize_github_username(github_username)
+        wallet_address = self._normalize_wallet_address(wallet_address, chain)
         conn = self._get_conn()
         cursor = conn.cursor()
         cursor.execute(
@@ -794,6 +817,7 @@ class AirdropV2:
         if not self._is_valid_github_username(github_username):
             return False, "Invalid GitHub username", None
         chain_lower = chain.lower()
+        wallet_address = self._normalize_wallet_address(wallet_address, chain_lower)
 
         if self._has_claimed(github_username, wallet_address, chain_lower):
             return False, "Claim already exists for this GitHub account or wallet", None
