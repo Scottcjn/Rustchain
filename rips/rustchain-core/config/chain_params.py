@@ -27,9 +27,8 @@ PREMINE_PER_FOUNDER: Decimal = Decimal("125829.12")  # 4 founders
 BLOCK_REWARD: Decimal = Decimal("1.5")  # RTC per block
 BLOCK_TIME_SECONDS: int = 600  # 10 minutes
 
-# Halving schedule
-HALVING_INTERVAL_BLOCKS: int = 210_000  # ~4 years
-HALVING_COUNT: int = 4  # After 4 halvings, tail emission
+# Emission is FIXED per RIP-0004: no halving schedule. The 1.5 RTC/epoch
+# rate holds until the 2^23 supply cap is exhausted.
 
 # Token precision
 DECIMALS: int = 8
@@ -141,12 +140,8 @@ def get_multiplier_for_tier(tier: str) -> float:
     return HARDWARE_TIERS.get(tier, {}).get("multiplier", 0.5)
 
 def calculate_block_reward(height: int) -> Decimal:
-    """Calculate block reward at a given height"""
+    """Block reward at a given height. Fixed emission per RIP-0004:
+    1.5 RTC per block/epoch, no halving, until the supply cap is reached."""
     if height < 0:
         raise ValueError(f"Block height cannot be negative: {height}")
-
-    halvings = height // HALVING_INTERVAL_BLOCKS
-    if halvings >= HALVING_COUNT:
-        # Tail emission after 4 halvings
-        return BLOCK_REWARD / Decimal(2 ** HALVING_COUNT)
-    return BLOCK_REWARD / Decimal(2 ** halvings)
+    return BLOCK_REWARD
