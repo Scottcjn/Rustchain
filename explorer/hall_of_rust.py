@@ -190,19 +190,41 @@ def induct_machine():
         arch = data.get('device_arch', 'modern')
         
         if existing:
-            # Update attestation count
+            # Update attestation count, then recompute the Rust Score.
+            # calculate_rust_score() rewards attestation loyalty, but the
+            # re-attestation path used to bump total_attestations without
+            # recomputing rust_score, so a machine's leaderboard score was
+            # frozen at its induction-time value (attestations == 1) forever.
             c.execute("""
-                UPDATE hall_of_rust 
+                UPDATE hall_of_rust
                 SET total_attestations = total_attestations + 1,
                     last_attestation = ?
                 WHERE fingerprint_hash = ?
             """, (now, fingerprint_hash))
+
+            c.execute("""
+                SELECT id, manufacture_year, device_arch, device_model,
+                       total_attestations, thermal_events
+                FROM hall_of_rust WHERE fingerprint_hash = ?
+            """, (fingerprint_hash,))
+            updated = c.fetchone()
+            new_score = calculate_rust_score({
+                'id': updated[0],
+                'manufacture_year': updated[1],
+                'device_arch': updated[2],
+                'device_model': updated[3],
+                'total_attestations': updated[4],
+                'thermal_events': updated[5],
+            })
+            c.execute("UPDATE hall_of_rust SET rust_score = ? WHERE fingerprint_hash = ?",
+                      (new_score, fingerprint_hash))
             conn.commit()
             conn.close()
             return jsonify({
-                'inducted': False, 
+                'inducted': False,
                 'message': 'Already in Hall of Rust',
-                'attestation_count': existing[1] + 1
+                'attestation_count': existing[1] + 1,
+                'rust_score': new_score
             })
         
         # New induction!
