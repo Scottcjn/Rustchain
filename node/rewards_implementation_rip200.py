@@ -219,6 +219,18 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
                     }
                 # Default: re-acquire the write lock (rollback released it) + fall through.
                 db.execute("BEGIN IMMEDIATE")
+                # Re-check settled: rollback() above released the write lock, so a
+                # concurrent settler may have committed this epoch in the window
+                # between rollback() and this BEGIN IMMEDIATE. The top-of-function
+                # already_settled check (before the released lock) no longer holds,
+                # so without re-checking here the standard path below would credit
+                # the same epoch a SECOND time (double-credit).
+                st2 = db.execute(
+                    "SELECT settled FROM epoch_state WHERE epoch=?", (epoch,)
+                ).fetchone()
+                if st2 and int(st2[0]) == 1:
+                    db.rollback()
+                    return {"ok": True, "epoch": epoch, "already_settled": True}
 
         # Standard RIP-200 rewards (no anti-double-mining)
         rewards = calculate_epoch_rewards_time_aged(
