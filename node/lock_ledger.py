@@ -641,9 +641,24 @@ def auto_release_expired_locks(
 
     released_count = 0
     total_amount = 0
+    skipped_bridge_managed = 0
     errors = []
 
     for lock in expired:
+        # Bridge-managed locks (tied to a bridge_transfers row) must NOT be
+        # refunded by this unattended timer worker. Their funds were
+        # hard-debited at lock creation and committed to an external transfer;
+        # the bridge resolves them explicitly — a void atomically refunds the
+        # source AND voids the transfer, while a completion releases the lock
+        # WITHOUT a refund because the funds have already left the chain.
+        # Crediting the owner here is NOT paired with a transfer void, so a
+        # later external confirmation still settles the deposit cross-chain and
+        # the owner keeps both copies — supply inflation / double-spend. Leave
+        # bridge-tied locks for the bridge's own settlement path.
+        if lock.bridge_transfer_id is not None:
+            skipped_bridge_managed += 1
+            continue
+
         success, result = release_lock(
             db_conn,
             lock.id,
@@ -663,6 +678,7 @@ def auto_release_expired_locks(
     return {
         "released_count": released_count,
         "total_amount_rtc": total_amount / LOCK_UNIT,
+        "skipped_bridge_managed": skipped_bridge_managed,
         "errors": errors,
         "processed_at": now
     }
