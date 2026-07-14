@@ -25,18 +25,17 @@ def test_block_reward_rejects_negative_height():
         chain_params.calculate_block_reward(-1)
 
 
-def test_block_reward_rejects_negative_halving_boundary():
+def test_block_reward_rejects_negative_height_large():
     chain_params = load_chain_params()
 
     with pytest.raises(ValueError, match="Block height cannot be negative: -210000"):
-        chain_params.calculate_block_reward(-chain_params.HALVING_INTERVAL_BLOCKS)
+        chain_params.calculate_block_reward(-210_000)
 
 
-def test_block_reward_keeps_genesis_and_halving_outputs():
+def test_block_reward_is_fixed_no_halving():
+    # RIP-0004: emission is fixed at 1.5 RTC/epoch, no halving, at every height.
     chain_params = load_chain_params()
 
     assert chain_params.calculate_block_reward(0) == Decimal("1.5")
-    assert chain_params.calculate_block_reward(chain_params.HALVING_INTERVAL_BLOCKS) == Decimal("0.75")
-    assert chain_params.calculate_block_reward(
-        chain_params.HALVING_INTERVAL_BLOCKS * chain_params.HALVING_COUNT
-    ) == Decimal("0.09375")
+    assert chain_params.calculate_block_reward(210_000) == Decimal("1.5")
+    assert chain_params.calculate_block_reward(10_000_000) == Decimal("1.5")
