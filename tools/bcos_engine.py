@@ -191,7 +191,12 @@ class BCOSEngine:
             # Handle SSH and HTTPS URLs
             for prefix in ["git@github.com:", "https://github.com/"]:
                 if url.startswith(prefix):
-                    name = url[len(prefix):].rstrip(".git").rstrip("/")
+                    name = url[len(prefix):].rstrip("/")
+                    # rstrip(".git") strips a character SET, not the suffix,
+                    # mangling repos ending in '.', 'g', 'i' or 't'
+                    # (e.g. "audit" -> "aud"). Strip the exact ".git" suffix.
+                    if name.endswith(".git"):
+                        name = name[:-len(".git")]
                     return name
         return self.repo_path.name
 
