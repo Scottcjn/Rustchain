@@ -168,9 +168,13 @@ class ValidatorAgent:
         # Update stats
         if valid:
             self.stats["total_validated"] += 1
-            total = self.stats["total_validated"] + self.stats["total_rejected"]
+            # average_score is the running mean over VALIDATED scores only
+            # (rejected proofs never contribute a score to the numerator), so
+            # the divisor must be the count of validated proofs, not the
+            # combined validated+rejected total.
+            n = self.stats["total_validated"]
             self.stats["average_score"] = (
-                (self.stats["average_score"] * (total - 1) + score) / total
+                (self.stats["average_score"] * (n - 1) + score) / n
             )
         else:
             self.stats["total_rejected"] += 1
