@@ -1524,12 +1524,17 @@ class UtxoDB:
     def mempool_clear_expired(self) -> int:
         """Remove expired transactions from mempool. Returns count removed.
 
-        Uses BEGIN IMMEDIATE to ensure atomicity of the paired DELETE
-        operations for each expired transaction.  Without the transaction
-        wrapper, a crash between the two DELETEs can leave orphan
-        utxo_mempool_inputs rows or prematurely release UTXO locks
-        while the mempool transaction still references the stale inputs.
-        (see issue #2819 audit finding #1).
+        Acquires a write lock up front via ``BEGIN IMMEDIATE`` so the
+        paired DELETE loop runs as one atomic, write-locked section,
+        matching the pattern already used by ``mempool_add`` and
+        ``mempool_remove``. With the default deferred isolation the
+        DELETE pairs would still commit together (Python sqlite3 keeps
+        the implicit transaction open until ``conn.commit()``), so this
+        is a hardening / lock-discipline change rather than a fix for a
+        corruption path: it prevents a concurrent writer from observing
+        a half-cleared mempool and grabbing UTXOs the GC has decided to
+        release. ``timeout=30`` makes the write lock block-and-retry
+        rather than raise on contention. (see issue #2819).
         """
         conn = self._conn()
         try:
