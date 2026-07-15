@@ -28,9 +28,15 @@ def client(tmp_path):
         CREATE TABLE miner_attest_recent (miner TEXT, ts_ok INTEGER,
             device_family TEXT, device_arch TEXT, entropy_score REAL,
             fingerprint_passed INTEGER);
-        CREATE TABLE ergo_anchors (id INTEGER PRIMARY KEY, commitment TEXT,
-            miner_count INTEGER, miner_data TEXT, rc_slot INTEGER,
-            ergo_height INTEGER, tx_id TEXT, status TEXT, created_at INTEGER);
+        -- Real schema: rustchain_ergo_anchor._ensure_anchor_table (mirrored by
+        -- the node's _ensure_fallback_anchor_table and rustchain_migration).
+        -- Must stay in sync with the producer -- a fabricated shape here pins
+        -- the query instead of testing it.
+        CREATE TABLE ergo_anchors (id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rustchain_height INTEGER NOT NULL, rustchain_hash TEXT NOT NULL,
+            commitment_hash TEXT NOT NULL, ergo_tx_id TEXT NOT NULL,
+            ergo_height INTEGER, confirmations INTEGER DEFAULT 0,
+            status TEXT DEFAULT 'pending', created_at INTEGER NOT NULL);
         CREATE TABLE epoch_enroll (epoch INTEGER, miner TEXT);
         CREATE TABLE epoch_state (epoch INTEGER, settled INTEGER, settled_ts INTEGER);
         CREATE TABLE balances (miner_id TEXT PRIMARY KEY, amount_i64 INTEGER);
@@ -42,7 +48,9 @@ def client(tmp_path):
     conn.execute("INSERT INTO headers VALUES (1700,'minerA','','','',?)", (now,))
     conn.execute("INSERT INTO headers VALUES (1701,'minerB','','','',?)", (now,))
     conn.execute("INSERT INTO miner_attest_recent VALUES ('minerA',?, 'POWER8','power8',0.9,1)", (now,))
-    conn.execute("INSERT INTO ergo_anchors (commitment,miner_count,tx_id,status,created_at) VALUES ('abc',5,'txid1','confirmed',?)", (now,))
+    conn.execute("INSERT INTO ergo_anchors (rustchain_height,rustchain_hash,commitment_hash,"
+                 "ergo_tx_id,ergo_height,confirmations,status,created_at) "
+                 "VALUES (1700,'rchash','abc','txid1',5000,3,'confirmed',?)", (now,))
     conn.execute("INSERT INTO epoch_enroll VALUES (10,'minerA')")
     conn.execute("INSERT INTO epoch_state VALUES (10,0,0)")
     conn.execute("INSERT INTO balances VALUES ('minerA', 5000000)")
@@ -93,6 +101,23 @@ def test_blocks_and_latest_and_by_slot(client):
     assert client.get("/api/v1/blocks/latest").get_json()["block"]["slot"] == 1701
     assert client.get("/api/v1/blocks/1700").get_json()["block"]["miner_id"] == "minerA"
     assert client.get("/api/v1/blocks/999999").status_code == 404
+
+
+def test_anchors_against_real_producer_schema(client):
+    """The query must run against the schema rustchain_ergo_anchor actually writes.
+
+    Regression: it selected commitment/miner_count/tx_id, none of which exist on
+    ergo_anchors, so every call raised OperationalError and json_safe turned it
+    into a 503 "database busy" -- a permanent schema bug reported as transient.
+    """
+    r = client.get("/api/v1/anchors")
+    assert r.status_code == 200, f"expected 200, got {r.status_code} {r.get_json()}"
+    anchor = r.get_json()["anchors"][0]
+    assert anchor["tx_id"] == "txid1"          # ergo_tx_id
+    assert anchor["commitment"] == "abc"       # commitment_hash
+    assert anchor["status"] == "confirmed"
+    assert anchor["ergo_height"] == 5000
+    assert client.get("/api/v1/anchors/recent").status_code == 200
 
 
 def test_anchors_and_leaderboard_and_governance(client):
