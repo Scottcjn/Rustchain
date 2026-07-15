@@ -188,35 +188,40 @@ def compute_entropy_profile_hash(fingerprint: Dict) -> str:
     checks = fingerprint.get('checks', {}) if isinstance(fingerprint, dict) else {}
     
     entropy_values = {}
-    
+
+    # The producer (node/fingerprint_checks.py) emits load-normalized *ratios*
+    # and coefficients of variation as the stable per-machine characteristics;
+    # the raw *_ns latencies vary run-to-run and are intentionally excluded so
+    # the same box yields a stable profile across attestations.
+
     # Extract clock drift entropy
     clock_data = checks.get('clock_drift', {}).get('data', {})
     if isinstance(clock_data, dict):
         entropy_values['clock_cv'] = clock_data.get('cv', 0)
-        entropy_values['clock_drift_hash'] = clock_data.get('drift_hash', '')
-    
-    # Extract cache timing entropy
+
+    # Extract cache timing entropy (hierarchy ratios are the stable signal)
     cache_data = checks.get('cache_timing', {}).get('data', {})
     if isinstance(cache_data, dict):
-        entropy_values['cache_hash'] = cache_data.get('cache_hash', '')
-        entropy_values['cache_l1'] = cache_data.get('L1', 0)
-        entropy_values['cache_l2'] = cache_data.get('L2', 0)
-    
+        entropy_values['cache_l2_l1_ratio'] = cache_data.get('l2_l1_ratio', 0)
+        entropy_values['cache_l3_l2_ratio'] = cache_data.get('l3_l2_ratio', 0)
+
     # Extract thermal drift entropy
     thermal_data = checks.get('thermal_drift', {}).get('data', {})
     if isinstance(thermal_data, dict):
-        entropy_values['thermal_ratio'] = thermal_data.get('ratio', 0)
-    
-    # Extract jitter entropy
+        entropy_values['thermal_ratio'] = thermal_data.get('drift_ratio', 0)
+
+    # Extract jitter entropy as load-robust relative timings (fp/int, branch/int);
+    # the producer emits only per-op *_avg_ns, so derive dimensionless ratios.
     jitter_data = checks.get('instruction_jitter', {}).get('data', {})
     if isinstance(jitter_data, dict):
-        entropy_values['jitter_cv'] = jitter_data.get('cv', 0)
-        jitter_map = jitter_data.get('jitter_map', {})
-        if isinstance(jitter_map, dict):
-            # Hash the jitter map for compact representation
-            entropy_values['jitter_map_hash'] = hashlib.sha256(
-                json.dumps(jitter_map, sort_keys=True).encode()
-            ).hexdigest()[:16]
+        int_avg = jitter_data.get('int_avg_ns', 0) or 0
+        if int_avg:
+            entropy_values['jitter_fp_int_ratio'] = round(
+                jitter_data.get('fp_avg_ns', 0) / int_avg, 3
+            )
+            entropy_values['jitter_branch_int_ratio'] = round(
+                jitter_data.get('branch_avg_ns', 0) / int_avg, 3
+            )
     
     # Extract SIMD profile entropy
     simd_data = checks.get('simd_identity', {}).get('data', {})
