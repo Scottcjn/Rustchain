@@ -674,6 +674,7 @@ def settle_epoch_with_anti_double_mining(
         # We use an UPDATE that only succeeds if settled is currently 0.
         # This prevents the race condition.
         res = db.execute("UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ? AND settled = 0", (int(time.time()), epoch))
+        claimed = res.rowcount > 0
         if res.rowcount == 0:
             # If no row was updated, it was either already settled or doesn't exist
             st = db.execute("SELECT settled FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
@@ -698,6 +699,19 @@ def settle_epoch_with_anti_double_mining(
         if not rewards:
             if own_conn:
                 db.rollback()
+            elif claimed:
+                # Shared connection: the caller owns the transaction and commits
+                # on return (see settle_epoch_rip200), so `own_conn`-gated rollback
+                # never runs and the claim above would be committed despite paying
+                # nothing — burning the epoch's emission and making every retry
+                # answer already_settled. Rolling back is not ours to do here, so
+                # undo only our own claim and leave the epoch retryable. This
+                # matches the standard path, which rolls back before returning the
+                # same error.
+                db.execute(
+                    "UPDATE epoch_state SET settled = 0, settled_ts = NULL WHERE epoch = ?",
+                    (epoch,)
+                )
             return {"ok": False, "error": "no_eligible_miners", "epoch": epoch}
 
         # Credit rewards to miners
