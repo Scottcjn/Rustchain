@@ -48,21 +48,43 @@ download_file() {
 # --- Constants -------------------------------------------------------------
 INSTALL_DIR="/opt/rustchain-miner"
 REPO_RAW="https://raw.githubusercontent.com/Scottcjn/Rustchain/main"
-MINER_URL="${REPO_RAW}/miners/linux/rustchain_linux_miner.py"
-FINGERPRINT_URL="${REPO_RAW}/miners/linux/fingerprint_checks.py"
-MINER_CRYPTO_URL="${REPO_RAW}/miners/linux/miner_crypto.py"
+# Resolve miner paths based on OS (set dynamically in main)
+MINER_SUBDIR="linux"
+if [ "$(uname -s)" = "Darwin" ]; then
+    MINER_SUBDIR="macos"
+fi
+MINER_URL="${REPO_RAW}/miners/${MINER_SUBDIR}/rustchain_linux_miner.py"
+FINGERPRINT_URL="${REPO_RAW}/miners/${MINER_SUBDIR}/fingerprint_checks.py"
+MINER_CRYPTO_URL="${REPO_RAW}/miners/${MINER_SUBDIR}/miner_crypto.py"
+
+# macOS uses a different miner script name
+if [ "$MINER_SUBDIR" = "macos" ]; then
+    MINER_URL="${REPO_RAW}/miners/macos/rustchain_mac_miner_v2.5.py"
+fi
 NODE_URL="https://50.28.86.131"
 BOUNTY_URL="https://github.com/Scottcjn/rustchain-bounties/issues/2451"
 ARCADE_REPO="https://github.com/Scottcjn/rustchain-arcade"
 SERVICE_NAME="rustchain-miner"
 
-# --- Multiplier table ------------------------------------------------------
-declare -A MULT_TABLE=(
-    [sparc]="2.9"   [mips]="3.0"    [68k]="3.5"
-    [g4]="2.5"      [g5]="2.0"      [g3]="1.8"
-    [power8]="1.5"  [riscv]="1.4"   [retro]="1.4"
-    [apple_silicon]="1.2" [modern]="1.0" [aarch64]="0.0005"
-)
+# --- Multiplier table (bash 3.2 compatible — no associative arrays) -------
+# macOS ships bash 3.2 which doesn't support declare -A
+get_mult_value() {
+    case "$1" in
+        sparc)          echo "2.9" ;;
+        mips)           echo "3.0" ;;
+        68k)            echo "3.5" ;;
+        g4)             echo "2.5" ;;
+        g5)             echo "2.0" ;;
+        g3)             echo "1.8" ;;
+        power8)         echo "1.5" ;;
+        riscv)          echo "1.4" ;;
+        retro)          echo "1.4" ;;
+        apple_silicon)  echo "1.2" ;;
+        modern)         echo "1.0" ;;
+        aarch64)        echo "0.0005" ;;
+        *)              echo "1.0" ;;
+    esac
+}
 
 # --- VM Detection ----------------------------------------------------------
 detect_vm() {
@@ -238,7 +260,7 @@ get_multiplier() {
     case "$arch" in
         rpi4|rpi5|rpi) echo "0.0005" ;;  # ARM — negligible mining, use arcade
         *)
-            echo "${MULT_TABLE[$arch]:-1.0}"
+            get_mult_value "$arch"
             ;;
     esac
 }
@@ -355,7 +377,7 @@ User=$(whoami)
 WorkingDirectory=${INSTALL_DIR}
 Environment="RUSTCHAIN_WALLET=${wallet}"
 Environment="PYTHONUNBUFFERED=1"
-ExecStart=${py} -u ${INSTALL_DIR}/rustchain_linux_miner.py --wallet ${wallet}
+ExecStart=${py} -u ${INSTALL_DIR}/${MINER_SCRIPT} --wallet ${wallet}
 Restart=always
 RestartSec=30
 StandardOutput=append:/var/log/rustchain-miner.log
@@ -392,7 +414,7 @@ create_launchd_plist() {
     <array>
         <string>${py}</string>
         <string>-u</string>
-        <string>${INSTALL_DIR}/rustchain_linux_miner.py</string>
+        <string>${INSTALL_DIR}/${MINER_SCRIPT}</string>
         <string>--wallet</string>
         <string>${wallet}</string>
     </array>
@@ -526,11 +548,18 @@ main() {
 
     # --- Download miner files ---
     info "Downloading miner files..."
-    download_file "${MINER_URL}" "https://rustchain.org/rustchain_linux_miner.py" "${INSTALL_DIR}/rustchain_linux_miner.py" "miner"
+    MINER_SCRIPT="rustchain_linux_miner.py"
+    if [ "$os_name" = "Darwin" ]; then
+        MINER_SCRIPT="rustchain_mac_miner.py"
+    fi
+    download_file "${MINER_URL}" "https://rustchain.org/rustchain_mac_miner.py" "${INSTALL_DIR}/${MINER_SCRIPT}" "miner"
     download_file "${FINGERPRINT_URL}" "https://rustchain.org/fingerprint_checks.py" "${INSTALL_DIR}/fingerprint_checks.py" "fingerprint helper"
-    download_file "${MINER_CRYPTO_URL}" "https://rustchain.org/miner_crypto.py" "${INSTALL_DIR}/miner_crypto.py" "miner signing helper"
+    # miner_crypto.py only exists for Linux; macOS miner is self-contained
+    if [ "$os_name" = "Linux" ]; then
+        download_file "${MINER_CRYPTO_URL}" "https://rustchain.org/miner_crypto.py" "${INSTALL_DIR}/miner_crypto.py" "miner signing helper"
+    fi
 
-    if [ ! -s "${INSTALL_DIR}/rustchain_linux_miner.py" ]; then
+    if [ ! -s "${INSTALL_DIR}/${MINER_SCRIPT}" ]; then
         err "Failed to download miner files. Check network connectivity."
         exit 1
     fi
@@ -538,7 +567,7 @@ main() {
         err "Failed to download fingerprint helper. Check network connectivity."
         exit 1
     fi
-    if [ ! -s "${INSTALL_DIR}/miner_crypto.py" ]; then
+    if [ "$os_name" = "Linux" ] && [ ! -s "${INSTALL_DIR}/miner_crypto.py" ]; then
         err "Failed to download miner signing helper. Check network connectivity."
         exit 1
     fi
@@ -578,13 +607,13 @@ CFGEOF
             create_systemd_service "$py" "$wallet"
         else
             warn "systemd not found. Start the miner manually:"
-            warn "  ${py} ${INSTALL_DIR}/rustchain_linux_miner.py"
+            warn "  ${py} ${INSTALL_DIR}/${MINER_SCRIPT}"
         fi
     elif [ "$os_name" = "Darwin" ]; then
         create_launchd_plist "$py" "$wallet"
     else
         warn "Unknown OS. Start the miner manually:"
-        warn "  ${py} ${INSTALL_DIR}/rustchain_linux_miner.py"
+        warn "  ${py} ${INSTALL_DIR}/${MINER_SCRIPT}"
     fi
 
     # --- Print summary ---
