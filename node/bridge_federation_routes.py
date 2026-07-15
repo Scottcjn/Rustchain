@@ -47,8 +47,19 @@ MAX_EVENTS_WINDOW_SECONDS = 30 * 24 * 3600
 
 
 def _get_db_path() -> str:
-    """Resolve DB_PATH the same way bridge_api.py does."""
-    return os.environ.get("DB_PATH", "rustchain_v2.db")
+    """Resolve the DB path exactly as the node does.
+
+    `bridge_api.py` gets this right by importing DB_PATH from the node module,
+    which resolves `RUSTCHAIN_DB_PATH` first — and that is the variable the
+    operator docs tell you to set (NODE_OPERATOR_GUIDE.md, DEVNET.md).
+    Honouring only DB_PATH here made these public read routes open a different
+    file than the one the bridge writes to.
+    """
+    return (
+        os.environ.get("RUSTCHAIN_DB_PATH")
+        or os.environ.get("DB_PATH")
+        or "rustchain_v2.db"
+    )
 
 
 def _parse_int_arg(value: Optional[str], default: int, min_value: int, max_value: int) -> int:
