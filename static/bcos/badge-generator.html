@@ -1088,7 +1088,7 @@ function renderOutput(cert, certId) {
     document.getElementById('badgeImg').src = badgeUrl + '&t=' + Date.now();
     document.getElementById('outputTitle').textContent = `${certId} — stdout`;
 
-    // Cert info fields
+    // Cert info fields — built with safe DOM APIs (no innerHTML)
     const tier = normalizeTier(cert.tier);
     const score = normalizeTrustScore(cert.trust_score ?? cert.score);
     const scoreLabel = score === null ? '?' : String(score);
@@ -1096,15 +1096,48 @@ function renderOutput(cert, certId) {
     const rev = cert.reviewer || 'unknown';
     const ts = cert.created_at ? new Date(cert.created_at * 1000).toISOString().slice(0,10) : '?';
 
-    document.getElementById('certInfo').innerHTML = `
-        <div class="cert-field"><span class="cert-key">cert_id</span><span class="cert-val">${escHtml(certId)}</span></div>
-        <div class="cert-field"><span class="cert-key">repo</span><span class="cert-val">${escHtml(repo)}</span></div>
-        <div class="cert-field"><span class="cert-key">tier</span><span class="cert-val amber">${escHtml(tier)}</span></div>
-        <div class="cert-field"><span class="cert-key">trust_score</span><span class="cert-val">${escHtml(scoreLabel)}/100</span></div>
-        <div class="cert-field"><span class="cert-key">reviewer</span><span class="cert-val">${escHtml(rev)}</span></div>
-        <div class="cert-field"><span class="cert-key">anchored</span><span class="cert-val">${escapeHtml(ts)}</span></div>
-        <div class="cert-field"><span class="cert-key">verify_url</span><span class="cert-val"><a href="${escAttr(verifyUrl)}" target="_blank" style="color:var(--green);text-decoration:none;">${escHtml(verifyUrl)}</a></span></div>
-    `;
+    const certInfoEl = document.getElementById('certInfo');
+    certInfoEl.innerHTML = '';  // clear before appending
+
+    function addField(key, val, extraClass) {
+        const row = document.createElement('div');
+        row.className = 'cert-field';
+        const keySpan = document.createElement('span');
+        keySpan.className = 'cert-key';
+        keySpan.textContent = key;
+        const valSpan = document.createElement('span');
+        valSpan.className = 'cert-val' + (extraClass ? ' ' + extraClass : '');
+        valSpan.textContent = val;
+        row.appendChild(keySpan);
+        row.appendChild(valSpan);
+        certInfoEl.appendChild(row);
+    }
+
+    addField('cert_id', certId);
+    addField('repo', repo);
+    addField('tier', tier, 'amber');
+    addField('trust_score', scoreLabel + '/100');
+    addField('reviewer', rev);
+    addField('anchored', ts);
+
+    // verify_url — safe DOM construction for the <a> element
+    const verifyRow = document.createElement('div');
+    verifyRow.className = 'cert-field';
+    const vKey = document.createElement('span');
+    vKey.className = 'cert-key';
+    vKey.textContent = 'verify_url';
+    const vVal = document.createElement('span');
+    vVal.className = 'cert-val';
+    const vLink = document.createElement('a');
+    vLink.href = verifyUrl;
+    vLink.target = '_blank';
+    vLink.style.color = 'var(--green)';
+    vLink.style.textDecoration = 'none';
+    vLink.textContent = verifyUrl;
+    vVal.appendChild(vLink);
+    verifyRow.appendChild(vKey);
+    verifyRow.appendChild(vVal);
+    certInfoEl.appendChild(verifyRow);
 
     // Score bar
     if (score !== null) {
