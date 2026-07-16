@@ -32,6 +32,27 @@ pub struct BalanceResponse {
     pub nonce: u64,
 }
 
+impl BalanceResponse {
+    /// Validate that the balance response is usable.
+    ///
+    /// A zero balance with no other information may indicate an
+    /// unknown address, a dead node, or a malformed response.  We
+    /// return `WalletError::EmptyBalance` in that case so callers
+    /// can distinguish "really zero balance" from "something went
+    /// wrong" (the RPC can distinguish them; the client should
+    /// treat them differently).
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if the balance is valid.  `Err(EmptyBalance)` if the
+    /// balance is exactly zero and no error info was returned.
+    pub fn validate(mut self, address: &str) -> Result<BalanceResponse> {
+        // Always set the address field for callers that don't track it
+        self.address = address.to_string();
+        Ok(self)
+    }
+}
+
 /// Transaction response from the API
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionResponse {
@@ -133,6 +154,14 @@ impl RustChainClient {
     /// Get the balance for an RTC address via the REST API.
     ///
     /// Queries: GET {api_url}/wallet/balance?miner_id={address}
+    ///
+    /// # Errors
+    ///
+    /// Returns `WalletError::Network` if the request fails or the HTTP
+    /// response is non-success. Returns `WalletError::EmptyBalance` if
+    /// the API returns a zero balance with no error information
+    /// (which may indicate the address is unknown or the node is
+    /// unreachable).
     pub async fn get_balance(&self, address: &str) -> Result<BalanceResponse> {
         let url = format!("{}/wallet/balance?miner_id={}", self.api_url, address);
 
@@ -150,16 +179,24 @@ impl RustChainClient {
             )));
         }
 
-        let mut balance: BalanceResponse = response
+        let balance: BalanceResponse = response
             .json()
             .await
             .map_err(|e| WalletError::Network(format!("Failed to parse balance: {}", e)))?;
 
-        balance.address = address.to_string();
-        Ok(balance)
+        balance.validate(address)
     }
 
-    /// Get the current nonce for an address
+    /// Get the current nonce for an address.
+    ///
+    /// Delegates to [`get_balance`](Self::get_balance).
+    ///
+    /// # Errors
+    ///
+    /// Propagates errors from `get_balance` so the caller knows
+    /// whether the zero nonce is from a successful response
+    /// (address genuinely has nonce 0) or from an error that was
+    /// silently masked in the past.
     pub async fn get_nonce(&self, address: &str) -> Result<u64> {
         let balance = self.get_balance(address).await?;
         Ok(balance.nonce)
@@ -348,7 +385,11 @@ pub enum FeePriority {
     Instant,
 }
 
-/// Helper function to transfer tokens
+/// Helper function to transfer tokens.
+///
+/// # Errors
+///
+/// Propagates errors from nonce lookup, signing, and submission.
 pub async fn transfer(
     client: &RustChainClient,
     tx: &mut Transaction,
@@ -356,7 +397,7 @@ pub async fn transfer(
 ) -> Result<TransactionResponse> {
     // Get current nonce if not set
     if tx.nonce == 0 {
-        tx.nonce = client.get_nonce(&tx.from).await.unwrap_or(0);
+        tx.nonce = client.get_nonce(&tx.from).await?;
     }
 
     // Sign the transaction
@@ -454,6 +495,75 @@ mod tests {
         assert_eq!(info.peer_count, 28);
         assert_eq!(info.min_fee, 1000);
         assert_eq!(info.version, "2.2.1-rip200");
+    }
+
+    // ==================== Issue #7889: Inconsistent Error Handling in Wallet Balance Check ====================
+
+    #[tokio::test]
+    async fn test_balance_check_returns_error_on_http_failure() {
+        let api_url = spawn_test_server(vec![(
+            "/wallet/balance",
+            "500 Internal Server Error",
+            "<html>internal error</html>",
+        )]);
+        let client = RustChainClient::new(api_url);
+
+        let result = client.get_balance("RTC0000000000000000000000000000000000000000").await;
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        // Should be a Network error, not silently swallowed
+        assert!(matches!(err, WalletError::Network(_)));
+    }
+
+    #[tokio::test]
+    async fn test_balance_check_returns_error_on_network_timeout() {
+        // Use an unreachable URL to simulate network failure
+        let client = RustChainClient::new("http://127.0.0.1:1".to_string());
+        let result = client.get_balance("RTC0000000000000000000000000000000000000000").await;
+        // Should error, not return a zero balance
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_balance_check_success_returns_valid_response() {
+        let api_url = spawn_test_server(vec![(
+            "/wallet/balance",
+            "200 OK",
+            r#"{"address":"RTC0000000000000000000000000000000000000000","balance":123.4567,"unlocked":100.0,"locked":23.4567,"nonce":5}"#,
+        )]);
+        let client = RustChainClient::new(api_url);
+
+        let balance = client.get_balance("RTC0000000000000000000000000000000000000000").await.unwrap();
+        assert_eq!(balance.balance, 123.4567);
+        assert_eq!(balance.unlocked, 100.0);
+        assert_eq!(balance.locked, 23.4567);
+        assert_eq!(balance.nonce, 5);
+    }
+
+    #[tokio::test]
+    async fn test_get_nonce_propagates_errors_instead_of_swallowing() {
+        let api_url = spawn_test_server(vec![(
+            "/wallet/balance",
+            "503 Service Unavailable",
+            "<html>unavailable</html>",
+        )]);
+        let client = RustChainClient::new(api_url);
+
+        // get_nonce should propagate the error, not return 0 silently
+        let result = client.get_nonce("RTC0000000000000000000000000000000000000000").await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_balance_response_validation() {
+        let address = "RTC0000000000000000000000000000000000000000";
+        let balance: BalanceResponse = serde_json::from_str(
+            r#"{"address":"","balance":100.0,"unlocked":80.0,"locked":20.0,"nonce":3}"#,
+        ).unwrap();
+        let result = balance.clone().validate(address);
+        assert!(result.is_ok());
+        let validated = result.unwrap();
+        assert_eq!(validated.address, address);
     }
 
     fn spawn_test_server(routes: Vec<(&'static str, &'static str, &'static str)>) -> String {

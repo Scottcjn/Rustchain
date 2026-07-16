@@ -399,8 +399,10 @@ async fn cmd_send(
 
     let client = RustChainClient::new(api_url.to_string());
 
-    // Get current nonce
-    let nonce = client.get_nonce(&from_address).await.unwrap_or(0);
+    // Get current nonce – propagate errors so the caller knows
+    // whether the network is unreachable vs. the address simply
+    // having nonce 0.
+    let nonce = client.get_nonce(&from_address).await?;
 
     // Calculate fee
     let fee = fee.unwrap_or(1000);
@@ -480,6 +482,21 @@ async fn cmd_balance(
 
     // If it starts with RTC, treat as address; otherwise look up wallet name
     let address = if wallet_or_address.starts_with("RTC") {
+        // Validate address format: RTC prefix + 40 hex chars = 43 chars total
+        if wallet_or_address.len() != 43 {
+            error!(
+                "Invalid address format: expected 43 characters (RTC + 40 hex), got {}",
+                wallet_or_address.len()
+            );
+            std::process::exit(1);
+        }
+        // Verify the rest is valid hex
+        if !wallet_or_address[3..].chars().all(|c| c.is_ascii_hexdigit()) {
+            error!(
+                "Invalid address: suffix after 'RTC' must be 40 hex characters"
+            );
+            std::process::exit(1);
+        }
         wallet_or_address.to_string()
     } else if storage.exists(wallet_or_address) {
         let password =
