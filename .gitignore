@@ -54,3 +54,11 @@ Rustchain/miners/windows/python-3.11.5-embed-win32.zip
 miners/windows/dist/
 miners/windows/release/
 tests/.hypothesis/
+
+# Speckit/Specify architectural docs — never commit
+# IMPORTANT: Design docs, constitutional specs, and task files stay local only.
+# These are authoring tools, not deliverables — do NOT commit them.
+.specify/
+specs/
+**/specs/
+**/.specify/

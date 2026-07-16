@@ -67,6 +67,20 @@ def test_detect_repo_name_strips_dotgit_suffix_not_chars(tmp_path):
     with patch.object(module, "_run_cmd", return_value=(0, "https://github.com/owner/gigi.git\n", "")):
         assert engine._detect_repo_name() == "owner/gigi"
 
+    # No .git suffix — names ending in t, i, g that rstrip(".git") would also mangle
+    with patch.object(module, "_run_cmd", return_value=(0, "https://github.com/acme/my-bot\n", "")):
+        assert engine._detect_repo_name() == "acme/my-bot"
+
+    with patch.object(module, "_run_cmd", return_value=(0, "https://github.com/acme/toolkit\n", "")):
+        assert engine._detect_repo_name() == "acme/toolkit"
+
+    # SSH remote with .git suffix (confirms both URL branches are protected)
+    with patch.object(module, "_run_cmd", return_value=(0, "git@github.com:owner/audit.git\n", "")):
+        assert engine._detect_repo_name() == "owner/audit"
+
+    with patch.object(module, "_run_cmd", return_value=(0, "git@github.com:owner/my-bot\n", "")):
+        assert engine._detect_repo_name() == "owner/my-bot"
+
 
 def test_detect_repo_name_falls_back_to_directory_name(tmp_path):
     module = load_module()
