@@ -76,7 +76,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
             FINGERPRINT_PATH="linux/fingerprint_checks.py"
             ;;
         Darwin)
-            MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
+            MINER_PATH="macos/rustchain_mac_miner_v2.5.py"
             FINGERPRINT_PATH="macos/fingerprint_checks.py"
             ;;
         *)      echo -e "${RED}Unsupported OS: $OS${NC}"; exit 1 ;;
@@ -127,7 +127,7 @@ case "$OS" in
         ;;
     Darwin)
         echo "  OS: macOS"
-        MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
+        MINER_PATH="macos/rustchain_mac_miner_v2.5.py"
         FINGERPRINT_PATH="macos/fingerprint_checks.py"
         ;;
     *)      echo -e "${RED}  Unsupported OS: $OS${NC}"; exit 1 ;;
