@@ -25,13 +25,113 @@ import os
 import sqlite3
 import time
 from contextlib import closing
-from typing import Dict, List, Tuple, Optional, Any
-from collections import defaultdict
-
+from typing import Dict, List, Tuple, Optional
 # Configuration constants
 REPLAY_WINDOW_SECONDS = 300  # 5 minutes - fingerprints expire after this
 MAX_FINGERPRINT_SUBMISSIONS_PER_HOUR = 10  # Rate limit per hardware ID
 ENTROPY_HASH_COLLISION_TOLERANCE = 0.95  # Similarity threshold for collision detection
+
+# ============================================================================
+# Quantization bucket widths for entropy profile hash stability
+# ============================================================================
+# These bucket widths convert raw timing values into coarse grids so that
+# per-process / per-run noise does not produce different hashes on the same
+# machine.  They are the primary tuning knob for the entropy profile hash.
+#
+# Design rationale (Issue #7991):
+#   - Raw float hashes are unstable because values vary 10-20% between runs.
+#   - Quantization to coarse buckets absorbs that noise while keeping the
+#     hash distinct across different machines (they land on different bins).
+#   - Values derived from hardware_binding_v2.py extract_entropy_profile()
+#     which already tolerates v2/v3 key name differences.
+#   - If empirical data shows buckets need tuning, adjust these constants
+#     and recommit.
+BUCKET_NS = 500.0       # nanosecond timing fields (cache, instruction jitter)
+BUCKET_RATIO = 0.01     # dimensionless ratios (thermal drift_ratio)
+BUCKET_CV = 0.05        # coefficient of variation (clock_cv, jitter_cv)
+
+
+def _quantize(value: float, bucket: float) -> float:
+    """Quantize a float to a coarse bucket to absorb per-process noise.
+
+    bucket > 0: quantization step size (e.g., 500.0 for 500ns)
+    Returns 0.0 if value is 0.0 (preserve zero)
+    """
+    if value == 0.0:
+        return 0.0
+    return round(value / bucket) * bucket
+
+
+def _extract_entropy_v3(checks: Dict) -> Dict:
+    """Extract entropy profile with v3 key tolerance and quantization.
+
+    Mirrors hardware_binding_v2.extract_entropy_profile() but adds
+    quantization for hash stability across runs on the same machine.
+
+    Key tolerance:
+      - Cache: v3 'l1_ns'/'l2_ns' OR legacy 'L1'/'L2'
+      - Thermal: v3 'drift_ratio' OR legacy 'ratio'
+      - Jitter: v3 'int_avg_ns'+'int_stdev' derived CV OR legacy 'cv'
+
+    Returns a dict of field-name → quantized value (or '' for hash fields
+    with no source data).
+    """
+    BUCKETS_NS = BUCKET_NS
+    BUCKETS_RATIO = BUCKET_RATIO
+    BUCKETS_CV = BUCKET_CV
+
+    def q_ns(v):
+        return _quantize(v, BUCKETS_NS)
+
+    def q_ratio(v):
+        return _quantize(v, BUCKETS_RATIO)
+
+    def q_cv(v):
+        return _quantize(v, BUCKETS_CV)
+
+    clock_data = checks.get('clock_drift', {}).get('data', {}) or {}
+    cache_data = checks.get('cache_timing', {}).get('data', {}) or {}
+    thermal_data = checks.get('thermal_drift', {}).get('data', {}) or {}
+    jitter_data = checks.get('instruction_jitter', {}).get('data', {}) or {}
+
+    # clock_cv — matches both v2 and v3 formats
+    clock_cv_raw = clock_data.get('cv', 0) or 0
+    clock_cv = q_cv(float(clock_cv_raw))
+
+    # Cache timing: v3 uses l1_ns/l2_ns; legacy uses L1/L2
+    cache_l1_raw = cache_data.get('l1_ns') or cache_data.get('L1') or 0
+    cache_l2_raw = cache_data.get('l2_ns') or cache_data.get('L2') or 0
+    cache_l1 = q_ns(float(cache_l1_raw))
+    cache_l2 = q_ns(float(cache_l2_raw))
+
+    # Thermal drift: v3 uses drift_ratio; legacy uses ratio
+    thermal_raw = thermal_data.get('drift_ratio') or thermal_data.get('ratio') or 0
+    thermal_ratio = q_ratio(float(thermal_raw))
+
+    # Instruction jitter: derive CV from v3's int_avg_ns/int_stdev
+    jitter_cv_raw = jitter_data.get('cv')
+    if jitter_cv_raw:
+        jitter_cv = q_cv(float(jitter_cv_raw))
+    else:
+        int_avg_ns = jitter_data.get('int_avg_ns')
+        int_stdev = jitter_data.get('int_stdev')
+        if int_avg_ns and int_stdev:
+            mean_val = float(int_avg_ns)
+            stdev_val = float(int_stdev)
+            jitter_cv = q_cv(stdev_val / mean_val) if mean_val > 0 else 0.0
+        else:
+            jitter_cv = 0.0
+
+    return {
+        'clock_cv': clock_cv,
+        'clock_drift_hash': '',  # no source data — leave empty
+        'cache_hash': '',        # no source data — leave empty
+        'cache_l1': cache_l1,
+        'cache_l2': cache_l2,
+        'thermal_ratio': thermal_ratio,
+        'jitter_cv': jitter_cv,
+        'jitter_map_hash': '',   # no source data — leave empty
+    }
 
 
 def get_db_path() -> str:
@@ -175,56 +275,31 @@ def _normalize_check_data(data: Dict) -> Dict:
 
 
 def compute_entropy_profile_hash(fingerprint: Dict) -> str:
-    """
-    Compute hash of the entropy profile extracted from fingerprint.
+    """Compute hash of the entropy profile extracted from fingerprint.
+
+    Uses v3 key names (l1_ns, l2_ns, drift_ratio, int_avg_ns) with
+    fallback to legacy names (L1, L2, ratio, cv).  All timing values
+    are quantized to coarse buckets for hash stability across runs.
+
     This is used for collision detection across different wallets.
-    
+
     Args:
-        fingerprint: The fingerprint dictionary
-        
+        fingerprint: The fingerprint dictionary (shape: {"checks": {...}})
+
     Returns:
-        SHA-256 hash (hex) of the entropy profile
+        SHA-256 hash (hex) of the quantized entropy profile
     """
     checks = fingerprint.get('checks', {}) if isinstance(fingerprint, dict) else {}
-    
-    entropy_values = {}
-    
-    # Extract clock drift entropy
-    clock_data = checks.get('clock_drift', {}).get('data', {})
-    if isinstance(clock_data, dict):
-        entropy_values['clock_cv'] = clock_data.get('cv', 0)
-        entropy_values['clock_drift_hash'] = clock_data.get('drift_hash', '')
-    
-    # Extract cache timing entropy
-    cache_data = checks.get('cache_timing', {}).get('data', {})
-    if isinstance(cache_data, dict):
-        entropy_values['cache_hash'] = cache_data.get('cache_hash', '')
-        entropy_values['cache_l1'] = cache_data.get('L1', 0)
-        entropy_values['cache_l2'] = cache_data.get('L2', 0)
-    
-    # Extract thermal drift entropy
-    thermal_data = checks.get('thermal_drift', {}).get('data', {})
-    if isinstance(thermal_data, dict):
-        entropy_values['thermal_ratio'] = thermal_data.get('ratio', 0)
-    
-    # Extract jitter entropy
-    jitter_data = checks.get('instruction_jitter', {}).get('data', {})
-    if isinstance(jitter_data, dict):
-        entropy_values['jitter_cv'] = jitter_data.get('cv', 0)
-        jitter_map = jitter_data.get('jitter_map', {})
-        if isinstance(jitter_map, dict):
-            # Hash the jitter map for compact representation
-            entropy_values['jitter_map_hash'] = hashlib.sha256(
-                json.dumps(jitter_map, sort_keys=True).encode()
-            ).hexdigest()[:16]
-    
-    # Extract SIMD profile entropy
+
+    entropy_values = _extract_entropy_v3(checks)
+
+    # Extract SIMD profile entropy (unchanged — categorical, always read)
     simd_data = checks.get('simd_identity', {}).get('data', {})
     if isinstance(simd_data, dict):
         entropy_values['simd_profile_hash'] = hashlib.sha256(
             json.dumps(simd_data, sort_keys=True).encode()
         ).hexdigest()[:16]
-    
+
     # Hash the entropy profile
     serialized = json.dumps(entropy_values, sort_keys=True, separators=(',', ':'))
     return hashlib.sha256(serialized.encode()).hexdigest()
@@ -394,7 +469,7 @@ def check_fingerprint_rate_limit(
         return True, "no_hardware_id", None  # Can't rate limit without hardware ID
 
     now = int(time.time())
-    window_start = now - 3600  # 1 hour window
+    _window_start = now - 3600  # 1 hour window; reserved for future use
 
     with sqlite3.connect(get_db_path()) as conn:
         c = conn.cursor()

@@ -32,6 +32,11 @@ pub enum WalletError {
     #[error("Network error: {0}")]
     Network(String),
 
+    /// Zero balance with no error info — may indicate unknown address
+    /// or unreachable node.
+    #[error("Empty balance response: balance is zero and no error was returned")]
+    EmptyBalance,
+
     #[error("Transaction error: {0}")]
     Transaction(String),
 
