@@ -42,6 +42,14 @@ __author__ = "kuanglaodi2-sudo"
 from .client import RustChainClient
 from .wallet import RustChainWallet
 from .governance import GovernanceManager
+from .xaps_audit import (
+    XAPSInspector,
+    XAPSResult,
+    XAPSPolicy,
+    audit_transfer,
+    audit_governance_vote,
+    audit_attestation,
+)
 from .exceptions import (
     RustChainError,
     AuthenticationError,
@@ -51,6 +59,7 @@ from .exceptions import (
     WalletError,
     AttestationError,
     GovernanceError,
+    XAPSAuditError,
 )
 
 __all__ = [
@@ -62,6 +71,13 @@ __all__ = [
     "RustChainWallet",
     # Governance
     "GovernanceManager",
+    # XAPS audit
+    "XAPSInspector",
+    "XAPSResult",
+    "XAPSPolicy",
+    "audit_transfer",
+    "audit_governance_vote",
+    "audit_attestation",
     # Exceptions
     "RustChainError",
     "AuthenticationError",
@@ -71,4 +87,5 @@ __all__ = [
     "WalletError",
     "AttestationError",
     "GovernanceError",
+    "XAPSAuditError",
 ]

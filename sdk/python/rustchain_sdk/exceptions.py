@@ -104,3 +104,15 @@ class RPCError(RustChainError):
             method = "rpc"
         super().__init__(message, details)
         self.method = method
+
+
+class XAPSAuditError(RustChainError):
+    """Raised when XAPS (Cross-protocol Audit System) pre-execution audit fails."""
+
+    def __init__(
+        self,
+        reason: str,
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(f"XAPS audit failed: {reason}", details)
+        self.reason = reason
