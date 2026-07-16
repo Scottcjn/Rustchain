@@ -47,6 +47,27 @@ def test_detect_repo_name_parses_https_and_ssh_remotes(tmp_path):
         assert engine._detect_repo_name() == "owner/other"
 
 
+def test_detect_repo_name_strips_dotgit_suffix_not_chars(tmp_path):
+    """Ensure .git suffix is stripped as an exact suffix, not via rstrip char-set.
+
+    The old bug used rstrip(".git") which would strip any combination of
+    '.', 'g', 'i', 't' characters from the end — e.g. "audit" -> "aud".
+    This test verifies the fix uses exact suffix matching instead.
+    """
+    module = load_module()
+    engine = module.BCOSEngine(str(tmp_path))
+
+    # Repo name ending with characters that rstrip(".git") would mistakenly strip
+    with patch.object(module, "_run_cmd", return_value=(0, "https://github.com/owner/audit.git\n", "")):
+        assert engine._detect_repo_name() == "owner/audit"
+
+    with patch.object(module, "_run_cmd", return_value=(0, "https://github.com/owner/test.git\n", "")):
+        assert engine._detect_repo_name() == "owner/test"
+
+    with patch.object(module, "_run_cmd", return_value=(0, "https://github.com/owner/gigi.git\n", "")):
+        assert engine._detect_repo_name() == "owner/gigi"
+
+
 def test_detect_repo_name_falls_back_to_directory_name(tmp_path):
     module = load_module()
     engine = module.BCOSEngine(str(tmp_path))
