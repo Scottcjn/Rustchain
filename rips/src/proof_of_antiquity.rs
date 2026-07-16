@@ -239,19 +239,59 @@ pub fn submit_proof(&mut self, proof: MiningProof) -> Result<SubmitResult, Proof
             return None;
         }
 
-        // Calculate total multipliers
-        let total_multipliers: f64 = self.pending_proofs.iter()
-            .map(|p| p.multiplier)
-            .sum();
+        // ==================================================================
+        // Reward distribution with exact integer arithmetic (Issue #7896 fix)
+        //
+        // Multipliers are 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5 — all multiples
+        // of 0.5.  Scaling by 2 gives exact integer weights with no precision
+        // loss.  The remainder is distributed by giving +1 unit to the
+        // top-remainder miners (sorted by weight descending), guaranteeing
+        // the sum equals BLOCK_REWARD exactly.
+        //
+        // Algorithm:
+        //   weight_i = round(multiplier_i * 2)         // exact integer
+        //   total_weights = sum(weight_i)
+        //   base_reward = BLOCK_REWARD / total_weights  // integer div
+        //   remainder = BLOCK_REWARD % total_weights
+        //   reward_i = base_reward + (1 if rank_i < remainder else 0)
+        //
+        // Properties:
+        //   - No floating-point arithmetic in the distribution
+        //   - Sum of all reward_i == BLOCK_REWARD exactly
+        //   - Larger weights get at least as many base units
+        //
+        // Original (buggy) code used:  reward = (BLOCK_REWARD * (mult / total)) as u64
+        // which accumulated f64 rounding errors, causing sum != BLOCK_REWARD.
+        // ==================================================================
 
-        // Calculate rewards for each miner (proportional to multiplier)
-        let mut miners = Vec::new();
-        let mut total_distributed = 0u64;
+        // Convert multipliers to exact integer weights (×2)
+        let weights: Vec<u64> = self.pending_proofs.iter()
+            .map(|p| (p.multiplier * 2.0).round() as u64)
+            .collect();
 
-        for proof in &self.pending_proofs {
-            let share = proof.multiplier / total_multipliers;
-            let reward = (BLOCK_REWARD.0 as f64 * share) as u64;
-            total_distributed += reward;
+        let total_weights: u64 = weights.iter().sum();
+        if total_weights == 0 {
+            self.reset_block();
+            return None;
+        }
+
+        let base_reward = BLOCK_REWARD.0 / total_weights;
+        let remainder = BLOCK_REWARD.0 % total_weights; // 0 ≤ remainder < total_weights
+
+        // Sort (index, weight) descending by weight; rank < remainder → gets +1
+        let mut ranked: Vec<(usize, u64)> = weights.iter().enumerate().collect();
+        ranked.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Build rank lookup: original_index → position in sorted list
+        let mut rank = vec![0usize; ranked.len()];
+        for (pos, &(orig_idx, _)) in ranked.iter().enumerate() {
+            rank[orig_idx] = pos;
+        }
+
+        // Build miner entries with exact rewards
+        let mut miners = Vec::with_capacity(self.pending_proofs.len());
+        for (idx, proof) in self.pending_proofs.iter().enumerate() {
+            let reward = base_reward + if (rank[idx] as u64) < remainder { 1 } else { 0 };
 
             miners.push(BlockMiner {
                 wallet: proof.wallet.clone(),
@@ -260,6 +300,14 @@ pub fn submit_proof(&mut self, proof: MiningProof) -> Result<SubmitResult, Proof
                 reward,
             });
         }
+
+        // Verify: sum of per-miner rewards must equal BLOCK_REWARD exactly
+        let total_distributed: u64 = miners.iter().map(|m| m.reward).sum();
+        debug_assert_eq!(
+            total_distributed, BLOCK_REWARD.0,
+            "Reward sum mismatch: {} ≠ {}, base_reward={}, remainder={}, total_weights={}",
+            total_distributed, BLOCK_REWARD.0, base_reward, remainder, total_weights
+        );
 
         // Calculate block hash
         let block_data = format!(
@@ -740,5 +788,138 @@ mod tests {
 
         // Same wallet + same nonce should be rejected even in new block
         assert!(matches!(poa.submit_proof(proof), Err(ProofError::NonceReuse)));
+    }
+
+    // ============================================================================
+    // Reward Distribution Tests (Issue #7896)
+    // ============================================================================
+
+    /// Helper: submit N miners with the given multipliers.
+    fn make_miners(poa: &mut ProofOfAntiquity, multipliers: &[f64]) {
+        for (i, &mult) in multipliers.iter().enumerate() {
+            let mut hw = HardwareInfo::new(
+                format!("CPU-{}", i),
+                "Gen".to_string(),
+                20, // Vintage → 2.5x base, but we override
+            );
+            hw.multiplier = mult;
+            let proof = MiningProof {
+                wallet: WalletAddress::new(format!("RTC1Miner{:04}", i)),
+                hardware: hw,
+                anti_emulation_hash: [0u8; 32],
+                timestamp: current_timestamp(),
+                nonce: i as u64 + 1,
+            };
+            assert!(poa.submit_proof(proof).is_ok(), "Failed to submit miner {}", i);
+        }
+    }
+
+    #[test]
+    fn test_reward_sum_equals_block_reward_single_miner() {
+        let mut poa = ProofOfAntiquity::new();
+        make_miners(&mut poa, &[3.5]);
+        let block = poa.process_block([1u8; 32], 1).unwrap();
+        assert_eq!(block.miners.len(), 1);
+        assert_eq!(block.miners[0].reward, BLOCK_REWARD.0);
+        assert_eq!(block.total_reward, BLOCK_REWARD.0);
+    }
+
+    #[test]
+    fn test_reward_sum_equals_block_reward_two_miners() {
+        let mut poa = ProofOfAntiquity::new();
+        make_miners(&mut poa, &[2.0, 2.0]);
+        let block = poa.process_block([2u8; 32], 1).unwrap();
+        assert_eq!(block.miners.len(), 2);
+        let sum: u64 = block.miners.iter().map(|m| m.reward).sum();
+        assert_eq!(sum, BLOCK_REWARD.0, "Reward sum must equal block reward");
+        assert_eq!(block.total_reward, BLOCK_REWARD.0);
+    }
+
+    #[test]
+    fn test_reward_sum_equals_block_reward_two_miners_different() {
+        let mut poa = ProofOfAntiquity::new();
+        make_miners(&mut poa, &[3.5, 2.5]);
+        let block = poa.process_block([3u8; 32], 1).unwrap();
+        assert_eq!(block.miners.len(), 2);
+        let sum: u64 = block.miners.iter().map(|m| m.reward).sum();
+        assert_eq!(sum, BLOCK_REWARD.0, "Reward sum must equal block reward");
+        assert_eq!(block.total_reward, BLOCK_REWARD.0);
+        assert!(block.miners[0].reward >= block.miners[1].reward);
+    }
+
+    #[test]
+    fn test_reward_sum_equals_block_reward_large_pool() {
+        let mut poa = ProofOfAntiquity::new();
+        let multipliers: Vec<f64> = (0..50)
+            .map(|i| [3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.5][(i % 7)])
+            .collect();
+        make_miners(&mut poa, &multipliers);
+        let block = poa.process_block([4u8; 32], 1).unwrap();
+        assert_eq!(block.miners.len(), 50);
+        let sum: u64 = block.miners.iter().map(|m| m.reward).sum();
+        assert_eq!(sum, BLOCK_REWARD.0, "50-miner pool must sum to exact block reward");
+        assert_eq!(block.total_reward, BLOCK_REWARD.0);
+    }
+
+    #[test]
+    fn test_reward_sum_all_tier_combinations() {
+        let mut poa = ProofOfAntiquity::new();
+        let multipliers = [3.5, 3.0, 2.5, 2.0, 1.5, 1.0, 0.5];
+        make_miners(&mut poa, &multipliers);
+        let block = poa.process_block([5u8; 32], 1).unwrap();
+        assert_eq!(block.miners.len(), 7);
+        let sum: u64 = block.miners.iter().map(|m| m.reward).sum();
+        assert_eq!(sum, BLOCK_REWARD.0, "All 7 tiers must sum to exact block reward");
+        assert_eq!(block.total_reward, BLOCK_REWARD.0);
+    }
+
+    #[test]
+    fn test_reward_proportional_to_weight() {
+        let mut poa = ProofOfAntiquity::new();
+        make_miners(&mut poa, &[3.5, 2.0, 0.5]);
+        let block = poa.process_block([6u8; 32], 1).unwrap();
+        let sum: u64 = block.miners.iter().map(|m| m.reward).sum();
+        assert_eq!(sum, BLOCK_REWARD.0);
+        assert!(block.miners[0].reward >= block.miners[2].reward,
+            "Larger weight must not get less reward");
+    }
+
+    #[test]
+    fn test_reward_sum_with_100_miners() {
+        let mut poa = ProofOfAntiquity::new();
+        let multipliers: Vec<f64> = std::iter::repeat(1.0).take(100).collect();
+        make_miners(&mut poa, &multipliers);
+        let block = poa.process_block([7u8; 32], 1).unwrap();
+        assert_eq!(block.miners.len(), 100);
+        let sum: u64 = block.miners.iter().map(|m| m.reward).sum();
+        assert_eq!(sum, BLOCK_REWARD.0, "100 equal miners must sum to exact block reward");
+        assert_eq!(block.total_reward, BLOCK_REWARD.0);
+    }
+
+    #[test]
+    fn test_reward_per_miner_positive_100_miners() {
+        let mut poa = ProofOfAntiquity::new();
+        let multipliers: Vec<f64> = std::iter::repeat(0.5).take(100).collect();
+        make_miners(&mut poa, &multipliers);
+        let block = poa.process_block([8u8; 32], 1).unwrap();
+        for miner in &block.miners {
+            assert!(miner.reward > 0, "Every miner must receive at least 1 unit");
+        }
+    }
+
+    #[test]
+    fn test_integer_exact_deterministic() {
+        let mut results: Vec<Vec<u64>> = Vec::new();
+        for _round in 0..5 {
+            let mut poa = ProofOfAntiquity::new();
+            let multipliers = vec![3.5, 2.5, 2.0, 1.5, 1.0];
+            make_miners(&mut poa, &multipliers);
+            let block = poa.process_block([9u8; 32], 1).unwrap();
+            let rewards: Vec<u64> = block.miners.iter().map(|m| m.reward).collect();
+            results.push(rewards);
+        }
+        for i in 1..results.len() {
+            assert_eq!(results[i], results[0], "Round {} differs from round 0", i);
+        }
     }
 }

@@ -68,6 +68,7 @@ pub mod nft_badges;
 pub mod network;
 pub mod governance;
 pub mod ergo_bridge;
+pub mod timer;
 
 // Re-export commonly used types
 pub use core_types::{
@@ -125,6 +126,21 @@ pub use network::{
     PROTOCOL_VERSION,
     DEFAULT_PORT,
     MTLS_PORT,
+};
+
+pub use timer::{
+    EpochRange,
+    EPOCH_START_TIME,
+    MAX_EPOCH,
+    epoch_start,
+    epoch_end,
+    epoch_range,
+    current_epoch,
+    current_epoch_range,
+    time_to_epoch_boundary,
+    timestamp_in_epoch,
+    epoch_start_label,
+    seconds_into_epoch,
 };
 
 /// Prelude module for convenient imports
