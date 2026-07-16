@@ -337,7 +337,7 @@ def init_app(app, get_db_func):
         db = get_db_func()
         try:
             rows = db.execute(
-                "SELECT * FROM reputation ORDER BY score DESC"
+                "SELECT * FROM beacon_reputation ORDER BY score DESC"
             ).fetchall()
             reputation = [dict(r) for r in rows]
         except sqlite3.OperationalError:
@@ -363,9 +363,12 @@ def init_app(app, get_db_func):
             return err_resp
 
         db = get_db_func()
+        # The wallet join below is unguarded, and _run_migrations creates
+        # beacon_wallets next to this module rather than in the runtime database.
+        _ensure_x402_tables(db)
         try:
             rows = db.execute(
-                "SELECT * FROM contracts ORDER BY created_at DESC"
+                "SELECT * FROM beacon_contracts ORDER BY created_at DESC"
             ).fetchall()
         except sqlite3.OperationalError:
             rows = []
