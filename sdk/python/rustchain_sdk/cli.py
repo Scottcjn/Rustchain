@@ -24,6 +24,51 @@ from .wallet import RustChainWallet
 from .exceptions import RustChainError
 
 
+# ---------------------------------------------------------------------------
+# Safe emoji output — falls back to ASCII on encodings that choke on emoji
+# (e.g. Windows CP850).  The wallet / transfer / attestation creation is
+# already done at this point so an encoding error must not be fatal.
+# ---------------------------------------------------------------------------
+
+_ASCII_BANNER = {
+    "success": "OK!",
+    "warning": "WARNING:",
+    "error":   "ERROR:",
+    "request": "[REQ]",
+    "submit":  "[SUBMIT]",
+}
+
+
+def _safe_echo(text: str, *args, **kwargs) -> None:
+    """Echo *text* to stdout, falling back to ASCII-safe text on UnicodeEncodeError."""
+    try:
+        click.echo(text, *args, **kwargs)
+    except UnicodeEncodeError:
+        click.echo(_ascii_version(text), *args, **kwargs)
+
+
+def _ascii_version(text: str) -> str:
+    """Replace leading emoji with an ASCII-safe token.
+
+    Strips the emoji (and its optional variant selector) plus the two
+    following spaces, then prepends the ASCII banner token with a space.
+    """
+    for emoji, replacement in [
+        ("\u2705\ufe0f", "success"),   # ✅ or ✅
+        ("\u2705",                "success"),   # ✅ plain
+        ("\u26a0\ufe0f", "warning"),   # ⚠️ (emoji + VS16)
+        ("\u26a0",                "warning"),   # ⚠ plain
+        ("\u274c\ufe0f", "error"),     # ❌ or ❌
+        ("\u274c",                "error"),     # ❌ plain
+        ("\U0001f4cb",            "request"),   # 📋
+        ("\U0001f4e4",            "submit"),    # 📤
+    ]:
+        prefix = emoji + "  "  # emoji + two spaces
+        if text.startswith(prefix):
+            return _ASCII_BANNER[replacement] + " " + text[len(prefix):]
+    return text  # pragma: no cover — safety fallback
+
+
 @click.group()
 @click.version_option(version="1.0.0", prog_name="rustchain")
 def main():
@@ -70,20 +115,22 @@ def wallet_create(words: int, as_json: bool):
             raise ValueError("Number of seed words must be 12 or 24")
         strength = 128 if words == 12 else 256
         wallet = RustChainWallet.create(strength=strength)
-        if as_json:
-            click.echo(json.dumps(wallet.export(), indent=2))
-        else:
-            click.echo(f"✅  Wallet created successfully!")
-            click.echo(f"   Address:      {wallet.address}")
-            click.echo(f"   Public Key:   {wallet.public_key_hex}")
-            click.echo(f"   Seed Phrase ({len(wallet.seed_phrase)} words):")
-            for i in range(0, len(wallet.seed_phrase), 4):
-                click.echo("   " + " ".join(wallet.seed_phrase[i : i + 4]))
-            click.echo()
-            click.echo("⚠️  SAVE YOUR SEED PHRASE! It cannot be recovered.")
     except Exception as e:
-        click.echo(f"❌  Error creating wallet: {e}", err=True)
+        _safe_echo(f"❌  Error creating wallet: {e}", err=True)
         sys.exit(1)
+
+    # --- output (separate from creation so encoding errors aren't fatal) ---
+    if as_json:
+        click.echo(json.dumps(wallet.export(), indent=2))
+    else:
+        _safe_echo(f"✅  Wallet created successfully!")
+        _safe_echo(f"   Address:      {wallet.address}")
+        _safe_echo(f"   Public Key:   {wallet.public_key_hex}")
+        _safe_echo(f"   Seed Phrase ({len(wallet.seed_phrase)} words):")
+        for i in range(0, len(wallet.seed_phrase), 4):
+            _safe_echo("   " + " ".join(wallet.seed_phrase[i : i + 4]))
+        _safe_echo("")
+        _safe_echo("⚠️  SAVE YOUR SEED PHRASE! It cannot be recovered.")
 
 
 @wallet_group.command(name="balance")
@@ -117,7 +164,7 @@ async def _wallet_balance(address: str, node: str, as_json: bool):
                 click.echo(f"Balance:  {balance} RTC")
                 click.echo(f"Nonce:    {nonce}")
     except RustChainError as e:
-        click.echo(f"❌  Error: {e}", err=True)
+        _safe_echo(f"❌  Error: {e}", err=True)
         sys.exit(1)
 
 
@@ -190,7 +237,7 @@ async def _wallet_send(
             else:
                 tx_hash = result.get("tx_hash", "unknown")
                 status = result.get("status", "unknown")
-                click.echo(f"✅  Transfer submitted!")
+                _safe_echo(f"✅  Transfer submitted!")
                 click.echo(f"   From:     {from_address}")
                 click.echo(f"   To:       {to_address}")
                 click.echo(f"   Amount:   {amount} RTC")
@@ -198,7 +245,7 @@ async def _wallet_send(
                 click.echo(f"   Status:   {status}")
                 click.echo(f"   TX Hash:  {tx_hash}")
     except RustChainError as e:
-        click.echo(f"❌  Error: {e}", err=True)
+        _safe_echo(f"❌  Error: {e}", err=True)
         sys.exit(1)
 
 
@@ -232,11 +279,11 @@ async def _node_status(node: str, as_json: bool):
             else:
                 status = result.get("status", "unknown")
                 version = result.get("version", "unknown")
-                click.echo(f"✅  Node is healthy" if status == "ok" else f"⚠️  Node status: {status}")
+                _safe_echo(f"✅  Node is healthy" if status == "ok" else f"⚠️  Node status: {status}")
                 for key, val in result.items():
                     click.echo(f"   {key}:  {val}")
     except RustChainError as e:
-        click.echo(f"❌  Error: {e}", err=True)
+        _safe_echo(f"❌  Error: {e}", err=True)
         sys.exit(1)
 
 
@@ -272,7 +319,7 @@ async def _epoch_info(node: str, as_json: bool):
                 for key, val in result.items():
                     click.echo(f"   {key}:  {val}")
     except RustChainError as e:
-        click.echo(f"❌  Error: {e}", err=True)
+        _safe_echo(f"❌  Error: {e}", err=True)
         sys.exit(1)
 
 
@@ -314,7 +361,7 @@ async def _miners_list(node: str, as_json: bool):
                 for miner in miners:
                     click.echo(f"   {json.dumps(miner)}")
     except RustChainError as e:
-        click.echo(f"❌  Error: {e}", err=True)
+        _safe_echo(f"❌  Error: {e}", err=True)
         sys.exit(1)
 
 
@@ -371,30 +418,30 @@ async def _attest(wallet_address: str, seed_phrase: list, node: str, as_json: bo
                 return
 
             # Step 2: Request challenge
-            click.echo("📋  Requesting attestation challenge...")
+            _safe_echo("📋  Requesting attestation challenge...")
             challenge_result = await client.attest_challenge(wallet.public_key_hex)
             challenge = challenge_result.get("challenge", "")
 
             if not challenge:
-                click.echo(f"⚠️  No challenge received. Status: {status}")
+                _safe_echo(f"⚠️  No challenge received. Status: {status}")
                 return
 
             # Step 3: Sign the challenge
             signature = wallet.sign(challenge.encode()).hex()
 
             # Step 4: Submit attestation
-            click.echo("📤  Submitting attestation...")
+            _safe_echo("📤  Submitting attestation...")
             submit_result = await client.attest_submit(
                 wallet.public_key_hex,
                 challenge,
                 signature,
             )
 
-            click.echo(f"✅  Attestation submitted!")
+            _safe_echo(f"✅  Attestation submitted!")
             click.echo(f"   Result: {json.dumps(submit_result)}")
 
     except RustChainError as e:
-        click.echo(f"❌  Error: {e}", err=True)
+        _safe_echo(f"❌  Error: {e}", err=True)
         sys.exit(1)
 
 
