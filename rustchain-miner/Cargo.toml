@@ -46,6 +46,7 @@ ed25519-dalek = { version = "2.1", features = ["rand_core"] }
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
+dirs = "6.0"
 
 # Config
 dotenvy = "0.15"

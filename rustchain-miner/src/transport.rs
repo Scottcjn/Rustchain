@@ -130,6 +130,19 @@ mod tests {
     use super::*;
 
     #[test]
+
+    /// Check node health via a lightweight /health endpoint.
+    /// Returns Ok(()) if the node responds with a 2xx status.
+    pub async fn node_health(&self) -> crate::Result<()> {
+        let resp = self.get("/health").await?;
+        if resp.status.is_success() {
+            Ok(())
+        } else {
+            Err(MinerError::MinerError(
+                format!("Node health check returned {}", resp.status),
+            ))
+        }
+    }
     fn test_transport_creation() {
         let transport = NodeTransport::new(
             "https://example.com".to_string(),
