@@ -242,7 +242,8 @@ def release_lock(
 
     # Find the lock
     row = cursor.execute("""
-        SELECT id, miner_id, amount_i64, lock_type, status, unlock_at
+        SELECT id, miner_id, amount_i64, lock_type, status, unlock_at,
+               bridge_transfer_id
         FROM lock_ledger
         WHERE id = ?
     """, (lock_id,)).fetchone()
@@ -250,12 +251,30 @@ def release_lock(
     if not row:
         return False, {"error": "Lock not found"}
 
-    lid, miner_id, amount_i64, lock_type, status, unlock_at = row
+    lid, miner_id, amount_i64, lock_type, status, unlock_at, bridge_transfer_id = row
 
     if status != "locked":
         return False, {
             "error": f"Lock already {status}",
             "hint": "Only locked entries can be released"
+        }
+
+    # Bridge-owned locks settle through bridge_api, not here. This function
+    # credits `balances` because it is the counterpart of create_lock(), which
+    # debits. bridge_api.create_bridge_transfer() does its own hard debit and
+    # writes the lock row directly, tracking the refund on
+    # bridge_transfers.source_debited — a flag this function neither reads nor
+    # clears. Crediting such a lock therefore reverses a debit the bridge still
+    # considers outstanding, and the bridge's own void path refunds it again.
+    if bridge_transfer_id is not None:
+        return False, {
+            "error": "Lock is owned by a bridge transfer",
+            "lock_id": lock_id,
+            "bridge_transfer_id": bridge_transfer_id,
+            "hint": (
+                "Settle via the bridge: complete the transfer, or void it to "
+                "refund the source. Releasing here would double-credit."
+            )
         }
 
     # Check if unlock time has passed (unless admin override)
@@ -641,9 +660,18 @@ def auto_release_expired_locks(
 
     released_count = 0
     total_amount = 0
+    skipped_bridge_owned = 0
     errors = []
 
     for lock in expired:
+        # Bridge-owned locks are settled by bridge_api (complete or void); this
+        # worker must not touch their balances. Skip rather than call through to
+        # release_lock() and log an error per lock on every run — an expired
+        # bridge deposit is a normal state that an operator resolves by voiding.
+        if lock.bridge_transfer_id is not None:
+            skipped_bridge_owned += 1
+            continue
+
         success, result = release_lock(
             db_conn,
             lock.id,
@@ -663,6 +691,7 @@ def auto_release_expired_locks(
     return {
         "released_count": released_count,
         "total_amount_rtc": total_amount / LOCK_UNIT,
+        "skipped_bridge_owned": skipped_bridge_owned,
         "errors": errors,
         "processed_at": now
     }
