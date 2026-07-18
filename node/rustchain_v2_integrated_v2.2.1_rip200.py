@@ -6881,6 +6881,12 @@ def gov_rotate_stage():
                      VALUES(?,?,?,?)""", (epoch, thr, members_json, int(time.time())))
         c.execute("DELETE FROM gov_rotation WHERE epoch_effective=?", (epoch,))
         c.execute("DELETE FROM gov_rotation_members WHERE epoch_effective=?", (epoch,))
+        # (Re)staging redefines the canonical signing message
+        # (ROTATE|epoch|threshold|sha256(members_json)); any approvals collected
+        # for a prior member set / threshold no longer authorize this proposal.
+        # Clear them so /gov/rotate/commit cannot count a stale signature toward
+        # committing a member set it never signed (multisig bypass).
+        c.execute("DELETE FROM gov_rotation_approvals WHERE epoch_effective=?", (epoch,))
         c.execute("""INSERT INTO gov_rotation
                      (epoch_effective, committed, threshold, created_ts)
                      VALUES(?,?,?,?)""", (epoch, 0, thr, int(time.time())))
