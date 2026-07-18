@@ -186,6 +186,29 @@ _current_slot_fn = None    # current_slot() -> int
 _dual_write: bool = False
 
 
+def _selected_account_mirror_boxes(conn: sqlite3.Connection, selected: list) -> list:
+    """Which of the selected boxes are account-mirror provenance (bounty #2819).
+
+    Uses the ``account_mirror_boxes`` discriminator the node maintains, not a
+    ``registers_json`` marker match: a marker is lost on change boxes from
+    partial spends, and "any box the sender owns" would wrongly block
+    independently-earned UTXOs. Absent table (pure-UTXO DB) means no mirrors.
+    """
+    if not selected:
+        return []
+    if not conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_mirror_boxes'"
+    ).fetchone():
+        return []
+    box_ids = [u['box_id'] for u in selected]
+    placeholders = ','.join('?' * len(box_ids))
+    rows = conn.execute(
+        f"SELECT box_id FROM account_mirror_boxes WHERE box_id IN ({placeholders})",
+        box_ids,
+    ).fetchall()  # fetchall-ok: bounded-by-schema
+    return [r[0] for r in rows]
+
+
 def _ensure_transfer_nonce_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -734,6 +757,25 @@ def utxo_transfer():
                 'nonce': nonce,
                 'latest_nonce': int(previous_nonce),
             }), 400
+
+        # Account-mirrored boxes ARE the sender's account balance (bounty #2819).
+        # The account->UTXO direction is reconciled by the node's
+        # _settle_account_transfer_in_utxo, which runs independent of dual-write
+        # precisely because "a migrated box must be reconciled whenever it exists".
+        # This is the same crossing in reverse: with dual-write off there is no
+        # account debit to pair the spend with, so spending a mirror box here
+        # would leave the balance behind it fully spendable. Fail closed --
+        # migrated funds move via the account path in this config.
+        if not _dual_write:
+            mirrored = _selected_account_mirror_boxes(conn, selected)
+            if mirrored:
+                conn.rollback()
+                return jsonify({
+                    'error': 'Box mirrors an account balance; move it via the account '
+                             'transfer path while dual-write is off',
+                    'code': 'ACCOUNT_MIRROR_BOX_NOT_SPENDABLE',
+                    'box_ids': mirrored,
+                }), 409
 
         ok = _utxo_db.apply_transaction(tx, block_height, conn=conn)
         if not ok:
