@@ -882,6 +882,19 @@ class UtxoDB:
                 'timestamp': ts,
                 'block_height': block_height,
             }
+            # Mints must not inherit the settling node's wall clock.
+            # `timestamp` defaults to time.time() above, and the production
+            # mint path (epoch reward settlement) passes no timestamp, so
+            # leaving it in the identity makes tx_id -> box_id -> the Merkle
+            # leaf node-local: two honest nodes settling the same epoch
+            # seconds apart derive different roots from identical state, and
+            # a resync cannot rebuild the UTXO set it replays.  Dropping it
+            # cannot collide: at most one mint may exist per block_height
+            # (enforced above), so block_height + outputs is already a unique
+            # mint identity.  Spend paths keep binding their explicit
+            # timestamp, which distinguishes otherwise-identical transfers.
+            if tx_type in MINTING_TX_TYPES:
+                del tx_identity['timestamp']
             tx_seed = json.dumps(
                 tx_identity, sort_keys=True, separators=(',', ':')
             ).encode()
