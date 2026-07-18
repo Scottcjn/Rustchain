@@ -49,18 +49,20 @@ download_file() {
 INSTALL_DIR="/opt/rustchain-miner"
 REPO_RAW="https://raw.githubusercontent.com/Scottcjn/Rustchain/main"
 
-# Platform-specific miner paths. The files are organised per-OS under
-# miners/<os>/ — hard-coding miners/linux/ here returned 404 on macOS.
+# Platform-specific miner paths. Files live under miners/<os>/; hard-coding
+# miners/linux/ on macOS returned 404. The Linux branch keeps the literal
+# miners/linux/ paths because the installer-contract tests assert on them
+# (they guard the curl|bash install UX).
 if [ "$(uname -s)" = "Darwin" ]; then
     MINER_FILENAME="rustchain_mac_miner_v2.5.py"
-    MINERS_SUBDIR="miners/macos"
+    MINER_URL="${REPO_RAW}/miners/macos/${MINER_FILENAME}"
+    FINGERPRINT_URL="${REPO_RAW}/miners/macos/fingerprint_checks.py"
 else
     MINER_FILENAME="rustchain_linux_miner.py"
-    MINERS_SUBDIR="miners/linux"
+    MINER_URL="${REPO_RAW}/miners/linux/rustchain_linux_miner.py"
+    FINGERPRINT_URL="${REPO_RAW}/miners/linux/fingerprint_checks.py"
+    MINER_CRYPTO_URL="${REPO_RAW}/miners/linux/miner_crypto.py"
 fi
-MINER_URL="${REPO_RAW}/${MINERS_SUBDIR}/${MINER_FILENAME}"
-FINGERPRINT_URL="${REPO_RAW}/${MINERS_SUBDIR}/fingerprint_checks.py"
-MINER_CRYPTO_URL="${REPO_RAW}/${MINERS_SUBDIR}/miner_crypto.py"
 NODE_URL="https://50.28.86.131"
 BOUNTY_URL="https://github.com/Scottcjn/rustchain-bounties/issues/2451"
 ARCADE_REPO="https://github.com/Scottcjn/rustchain-arcade"
@@ -554,14 +556,12 @@ main() {
     download_file "${MINER_URL}" "https://rustchain.org/${MINER_FILENAME}" "${miner_dest}" "miner"
     download_file "${FINGERPRINT_URL}" "https://rustchain.org/fingerprint_checks.py" "${INSTALL_DIR}/fingerprint_checks.py" "fingerprint helper"
 
-    # macOS miner also imports the sibling color_logs module.
     if [ "$(uname -s)" = "Darwin" ]; then
-        download_file "${REPO_RAW}/${MINERS_SUBDIR}/color_logs.py" "https://rustchain.org/color_logs.py" "${INSTALL_DIR}/color_logs.py" "color log helper" || warn "color_logs.py not available; colored output disabled"
-    fi
-
-    # miner_crypto.py is only shipped for Linux (optional attestation signing).
-    if [ "$(uname -s)" != "Darwin" ]; then
-        download_file "${MINER_CRYPTO_URL}" "https://rustchain.org/miner_crypto.py" "${INSTALL_DIR}/miner_crypto.py" "miner signing helper" || warn "miner_crypto.py unavailable; signed attestations disabled"
+        # macOS miner imports the sibling color_logs module.
+        download_file "${REPO_RAW}/miners/macos/color_logs.py" "https://rustchain.org/color_logs.py" "${INSTALL_DIR}/color_logs.py" "color log helper" || warn "color_logs.py unavailable; colored output disabled"
+    else
+        # Linux attestation signing helper (keeps the empty-file guard below).
+        download_file "${MINER_CRYPTO_URL}" "https://rustchain.org/miner_crypto.py" "${INSTALL_DIR}/miner_crypto.py" "miner signing helper"
     fi
 
     if [ ! -s "${miner_dest}" ]; then
@@ -570,6 +570,10 @@ main() {
     fi
     if [ ! -s "${INSTALL_DIR}/fingerprint_checks.py" ]; then
         err "Failed to download fingerprint helper. Check network connectivity."
+        exit 1
+    fi
+    if [ "$(uname -s)" != "Darwin" ] && [ ! -s "${INSTALL_DIR}/miner_crypto.py" ]; then
+        err "Failed to download miner signing helper. Check network connectivity."
         exit 1
     fi
     ok "Miner files downloaded"
