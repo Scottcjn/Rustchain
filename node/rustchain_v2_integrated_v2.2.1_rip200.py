@@ -5837,6 +5837,19 @@ def ensure_wallet_review_tables(conn):
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_wallet ON wallet_review_holds(wallet, created_at DESC)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_status ON wallet_review_holds(status, created_at DESC)")
+    # get_wallet_review_entry() also reads the legacy blocked_wallets table, so
+    # ensure it exists here too — otherwise the gate raises "no such table:
+    # blocked_wallets" on any DB where the main startup init never ran (e.g. a
+    # node/tool that only touches the review helpers). The gate must be safe to
+    # call from every endpoint, not just /attest/submit.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS blocked_wallets(
+            wallet TEXT PRIMARY KEY,
+            reason TEXT
+        )
+        """
+    )
 
 
 _ADMIN_SESSIONS: dict = {}
@@ -6483,6 +6496,17 @@ def request_withdrawal():
 
     if not all([miner_pk, destination, signature, nonce]):
         return jsonify({"error": "Missing required fields"}), 400
+
+    # SECURITY: a wallet under review / blocked (wallet_review_holds or the
+    # legacy blocked_wallets table) must not be able to move funds out. The
+    # same gate already guards /attest/submit, but the fund-EXIT paths never
+    # consulted it — so a flagged wallet could drain its whole balance before
+    # a maintainer released it, defeating the entire purpose of a review hold.
+    # Checked before the BEGIN IMMEDIATE write transaction below so the gate's
+    # own read connection cannot contend with the reserved write lock.
+    review_gate = wallet_review_gate_response(miner_pk)
+    if review_gate is not None:
+        return review_gate
 
     # SECURITY: Validate amount is a number (CVE-style float injection)
     raw_amount = data.get('amount', 0)
@@ -11313,6 +11337,16 @@ def wallet_transfer_signed():
     to_address = pre.details["to_address"]
     nonce_int = pre.details["nonce"]
     chain_id = pre.details.get("chain_id")
+
+    # SECURITY: freeze fund-exit for a wallet under review / blocked. Mirrors
+    # the guard on /attest/submit and /withdraw/request — a flagged sender must
+    # not be able to sweep its balance to another address while a maintainer
+    # review is pending. Checked on the sender (from_address) before any state
+    # mutation or the debit below.
+    review_gate = wallet_review_gate_response(from_address)
+    if review_gate is not None:
+        return review_gate
+
     # SECURITY (#6127): Validate signature/public_key types before str() coercion
     _raw_sig = data.get("signature")
     _raw_pubkey = data.get("public_key")
