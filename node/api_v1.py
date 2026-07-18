@@ -168,8 +168,14 @@ def register_api_v1(app, *, db_path, current_slot, slot_to_epoch,
     @bp.route("/anchors/recent")
     @json_safe
     def v1_anchors():
+        # Column names must match the only ergo_anchors schema that exists:
+        # rustchain_ergo_anchor._ensure_anchor_table (mirrored by the node's
+        # _ensure_fallback_anchor_table and rustchain_migration). It stores
+        # commitment_hash/ergo_tx_id, and has no miner_count at all -- selecting
+        # commitment/miner_count/tx_id raised OperationalError on every call.
         rows = _rows(
-            "SELECT id, commitment, miner_count, tx_id, status, ergo_height, "
+            "SELECT id, commitment_hash AS commitment, ergo_tx_id AS tx_id, "
+            "status, ergo_height, rustchain_height, confirmations, "
             "created_at FROM ergo_anchors ORDER BY id DESC LIMIT ?",
             (_limit(),),
         )
