@@ -3269,11 +3269,30 @@ def extract_temporal_profile(fingerprint: dict) -> dict:
     jitter = _check_data("instruction_jitter")
     cache = _check_data("cache_timing")
 
+    # Prefer the keys the fingerprint producers (fingerprint_checks.py) actually
+    # emit; keep the legacy names as fallbacks so older payloads still populate.
+    # check_thermal_drift emits `drift_ratio` (not `variance`),
+    # check_instruction_jitter emits `int_stdev`/`int_avg_ns` (not `cv`/`stddev_ns`),
+    # check_cache_timing emits `l2_l1_ratio` (not `hierarchy_ratio`). Without this
+    # three of the four TEMPORAL_DRIFT_BANDS read 0.0 for every real miner and are
+    # silently skipped (validate_temporal_consistency scores <3-sample metrics 1.0),
+    # collapsing the anti-spoofing detector onto clock_drift_cv alone. Mirrors the
+    # primary/legacy handling already used for cache ratios at _detect_x86_evidence.
+    int_avg = _attest_metric_float(jitter.get("int_avg_ns", 0.0))
+    int_stdev = _attest_metric_float(jitter.get("int_stdev", 0.0))
+    jitter_cv = jitter.get("cv", jitter.get("stddev_ns"))
+    if jitter_cv is None:
+        jitter_cv = (int_stdev / int_avg) if int_avg > 0 else 0.0
+
     return {
         "clock_drift_cv": _attest_metric_float(clock.get("cv", 0.0)),
-        "thermal_variance": _attest_metric_float(thermal.get("variance", 0.0)),
-        "jitter_cv": _attest_metric_float(jitter.get("cv", jitter.get("stddev_ns", 0.0))),
-        "cache_hierarchy_ratio": _attest_metric_float(cache.get("hierarchy_ratio", 0.0)),
+        "thermal_variance": _attest_metric_float(
+            thermal.get("drift_ratio", thermal.get("variance", 0.0))
+        ),
+        "jitter_cv": _attest_metric_float(jitter_cv),
+        "cache_hierarchy_ratio": _attest_metric_float(
+            cache.get("l2_l1_ratio", cache.get("hierarchy_ratio", 0.0))
+        ),
     }
 
 
