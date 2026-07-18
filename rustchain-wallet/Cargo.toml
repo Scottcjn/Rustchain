@@ -15,7 +15,7 @@ homepage = "https://rustchain.org"
 
 [dependencies]
 # Cryptography
-ed25519-dalek = { version = "2.1", features = ["rand_core", "serde"] }
+ed25519-dalek = { version = "3.0", features = ["rand_core", "serde"] }
 sha2 = "0.11"
 hex = "0.4"
 bs58 = "0.5"
