@@ -331,9 +331,16 @@ def record_fleet_signals_from_request(
             cache_str = str(sorted(cache.items()))
             cache_hash = hashlib.sha256(cache_str.encode()).hexdigest()[:16]
 
-        # Thermal drift entropy
+        # Thermal drift entropy. check_thermal_drift emits 'drift_ratio' (and has
+        # in every miner build); 'entropy'/'drift_magnitude' are read first only
+        # for legacy payloads. Without drift_ratio this was None for every real
+        # attestation, so thermal_signature stored NULL fleet-wide and the
+        # thermal comparison in _detect_fingerprint_similarity could never run.
+        # Mirrors the tolerance already used by hardware_binding_v2.
         thermal = checks.get("thermal_drift", {}).get("data", {})
-        thermal_sig = thermal.get("entropy", thermal.get("drift_magnitude"))
+        thermal_sig = thermal.get(
+            "entropy", thermal.get("drift_magnitude", thermal.get("drift_ratio"))
+        )
 
         # SIMD bias profile hash
         simd = checks.get("simd_identity", {}).get("data", {})
