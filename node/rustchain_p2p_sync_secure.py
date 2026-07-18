@@ -491,9 +491,12 @@ class SecureBlockSync:
                 if not self.peer_manager.rate_limiter.check_rate_limit(peer_url, '/p2p/blocks'):
                     continue
 
-                # Generate auth signature
-                message = f"get_blocks:{peer_url}"
-                signature, timestamp = self.peer_manager.auth_manager.generate_signature(message)
+                # Sign the request body: that is the pre-image the peer's auth
+                # middleware verifies (create_p2p_auth_middleware -> request.get_data()).
+                # This GET carries no body, so the signed pre-image is the empty
+                # string, matching tests/test_p2p_peer_auth_no_ip_bypass.py.
+                body = ""
+                signature, timestamp = self.peer_manager.auth_manager.generate_signature(body)
 
                 # Request blocks with authentication
                 response = requests.get(
