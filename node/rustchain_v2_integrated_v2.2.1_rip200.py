@@ -4838,17 +4838,22 @@ def _submit_attestation_impl():
     except Exception as _te:
         print(f"[TEMPORAL] Warning: {_te}")
 
-    # Update warthog_bonus in attestation record
-    if warthog_bonus > 1.0:
-        try:
-            with closing(sqlite3.connect(DB_PATH)) as wb_conn:
-                wb_conn.execute(
-                    "UPDATE miner_attest_recent SET warthog_bonus=? WHERE miner=?",
-                    (warthog_bonus, miner)
-                )
-                wb_conn.commit()
-        except Exception:
-            pass  # Column may not exist yet
+    # Update warthog_bonus in attestation record.
+    # Written unconditionally: warthog_bonus describes THIS attestation, and
+    # record_attestation_success() does not carry the column in its upsert. A
+    # `> 1.0` guard here would make the column a one-way ratchet — a miner that
+    # stops dual-mining, or that starts failing the fingerprint gate above,
+    # would keep the multiplier forever and dilute every honest miner's share
+    # of the fixed epoch pot in calculate_epoch_rewards_time_aged().
+    try:
+        with closing(sqlite3.connect(DB_PATH)) as wb_conn:
+            wb_conn.execute(
+                "UPDATE miner_attest_recent SET warthog_bonus=? WHERE miner=?",
+                (warthog_bonus, miner)
+            )
+            wb_conn.commit()
+    except Exception:
+        pass  # Column may not exist yet
 
     # Record MACs if provided
     if macs:
