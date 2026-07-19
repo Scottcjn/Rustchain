@@ -4035,6 +4035,18 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             print(f"[SECURITY] No valid miners for epoch {epoch} after RIP-309 filtering")
             return
 
+        # Reward settlement must work with both balance schemas that the node
+        # supports.  Fresh/legacy databases use (miner_pk, balance_rtc), while
+        # migrated production databases use (miner_id, amount_i64) (optionally
+        # retaining balance_rtc as a display column).  The old direct UPDATE
+        # below assumed only the latter and made enabling UTXO dual-write fail
+        # the whole epoch with "no such column: amount_i64" on a legacy DB.
+        reward_balance_cols = _balance_columns(c)
+        if not _supports_wallet_balance_updates(reward_balance_cols):
+            raise RuntimeError(
+                "unsupported balances schema for epoch reward settlement"
+            )
+
         # ATOMIC TRANSACTION: claim the epoch first, then credit — all under an
         # IMMEDIATE write lock so two concurrent finalize_epoch calls cannot both
         # credit balances (double-settlement / reward inflation past the cap).
@@ -4089,10 +4101,26 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 if amount_i64 >= 2**63 or amount_nrtc >= 2**63:
                     raise ValueError(f"Reward overflow for miner {pk}: {amount_i64}")
 
-                upd = c.execute(
-                    "UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?",
-                    (amount_i64, amount_i64, pk)
-                )
+                # Preserve the existing no-phantom invariant: finalize_epoch
+                # must not create an account row for an enrolled miner that has
+                # no balance record.  Once the row exists, use the
+                # schema-tolerant helper so legacy (miner_pk, balance_rtc) and
+                # modern integer-unit databases receive the same reward.
+                if "miner_id" in reward_balance_cols:
+                    balance_row = c.execute(
+                        "SELECT 1 FROM balances WHERE miner_id = ?", (pk,)
+                    ).fetchone()
+                else:
+                    balance_row = c.execute(
+                        "SELECT 1 FROM balances WHERE miner_pk = ?", (pk,)
+                    ).fetchone()
+                if balance_row:
+                    _apply_wallet_balance_delta(
+                        c, pk, amount_i64, reward_balance_cols
+                    )
+                    updated = 1
+                else:
+                    updated = 0
 
                 # Ledger an audit row ONLY for an actual credit: amount_i64 > 0 AND the
                 # balance row existed (UPDATE mutated exactly one row — miner_id is the
@@ -4102,7 +4130,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 # exists to prevent. Integer truncation of tiny shares also yields
                 # amount_i64 == 0 (no mutation → no row). Best-effort: a ledger failure
                 # must not roll back the (valid) reward credit.
-                if amount_i64 > 0 and upd.rowcount == 1 and ledger_writable:
+                if amount_i64 > 0 and updated == 1 and ledger_writable:
                     # Best-effort audit row, isolated in a SAVEPOINT: on success it
                     # commits together with the credit (reconciliation intact); on
                     # failure ROLLBACK TO removes ONLY the failed insert and clears any
