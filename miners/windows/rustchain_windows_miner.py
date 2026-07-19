@@ -82,6 +82,14 @@ WALLET_DIR = Path.home() / ".rustchain"
 CONFIG_FILE = WALLET_DIR / "config.json"
 WALLET_FILE = WALLET_DIR / "wallet.json"
 
+# Header submissions that fail because the node is temporarily unavailable
+# are retried with bounded exponential backoff.  Client-side validation and
+# authentication failures are terminal for the signed header that produced
+# them and must not be resubmitted unchanged.
+HEADER_RETRY_BASE_SECONDS = 10
+HEADER_RETRY_CAP_SECONDS = 300
+HEADER_RETRYABLE_STATUS_CODES = frozenset((408, 425, 429))
+
 # ---------------------------------------------------------------------------
 # Zephyr dual-mining configuration
 # Zephyr is a privacy coin using the RandomX algorithm (same as Monero).
@@ -149,6 +157,9 @@ class RustChainMiner:
         self.shares_submitted = 0
         self.shares_accepted = 0
         self._last_submitted_slot = None
+        self._header_retry_slot = None
+        self._header_retry_attempts = 0
+        self._next_header_retry_at = 0.0
         self.miner_id = f"windows_{hashlib.md5(wallet_address.encode()).hexdigest()[:8]}"
         self.node_url = RUSTCHAIN_API
         self.attestation_valid_until = 0
@@ -158,6 +169,8 @@ class RustChainMiner:
         self.last_entropy = {}
         self.last_attestation_error = ""
         self.last_header_error = ""
+        self.last_header_retryable = False
+        self.header_retry_in_seconds = 0
         # Surfaced fingerprint status — non-empty string means the miner is
         # submitting NO fingerprint and will be enrolled at VM-tier weight
         # (1e-9), i.e. earning ~zero. Shown loudly every attest cycle.
@@ -317,7 +330,7 @@ class RustChainMiner:
                 if (
                     eligibility.get("eligible")
                     and slot is not None
-                    and slot != self._last_submitted_slot
+                    and self._header_submission_due(slot)
                 ):
                     header = self.generate_header(slot)
                     success = self.submit_header(header)
@@ -340,6 +353,11 @@ class RustChainMiner:
                         }
                         if not success and self.last_header_error:
                             share_event["error"] = self.last_header_error
+                            share_event["retryable"] = self.last_header_retryable
+                            if self.last_header_retryable:
+                                share_event["retry_in_seconds"] = (
+                                    self.header_retry_in_seconds
+                                )
                         callback(share_event)
                 time.sleep(10)
             except Exception as e:
@@ -738,25 +756,29 @@ class RustChainMiner:
         }
 
     def submit_header(self, payload):
-        """Submit one signed header and remember attempted slots.
+        """Submit one signed header and classify failures for retry policy.
 
         Issue #7368: the previous version only updated
         ``_last_submitted_slot`` on success, which meant a rejected or
-        connection-failed header (e.g. HTTP 403 ``no pubkey registered
-        for miner``) was retried every poll for the entire eligibility
-        window. We now record the slot as "handled" regardless of
-        outcome so each slot is attempted at most once. The failure
-        reason is preserved in ``last_header_error`` and surfaced to
-        the headless operator in the share event.
+        connection-failed header was retried every poll for the entire
+        eligibility window. Terminal rejections now mark the slot handled.
+        Network failures and temporary node responses instead schedule a
+        bounded retry; the mining loop rebuilds and signs the header before
+        that retry, so an unchanged rejected payload is never resubmitted.
         """
         slot = payload.get("header", {}).get("slot")
+        self.last_header_retryable = False
+        self.header_retry_in_seconds = 0
         try:
             response = requests.post(
                 f"{self.node_url}/headers/ingest_signed",
                 json=payload,
                 timeout=15,
             )
-            result = response.json()
+            try:
+                result = response.json()
+            except Exception:
+                result = None
             success = (
                 response.status_code == 200
                 and isinstance(result, dict)
@@ -764,18 +786,67 @@ class RustChainMiner:
             )
             if success:
                 self.last_header_error = ""
+                if slot is not None:
+                    self._last_submitted_slot = slot
+                self._reset_header_retry()
+                return True
             else:
                 self.last_header_error = self._response_diagnostic(response)
+                self.last_header_retryable = self._is_retryable_header_status(
+                    response.status_code
+                )
         except Exception as e:
             self.last_header_error = f"header request failed: {e}"
-            success = False
-        # Mark the slot as handled whether we succeeded or not. The
-        # outer mining loop guards on ``slot != self._last_submitted_slot``,
-        # so this is what stops a 10-second retry storm when a wallet
-        # is unregistered or a node is misconfigured.
-        if slot is not None:
-            self._last_submitted_slot = slot
-        return success
+            self.last_header_retryable = True
+
+        if self.last_header_retryable and slot is not None:
+            self.header_retry_in_seconds = self._schedule_header_retry(slot)
+        else:
+            # A malformed header, bad signature, or other terminal response
+            # cannot improve if the same signed header is sent again.
+            if slot is not None:
+                self._last_submitted_slot = slot
+            self._reset_header_retry()
+        return False
+
+    @staticmethod
+    def _is_retryable_header_status(status_code):
+        """Return whether an HTTP response represents a temporary failure."""
+        if status_code in HEADER_RETRYABLE_STATUS_CODES:
+            return True
+        return isinstance(status_code, int) and 500 <= status_code <= 599
+
+    def _header_submission_due(self, slot, now=None):
+        """Return whether *slot* can be submitted under the retry policy."""
+        if slot == self._last_submitted_slot:
+            return False
+        if slot != self._header_retry_slot:
+            return True
+        if now is None:
+            now = time.monotonic()
+        return now >= self._next_header_retry_at
+
+    def _schedule_header_retry(self, slot, now=None):
+        """Schedule and return the bounded exponential delay for *slot*."""
+        if slot != self._header_retry_slot:
+            self._header_retry_slot = slot
+            self._header_retry_attempts = 0
+        self._header_retry_attempts += 1
+        exponent = min(self._header_retry_attempts - 1, 10)
+        delay = min(
+            HEADER_RETRY_BASE_SECONDS * (2 ** exponent),
+            HEADER_RETRY_CAP_SECONDS,
+        )
+        if now is None:
+            now = time.monotonic()
+        self._next_header_retry_at = now + delay
+        return delay
+
+    def _reset_header_retry(self):
+        """Clear retry state after success or a terminal rejection."""
+        self._header_retry_slot = None
+        self._header_retry_attempts = 0
+        self._next_header_retry_at = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -881,6 +952,10 @@ def _format_headless_event(evt):
         # without attaching a debugger.
         if not evt.get("success") and evt.get("error"):
             line += f" error={evt['error']}"
+            if evt.get("retryable"):
+                line += f" class=retryable retry_in={evt.get('retry_in_seconds')}s"
+            else:
+                line += " class=terminal no_retry"
         return line
     if t == "attest":
         return (
