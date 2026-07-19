@@ -216,6 +216,89 @@ class TestAttestationSigningMessage(unittest.TestCase):
         )
         self.assertEqual(captured["private_key"], "priv")
 
+    def test_windows_miner_signs_when_signing_helpers_unavailable(self):
+        """The branch a real Windows install actually takes.
+
+        signing_helpers.py lives in miners/, but rustchain_miner_setup.bat
+        downloads only rustchain_windows_miner.py + miner_crypto.py into a flat
+        directory, so both imports at the top of the miner fail and
+        _SIGNING_HELPERS is False. The sibling test above hard-codes it to True,
+        which is why this path was never exercised.
+        """
+        spec = importlib.util.spec_from_file_location(
+            "windows_miner_no_helpers_signing_test",
+            WINDOWS_MINER_PATH,
+        )
+        miner_mod = importlib.util.module_from_spec(spec)
+        self.assertIsNotNone(spec.loader)
+        spec.loader.exec_module(miner_mod)
+
+        captured = {}
+
+        class _Response:
+            def __init__(self, payload):
+                self.status_code = 200
+                self._payload = payload
+
+            def json(self):
+                return self._payload
+
+        def fake_sign_payload(message, private_key):
+            captured["message"] = message
+            return "sig"
+
+        def fake_post(url, **kwargs):
+            if url.endswith("/attest/challenge"):
+                return _Response({"nonce": "test-nonce-abc123"})
+            if url.endswith("/attest/submit"):
+                captured["attestation"] = kwargs["json"]
+                return _Response({"ok": True})
+            raise AssertionError(url)
+
+        miner_mod.FINGERPRINT_AVAILABLE = False
+        miner_mod.CRYPTO_AVAILABLE = True
+        miner_mod._SIGNING_HELPERS = False          # the production reality
+        miner_mod.sign_payload = fake_sign_payload
+        miner_mod.get_or_create_keypair = lambda: {
+            "private_key": "priv",
+            "public_key": "pub",
+        }
+        miner_mod.requests.post = fake_post
+
+        miner = miner_mod.RustChainMiner("RTC1EXAMPLEWALLETADDR")
+        miner._collect_entropy = lambda: {
+            "variance_ns": 42.5,
+            "source": "timer_jitter",
+        }
+        miner._build_pow_proof = lambda: None
+
+        self.assertTrue(miner.attest())
+        attestation = captured["attestation"]
+
+        # Without these the node stores no signing_pubkey, and enrollment then
+        # fails closed with ENROLLMENT_SIGNING_KEY_REQUIRED.
+        self.assertEqual(attestation["signature"], "sig")
+        self.assertEqual(attestation["public_key"], "pub")
+        self.assertEqual(attestation["signature_type"], "ed25519")
+
+        # ...and the bytes must be the same ones the helper branch produces.
+        self.assertEqual(
+            captured["message"],
+            self._node_verifier_reconstruction(attestation).encode("utf-8"),
+        )
+
+    def test_windows_fallback_message_matches_shared_helper(self):
+        """Both branches must yield identical bytes for the same attestation."""
+        attestation = self._build_sample_attestation()
+        del attestation["nonce"]  # Windows shape: nonce only under report
+        fallback = "{}|{}|{}|{}".format(
+            attestation["miner_id"],
+            attestation["miner"],
+            attestation["report"]["nonce"],
+            attestation["report"]["commitment"],
+        ).encode("utf-8")
+        self.assertEqual(fallback, build_pipe_sign_message(attestation))
+
 
 if __name__ == "__main__":
     unittest.main()

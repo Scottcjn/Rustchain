@@ -581,10 +581,13 @@ class RustChainMiner:
                 if _SIGNING_HELPERS:
                     sign_msg = build_pipe_sign_message(attestation)
                 else:
+                    # nonce lives under report — this attestation has no
+                    # top-level copy (the Linux miner carries one, which is why
+                    # the shared helper tolerates either).
                     sign_msg = "{}|{}|{}|{}".format(
                         attestation["miner_id"],
                         attestation["miner"],
-                        attestation["nonce"],
+                        attestation["report"]["nonce"],
                         attestation["report"]["commitment"],
                     ).encode("utf-8")
                 signature = sign_payload(sign_msg, self.keypair["private_key"])
