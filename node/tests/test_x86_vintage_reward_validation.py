@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Regression coverage for bounty #16271 vintage-x86 reward validation."""
 import importlib.util
 import os
