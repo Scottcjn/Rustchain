@@ -2661,6 +2661,56 @@ def _passed_fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
     return data if isinstance(data, dict) and data else {}
 
 
+def _is_finite_measurement(value) -> bool:
+    """Return true only for a concrete, finite numeric measurement."""
+    return value is not None and value != "" and not isinstance(value, bool) and _attest_metric_is_valid(value)
+
+
+def _has_validated_x86_measurement(check_name: str, data: dict) -> bool:
+    """Recognize measurement-bearing shapes emitted by supported miners.
+
+    A client-provided ``passed`` bit is necessary but not sufficient: accepting
+    any non-empty data object would let ``{"note": "passed"}`` satisfy the
+    vintage reward gate without a hardware observation.
+    """
+    if check_name == "cache_timing":
+        cache_keys = (
+            "l1_ns", "l2_ns", "l3_ns", "L1", "L2", "L3",
+            "l1_latency", "l2_latency", "l3_latency",
+            "l1_hit_ns", "l2_hit_ns", "l3_hit_ns",
+        )
+        if sum(_is_finite_measurement(data.get(key)) for key in cache_keys) >= 2:
+            return True
+        profile = data.get("profile")
+        return isinstance(profile, list) and len(profile) >= 2 and all(
+            _is_finite_measurement(value) for value in profile
+        )
+
+    if check_name in ("simd_identity", "simd_bias"):
+        flags = data.get("sample_flags")
+        if isinstance(flags, list) and any(isinstance(flag, str) and flag.strip() for flag in flags):
+            return True
+        count = data.get("simd_flags_count")
+        return _is_finite_measurement(count) and float(count) > 0
+
+    if check_name == "thermal_drift":
+        thermal_keys = (
+            "cold_avg_ns", "hot_avg_ns", "cold_stdev", "hot_stdev",
+            "drift_ratio", "thermal_drift_pct", "recovery_pct", "ratio",
+            "variance", "delta_c",
+        )
+        return any(_is_finite_measurement(data.get(key)) for key in thermal_keys)
+
+    if check_name == "instruction_jitter":
+        jitter_keys = (
+            "int_avg_ns", "fp_avg_ns", "branch_avg_ns", "int_stdev",
+            "fp_stdev", "branch_stdev", "cv", "stddev_ns", "jitter_ns",
+        )
+        return any(_is_finite_measurement(data.get(key)) for key in jitter_keys)
+
+    return False
+
+
 def _classify_validated_x86_brand(cpu_brand: str):
     """Map an anchored CPU brand to (reward arch, CPUID family)."""
     brand = " ".join(str(cpu_brand or "").strip().split()).lower()
@@ -2708,7 +2758,10 @@ def _derive_enroll_weight_device(verified_device: dict, fingerprint: dict) -> di
         name: _passed_fingerprint_check_data(fingerprint, name)
         for name in measurement_names
     }
-    has_measurement = any(measurements.values())
+    has_measurement = any(
+        _has_validated_x86_measurement(name, data)
+        for name, data in measurements.items()
+    )
     simd = measurements.get("simd_identity") or measurements.get("simd_bias") or {}
     # SSE is legitimate positive evidence on Pentium III and Pentium M, but is
     # a contradiction for older tiers. AVX contradicts every vintage tier.
