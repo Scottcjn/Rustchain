@@ -1,5 +1,0 @@
-# RustChain Multi-Node Health Dashboard Dependencies
-# Issue #2300
-
-flask>=3.1.3
-requests>=2.34.2

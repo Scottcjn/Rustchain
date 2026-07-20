@@ -1,6 +1,0 @@
-requests
-PyYAML
-python-dotenv
-google-generativeai
-pygithub
-pytest

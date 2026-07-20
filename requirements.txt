@@ -20,3 +20,5 @@ matplotlib>=3.10.9
 seaborn>=0.13.2
 # For running tests:
 pytest>=9.0.3
+# For property-based fuzzing (classification test suite):
+hypothesis>=6.0.0

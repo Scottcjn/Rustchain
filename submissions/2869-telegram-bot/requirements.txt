@@ -1,3 +1,0 @@
-python-telegram-bot>=20.0
-requests>=2.28
-urllib3>=2.0

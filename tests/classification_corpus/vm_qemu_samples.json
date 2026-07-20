@@ -1,0 +1,145 @@
+[
+  {
+    "label": "vm_qemu_kvm_x86",
+    "description": "QEMU/KVM virtual machine with x86 emulation (KVM CPU)",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "QEMU Virtual CPU version 2.5+",
+      "machine": "pc-q35-9.0",
+      "arch_features": {
+        "simd_type": "sse2",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": false,
+        "has_avx": false,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 4096, "present": true}, "L3": {"present": false}},
+      "clock_drift_cv": 0.0003,
+      "thermal_drift_pct": 0.1
+    },
+    "expected": {"vendor": "intel"},
+    "note": "QEMU string; clock drift too low for real hardware"
+  },
+  {
+    "label": "vm_qemu_kvm_arm",
+    "description": "QEMU/KVM virtual machine with ARM emulation",
+    "device_payload": {
+      "cpu_family": "AArch64",
+      "cpu_brand": "ARM Cortex-A57",
+      "machine": "virt-9.0",
+      "arch_features": {
+        "simd_type": "neon",
+        "has_neon": true,
+        "has_sse": false,
+        "has_altivec": false
+      },
+      "cache": {"L1": {"size_kb": 48, "present": true}, "L2": {"size_kb": 2048, "present": true}},
+      "clock_drift_cv": 0.0001,
+      "thermal_drift_pct": 0.05
+    },
+    "expected_classification": "arm64_or_apple",
+    "note": "ARM in VM — suspicious drift"
+  },
+  {
+    "label": "vm_vmware_esxi",
+    "description": "VMware ESXi virtual machine (x86_64)",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz",
+      "machine": "vmware",
+      "arch_features": {
+        "simd_type": "avx2",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_avx2": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 256, "present": true}, "L3": {"size_kb": 35840, "present": true}},
+      "clock_drift_cv": 0.0005,
+      "thermal_drift_pct": 0.2
+    },
+    "expected": {"vendor": "intel"},
+    "note": "VMware machine field — anti-emulation flag"
+  },
+  {
+    "label": "vm_virtualbox_x86",
+    "description": "VirtualBox guest (x86_64)",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Core(TM) i7-7700K CPU @ 4.20GHz",
+      "machine": "VirtualBox",
+      "arch_features": {
+        "simd_type": "avx2",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_avx2": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 256, "present": true}, "L3": {"size_kb": 8192, "present": true}},
+      "clock_drift_cv": 0.0008,
+      "thermal_drift_pct": 0.3
+    },
+    "expected": {"vendor": "intel"},
+    "note": "VirtualBox in machine field"
+  },
+  {
+    "label": "vm_wsl2_x86",
+    "description": "WSL2 (Windows Subsystem for Linux) on x86_64",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Core(TM) Ultra 9 285K",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx2",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_avx2": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 320, "present": true}, "L2": {"size_kb": 5120, "present": true}, "L3": {"size_kb": 36864, "present": true}},
+      "clock_drift_cv": 0.003,
+      "thermal_drift_pct": 1.5
+    },
+    "expected": {"vendor": "intel", "architecture": "arrow_lake"},
+    "note": "WSL2 passes through real CPU brand"
+  },
+  {
+    "label": "vm_docker_container_x86",
+    "description": "Docker container on x86_64 host (native)",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx2",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_avx2": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 256, "present": true}, "L3": {"size_kb": 16384, "present": true}},
+      "clock_drift_cv": 0.001,
+      "thermal_drift_pct": 0.8
+    },
+    "expected": {"vendor": "intel", "architecture": "comet_lake"},
+    "note": "Docker passes through host CPU info"
+  }
+]
