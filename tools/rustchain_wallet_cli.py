@@ -38,9 +38,15 @@ except Exception:  # pragma: no cover
 
 NODE_URL = os.environ.get("RUSTCHAIN_NODE_URL", "https://rustchain.org")
 CHAIN_ID = os.environ.get("RUSTCHAIN_CHAIN_ID", "rustchain-mainnet-v2")
-VERIFY_SSL = os.environ.get("RUSTCHAIN_VERIFY_SSL", "0") in {"1", "true", "True"}
+VERIFY_SSL = os.environ.get("RUSTCHAIN_VERIFY_SSL", "1") in {"1", "true", "True"}
 KEYSTORE_DIR = Path.home() / ".rustchain" / "wallets"
 KEYSTORE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Exit codes:
+# 0 = success
+# 1 = generic error (usage, missing dependencies, invalid input)
+# 2 = network error (connection refused, DNS failure, timeout)
+# 3 = bad response (non-JSON, unexpected format from server)
 
 
 def _derive_ed25519_from_mnemonic(mnemonic_phrase: str, passphrase: str = "") -> Tuple[str, str]:
@@ -300,23 +306,73 @@ def _safe_json_object(r: "requests.Response") -> "tuple[dict | None, int]":
     return data, rc
 
 
+def _request_get(url, params=None, timeout=12):
+    """Perform a GET request with consistent error handling.
+
+    Returns (response, 0) on success, (None, exit_code) on failure.
+    Distinguishes network errors (exit 2) from bad responses (exit 3).
+    """
+    try:
+        r = requests.get(url, params=params, timeout=timeout, verify=VERIFY_SSL)
+        return r, 0
+    except requests.exceptions.ConnectionError as e:
+        print(f"Network error: Cannot connect to {NODE_URL} — {e}", file=sys.stderr)
+        return None, 2
+    except requests.exceptions.Timeout as e:
+        print(f"Network error: Request to {url} timed out after {timeout}s", file=sys.stderr)
+        return None, 2
+    except requests.exceptions.RequestException as e:
+        print(f"Network error: {e}", file=sys.stderr)
+        return None, 2
+
+
+def _request_post(url, json_data, timeout=20):
+    """Perform a POST request with consistent error handling."""
+    try:
+        r = requests.post(url, json=json_data, timeout=timeout, verify=VERIFY_SSL)
+        return r, 0
+    except requests.exceptions.ConnectionError as e:
+        print(f"Network error: Cannot connect to {NODE_URL} — {e}", file=sys.stderr)
+        return None, 2
+    except requests.exceptions.Timeout as e:
+        print(f"Network error: Request to {url} timed out after {timeout}s", file=sys.stderr)
+        return None, 2
+    except requests.exceptions.RequestException as e:
+        print(f"Network error: {e}", file=sys.stderr)
+        return None, 2
+
+
 def cmd_balance(args):
     url = f"{NODE_URL}/wallet/balance"
-    r = requests.get(url, params={"miner_id": args.wallet_id}, timeout=12, verify=VERIFY_SSL)
+    r, rc = _request_get(url, params={"miner_id": args.wallet_id})
+    if r is None:
+        return rc
     data, rc = _safe_json_object(r)
     if data is None:
-        return rc
+        return 3
     if "amount_rtc" not in data and "balance_rtc" in data:
         data["amount_rtc"] = data.get("balance_rtc")
     data["wallet_id"] = args.wallet_id
     print(json.dumps(data, indent=2))
-    return rc
+    return 0
 
 
 def cmd_send(args):
-    ks = _load_keystore(args.from_wallet)
+    try:
+        ks = _load_keystore(args.from_wallet)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except json.JSONDecodeError as e:
+        print(f"Error: Corrupt keystore — {e}", file=sys.stderr)
+        return 1
+
     password = _read_password("Wallet password: ", "RUSTCHAIN_WALLET_PASSWORD")
-    priv_hex = _decrypt_private_key(ks["crypto"], password)
+    try:
+        priv_hex = _decrypt_private_key(ks["crypto"], password)
+    except (ValueError, KeyError) as e:
+        print(f"Error: Failed to decrypt keystore — {e}", file=sys.stderr)
+        return 1
     from_addr = ks["address"]
     nonce = int(time.time())
     payload = _sign_transfer(
@@ -330,39 +386,49 @@ def cmd_send(args):
     )
 
     url = f"{NODE_URL}/wallet/transfer/signed"
-    r = requests.post(url, json=payload, timeout=20, verify=VERIFY_SSL)
+    r, rc = _request_post(url, payload)
+    if r is None:
+        return rc
     data, rc = _safe_json_object(r)
     if data is not None:
         print(json.dumps(data, indent=2))
-    return rc
+    return 0 if rc == 0 else 3
 
 
 def cmd_history(args):
     url = f"{NODE_URL}/wallet/ledger"
-    r = requests.get(url, params={"miner_id": args.wallet_id}, timeout=12, verify=VERIFY_SSL)
+    r, rc = _request_get(url, params={"miner_id": args.wallet_id})
+    if r is None:
+        return rc
     data, rc = _safe_json(r)
     if data is None:
-        return rc
+        return 3
     if isinstance(data, list):
         data = {"wallet_id": args.wallet_id, "transactions": data}
     print(json.dumps(data, indent=2))
-    return rc
+    return 0
 
 
 def cmd_miners(args):
-    r = requests.get(f"{NODE_URL}/api/miners", timeout=12, verify=VERIFY_SSL)
+    r, rc = _request_get(f"{NODE_URL}/api/miners")
+    if r is None:
+        return rc
     data, rc = _safe_json(r)
-    if data is not None:
-        print(json.dumps(data, indent=2))
-    return rc
+    if data is None:
+        return 3
+    print(json.dumps(data, indent=2))
+    return 0
 
 
 def cmd_epoch(args):
-    r = requests.get(f"{NODE_URL}/epoch", timeout=12, verify=VERIFY_SSL)
+    r, rc = _request_get(f"{NODE_URL}/epoch")
+    if r is None:
+        return rc
     data, rc = _safe_json_object(r)
-    if data is not None:
-        print(json.dumps(data, indent=2))
-    return rc
+    if data is None:
+        return 3
+    print(json.dumps(data, indent=2))
+    return 0
 
 
 def build_parser():
@@ -412,6 +478,15 @@ def main():
     args = parser.parse_args()
     try:
         return args.func(args)
+    except requests.exceptions.ConnectionError as e:
+        print(f"Network error: Cannot connect to {NODE_URL} — {e}", file=sys.stderr)
+        return 2
+    except requests.exceptions.Timeout as e:
+        print(f"Network error: Request timed out — {e}", file=sys.stderr)
+        return 2
+    except requests.exceptions.RequestException as e:
+        print(f"Network error: {e}", file=sys.stderr)
+        return 2
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
