@@ -36,6 +36,15 @@ try:
 except Exception:  # pragma: no cover
     Mnemonic = None
 
+# Exit codes for consistent error handling
+EXIT_SUCCESS = 0
+EXIT_USAGE_ERROR = 1
+EXIT_NETWORK_ERROR = 2
+EXIT_BAD_RESPONSE = 3
+EXIT_WALLET_NOT_FOUND = 4
+EXIT_AUTH_ERROR = 5
+EXIT_UNKNOWN_ERROR = 6
+
 NODE_URL = os.environ.get("RUSTCHAIN_NODE_URL", "https://rustchain.org")
 VERIFY_SSL = os.environ.get("RUSTCHAIN_VERIFY_SSL", "0") in {"1", "true", "True"}
 KEYSTORE_DIR = Path.home() / ".rustchain" / "wallets"
@@ -188,14 +197,14 @@ def _sign_transfer(priv_hex: str, from_addr: str, to_addr: str, amount_rtc: floa
 def cmd_create(args):
     if Mnemonic is None:
         print("Error: missing dependency 'mnemonic'. Install: python3 -m pip install mnemonic", file=sys.stderr)
-        return 2
+        return EXIT_USAGE_ERROR
 
     wallet_name = args.name or f"wallet-{int(time.time())}"
     password = _read_password("Set wallet password: ", "RUSTCHAIN_WALLET_PASSWORD")
     confirm = _read_password("Confirm password: ", "RUSTCHAIN_WALLET_PASSWORD_CONFIRM")
     if password != confirm:
         print("Error: password mismatch", file=sys.stderr)
-        return 2
+        return EXIT_USAGE_ERROR
 
     m = Mnemonic("english")
     phrase = m.generate(strength=256)  # 24 words
@@ -218,13 +227,13 @@ def cmd_create(args):
     print(f"Keystore: {path}")
     print("Seed phrase (write this down safely):")
     print(phrase)
-    return 0
+    return EXIT_SUCCESS
 
 
 def cmd_import(args):
     if Mnemonic is None:
         print("Error: missing dependency 'mnemonic'. Install: python3 -m pip install mnemonic", file=sys.stderr)
-        return 2
+        return EXIT_USAGE_ERROR
 
     phrase = args.mnemonic.strip().lower()
     wallet_name = args.name or f"imported-{int(time.time())}"
@@ -232,7 +241,7 @@ def cmd_import(args):
     confirm = _read_password("Confirm password: ", "RUSTCHAIN_WALLET_PASSWORD_CONFIRM")
     if password != confirm:
         print("Error: password mismatch", file=sys.stderr)
-        return 2
+        return EXIT_USAGE_ERROR
 
     priv_hex, pub_hex = _derive_ed25519_from_mnemonic(phrase)
     address = _address_from_pubkey_hex(pub_hex)
@@ -249,13 +258,13 @@ def cmd_import(args):
     print(f"Wallet imported: {wallet_name}")
     print(f"Address: {address}")
     print(f"Keystore: {path}")
-    return 0
+    return EXIT_SUCCESS
 
 
 def cmd_export(args):
     ks = _load_keystore(args.wallet)
     print(json.dumps(ks, indent=2))
-    return 0
+    return EXIT_SUCCESS
 
 
 def _safe_json(r: "requests.Response") -> "tuple[dict | list | None, int]":
@@ -266,14 +275,14 @@ def _safe_json(r: "requests.Response") -> "tuple[dict | list | None, int]":
     the opaque ``JSONDecodeError`` that previously surfaced to callers.
     """
     try:
-        return r.json(), 0 if r.ok else 1
+        return r.json(), EXIT_SUCCESS if r.ok else EXIT_BAD_RESPONSE
     except Exception:
         print(
             f"Error: Server returned HTTP {r.status_code} with non-JSON body"
             f" (check node URL / connectivity)",
             file=sys.stderr,
         )
-        return None, 1
+        return None, EXIT_BAD_RESPONSE
 
 
 def _safe_json_object(r: "requests.Response") -> "tuple[dict | None, int]":
@@ -282,33 +291,66 @@ def _safe_json_object(r: "requests.Response") -> "tuple[dict | None, int]":
         return None, rc
     if not isinstance(data, dict):
         print("Error: Server returned JSON but not an object", file=sys.stderr)
-        return None, 1
+        return None, EXIT_BAD_RESPONSE
     return data, rc
 
 
 def cmd_balance(args):
     url = f"{NODE_URL}/wallet/balance"
-    r = requests.get(url, params={"miner_id": args.wallet_id}, timeout=12, verify=VERIFY_SSL)
+    try:
+        r = requests.get(url, params={"miner_id": args.wallet_id}, timeout=12, verify=VERIFY_SSL)
+    except requests.exceptions.RequestException as e:
+        print(f"ERROR: Network error - {e}", file=sys.stderr)
+        return EXIT_NETWORK_ERROR
+
+    if r.status_code == 404:
+        print(f"ERROR: Wallet '{args.wallet_id}' not found", file=sys.stderr)
+        return EXIT_WALLET_NOT_FOUND
+
+    if r.status_code != 200:
+        print(f"ERROR: Server returned HTTP {r.status_code}", file=sys.stderr)
+        return EXIT_BAD_RESPONSE
+
     data, rc = _safe_json_object(r)
     if data is None:
         return rc
+
+    if "amount_rtc" not in data:
+        print("ERROR: Response missing 'amount_rtc' field", file=sys.stderr)
+        return EXIT_BAD_RESPONSE
+
     if "amount_rtc" not in data and "balance_rtc" in data:
         data["amount_rtc"] = data.get("balance_rtc")
     data["wallet_id"] = args.wallet_id
     print(json.dumps(data, indent=2))
-    return rc
+    return EXIT_SUCCESS
 
 
 def cmd_send(args):
-    ks = _load_keystore(args.from_wallet)
+    try:
+        ks = _load_keystore(args.from_wallet)
+    except FileNotFoundError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return EXIT_WALLET_NOT_FOUND
+
     password = _read_password("Wallet password: ", "RUSTCHAIN_WALLET_PASSWORD")
-    priv_hex = _decrypt_private_key(ks["crypto"], password)
+    try:
+        priv_hex = _decrypt_private_key(ks["crypto"], password)
+    except Exception as e:
+        print(f"ERROR: Failed to decrypt wallet - {e}", file=sys.stderr)
+        return EXIT_AUTH_ERROR
+
     from_addr = ks["address"]
     nonce = int(time.time())
     payload = _sign_transfer(priv_hex, from_addr, args.to, float(args.amount), args.memo or "", nonce)
 
     url = f"{NODE_URL}/wallet/transfer/signed"
-    r = requests.post(url, json=payload, timeout=20, verify=VERIFY_SSL)
+    try:
+        r = requests.post(url, json=payload, timeout=20, verify=VERIFY_SSL)
+    except requests.exceptions.RequestException as e:
+        print(f"ERROR: Network error - {e}", file=sys.stderr)
+        return EXIT_NETWORK_ERROR
+
     data, rc = _safe_json_object(r)
     if data is not None:
         print(json.dumps(data, indent=2))
@@ -317,18 +359,36 @@ def cmd_send(args):
 
 def cmd_history(args):
     url = f"{NODE_URL}/wallet/ledger"
-    r = requests.get(url, params={"miner_id": args.wallet_id}, timeout=12, verify=VERIFY_SSL)
+    try:
+        r = requests.get(url, params={"miner_id": args.wallet_id}, timeout=12, verify=VERIFY_SSL)
+    except requests.exceptions.RequestException as e:
+        print(f"ERROR: Network error - {e}", file=sys.stderr)
+        return EXIT_NETWORK_ERROR
+
+    if r.status_code == 404:
+        print(f"ERROR: Wallet '{args.wallet_id}' not found", file=sys.stderr)
+        return EXIT_WALLET_NOT_FOUND
+
+    if r.status_code != 200:
+        print(f"ERROR: Server returned HTTP {r.status_code}", file=sys.stderr)
+        return EXIT_BAD_RESPONSE
+
     data, rc = _safe_json(r)
     if data is None:
         return rc
     if isinstance(data, list):
         data = {"wallet_id": args.wallet_id, "transactions": data}
     print(json.dumps(data, indent=2))
-    return rc
+    return EXIT_SUCCESS
 
 
 def cmd_miners(args):
-    r = requests.get(f"{NODE_URL}/api/miners", timeout=12, verify=VERIFY_SSL)
+    try:
+        r = requests.get(f"{NODE_URL}/api/miners", timeout=12, verify=VERIFY_SSL)
+    except requests.exceptions.RequestException as e:
+        print(f"ERROR: Network error - {e}", file=sys.stderr)
+        return EXIT_NETWORK_ERROR
+
     data, rc = _safe_json(r)
     if data is not None:
         print(json.dumps(data, indent=2))
@@ -336,7 +396,12 @@ def cmd_miners(args):
 
 
 def cmd_epoch(args):
-    r = requests.get(f"{NODE_URL}/epoch", timeout=12, verify=VERIFY_SSL)
+    try:
+        r = requests.get(f"{NODE_URL}/epoch", timeout=12, verify=VERIFY_SSL)
+    except requests.exceptions.RequestException as e:
+        print(f"ERROR: Network error - {e}", file=sys.stderr)
+        return EXIT_NETWORK_ERROR
+
     data, rc = _safe_json_object(r)
     if data is not None:
         print(json.dumps(data, indent=2))
@@ -391,7 +456,7 @@ def main():
         return args.func(args)
     except Exception as e:
         print(f"Error: {e}", file=sys.stderr)
-        return 1
+        return EXIT_UNKNOWN_ERROR
 
 
 if __name__ == "__main__":
