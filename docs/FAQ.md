@@ -414,7 +414,7 @@ curl -sk -X POST https://rustchain.org/api/governance/vote \
 
 ### 在哪里可以找到社区？
 
-- **Discord:** [discord.gg/VqVVS2CW9Q](https://discord.gg/VqVVS2CW9Q)
+- **Discord:** [discord.gg/XnRp7M5gBW](https://discord.gg/XnRp7M5gBW)
 - **GitHub:** [github.com/Scottcjn/RustChain](https://github.com/Scottcjn/RustChain)
 - **网站:** [rustchain.org](https://rustchain.org)
 - **区块浏览器:** [rustchain.org/explorer/](https://rustchain.org/explorer/)
@@ -477,7 +477,7 @@ Apache License 2.0
 如果本 FAQ 没有回答你的问题：
 
 1. 在 GitHub 上开一个 [issue](https://github.com/Scottcjn/Rustchain/issues)
-2. 在 [Discord](https://discord.gg/VqVVS2CW9Q) 提问
+2. 在 [Discord](https://discord.gg/XnRp7M5gBW) 提问
 3. 在任何赏金问题下评论寻求帮助
 
 ---
