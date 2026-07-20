@@ -2717,6 +2717,17 @@ def _has_validated_x86_measurement(check_name: str, data: dict) -> bool:
     return False
 
 
+def _simd_measurement_has_feature(data: dict, feature: str) -> bool:
+    """Read SIMD contradictions from booleans and the measured flag sample."""
+    if data.get(f"has_{feature}") is True:
+        return True
+    flags = data.get("sample_flags")
+    return isinstance(flags, list) and any(
+        isinstance(flag, str) and flag.strip().lower().startswith(feature)
+        for flag in flags
+    )
+
+
 def _classify_validated_x86_brand(cpu_brand: str):
     """Map an anchored CPU brand to (reward arch, CPUID family)."""
     brand = " ".join(str(cpu_brand or "").strip().split()).lower()
@@ -2768,11 +2779,16 @@ def _derive_enroll_weight_device(verified_device: dict, fingerprint: dict) -> di
         _has_validated_x86_measurement(name, data)
         for name, data in measurements.items()
     )
-    simd = measurements.get("simd_identity") or measurements.get("simd_bias") or {}
+    simd_measurements = (
+        measurements.get("simd_identity") or {},
+        measurements.get("simd_bias") or {},
+    )
     # SSE is legitimate positive evidence on Pentium III and Pentium M, but is
     # a contradiction for older tiers. AVX contradicts every vintage tier.
-    modern_simd = bool(simd.get("has_avx")) or (
-        bool(simd.get("has_sse"))
+    has_avx = any(_simd_measurement_has_feature(data, "avx") for data in simd_measurements)
+    has_sse = any(_simd_measurement_has_feature(data, "sse") for data in simd_measurements)
+    modern_simd = has_avx or (
+        has_sse
         and claimed_arch not in {"pentium_iii", "pentium_m_banias", "pentium_m_dothan", "pentium_m_yonah"}
     )
 

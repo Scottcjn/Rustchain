@@ -110,6 +110,21 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         )
         self.assertEqual(self._reward("486", fp)["device_arch"], "default")
 
+    def test_sampled_avx_flag_clamps_without_boolean_hint(self):
+        fp = _fingerprint(
+            "Intel Pentium III 800MHz", 6,
+            simd_identity=_check(sample_flags=["avx2"]),
+        )
+        self.assertEqual(self._reward("pentium_iii", fp)["device_arch"], "default")
+
+    def test_contradiction_in_simd_alias_cannot_be_shadowed(self):
+        fp = _fingerprint(
+            "Am486DX4", 4,
+            simd_identity=_check(sample_flags=["legacy"]),
+            simd_bias=_check(has_avx=True, sample_flags=["avx"]),
+        )
+        self.assertEqual(self._reward("486", fp)["device_arch"], "default")
+
     def test_pentium_iii_sse_is_legitimate(self):
         fp = _fingerprint(
             "Intel(R) Pentium(R) III 800MHz", 6,
