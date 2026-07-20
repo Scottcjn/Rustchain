@@ -395,6 +395,7 @@ open https://rustchain.org/explorer
 ### 社区支持
 
 - **Discord:** https://discord.gg/XnRp7M5gBW
+- **Telegram:** https://t.me/+l8dHTjXCBNM1MTIx
 - **GitHub Issues:** https://github.com/Scottcjn/Rustchain/issues
 - **赏金任务:** https://github.com/Scottcjn/rustchain-bounties/issues
 
