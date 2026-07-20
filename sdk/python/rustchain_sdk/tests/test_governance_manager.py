@@ -11,7 +11,7 @@ from rustchain_sdk.exceptions import GovernanceError, ValidationError
 
 
 class DummyWallet:
-    address = "RTCvoter123"
+    address = "RTC0000000000000000000000000000000000000000"
     public_key_hex = "ab" * 32
 
     def __init__(self):
@@ -78,7 +78,7 @@ def test_sign_vote_returns_payload_with_signature_and_public_key():
     payload = manager.sign_vote(42, "No", nonce=123)
 
     assert payload == {
-        "voter": "RTCvoter123",
+        "voter": "RTC0000000000000000000000000000000000000000",
         "proposal_id": 42,
         "vote": "no",
         "signature": (b"\x11" * 64).hex(),
@@ -99,7 +99,7 @@ async def test_vote_signs_and_submits_to_client():
     assert result == {"result": "accepted", "proposal_id": 9, "vote": "abstain"}
     assert client.vote_calls == [
         {
-            "voter": "RTCvoter123",
+            "voter": "RTC0000000000000000000000000000000000000000",
             "proposal_id": 9,
             "vote": "abstain",
             "signature": (b"\x11" * 64).hex(),
@@ -121,7 +121,7 @@ async def test_propose_uses_wallet_address_as_proposer():
     assert result == {"proposal_id": 7, "status": "submitted"}
     assert client.propose_calls == [
         {
-            "proposer": "RTCvoter123",
+            "proposer": "RTC0000000000000000000000000000000000000000",
             "proposal_type": "param_change",
             "description": "Lower test quorum",
             "payload": {"key": "quorum", "value": 0.4},
@@ -147,7 +147,7 @@ def test_vote_rejects_invalid_choice(vote):
 
 def test_init_requires_wallet_sign_method():
     class NoSignWallet:
-        address = "RTCvoter123"
+        address = "RTC0000000000000000000000000000000000000000"
 
     with pytest.raises(ValidationError, match="wallet.sign"):
         GovernanceManager(DummyClient(), NoSignWallet())

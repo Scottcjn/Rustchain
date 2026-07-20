@@ -11,6 +11,8 @@ use crate::config::Config;
 use crate::error::{MinerError, Result};
 use crate::hardware::HardwareInfo;
 use crate::transport::NodeTransport;
+use reqwest::Client;
+use serde_json::json;
 
 /// Mining statistics
 #[derive(Debug, Default)]
@@ -439,6 +441,21 @@ impl Miner {
             println!("Cycle #{} - {}", cycle, chrono::Local::now().format("%Y-%m-%d %H:%M:%S"));
             println!("{}", "=".repeat(70));
 
+            // --- Heartbeat: verify network connectivity (Issue #7930) ---
+            match self.heartbeat().await {
+                Ok(()) => {
+                    println!("✅ Node connected");
+                }
+                Err(e) => {
+                    println!("⚠️ Network unreachable: {}", e);
+                    println!("   Miner will operate in degraded mode (local tracking only)");
+                    let state = self.local_state.load();
+                    if state.consecutive_failures > 0 {
+                        println!("   Offline for: {:?}", state.outage_duration());
+                    }
+                }
+            }
+
             // Ensure attestation is valid
             if !self.is_attestation_valid() {
                 tracing::info!("[MINER] Attestation expired, re-attesting...");
@@ -529,6 +546,131 @@ impl Miner {
             sleep((deadline - now).min(Duration::from_secs(1))).await;
         }
     }
+
+    /// Verify network connectivity via a lightweight node health check.
+    /// Includes retry with exponential backoff, error logging, local state tracking,
+    /// and alerting via configured webhook on prolonged outages.
+    ///
+    /// # Returns
+    /// - `Ok(())` when the node is reachable
+    /// - `Err(MinerError)` when all retries are exhausted
+    ///
+    /// This method is critical for preventing silent disconnections (Issue #7930).
+    /// Miners that cannot reach the node are operating in degraded mode and
+    /// should rely on local state tracking.
+    pub async fn heartbeat(&self) -> Result<()> {
+
+        let max_retries = self.config.max_heartbeat_retries.unwrap_or(3);
+        let base_delay = self.config.heartbeat_base_delay;
+        let mut attempt = 0;
+
+        while attempt < max_retries {
+            attempt += 1;
+            
+            // Check if we should shutdown mid-retry
+            if self.is_shutdown() {
+                return Err(MinerError::MinerError(
+                    "Heartbeat aborted: miner shutting down".to_string(),
+                ));
+            }
+
+            match self.transport.node_health().await {
+                Ok(()) => {
+                    // Success: reset failure tracking
+                    self.heartbeat_success();
+                    return Ok(());
+                }
+                Err(e) => {
+                    let msg = format!(
+                        "Heartbeat attempt {}/{} failed: {}",
+                        attempt, max_retries, e
+                    );
+                    eprintln!("⚠️ [Heartbeat] {}", msg);
+                    
+                    if attempt < max_retries {
+                        let delay = base_delay * 2u32.pow(attempt - 1);
+                        eprintln!("   Retrying in {:?}", delay);
+                        sleep(delay).await;
+                    }
+                }
+            }
+        }
+
+        // All retries exhausted - record failure in local state
+        let state = self.local_state.load();
+        let state = state.with_consecutive_failure();
+        self.local_state.save(&state);
+
+        // Alert operator if outage persists
+        if state.consecutive_failures == 1 {
+            // First failure after being healthy - alert immediately
+            if let Some(webhook) = &self.alert_webhook {
+                let alert_msg = format!(
+                    "🚨 Miner {} lost connection to node. Attempting {} retries.",
+                    self.miner_id, max_retries
+                );
+                eprintln!("📢 [Alert] {}", alert_msg);
+                // Fire-and-forget the alert
+                let wh = webhook.clone();
+                let miner_id = self.miner_id.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = Self::send_alert(&wh, &miner_id, &alert_msg).await {
+                        eprintln!("⚠️ Failed to send alert: {}", e);
+                    }
+                });
+            }
+        }
+
+        if state.consecutive_failures > 0 {
+            eprintln!(
+                "📊 [Heartbeat] Offline for {:?} ({} consecutive failures)",
+                state.outage_duration(),
+                state.consecutive_failures
+            );
+        }
+
+        Err(MinerError::MinerError(
+            format!("Heartbeat failed after {} retries", max_retries),
+        ))
+    }
+
+    /// Signal that a heartbeat succeeded - resets failure tracking.
+    fn heartbeat_success(&self) {
+        let state = self.local_state.load();
+        let state = state.with_recovery();
+        self.local_state.save(&state);
+    }
+
+    /// Send an alert notification via webhook.
+    async fn send_alert(webhook_url: &str, miner_id: &str, message: &str) -> Result<()> {
+        use reqwest::Client;
+        use serde_json::json;
+
+        let payload = json!({
+            "miner_id": miner_id,
+            "alert": message,
+            "timestamp": chrono::Utc::now().to_rfc3339()
+        });
+
+        let client = Client::new();
+        match client
+            .post(webhook_url)
+            .json(&payload)
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                if resp.status().is_success() {
+                    Ok(())
+                } else {
+                    Err(MinerError::MinerError(
+                        format!("Alert webhook returned status {}", resp.status()),
+                    ))
+                }
+            }
+            Err(e) => Err(MinerError::MinerError(format!("Alert webhook error: {}", e))),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -555,6 +697,35 @@ mod tests {
         }
     }
 
+
+    /// Helper to create a minimal Miner for tests.
+    fn test_miner() -> Miner {
+        let signing_key = ed25519_dalek::SigningKey::generate(&mut rand::rngs::OsRng);
+        let local_state = StateStore::new(PathBuf::from("/tmp/test_miner_state.json"));
+        let _ = std::fs::remove_file("/tmp/test_miner_state.json");
+
+        Miner {
+            config: Config::default(),
+            transport: NodeTransport::new(
+                "https://unused.example.com".to_string(),
+                None,
+                Duration::from_secs(5),
+            )
+            .unwrap(),
+            wallet: "test-wallet".to_string(),
+            miner_id: "test-miner-1".to_string(),
+            hw_info: hardware_fixture(),
+            public_key_hex: hex::encode(signing_key.verifying_key().as_bytes()),
+            signing_key,
+            attestation_valid_until: AtomicU64::new(0),
+            enrolled: AtomicBool::new(false),
+            stats: Arc::new(MiningStats::new()),
+            shutdown: Arc::new(AtomicBool::new(false)),
+            local_state,
+            local_block_height: 0,
+            alert_webhook: None,
+        }
+    }
     #[test]
     fn enrollment_payload_uses_public_key_for_miner_pubkey() {
         let public_key_hex = "aabbccdd";
@@ -648,6 +819,8 @@ mod tests {
             config: Config {
                 node_url: node_url.clone(),
                 ..Config::default()
+        let local_state = StateStore::new(PathBuf::from("/tmp/test_balance_state.json"));
+        let _ = std::fs::remove_file("/tmp/test_balance_state.json");
             },
             transport: NodeTransport::new(node_url, None, Duration::from_secs(5)).unwrap(),
             wallet: "wallet-one".to_string(),
@@ -659,6 +832,9 @@ mod tests {
             enrolled: AtomicBool::new(false),
             stats: Arc::new(MiningStats::new()),
             shutdown: Arc::new(AtomicBool::new(false)),
+            local_state,
+            local_block_height: 0,
+            alert_webhook: None,
         };
 
         assert_eq!(miner.check_balance().await.unwrap(), 2.5);
@@ -668,5 +844,118 @@ mod tests {
         assert!(!request.contains("/balance/wallet-one"));
 
         server.join().unwrap();
+    }
+
+    // --- Heartbeat network failure tests (Issue #7930) ---
+
+    #[tokio::test]
+    async fn heartbeat_records_failure_when_node_unreachable() {
+        let miner = test_miner();
+        
+        // Heartbeat should attempt retries and log failure when node is unreachable
+        let result = miner.heartbeat().await;
+        
+        // Expect failure because the transport targets an unreachable URL
+        assert!(result.is_err());
+        
+        // Verify local state recorded the failure
+        let state = miner.local_state.load();
+        assert!(state.consecutive_failures > 0);
+    }
+
+    #[tokio::test]
+    async fn heartbeat_retries_on_failure() {
+        let miner = test_miner();
+        
+        // Call heartbeat multiple times to verify retry counter
+        let mut fail_count = 0;
+        for _ in 0..3 {
+            if miner.heartbeat().await.is_err() {
+                fail_count += 1;
+            }
+        }
+        
+        assert_eq!(fail_count, 3);
+        
+        let state = miner.local_state.load();
+        assert_eq!(state.consecutive_failures, 3);
+        assert!(state.outage_start.is_some());
+    }
+
+    #[test]
+    fn local_state_persists_across_network_outages() {
+        let path = std::path::PathBuf::from("/tmp/test_persist_state.json");
+        let _ = std::fs::remove_file(&path);
+        
+        let store = StateStore::new(path.clone());
+        
+        // Save some state
+        let mut s = LocalState::default();
+        s.consecutive_failures = 5;
+        s.local_block_height = 42;
+        s.last_seen_peers = 10;
+        store.save(&s).unwrap();
+        
+        // Load it back (simulating restart after outage)
+        let loaded = store.load();
+        assert_eq!(loaded.consecutive_failures, 5);
+        assert_eq!(loaded.local_block_height, 42);
+        assert_eq!(loaded.last_seen_peers, 10);
+        
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[tokio::test]
+    async fn heartbeat_recovery_resets_after_success() {
+        // Create a miner with an artificially healthy state
+        let miner = test_miner();
+        
+        // Simulate recovery: set a healthy peer response via transport
+        // Since we can't mock the HTTP client easily, we verify the 
+        // state load path works and the counter can be reset
+        
+        // Load current state - should show failures from previous tests
+        let state_before = miner.local_state.load();
+        
+        // In a real scenario, heartbeat_success() would be called after a
+        // successful heartbeat, resetting the counter. Verify that function exists.
+        miner.heartbeat_success();
+        
+        // After a successful heartbeat, counter should be 0
+        // (even if previous attempts failed)
+        let state_after = miner.local_state.load();
+        assert_eq!(state_after.consecutive_failures, 0);
+        // outage_start should be reset
+        assert_eq!(state_after.outage_start, None);
+    }
+
+    #[test]
+    fn local_state_outage_duration_calculation() {
+        let path = std::path::PathBuf::from("/tmp/test_duration.json");
+        let _ = std::fs::remove_file(&path);
+        
+        let store = StateStore::new(path.clone());
+        
+        // Save state with an outage start time 2 seconds ago
+        let mut s = LocalState::default();
+        s.consecutive_failures = 3;
+        s.outage_start = Some(std::time::SystemTime::now() - std::time::Duration::from_secs(2));
+        store.save(&s).unwrap();
+        
+        let loaded = store.load();
+        let duration = loaded.outage_duration();
+        // Duration should be >= 1 second (allowing for test timing)
+        assert!(duration.as_secs() >= 1);
+        
+        // State with no outage_start should return zero
+        let mut s2 = LocalState::default();
+        s2.consecutive_failures = 0;
+        s2.outage_start = None;
+        store.save(&s2).unwrap();
+        
+        let loaded2 = store.load();
+        assert!(loaded2.outage_duration().as_secs() == 0);
+        
+        let _ = std::fs::remove_file(&path);
     }
 }
