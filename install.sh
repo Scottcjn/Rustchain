@@ -147,6 +147,8 @@ elif command -v sysctl &>/dev/null; then
 else
     CPU="$ARCH"
 fi
+# Sanitize CPU string for display (remove extra whitespace)
+CPU=$(echo "$CPU" | tr -s ' ')
 echo "  CPU: $CPU"
 
 # ─── Download Helpers ────────────────────────────────────────────────
@@ -218,9 +220,9 @@ echo -e "${GREEN}[2/6]${NC} Checking Python..."
 PYTHON=""
 for cmd in python3 python; do
     if command -v $cmd &>/dev/null; then
-        ver=$($cmd --version 2>&1 | grep -oP '\d+\.\d+')
-        major=$(echo $ver | cut -d. -f1)
-        minor=$(echo $ver | cut -d. -f2)
+        ver=$($cmd --version 2>&1 | grep -o '[0-9]\+\.[0-9]\+' | head -1)
+        major=$(echo "$ver" | cut -d. -f1)
+        minor=$(echo "$ver" | cut -d. -f2)
         if [ "$major" -ge 3 ] && [ "$minor" -ge 6 ]; then
             PYTHON=$cmd
             echo "  Found: $cmd ($($cmd --version 2>&1))"
@@ -231,7 +233,11 @@ done
 
 if [ -z "$PYTHON" ]; then
     echo -e "${RED}  Python 3.6+ required but not found.${NC}"
-    echo "  Install with: sudo apt install python3 python3-pip"
+    if [ "$OS" = "Darwin" ]; then
+        echo "  Install with: brew install python3"
+    else
+        echo "  Install with: sudo apt install python3 python3-pip"
+    fi
     exit 1
 fi
 
