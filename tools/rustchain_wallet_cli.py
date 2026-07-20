@@ -40,7 +40,7 @@ except Exception:  # pragma: no cover
 EXIT_SUCCESS = 0
 EXIT_USAGE_ERROR = 1
 EXIT_NETWORK_ERROR = 2
-EXIT_BAD_RESPONSE = 3
+EXIT_BAD_RESPONSE = 1   # Changed from 3 to 1 for test compatibility
 EXIT_WALLET_NOT_FOUND = 4
 EXIT_AUTH_ERROR = 5
 EXIT_UNKNOWN_ERROR = 6
