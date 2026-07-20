@@ -1,5 +1,0 @@
-# Ignore generated artifacts
-artifacts/
-test_artifacts/
-__pycache__/
-*.pyc

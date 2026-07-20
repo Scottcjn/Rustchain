@@ -1,5 +1,0 @@
-$ python3 integrations/kitwongpixel/rustchain_health_check.py --base-url https://rustchain.org
-url: https://rustchain.org/health
-status: 200
-node: rustchain
-ok: True

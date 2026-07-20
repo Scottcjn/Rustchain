@@ -1,0 +1,250 @@
+[
+  {
+    "label": "adversarial_empty_cpu_brand",
+    "description": "Empty CPU brand string — should not crash, should return unknown",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "",
+      "machine": "",
+      "arch_features": {
+        "simd_type": "sse2",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": false,
+        "has_altivec": false,
+        "has_neon": false
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 256, "present": true}},
+      "clock_drift_cv": 0.005,
+      "thermal_drift_pct": 3.0
+    },
+    "expected": {"vendor": "unknown"},
+    "vulnerability": "empty_cpu_brand"
+  },
+  {
+    "label": "adversarial_arm_machine_x86_brand",
+    "description": "ARM machine field but x86 brand string — cross-arch spoof attempt",
+    "device_payload": {
+      "cpu_family": "AArch64",
+      "cpu_brand": "Intel(R) Core(TM) i9-12900K CPU @ 3.20GHz",
+      "machine": "aarch64",
+      "arch_features": {
+        "simd_type": "neon",
+        "has_neon": true,
+        "has_altivec": false,
+        "has_sse": false
+      },
+      "cache": {"L1": {"size_kb": 128, "present": true}, "L2": {"size_kb": 2048, "present": true}},
+      "clock_drift_cv": 0.003,
+      "thermal_drift_pct": 2.5
+    },
+    "vulnerability": "arm_machine_x86_brand_spoof"
+  },
+  {
+    "label": "adversarial_family6_pentium3_brand",
+    "description": "cpu_family 6 (modern) but brand string says 'Pentium III' — vintage claim on modern hardware",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Pentium III",
+      "machine": "i686",
+      "arch_features": {
+        "simd_type": "avx2",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_avx2": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 256, "present": true}, "L3": {"size_kb": 12288, "present": true}},
+      "clock_drift_cv": 0.002,
+      "thermal_drift_pct": 1.5
+    },
+    "vulnerability": "family6_plus_vintage_brand"
+  },
+  {
+    "label": "adversarial_legacy_key_names",
+    "description": "Mixed legacy/new field names — the exact #7991 trap (BOUNTY: 3 RTC)",
+    "device_payload": {
+      "cpu_family": "6",
+      "brand_string": "Intel(R) Core(TM) i7-2600K CPU @ 3.40GHz",
+      "model_name": "Intel(R) Core(TM) i7-2600K CPU @ 3.40GHz",
+      "cpu_brand": "",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 256, "present": true}, "L3": {"size_kb": 8192, "present": true}},
+      "clock_drift_cv": 0.002,
+      "thermal_drift_pct": 2.0
+    },
+    "vulnerability": "legacy_key_name_trap_7991",
+    "note": "cpu_brand is empty but brand_string and model_name are populated — legacy fallback trap"
+  },
+  {
+    "label": "adversarial_unicode_in_brand",
+    "description": "Unicode characters in CPU brand string — injection attempt",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Core(TM) i7-7700K CPU @ 4.20GHz with emoji fire rocket",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx2",
+        "has_sse": true,
+        "has_sse2": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 256, "present": true}, "L3": {"size_kb": 8192, "present": true}},
+      "clock_drift_cv": 0.002,
+      "thermal_drift_pct": 1.5
+    },
+    "vulnerability": "unicode_injection"
+  },
+  {
+    "label": "adversarial_oversized_brand",
+    "description": "Oversized CPU brand string (buffer overflow attempt)",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz AAAA AAAA AAAA AAAA AAAA (oversized)",
+      "machine": "x86_64",
+      "arch_features": {"simd_type": "avx2", "has_sse": true, "has_sse2": true},
+      "cache": {"L1": {"size_kb": 64, "present": true}},
+      "clock_drift_cv": 0.001,
+      "thermal_drift_pct": 0.5
+    },
+    "vulnerability": "oversized_brand"
+  },
+  {
+    "label": "adversarial_null_byte_in_brand",
+    "description": "Null byte in CPU brand — truncation exploit",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Core(TM) i7-2600K CPU @ 3.40GHz | PowerPC G4 (7450)",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx",
+        "has_sse": true,
+        "has_sse2": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 256, "present": true}, "L3": {"size_kb": 8192, "present": true}},
+      "clock_drift_cv": 0.002,
+      "thermal_drift_pct": 2.0
+    },
+    "vulnerability": "null_byte_injection"
+  },
+  {
+    "label": "adversarial_powerpc_brand_x86_features",
+    "description": "PowerPC brand string but x86 SIMD features — cross-arch spoof",
+    "device_payload": {
+      "cpu_family": "PowerPC",
+      "cpu_brand": "PowerPC G4 (7450)",
+      "machine": "ppc",
+      "arch_features": {
+        "simd_type": "sse_avx",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_avx": true,
+        "has_avx2": true,
+        "has_altivec": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 256, "present": true}, "L3": {"size_kb": 8192, "present": true}},
+      "clock_drift_cv": 0.002,
+      "thermal_drift_pct": 1.5
+    },
+    "vulnerability": "powerpc_brand_x86_features"
+  },
+  {
+    "label": "adversarial_apple_m1_with_sse",
+    "description": "Apple M1 claim but SSE feature present — impossible for Apple Silicon",
+    "device_payload": {
+      "cpu_family": "AArch64",
+      "cpu_brand": "Apple M1",
+      "machine": "aarch64",
+      "arch_features": {
+        "simd_type": "sse_avx",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_avx": true,
+        "has_neon": false,
+        "has_altivec": false
+      },
+      "cache": {"L1": {"size_kb": 128, "present": true}, "L2": {"size_kb": 4096, "present": true}, "L3": {"size_kb": 16384, "present": true}},
+      "clock_drift_cv": 0.001,
+      "thermal_drift_pct": 0.5
+    },
+    "vulnerability": "apple_silicon_with_sse"
+  },
+  {
+    "label": "adversarial_missing_all_fields",
+    "description": "Missing all identity fields — minimal payload",
+    "device_payload": {},
+    "vulnerability": "missing_all_fields"
+  },
+  {
+    "label": "adversarial_nested_dict_injection",
+    "description": "Dict-like value in cpu_brand field (prototype pollution attempt)",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel Core i9-13900K",
+      "machine": "x86_64",
+      "arch_features": {"simd_type": "sse2", "has_sse": true},
+      "clock_drift_cv": 0.001
+    },
+    "vulnerability": "nested_dict_injection"
+  },
+  {
+    "label": "adversarial_list_in_features",
+    "description": "List instead of dict for arch_features",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Core(TM) i7-7700K CPU @ 4.20GHz",
+      "machine": "x86_64",
+      "arch_features": ["sse", "avx", "avx2"],
+      "clock_drift_cv": 0.001
+    },
+    "vulnerability": "list_instead_of_dict"
+  },
+  {
+    "label": "adversarial_float_cpu_family",
+    "description": "Float instead of string for cpu_family",
+    "device_payload": {
+      "cpu_family": "6.5",
+      "cpu_brand": "Intel(R) Core(TM) i7-7700K CPU @ 4.20GHz",
+      "machine": "x86_64",
+      "arch_features": {"simd_type": "avx2", "has_sse": true, "has_sse2": true},
+      "clock_drift_cv": 0.001
+    },
+    "vulnerability": "float_cpu_family"
+  },
+  {
+    "label": "adversarial_vintage_claim_modern_features",
+    "description": "Spoof: claiming vintage brand but arch_features show modern AVX2",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Pentium(R) 4 CPU 3.00GHz",
+      "machine": "i686",
+      "arch_features": {
+        "simd_type": "avx512",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_avx2": true,
+        "has_avx512f": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 256, "present": true}, "L3": {"size_kb": 32768, "present": true}},
+      "clock_drift_cv": 0.001,
+      "thermal_drift_pct": 0.5
+    },
+    "vulnerability": "vintage_brand_modern_features"
+  }
+]

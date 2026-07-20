@@ -1,0 +1,79 @@
+[
+  {
+    "label": "arm64_raspberry_pi4",
+    "description": "Raspberry Pi 4 (BCM2711, Cortex-A72) — ARM SBC",
+    "device_payload": {
+      "cpu_family": "AArch64",
+      "cpu_brand": "ARM Cortex-A72",
+      "machine": "aarch64",
+      "arch_features": {
+        "simd_type": "neon",
+        "has_neon": true,
+        "has_sse": false,
+        "has_altivec": false
+      },
+      "cache": {"L1": {"size_kb": 96, "present": true}, "L2": {"size_kb": 1024, "present": true}},
+      "clock_drift_cv": 0.003,
+      "thermal_drift_pct": 3.0
+    },
+    "expected_classification": "arm64_or_apple",
+    "note": "Should NOT match x86 patterns"
+  },
+  {
+    "label": "arm64_raspberry_pi5",
+    "description": "Raspberry Pi 5 (BCM2712, Cortex-A76)",
+    "device_payload": {
+      "cpu_family": "AArch64",
+      "cpu_brand": "ARM Cortex-A76",
+      "machine": "aarch64",
+      "arch_features": {
+        "simd_type": "neon",
+        "has_neon": true,
+        "has_altivec": false,
+        "has_sse": false
+      },
+      "cache": {"L1": {"size_kb": 128, "present": true}, "L2": {"size_kb": 2048, "present": true}},
+      "clock_drift_cv": 0.002,
+      "thermal_drift_pct": 2.5
+    },
+    "expected_classification": "arm64_or_apple"
+  },
+  {
+    "label": "arm64_orange_pi5",
+    "description": "Orange Pi 5 (RK3588, Cortex-A76/A55) — ARM SBC",
+    "device_payload": {
+      "cpu_family": "AArch64",
+      "cpu_brand": "ARM Cortex-A76",
+      "machine": "rockchip,rk3588",
+      "arch_features": {
+        "simd_type": "neon",
+        "has_neon": true,
+        "has_sse": false,
+        "has_altivec": false
+      },
+      "cache": {"L1": {"size_kb": 256, "present": true}, "L2": {"size_kb": 4096, "present": true}},
+      "clock_drift_cv": 0.0025,
+      "thermal_drift_pct": 3.5
+    },
+    "expected_classification": "arm64_or_apple"
+  },
+  {
+    "label": "arm64_nvidia_jetson",
+    "description": "NVIDIA Jetson Nano (Cortex-A57) — ARM SBC",
+    "device_payload": {
+      "cpu_family": "AArch64",
+      "cpu_brand": "ARM Cortex-A57",
+      "machine": "tegra210",
+      "arch_features": {
+        "simd_type": "neon",
+        "has_neon": true,
+        "has_sse": false,
+        "has_altivec": false
+      },
+      "cache": {"L1": {"size_kb": 96, "present": true}, "L2": {"size_kb": 2048, "present": true}},
+      "clock_drift_cv": 0.004,
+      "thermal_drift_pct": 4.0
+    },
+    "expected_classification": "arm64_or_apple"
+  }
+]

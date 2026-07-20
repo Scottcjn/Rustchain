@@ -1,0 +1,242 @@
+[
+  {
+    "label": "modern_intel_sandy_bridge",
+    "description": "Intel Core i7-2600K (Sandy Bridge) — 2nd-gen Core i",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Core(TM) i7-2600K CPU @ 3.40GHz",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 256, "present": true}, "L3": {"size_kb": 8192, "present": true}},
+      "clock_drift_cv": 0.002,
+      "thermal_drift_pct": 2.0
+    },
+    "expected": {"vendor": "intel", "architecture": "sandy_bridge"}
+  },
+  {
+    "label": "modern_intel_haswell",
+    "description": "Intel Core i7-4770K (Haswell)",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Core(TM) i7-4770K CPU @ 3.50GHz",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx2",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_avx2": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 256, "present": true}, "L3": {"size_kb": 8192, "present": true}},
+      "clock_drift_cv": 0.0018,
+      "thermal_drift_pct": 1.8
+    },
+    "expected": {"vendor": "intel", "architecture": "haswell"}
+  },
+  {
+    "label": "modern_intel_alder_lake",
+    "description": "Intel Core i9-12900K (Alder Lake) — hybrid P/E cores",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Core(TM) i9-12900K CPU @ 3.20GHz",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx2",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_avx2": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 320, "present": true}, "L2": {"size_kb": 5120, "present": true}, "L3": {"size_kb": 30720, "present": true}},
+      "clock_drift_cv": 0.0015,
+      "thermal_drift_pct": 0.8
+    },
+    "expected": {"vendor": "intel", "architecture": "alder_lake"}
+  },
+  {
+    "label": "modern_intel_raptor_lake",
+    "description": "Intel Core i9-13900K (Raptor Lake) — 13th-gen",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Core(TM) i9-13900K CPU @ 3.00GHz",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx2",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_avx2": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 384, "present": true}, "L2": {"size_kb": 8192, "present": true}, "L3": {"size_kb": 36864, "present": true}},
+      "clock_drift_cv": 0.0012,
+      "thermal_drift_pct": 0.5
+    },
+    "expected": {"vendor": "intel", "architecture": "raptor_lake"}
+  },
+  {
+    "label": "modern_intel_xeon_ivy_bridge",
+    "description": "Intel Xeon E5-1650 v2 (Ivy Bridge-EP) — server",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Xeon(R) CPU E5-1650 v2 @ 3.50GHz",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 256, "present": true}, "L3": {"size_kb": 12288, "present": true}},
+      "clock_drift_cv": 0.002,
+      "thermal_drift_pct": 1.5
+    },
+    "expected": {"vendor": "intel", "architecture": "ivy_bridge", "is_server": true}
+  },
+  {
+    "label": "modern_intel_xeon_cascade_lake",
+    "description": "Intel Xeon Gold 6248R (Cascade Lake) — server",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel(R) Xeon(R) Gold 6248R CPU @ 3.00GHz",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx512",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_avx2": true,
+        "has_avx512f": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 1024, "present": true}, "L3": {"size_kb": 35840, "present": true}},
+      "clock_drift_cv": 0.001,
+      "thermal_drift_pct": 0.8
+    },
+    "expected": {"vendor": "intel", "architecture": "cascade_lake", "is_server": true}
+  },
+  {
+    "label": "modern_amd_ryzen_zen3",
+    "description": "AMD Ryzen 9 5950X (Zen 3)",
+    "device_payload": {
+      "cpu_family": "25",
+      "cpu_brand": "AMD Ryzen 9 5950X 16-Core Processor",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx2",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_avx2": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 512, "present": true}, "L2": {"size_kb": 8192, "present": true}, "L3": {"size_kb": 65536, "present": true}},
+      "clock_drift_cv": 0.001,
+      "thermal_drift_pct": 1.2
+    },
+    "expected": {"vendor": "amd", "architecture": "zen3"}
+  },
+  {
+    "label": "modern_amd_ryzen_zen4",
+    "description": "AMD Ryzen 9 7950X (Zen 4) — desktop",
+    "device_payload": {
+      "cpu_family": "25",
+      "cpu_brand": "AMD Ryzen 9 7950X 16-Core Processor",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx512",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_avx2": true,
+        "has_avx512f": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 512, "present": true}, "L2": {"size_kb": 16384, "present": true}, "L3": {"size_kb": 65536, "present": true}},
+      "clock_drift_cv": 0.001,
+      "thermal_drift_pct": 1.0
+    },
+    "expected": {"vendor": "amd", "architecture": "zen4"}
+  },
+  {
+    "label": "modern_amd_epyc_rome",
+    "description": "AMD EPYC 7742 (Zen 2, Rome) — server",
+    "device_payload": {
+      "cpu_family": "23",
+      "cpu_brand": "AMD EPYC 7742 64-Core Processor",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx2",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_avx2": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 2048, "present": true}, "L2": {"size_kb": 32768, "present": true}, "L3": {"size_kb": 262144, "present": true}},
+      "clock_drift_cv": 0.0008,
+      "thermal_drift_pct": 0.5
+    },
+    "expected": {"vendor": "amd", "architecture": "zen2", "is_server": true}
+  },
+  {
+    "label": "modern_amd_fx_bulldozer",
+    "description": "AMD FX-8350 (Piledriver/Vishera) — mid-range vintage",
+    "device_payload": {
+      "cpu_family": "21",
+      "cpu_brand": "AMD FX(tm)-8350 Eight-Core Processor",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "avx",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4_1": true,
+        "has_sse4_2": true,
+        "has_avx": true,
+        "has_fma4": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 8192, "present": true}, "L3": {"size_kb": 8192, "present": true}},
+      "clock_drift_cv": 0.005,
+      "thermal_drift_pct": 3.5
+    },
+    "expected": {"vendor": "amd", "architecture": "piledriver"}
+  }
+]

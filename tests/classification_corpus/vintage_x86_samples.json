@@ -1,0 +1,178 @@
+[
+  {
+    "label": "vintage_486_reference",
+    "description": "Intel i486 DX4-100 — real /proc/cpuinfo dump (Pentium equivalent era)",
+    "device_payload": {
+      "cpu_family": "i486",
+      "cpu_brand": "Intel 80486 DX4-100",
+      "machine": "i486",
+      "arch_features": {
+        "simd_type": "none",
+        "has_sse": false,
+        "has_sse2": false,
+        "has_mmx": false
+      },
+      "cache": {"L1": {"size_kb": 8, "present": true}, "L2": {"present": false}},
+      "clock_drift_cv": 0.021,
+      "thermal_drift_pct": 12.5
+    },
+    "expected": {"vendor": "intel", "architecture": "i486", "antiquity_multiplier": 2.8, "era": "vintage"}
+  },
+  {
+    "label": "vintage_pentium_reference",
+    "description": "Intel Pentium (P5) 100 MHz — original P5",
+    "device_payload": {
+      "cpu_family": "i586",
+      "cpu_brand": "Intel Pentium 100MHz",
+      "machine": "i586",
+      "arch_features": {
+        "simd_type": "none",
+        "has_sse": false,
+        "has_sse2": false,
+        "has_mmx": false
+      },
+      "cache": {"L1": {"size_kb": 16, "present": true}, "L2": {"present": false}},
+      "clock_drift_cv": 0.025,
+      "thermal_drift_pct": 14.0
+    },
+    "expected": {"vendor": "intel", "architecture": "pentium4"}
+  },
+  {
+    "label": "vintage_amd_k6_reference",
+    "description": "AMD K6-2 500 MHz — classic Socket 7 super socket",
+    "device_payload": {
+      "cpu_family": "i586",
+      "cpu_brand": "AMD K6-2 500",
+      "machine": "i586",
+      "arch_features": {
+        "simd_type": "3dnow",
+        "has_sse": false,
+        "has_sse2": false,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 64, "present": true}, "L2": {"size_kb": 512, "present": true}},
+      "clock_drift_cv": 0.018,
+      "thermal_drift_pct": 10.0
+    },
+    "expected": {"vendor": "amd", "architecture": "k6"}
+  },
+  {
+    "label": "vintage_pentium2_reference",
+    "description": "Intel Pentium II 400 MHz (Klamath/Deschutes)",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel Pentium II 400MHz",
+      "machine": "i686",
+      "arch_features": {
+        "simd_type": "mmx",
+        "has_sse": false,
+        "has_sse2": false,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 32, "present": true}, "L2": {"size_kb": 512, "present": true}},
+      "clock_drift_cv": 0.015,
+      "thermal_drift_pct": 8.5
+    },
+    "expected": {"vendor": "intel", "architecture": "pentium4"}
+  },
+  {
+    "label": "vintage_pentium3_reference",
+    "description": "Intel Pentium III 1.0 GHz (Coppermine)",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "Intel Pentium III 1000MHz",
+      "machine": "i686",
+      "arch_features": {
+        "simd_type": "sse",
+        "has_sse": true,
+        "has_sse2": false,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 32, "present": true}, "L2": {"size_kb": 256, "present": true}},
+      "clock_drift_cv": 0.012,
+      "thermal_drift_pct": 7.0
+    },
+    "expected": {"vendor": "intel", "architecture": "pentium4"}
+  },
+  {
+    "label": "vintage_pentium4_reference",
+    "description": "Intel Pentium 4 3.0 GHz (Northwood)",
+    "device_payload": {
+      "cpu_family": "15",
+      "cpu_brand": "Intel(R) Pentium(R) 4 CPU 3.00GHz",
+      "machine": "i686",
+      "arch_features": {
+        "simd_type": "sse2",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": false,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 8, "present": true}, "L2": {"size_kb": 512, "present": true}},
+      "clock_drift_cv": 0.010,
+      "thermal_drift_pct": 6.0
+    },
+    "expected": {"vendor": "intel", "architecture": "pentium4"}
+  },
+  {
+    "label": "vintage_amd_athlon_xp_reference",
+    "description": "AMD Athlon XP 1800+ (Palomino)",
+    "device_payload": {
+      "cpu_family": "6",
+      "cpu_brand": "AMD Athlon(tm) XP 1800+",
+      "machine": "i686",
+      "arch_features": {
+        "simd_type": "sse",
+        "has_sse": true,
+        "has_sse2": false,
+        "has_3dnow": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 128, "present": true}, "L2": {"size_kb": 256, "present": true}},
+      "clock_drift_cv": 0.014,
+      "thermal_drift_pct": 9.0
+    },
+    "expected": {"vendor": "amd", "architecture": "k7_athlon"}
+  },
+  {
+    "label": "vintage_amd_athlon64_reference",
+    "description": "AMD Athlon 64 3200+ (ClawHammer)",
+    "device_payload": {
+      "cpu_family": "15",
+      "cpu_brand": "AMD Athlon(tm) 64 Processor 3200+",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "sse2",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_3dnow": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 128, "present": true}, "L2": {"size_kb": 1024, "present": true}},
+      "clock_drift_cv": 0.009,
+      "thermal_drift_pct": 5.0
+    },
+    "expected": {"vendor": "amd", "architecture": "k8_athlon64"}
+  },
+  {
+    "label": "vintage_amd_phenom_reference",
+    "description": "AMD Phenom II X6 1090T (Thuban)",
+    "device_payload": {
+      "cpu_family": "16",
+      "cpu_brand": "AMD Phenom(tm) II X6 1090T Processor",
+      "machine": "x86_64",
+      "arch_features": {
+        "simd_type": "sse3",
+        "has_sse": true,
+        "has_sse2": true,
+        "has_sse3": true,
+        "has_sse4a": true,
+        "has_mmx": true
+      },
+      "cache": {"L1": {"size_kb": 256, "present": true}, "L2": {"size_kb": 3072, "present": true}, "L3": {"size_kb": 6144, "present": true}},
+      "clock_drift_cv": 0.007,
+      "thermal_drift_pct": 4.5
+    },
+    "expected": {"vendor": "amd", "architecture": "k10_phenom"}
+  }
+]
