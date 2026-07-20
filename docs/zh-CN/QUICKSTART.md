@@ -402,7 +402,7 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 ### 获取帮助
 
 - **GitHub Issues：** https://github.com/Scottcjn/Rustchain/issues
-- **Discord：** https://discord.gg/VqVVS2CW9Q
+- **Discord：** https://discord.gg/XnRp7M5gBW
 - **Moltbook：** https://www.moltbook.com/m/rustchain
 - **FAQ：** [FAQ_TROUBLESHOOTING.md](../FAQ_TROUBLESHOOTING.md)
 
