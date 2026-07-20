@@ -2661,9 +2661,15 @@ def _passed_fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
     return data if isinstance(data, dict) and data else {}
 
 
-def _is_finite_measurement(value) -> bool:
-    """Return true only for a concrete, finite numeric measurement."""
-    return value is not None and value != "" and not isinstance(value, bool) and _attest_metric_is_valid(value)
+def _is_positive_measurement(value) -> bool:
+    """Return true only for a concrete, finite, positive measurement."""
+    return (
+        value is not None
+        and value != ""
+        and not isinstance(value, bool)
+        and _attest_metric_is_valid(value)
+        and float(value) > 0
+    )
 
 
 def _has_validated_x86_measurement(check_name: str, data: dict) -> bool:
@@ -2679,11 +2685,11 @@ def _has_validated_x86_measurement(check_name: str, data: dict) -> bool:
             "l1_latency", "l2_latency", "l3_latency",
             "l1_hit_ns", "l2_hit_ns", "l3_hit_ns",
         )
-        if sum(_is_finite_measurement(data.get(key)) for key in cache_keys) >= 2:
+        if sum(_is_positive_measurement(data.get(key)) for key in cache_keys) >= 2:
             return True
         profile = data.get("profile")
         return isinstance(profile, list) and len(profile) >= 2 and all(
-            _is_finite_measurement(value) for value in profile
+            _is_positive_measurement(value) for value in profile
         )
 
     if check_name in ("simd_identity", "simd_bias"):
@@ -2691,7 +2697,7 @@ def _has_validated_x86_measurement(check_name: str, data: dict) -> bool:
         if isinstance(flags, list) and any(isinstance(flag, str) and flag.strip() for flag in flags):
             return True
         count = data.get("simd_flags_count")
-        return _is_finite_measurement(count) and float(count) > 0
+        return _is_positive_measurement(count)
 
     if check_name == "thermal_drift":
         thermal_keys = (
@@ -2699,14 +2705,14 @@ def _has_validated_x86_measurement(check_name: str, data: dict) -> bool:
             "drift_ratio", "thermal_drift_pct", "recovery_pct", "ratio",
             "variance", "delta_c",
         )
-        return any(_is_finite_measurement(data.get(key)) for key in thermal_keys)
+        return any(_is_positive_measurement(data.get(key)) for key in thermal_keys)
 
     if check_name == "instruction_jitter":
         jitter_keys = (
             "int_avg_ns", "fp_avg_ns", "branch_avg_ns", "int_stdev",
             "fp_stdev", "branch_stdev", "cv", "stddev_ns", "jitter_ns",
         )
-        return any(_is_finite_measurement(data.get(key)) for key in jitter_keys)
+        return any(_is_positive_measurement(data.get(key)) for key in jitter_keys)
 
     return False
 

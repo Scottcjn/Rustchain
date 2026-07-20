@@ -88,6 +88,11 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         fp["checks"]["thermal_drift"] = _check(variance=True)
         self.assertEqual(self._reward("486", fp)["device_arch"], "default")
 
+    def test_nonpositive_metrics_are_not_measurement_evidence(self):
+        fp = _fingerprint("Am486DX4", 4, measurements=False)
+        fp["checks"]["cache_timing"] = _check(l1_ns=-40.0, l2_ns=0)
+        self.assertEqual(self._reward("486", fp)["device_arch"], "default")
+
     def test_legacy_cache_profile_is_measurement_evidence(self):
         fp = _fingerprint("Am486DX4", 4, measurements=False)
         fp["checks"]["cache_timing"] = _check(profile=[12.5, 24.0, 70.0])
