@@ -696,9 +696,13 @@ def get_eligible_epochs(
             detailed=False
         )
         
-        claimed = not eligibility["checks"]["no_pending_claim"] or \
-                  (eligibility["checks"]["no_pending_claim"] and not eligibility["eligible"])
-        
+        # "claimed" means a claim actually exists for this epoch. A pending
+        # claim shows up as no_pending_claim == False here; a settled claim is
+        # detected by the query below. Ineligibility for any *other* reason
+        # (epoch not settled, no participation, wallet not registered, ...) must
+        # NOT be reported as claimed.
+        claimed = not eligibility["checks"]["no_pending_claim"]
+
         # Check if already claimed (status = settled)
         try:
             with sqlite3.connect(db_path) as conn:
