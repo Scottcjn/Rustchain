@@ -2048,11 +2048,24 @@ def market_stats():
             "SELECT COUNT(*), COALESCE(SUM(amount_micro_rtc), 0) FROM orders WHERE status = 'open' AND side = 'buy'"
         ).fetchone()
 
-        # Price stats from recent trades
-        prices = c.execute(
-            "SELECT price_per_rtc_nano_quote FROM trades ORDER BY completed_at DESC LIMIT 100"
-        ).fetchall()
-        price_list = [units_to_float(p[0], QUOTE_PRICE_SCALE) for p in prices]
+        # Last traded price = most recent trade overall.
+        last_row = c.execute(
+            "SELECT price_per_rtc_nano_quote FROM trades ORDER BY completed_at DESC LIMIT 1"
+        ).fetchone()
+        last_price = (
+            units_to_float(last_row[0], QUOTE_PRICE_SCALE) if last_row else RTC_REFERENCE_RATE
+        )
+
+        # 24h high/low must be scoped to the trailing 24h window (like volume_24h),
+        # not "the last 100 trades ever", otherwise a stale price outside the window
+        # is reported as a 24h extreme.
+        day_hilo = c.execute(
+            "SELECT MIN(price_per_rtc_nano_quote), MAX(price_per_rtc_nano_quote) "
+            "FROM trades WHERE completed_at >= ?",
+            (day_ago,)
+        ).fetchone()
+        low_24h = units_to_float(day_hilo[0], QUOTE_PRICE_SCALE) if day_hilo[0] is not None else None
+        high_24h = units_to_float(day_hilo[1], QUOTE_PRICE_SCALE) if day_hilo[1] is not None else None
 
         return jsonify({
             "ok": True,
@@ -2070,9 +2083,9 @@ def market_stats():
                     "count": open_buy[0],
                     "total_rtc": round(units_to_float(open_buy[1], RTC_UNIT), 2),
                 },
-                "last_price": price_list[0] if price_list else RTC_REFERENCE_RATE,
-                "high_24h": max(price_list) if price_list else None,
-                "low_24h": min(price_list) if price_list else None,
+                "last_price": last_price,
+                "high_24h": high_24h,
+                "low_24h": low_24h,
                 "reference_rate_usd": RTC_REFERENCE_RATE,
                 "supported_pairs": list(SUPPORTED_PAIRS.keys())
             }

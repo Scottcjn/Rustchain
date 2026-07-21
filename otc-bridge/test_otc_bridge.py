@@ -616,6 +616,39 @@ class OTCBridgeTestCase(unittest.TestCase):
         self.assertIn("total_trades", data["stats"])
         self.assertIn("supported_pairs", data["stats"])
 
+    def test_stats_high_low_are_24h_scoped(self):
+        """high_24h/low_24h must only reflect trades inside the trailing 24h."""
+        now = int(time.time())
+        rows = [
+            # (trade_id, completed_at, price_per_rtc)  -- price in quote units
+            ("old", now - 5 * 86400, 5.0),   # 5 days ago, outside 24h
+            ("new", now - 3600, 0.1),        # 1 hour ago, inside 24h
+        ]
+        with sqlite3.connect(TEST_DB) as conn:
+            c = conn.cursor()
+            for tid, ts, price in rows:
+                _, price_nano = otc_bridge.decimal_units(
+                    price, otc_bridge.QUOTE_PRICE_SCALE, "price"
+                )
+                _, amt_micro = otc_bridge.decimal_units(
+                    2, otc_bridge.RTC_UNIT, "amount"
+                )
+                c.execute(
+                    "INSERT INTO trades (trade_id, order_id, pair, side, maker_wallet, "
+                    "taker_wallet, amount_micro_rtc, price_per_rtc_nano_quote, "
+                    "total_quote_nano, completed_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (tid, "o_" + tid, "RTC/USDC", "sell", "m", "t",
+                     amt_micro, price_nano, price_nano * 2, ts),
+                )
+            conn.commit()
+
+        stats = self.app.get("/api/stats").get_json()["stats"]
+        # Only the 1h-old trade (0.1) is inside the 24h window.
+        self.assertEqual(stats["high_24h"], 0.1)
+        self.assertEqual(stats["low_24h"], 0.1)
+        # last_price still tracks the most recent trade overall.
+        self.assertEqual(stats["last_price"], 0.1)
+
     def test_trades_empty(self):
         r = self.app.get("/api/trades")
         data = r.get_json()
