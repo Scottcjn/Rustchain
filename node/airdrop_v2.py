@@ -319,6 +319,24 @@ class AirdropV2:
         return (github_username or "").strip().casefold()
 
     @staticmethod
+    def _normalize_wallet(wallet_address: str, chain: str) -> str:
+        """Canonicalize a wallet address for de-duplication.
+
+        Base (EVM) addresses are case-insensitive on-chain: the same account
+        can be written checksummed (EIP-55), all-lower, or all-upper, and
+        eth_getBalance returns the identical balance for every casing. The
+        one-airdrop-per-wallet invariant must therefore compare a canonical
+        (lowercase) form, otherwise the same physical Base wallet slips past
+        _has_claimed / UNIQUE(github_username, wallet_address, chain) simply by
+        varying hex case. Solana uses base58, which IS case-sensitive, so it is
+        left untouched.
+        """
+        wallet_address = (wallet_address or "").strip()
+        if chain and chain.lower() == "base":
+            return wallet_address.lower()
+        return wallet_address
+
+    @staticmethod
     def _is_valid_github_username(github_username: str) -> bool:
         return bool(GITHUB_USERNAME_RE.fullmatch(github_username))
 
@@ -355,6 +373,7 @@ class AirdropV2:
                 eligible=False,
                 reason=f"Unsupported chain: {chain}. Must be 'solana' or 'base'",
             )
+        wallet_address = self._normalize_wallet(wallet_address, chain_lower)
 
         checks = {}
 
@@ -794,6 +813,7 @@ class AirdropV2:
         if not self._is_valid_github_username(github_username):
             return False, "Invalid GitHub username", None
         chain_lower = chain.lower()
+        wallet_address = self._normalize_wallet(wallet_address, chain_lower)
 
         if self._has_claimed(github_username, wallet_address, chain_lower):
             return False, "Claim already exists for this GitHub account or wallet", None
