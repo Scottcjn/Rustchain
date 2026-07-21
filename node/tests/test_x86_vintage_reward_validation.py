@@ -46,8 +46,17 @@ class X86VintageRewardValidationTest(unittest.TestCase):
     def test_honest_tscless_486_fingerprint_can_omit_clock_drift(self):
         fp = _fingerprint("Am486DX4", 4)
         fp["checks"]["anti_emulation"] = _check(vm_indicators=[], paths_checked=["/proc/cpuinfo"])
-        passed, reason = self.mod.validate_fingerprint_data(fp, {"family": "x86", "arch": "486"})
+        passed, reason = self.mod.validate_fingerprint_data(
+            fp, {"family": "x86", "arch": "486"}, allow_tscless_x86_reward=True,
+        )
         self.assertTrue(passed, reason)
+
+    def test_tscless_relaxation_is_not_global(self):
+        fp = _fingerprint("Am486DX4", 4)
+        fp["checks"]["anti_emulation"] = _check(vm_indicators=[], paths_checked=["/proc/cpuinfo"])
+        passed, reason = self.mod.validate_fingerprint_data(fp, {"family": "x86", "arch": "486"})
+        self.assertFalse(passed)
+        self.assertEqual(reason, "missing_required_check:clock_drift")
 
     def test_modern_family_and_brand_cannot_claim_486(self):
         fp = _fingerprint("Intel Core i7-9750H", 6)
@@ -125,6 +134,20 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         )
         self.assertEqual(self._reward("486", fp)["device_arch"], "default")
 
+    def test_failed_simd_check_still_supplies_negative_evidence(self):
+        fp = _fingerprint(
+            "Am486DX4", 4,
+            simd_identity=_check(False, sample_flags=["avx2"], fail_reason="mismatch"),
+        )
+        self.assertEqual(self._reward("486", fp)["device_arch"], "default")
+
+    def test_sse2_does_not_count_as_original_sse(self):
+        fp = _fingerprint(
+            "Intel Pentium II 450MHz", 6,
+            simd_identity=_check(sample_flags=["sse2"]),
+        )
+        self.assertEqual(self._reward("pentium_ii", fp)["device_arch"], "pentium_ii")
+
     def test_pentium_iii_sse_is_legitimate(self):
         fp = _fingerprint(
             "Intel(R) Pentium(R) III 800MHz", 6,
@@ -138,6 +161,31 @@ class X86VintageRewardValidationTest(unittest.TestCase):
             simd_identity=_check(has_sse=True, sample_flags=["sse"]),
         )
         self.assertEqual(self._reward("pentium_ii", fp)["device_arch"], "default")
+
+    def test_real_world_pentium_iii_cpu_brand_is_accepted(self):
+        fp = _fingerprint("Intel(R) Pentium(R) III CPU 800MHz", 6)
+        self.assertEqual(self._reward("pentium_iii", fp)["device_arch"], "pentium_iii")
+
+    def test_real_world_486_dx_slash_brand_is_accepted(self):
+        fp = _fingerprint("486 DX/2", 4)
+        self.assertEqual(self._reward("486", fp)["device_arch"], "486")
+
+    def test_pentium_m_claim_is_disambiguated_down_only(self):
+        fp = _fingerprint("Intel(R) Pentium(R) M processor 1600MHz", 6)
+        self.assertEqual(self._reward("pentium_m_banias", fp)["device_arch"], "pentium_m_banias")
+        self.assertEqual(self._reward("pentium_m_dothan", fp)["device_arch"], "pentium_m_dothan")
+
+    def test_undifferentiated_pentium_m_cannot_keep_higher_subtype(self):
+        fp = _fingerprint("Intel Pentium M", 6)
+        self.assertEqual(self._reward("pentium_m_banias", fp)["device_arch"], "pentium_m_yonah")
+
+    def test_failed_overall_fingerprint_never_gets_vintage_weight(self):
+        fp = _fingerprint("Am486DX4", 4)
+        out = self.mod._derive_enroll_weight_device(
+            {"device_family": "x86", "device_arch": "486"}, fp,
+            fingerprint_passed=False,
+        )
+        self.assertEqual(out["device_arch"], "default")
 
     def test_reward_clamp_does_not_rewrite_general_identity(self):
         verified = {"device_family": "x86", "device_arch": "486"}

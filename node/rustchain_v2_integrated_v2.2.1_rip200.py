@@ -2661,6 +2661,19 @@ def _passed_fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
     return data if isinstance(data, dict) and data else {}
 
 
+def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
+    """Return raw check data regardless of the client-reported result.
+
+    Failed checks are not positive evidence, but their observations can still
+    disprove a vintage claim (for example a failed SIMD check that saw AVX).
+    """
+    item = _fingerprint_checks_map(fingerprint).get(check_name, {})
+    if not isinstance(item, dict):
+        return {}
+    data = item.get("data")
+    return data if isinstance(data, dict) and data else {}
+
+
 def _is_positive_measurement(value) -> bool:
     """Return true only for a concrete, finite, positive measurement."""
     return (
@@ -2722,10 +2735,16 @@ def _simd_measurement_has_feature(data: dict, feature: str) -> bool:
     if data.get(f"has_{feature}") is True:
         return True
     flags = data.get("sample_flags")
-    return isinstance(flags, list) and any(
-        isinstance(flag, str) and flag.strip().lower().startswith(feature)
-        for flag in flags
-    )
+    if not isinstance(flags, list):
+        return False
+    normalized = {
+        flag.strip().lower() for flag in flags
+        if isinstance(flag, str) and flag.strip()
+    }
+    if feature == "sse":
+        # SSE2/SSSE3 are not evidence that the original SSE bit was observed.
+        return "sse" in normalized
+    return any(flag.startswith(feature) for flag in normalized)
 
 
 def _classify_validated_x86_brand(cpu_brand: str):
@@ -2733,14 +2752,14 @@ def _classify_validated_x86_brand(cpu_brand: str):
     brand = " ".join(str(cpu_brand or "").strip().split()).lower()
     vendor = r"(?:(?:genuineintel|authenticamd|intel(?:\(r\))?|amd)\s+)?"
     patterns = (
-        ("386", 3, rf"^{vendor}(?:i?80386|i386|am386)(?:[a-z0-9-]*)?$"),
-        ("486", 4, rf"^{vendor}(?:i?80486|i486|am486)(?:[a-z0-9-]*)?$"),
+        ("386", 3, rf"^{vendor}(?:i?80386|i?386|am386)(?:[\s/-]?[a-z0-9]+)*$"),
+        ("486", 4, rf"^{vendor}(?:i?80486|i?486|am486)(?:[\s/-]?[a-z0-9]+)*$"),
         ("pentium_mmx", 5, rf"^{vendor}pentium(?:\(r\))?\s+mmx(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
         ("pentium_pro", 6, rf"^{vendor}pentium(?:\(r\))?\s+pro(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
-        ("pentium_iii", 6, rf"^{vendor}pentium(?:\(r\))?\s+iii(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
-        ("pentium_ii", 6, rf"^{vendor}pentium(?:\(r\))?\s+ii(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
-        ("pentium_m", 6, rf"^{vendor}pentium(?:\(r\))?\s+m(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
-        ("pentium", 5, rf"^{vendor}pentium(?:\(r\))?(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        ("pentium_iii", 6, rf"^{vendor}pentium(?:\(r\))?\s+iii(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        ("pentium_ii", 6, rf"^{vendor}pentium(?:\(r\))?\s+ii(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        ("pentium_m", 6, rf"^{vendor}pentium(?:\(r\))?\s+m(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        ("pentium", 5, rf"^{vendor}pentium(?:\(r\))?(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
     )
     for arch, cpu_family, pattern in patterns:
         if re.fullmatch(pattern, brand, flags=re.IGNORECASE):
@@ -2748,7 +2767,9 @@ def _classify_validated_x86_brand(cpu_brand: str):
     return None
 
 
-def _derive_enroll_weight_device(verified_device: dict, fingerprint: dict) -> dict:
+def _derive_enroll_weight_device(
+    verified_device: dict, fingerprint: dict, fingerprint_passed: bool = True,
+) -> dict:
     """Fail closed for vintage-x86 reward tiers without rewriting identity.
 
     The general device classifier remains useful to APIs and inventory.  Only
@@ -2759,6 +2780,9 @@ def _derive_enroll_weight_device(verified_device: dict, fingerprint: dict) -> di
     claimed_arch = str(verified_device.get("device_arch") or "").lower()
     if family.lower() not in ("x86", "x86_64") or claimed_arch not in _X86_VINTAGE_REWARD_ARCHES:
         return verified_device
+
+    if not fingerprint_passed:
+        return {"device_family": "x86", "device_arch": "default"}
 
     oracle = _passed_fingerprint_check_data(fingerprint, "device_age_oracle")
     brand_result = _classify_validated_x86_brand(oracle.get("cpu_model"))
@@ -2779,14 +2803,16 @@ def _derive_enroll_weight_device(verified_device: dict, fingerprint: dict) -> di
         _has_validated_x86_measurement(name, data)
         for name, data in measurements.items()
     )
-    simd_measurements = (
-        measurements.get("simd_identity") or {},
-        measurements.get("simd_bias") or {},
+    # Contradictions are authoritative even when their check failed. A failed
+    # check cannot earn a tier, but it must not erase a modern feature it saw.
+    simd_observations = (
+        _fingerprint_check_data(fingerprint, "simd_identity"),
+        _fingerprint_check_data(fingerprint, "simd_bias"),
     )
     # SSE is legitimate positive evidence on Pentium III and Pentium M, but is
     # a contradiction for older tiers. AVX contradicts every vintage tier.
-    has_avx = any(_simd_measurement_has_feature(data, "avx") for data in simd_measurements)
-    has_sse = any(_simd_measurement_has_feature(data, "sse") for data in simd_measurements)
+    has_avx = any(_simd_measurement_has_feature(data, "avx") for data in simd_observations)
+    has_sse = any(_simd_measurement_has_feature(data, "sse") for data in simd_observations)
     modern_simd = has_avx or (
         has_sse
         and claimed_arch not in {"pentium_iii", "pentium_m_banias", "pentium_m_dothan", "pentium_m_yonah"}
@@ -2800,7 +2826,30 @@ def _derive_enroll_weight_device(verified_device: dict, fingerprint: dict) -> di
         return {"device_family": "x86", "device_arch": "default"}
 
     if observed_arch == "pentium_m":
-        observed_arch = claimed_arch if claimed_arch.startswith("pentium_m_") else "pentium_m_dothan"
+        model = str(oracle.get("cpu_model") or "").lower()
+        mhz_match = re.search(r"(\d+)\s*mhz", model)
+        ghz_match = re.search(r"(\d+(?:\.\d+)?)\s*ghz", model)
+        speed_mhz = int(mhz_match.group(1)) if mhz_match else (
+            int(float(ghz_match.group(1)) * 1000) if ghz_match else None
+        )
+        oracle_arch = str(oracle.get("arch") or "").lower()
+        if oracle_arch in ("x86_64", "amd64"):
+            observed_arch = "pentium_m_yonah"
+        elif speed_mhz is not None and speed_mhz <= 1700:
+            observed_arch = "pentium_m_banias"
+        elif speed_mhz is not None:
+            observed_arch = "pentium_m_dothan"
+        else:
+            # An undifferentiated Pentium M cannot justify the highest subtype.
+            observed_arch = "pentium_m_yonah"
+
+        if claimed_arch.startswith("pentium_m_"):
+            chosen = min(
+                (claimed_arch, observed_arch),
+                key=lambda arch: HARDWARE_WEIGHTS["x86"].get(arch, 1.0),
+            )
+            return {"device_family": "x86", "device_arch": chosen}
+        return {"device_family": "x86", "device_arch": "default"}
 
     # A plain Pentium observation can only downgrade an MMX claim. Conversely,
     # an MMX observation never upgrades a plain Pentium claim.
@@ -3584,7 +3633,10 @@ KNOWN_VM_SIGNATURES = {
     "bhyve", "openvz", "virtuozzo", "systemd-nspawn",
 }
 
-def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) -> tuple:
+def validate_fingerprint_data(
+    fingerprint: dict, claimed_device: dict = None,
+    allow_tscless_x86_reward: bool = False,
+) -> tuple:
     """
     Server-side validation of miner fingerprint check results.
     Returns: (passed: bool, reason: str)
@@ -3624,19 +3676,17 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     claimed_arch_lower = claimed_arch.lower()
     vintage_relaxed_archs = {"g4", "g5", "g3", "powerpc", "power macintosh",
                              "powerpc g4", "powerpc g5", "powerpc g3",
-                             "power8", "power9", "68k", "m68k",
-                             # 386/486 predate RDTSC; early Pentium-family
-                             # fingerprints may also omit clock drift. Their
-                             # reward tier is independently fail-closed by
-                             # _derive_enroll_weight_device.
-                             "386", "486", "pentium", "pentium_mmx",
-                             "pentium_pro", "pentium_ii", "pentium_iii"}
+                             "power8", "power9", "68k", "m68k"}
     # RIP-304: Console miners via Pico bridge have their own fingerprint checks
     console_archs = {"nes_6502", "snes_65c816", "n64_mips", "gba_arm7",
                      "genesis_68000", "sms_z80", "saturn_sh2",
                      "gameboy_z80", "gameboy_color_z80", "ps1_mips",
                      "6502", "65c816", "z80", "sh2"}
-    is_vintage = claimed_arch_lower in vintage_relaxed_archs
+    # 386/486 predate RDTSC. Relax their clock requirement only for the
+    # attestation reward path; other validator consumers keep the strict rule.
+    is_vintage = claimed_arch_lower in vintage_relaxed_archs or (
+        allow_tscless_x86_reward and claimed_arch_lower in {"386", "486"}
+    )
     is_console = claimed_arch_lower in console_archs
 
     # RIP-304: Console miners use Pico bridge fingerprinting (ctrl_port_timing
@@ -4951,7 +5001,9 @@ def _submit_attestation_impl():
 
     # FIX #305: Always validate - pass None/empty to validator which rejects them
     if fingerprint is not None:
-        fingerprint_passed, fingerprint_reason = validate_fingerprint_data(fingerprint, claimed_device=device)
+        fingerprint_passed, fingerprint_reason = validate_fingerprint_data(
+            fingerprint, claimed_device=device, allow_tscless_x86_reward=True,
+        )
     else:
         fingerprint_reason = "no_fingerprint_submitted"
 
@@ -5054,6 +5106,7 @@ def _submit_attestation_impl():
         reward_device = _derive_enroll_weight_device(
             verified_device,
             fingerprint if isinstance(fingerprint, dict) else {},
+            fingerprint_passed=fingerprint_passed,
         )
         family = reward_device["device_family"]
         arch_for_weight = reward_device["device_arch"]
