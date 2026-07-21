@@ -2694,6 +2694,27 @@ def _measurement_close(actual, expected, relative_tolerance: float = 0.02) -> bo
     return abs(actual_f - expected_f) <= max(0.001, abs(expected_f) * relative_tolerance)
 
 
+def _canonical_attestation_signer_owns_miner(pubkey_hex: str, miner: str) -> bool:
+    """Require canonical measurement evidence to be signed by its RTC owner.
+
+    A valid Ed25519 signature proves only that *some* key signed the payload.
+    Reward evidence must additionally bind that key to the credited identity;
+    otherwise an arbitrary key can authenticate fabricated measurements for a
+    caller-chosen RTC address.  Named/legacy miners remain valid attestations,
+    but cannot use that unrelated signature as vintage-reward evidence.
+    """
+    if not isinstance(pubkey_hex, str) or not isinstance(miner, str):
+        return False
+    pubkey_hex = pubkey_hex.strip().lower()
+    miner = miner.strip()
+    if not pubkey_hex or not miner:
+        return False
+    try:
+        return miner.lower() == pubkey_hex or address_from_pubkey(pubkey_hex) == miner
+    except Exception:
+        return False
+
+
 def _has_validated_x86_measurement(check_name: str, data: dict) -> bool:
     """Recompute pass invariants for measurement-bearing producer output.
 
@@ -4786,7 +4807,9 @@ def _submit_attestation_impl():
                 ).encode('utf-8')
                 if verify_rtc_signature(pubkey_hex, canonical_msg, sig_hex):
                     verified = True
-                    canonical_payload_verified = True
+                    canonical_payload_verified = _canonical_attestation_signer_owns_miner(
+                        pubkey_hex, miner
+                    )
 
             # Scheme 2: v2 legacy 4-field MAC (backward compat) — but ONLY for
             # callers that did NOT explicitly claim the stronger v3 scheme. A

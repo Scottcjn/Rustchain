@@ -127,6 +127,22 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         )
         self.assertEqual(out["device_arch"], "default")
 
+    def test_canonical_signer_must_control_reward_identity(self):
+        pubkey = "11" * 32
+        owned_miner = self.mod.address_from_pubkey(pubkey)
+        self.assertTrue(
+            self.mod._canonical_attestation_signer_owns_miner(pubkey, owned_miner)
+        )
+        self.assertTrue(
+            self.mod._canonical_attestation_signer_owns_miner(pubkey, pubkey)
+        )
+        self.assertFalse(
+            self.mod._canonical_attestation_signer_owns_miner(pubkey, "RTC" + "22" * 20)
+        )
+        self.assertFalse(
+            self.mod._canonical_attestation_signer_owns_miner("not-hex", owned_miner)
+        )
+
     def test_flags_only_payload_is_not_validated_evidence(self):
         fp = _fingerprint("Am486DX4", 4, measurements=False)
         fp["checks"]["simd_identity"] = {"data": {"has_sse": False}}
