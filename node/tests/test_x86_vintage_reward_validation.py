@@ -16,10 +16,16 @@ def _check(passed=True, **data):
 
 def _fingerprint(brand, family, measurements=True, **extra_checks):
     checks = {
-        "device_age_oracle": _check(cpu_model=brand, cpu_family=str(family)),
+        "device_age_oracle": _check(
+            cpu_model=brand, cpu_family=str(family), arch="i686",
+            mismatch_reasons=[], confidence=0.8,
+        ),
     }
     if measurements:
-        checks["cache_timing"] = _check(l1_ns=40.0, l2_ns=115.0)
+        checks["cache_timing"] = _check(
+            l1_ns=40.0, l2_ns=80.0, l3_ns=240.0,
+            l2_l1_ratio=2.0, l3_l2_ratio=3.0,
+        )
     checks.update(extra_checks)
     return {"checks": checks}
 
@@ -36,7 +42,8 @@ class X86VintageRewardValidationTest(unittest.TestCase):
 
     def _reward(self, arch, fingerprint):
         return self.mod._derive_enroll_weight_device(
-            {"device_family": "x86", "device_arch": arch}, fingerprint
+            {"device_family": "x86", "device_arch": arch}, fingerprint,
+            measurement_report_verified=True,
         )
 
     def test_honest_tscless_486_keeps_tier_without_overall_pass_gate(self):
@@ -102,10 +109,23 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         fp["checks"]["cache_timing"] = _check(l1_ns=-40.0, l2_ns=0)
         self.assertEqual(self._reward("486", fp)["device_arch"], "default")
 
-    def test_legacy_cache_profile_is_measurement_evidence(self):
+    def test_legacy_cache_profile_is_not_server_revalidated_evidence(self):
         fp = _fingerprint("Am486DX4", 4, measurements=False)
         fp["checks"]["cache_timing"] = _check(profile=[12.5, 24.0, 70.0])
-        self.assertEqual(self._reward("486", fp)["device_arch"], "486")
+        self.assertEqual(self._reward("486", fp)["device_arch"], "default")
+
+    def test_inconsistent_derived_cache_ratios_are_not_evidence(self):
+        fp = _fingerprint("Am486DX4", 4)
+        fp["checks"]["cache_timing"]["data"]["l2_l1_ratio"] = 9.0
+        self.assertEqual(self._reward("486", fp)["device_arch"], "default")
+
+    def test_unsigned_measurement_report_never_gets_vintage_weight(self):
+        fp = _fingerprint("Am486DX4", 4)
+        out = self.mod._derive_enroll_weight_device(
+            {"device_family": "x86", "device_arch": "486"}, fp,
+            fingerprint_passed=True, measurement_report_verified=False,
+        )
+        self.assertEqual(out["device_arch"], "default")
 
     def test_flags_only_payload_is_not_validated_evidence(self):
         fp = _fingerprint("Am486DX4", 4, measurements=False)
@@ -183,7 +203,7 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         fp = _fingerprint("Am486DX4", 4)
         out = self.mod._derive_enroll_weight_device(
             {"device_family": "x86", "device_arch": "486"}, fp,
-            fingerprint_passed=False,
+            fingerprint_passed=False, measurement_report_verified=True,
         )
         self.assertEqual(out["device_arch"], "default")
 

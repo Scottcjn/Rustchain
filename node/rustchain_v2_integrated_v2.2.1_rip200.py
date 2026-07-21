@@ -2685,47 +2685,73 @@ def _is_positive_measurement(value) -> bool:
     )
 
 
-def _has_validated_x86_measurement(check_name: str, data: dict) -> bool:
-    """Recognize measurement-bearing shapes emitted by supported miners.
+def _measurement_close(actual, expected, relative_tolerance: float = 0.02) -> bool:
+    """Compare a reported derived metric to values recomputed by the node."""
+    if not _is_positive_measurement(actual) or not _is_positive_measurement(expected):
+        return False
+    actual_f = float(actual)
+    expected_f = float(expected)
+    return abs(actual_f - expected_f) <= max(0.001, abs(expected_f) * relative_tolerance)
 
-    A client-provided ``passed`` bit is necessary but not sufficient: accepting
-    any non-empty data object would let ``{"note": "passed"}`` satisfy the
-    vintage reward gate without a hardware observation.
+
+def _has_validated_x86_measurement(check_name: str, data: dict) -> bool:
+    """Recompute pass invariants for measurement-bearing producer output.
+
+    A client-provided ``passed`` bit and correctly named fields are insufficient.
+    Require the complete current producer schema and independently verify the
+    same relationships used by ``fingerprint_checks.py``.
     """
     if check_name == "cache_timing":
-        cache_keys = (
-            "l1_ns", "l2_ns", "l3_ns", "L1", "L2", "L3",
-            "l1_latency", "l2_latency", "l3_latency",
-            "l1_hit_ns", "l2_hit_ns", "l3_hit_ns",
-        )
-        if sum(_is_positive_measurement(data.get(key)) for key in cache_keys) >= 2:
-            return True
-        profile = data.get("profile")
-        return isinstance(profile, list) and len(profile) >= 2 and all(
-            _is_positive_measurement(value) for value in profile
+        l1, l2, l3 = data.get("l1_ns"), data.get("l2_ns"), data.get("l3_ns")
+        l2_l1 = data.get("l2_l1_ratio")
+        l3_l2 = data.get("l3_l2_ratio")
+        if not all(_is_positive_measurement(v) for v in (l1, l2, l3, l2_l1, l3_l2)):
+            return False
+        return (
+            _measurement_close(l2_l1, float(l2) / float(l1))
+            and _measurement_close(l3_l2, float(l3) / float(l2))
+            and (float(l2_l1) >= 1.01 or float(l3_l2) >= 1.01)
         )
 
     if check_name in ("simd_identity", "simd_bias"):
         flags = data.get("sample_flags")
-        if isinstance(flags, list) and any(isinstance(flag, str) and flag.strip() for flag in flags):
-            return True
         count = data.get("simd_flags_count")
-        return _is_positive_measurement(count)
+        if not isinstance(flags, list) or not flags or not _is_positive_measurement(count):
+            return False
+        normalized = [flag.strip().lower() for flag in flags if isinstance(flag, str) and flag.strip()]
+        if len(normalized) != len(flags) or float(count) < len(normalized):
+            return False
+        observed = {
+            "sse": any("sse" in flag for flag in normalized),
+            "avx": any("avx" in flag for flag in normalized),
+            "altivec": any("altivec" in flag for flag in normalized),
+            "neon": any("neon" in flag for flag in normalized),
+        }
+        return all(data.get(f"has_{feature}") is value for feature, value in observed.items())
 
     if check_name == "thermal_drift":
-        thermal_keys = (
-            "cold_avg_ns", "hot_avg_ns", "cold_stdev", "hot_stdev",
-            "drift_ratio", "thermal_drift_pct", "recovery_pct", "ratio",
-            "variance", "delta_c",
+        cold, hot = data.get("cold_avg_ns"), data.get("hot_avg_ns")
+        cold_sd, hot_sd = data.get("cold_stdev"), data.get("hot_stdev")
+        ratio = data.get("drift_ratio")
+        if not all(_is_positive_measurement(v) for v in (cold, hot, ratio)):
+            return False
+        if not all(v is not None and not isinstance(v, bool) and _attest_metric_is_valid(v)
+                   and float(v) >= 0 for v in (cold_sd, hot_sd)):
+            return False
+        return (
+            (float(cold_sd) > 0 or float(hot_sd) > 0)
+            and _measurement_close(ratio, float(hot) / float(cold))
         )
-        return any(_is_positive_measurement(data.get(key)) for key in thermal_keys)
 
     if check_name == "instruction_jitter":
-        jitter_keys = (
-            "int_avg_ns", "fp_avg_ns", "branch_avg_ns", "int_stdev",
-            "fp_stdev", "branch_stdev", "cv", "stddev_ns", "jitter_ns",
-        )
-        return any(_is_positive_measurement(data.get(key)) for key in jitter_keys)
+        averages = (data.get("int_avg_ns"), data.get("fp_avg_ns"), data.get("branch_avg_ns"))
+        deviations = (data.get("int_stdev"), data.get("fp_stdev"), data.get("branch_stdev"))
+        if not all(_is_positive_measurement(v) for v in averages):
+            return False
+        if not all(v is not None and not isinstance(v, bool) and _attest_metric_is_valid(v)
+                   and float(v) >= 0 for v in deviations):
+            return False
+        return any(float(v) > 0 for v in deviations)
 
     return False
 
@@ -2769,6 +2795,7 @@ def _classify_validated_x86_brand(cpu_brand: str):
 
 def _derive_enroll_weight_device(
     verified_device: dict, fingerprint: dict, fingerprint_passed: bool = True,
+    measurement_report_verified: bool = False,
 ) -> dict:
     """Fail closed for vintage-x86 reward tiers without rewriting identity.
 
@@ -2781,10 +2808,19 @@ def _derive_enroll_weight_device(
     if family.lower() not in ("x86", "x86_64") or claimed_arch not in _X86_VINTAGE_REWARD_ARCHES:
         return verified_device
 
-    if not fingerprint_passed:
+    if not fingerprint_passed or not measurement_report_verified:
         return {"device_family": "x86", "device_arch": "default"}
 
     oracle = _passed_fingerprint_check_data(fingerprint, "device_age_oracle")
+    oracle_arch = str(oracle.get("arch") or "").lower()
+    oracle_mismatches = oracle.get("mismatch_reasons")
+    oracle_confidence = oracle.get("confidence")
+    oracle_complete = (
+        oracle_arch in ("i386", "i486", "i586", "i686", "x86", "x86_64", "amd64")
+        and oracle_mismatches == []
+        and _attest_metric_is_valid(oracle_confidence)
+        and float(oracle_confidence) >= 0.6
+    )
     brand_result = _classify_validated_x86_brand(oracle.get("cpu_model"))
     try:
         observed_family = int(str(oracle.get("cpu_family", "")).strip())
@@ -2818,7 +2854,7 @@ def _derive_enroll_weight_device(
         and claimed_arch not in {"pentium_iii", "pentium_m_banias", "pentium_m_dothan", "pentium_m_yonah"}
     )
 
-    if not brand_result or not has_measurement or modern_simd:
+    if not oracle_complete or not brand_result or not has_measurement or modern_simd:
         return {"device_family": "x86", "device_arch": "default"}
 
     observed_arch, expected_family = brand_result
@@ -2832,7 +2868,6 @@ def _derive_enroll_weight_device(
         speed_mhz = int(mhz_match.group(1)) if mhz_match else (
             int(float(ghz_match.group(1)) * 1000) if ghz_match else None
         )
-        oracle_arch = str(oracle.get("arch") or "").lower()
         if oracle_arch in ("x86_64", "amd64"):
             observed_arch = "pentium_m_yonah"
         elif speed_mhz is not None and speed_mhz <= 1700:
@@ -4715,6 +4750,7 @@ def _submit_attestation_impl():
 
     sig_hex = (raw_sig or '').strip().lower()
     pubkey_hex = (raw_pubkey or '').strip().lower()
+    canonical_payload_verified = False
     miner_id_raw = _attest_valid_miner(data.get('miner_id')) or miner
     commitment = report.get('commitment') or ''
     if sig_hex and pubkey_hex:
@@ -4750,6 +4786,7 @@ def _submit_attestation_impl():
                 ).encode('utf-8')
                 if verify_rtc_signature(pubkey_hex, canonical_msg, sig_hex):
                     verified = True
+                    canonical_payload_verified = True
 
             # Scheme 2: v2 legacy 4-field MAC (backward compat) — but ONLY for
             # callers that did NOT explicitly claim the stronger v3 scheme. A
@@ -5107,6 +5144,7 @@ def _submit_attestation_impl():
             verified_device,
             fingerprint if isinstance(fingerprint, dict) else {},
             fingerprint_passed=fingerprint_passed,
+            measurement_report_verified=canonical_payload_verified,
         )
         family = reward_device["device_family"]
         arch_for_weight = reward_device["device_arch"]
