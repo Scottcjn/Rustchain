@@ -18,3 +18,4 @@ seaborn>=0.13.2
 psutil>=5.9.0
 # Needed by sdk/python/rustchain_sdk/client.py import during signed-transfer/SDK tests.
 httpx>=0.27.0
+hypothesis>=6.100,<7
