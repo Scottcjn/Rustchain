@@ -1,0 +1,51 @@
+name: Link Check (Lychee)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**.md"
+      - "docs/**"
+      - ".github/workflows/link-check.yml"
+  pull_request:
+    paths:
+      - "**.md"
+      - "docs/**"
+      - ".github/workflows/link-check.yml"
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"  # Every Monday at 6:00 UTC
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check all markdown and HTML files for broken links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >
+            --verbose
+            --no-progress
+            --include-fragments
+            --exclude-all-private
+            --exclude-mail
+            --exclude "https?://(twitter|x)\\.com"
+            --exclude "https?://(www\\.)?(linkedin|facebook|instagram|tiktok|youtube)\\.com"
+            --exclude "https://github.com/Scottcjn/Rustchain/actions"
+            --exclude "https://github.com/waterWang/Rustchain/actions"
+            --exclude "https://img\\.shields\\.io"
+            -- "./**/*.md" "./**/*.html"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Report broken links
+        if: failure()
+        run: |
+          echo "::warning::Broken links detected. Check the lychee output above for details."
+          exit 1
