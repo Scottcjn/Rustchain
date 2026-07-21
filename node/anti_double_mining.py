@@ -575,8 +575,17 @@ def calculate_anti_double_mining_rewards(
                         "SELECT warthog_bonus FROM miner_attest_recent WHERE miner=?",
                         (miner_id,)
                     ).fetchone()
-                    if wart_row and wart_row[0] and wart_row[0] > 1.0:
-                        weight *= wart_row[0]
+                    # Apply capped warthog bonus (MAX = 2.0) to prevent reward inflation.
+                    # Must match _calculate_anti_double_mining_rewards_conn exactly, or the
+                    # same epoch settles to a different split depending on whether the caller
+                    # passed an existing connection (settle_epoch_with_anti_double_mining
+                    # dispatches to the two paths on that condition).
+                    if wart_row and wart_row[0]:
+                        bonus = float(wart_row[0])
+                        if 1.0 < bonus <= 2.0:
+                            weight *= bonus
+                        elif bonus > 2.0:
+                            weight *= 2.0
                 except Exception:
                     pass
             
