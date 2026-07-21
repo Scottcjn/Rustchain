@@ -4,6 +4,21 @@ import os
 import subprocess
 from typing import Dict, Tuple
 
+def _supports_tensor_cores(compute_capability) -> bool:
+    """Tensor cores exist on CUDA compute capability >= 7.0 (Volta and newer).
+
+    compute_capability is a string like "7.0", "8.0", "9.0", "10.0", "12.0"
+    (built as f"{major}.{minor}"). It must be compared numerically: a raw
+    string comparison mis-ranks multi-digit majors — "10.0" >= "7.0" is False
+    because '1' < '7' lexically — which silently dropped the tensor-core channel
+    for exactly the newest tensor-core GPUs (Blackwell CC 10.0 / 12.0).
+    """
+    try:
+        return float(compute_capability) >= 7.0
+    except (TypeError, ValueError):
+        return False
+
+
 def validate_gpu_fingerprint(fingerprint_data: Dict) -> Tuple[bool, str]:
     """
     Server-side validation of GPU fingerprint data (RIP-0308).
@@ -70,7 +85,7 @@ def get_gpu_attestation_payload(device_index=0) -> Dict:
     
     # Add Channel 8f (Tensor Core LSB Signature) for deep silicon identity
     try:
-        if fp.compute_capability >= "7.0":
+        if _supports_tensor_cores(fp.compute_capability):
             tc_fp = run_tensor_core_fingerprint(device_index=device_index)
             payload["channels"].append({
                 "name": "8f: Tensor Core Precision Drift",
