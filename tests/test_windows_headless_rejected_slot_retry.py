@@ -74,6 +74,7 @@ def test_submit_header_backs_off_on_connection_failure(monkeypatch):
     module = _load_windows_miner()
     miner = module.RustChainMiner("RTC02811ff5e2bb4bb4b95eee44c5429cd9525496e7")
     monkeypatch.setattr(module.time, "monotonic", lambda: 100.0)
+    monkeypatch.setattr(module.random, "uniform", lambda *_args: 1.0)
 
     def fake_post(*_args, **_kwargs):
         raise ConnectionError("connection refused")
@@ -96,6 +97,7 @@ def test_temporary_http_failures_use_bounded_exponential_backoff(monkeypatch):
     module = _load_windows_miner()
     miner = module.RustChainMiner("RTC02811ff5e2bb4bb4b95eee44c5429cd9525496e7")
     monkeypatch.setattr(module.time, "monotonic", lambda: 200.0)
+    monkeypatch.setattr(module.random, "uniform", lambda *_args: 1.0)
 
     def fake_post(*_args, **_kwargs):
         return _StubResponse(503, {"ok": False, "error": "node restarting"})
@@ -112,6 +114,22 @@ def test_temporary_http_failures_use_bounded_exponential_backoff(monkeypatch):
     assert miner.last_header_retryable is True
     assert "HTTP 503" in miner.last_header_error
     assert "node restarting" in miner.last_header_error
+
+
+def test_header_retry_adds_jitter_without_exceeding_cap(monkeypatch):
+    module = _load_windows_miner()
+    miner = module.RustChainMiner("RTC02811ff5e2bb4bb4b95eee44c5429cd9525496e7")
+
+    monkeypatch.setattr(module.random, "uniform", lambda low, high: high)
+
+    assert miner._schedule_header_retry(27464, now=100.0) == 12.5
+    assert miner._next_header_retry_at == 112.5
+
+    # Even the maximum positive jitter remains bounded by the 300 s cap.
+    for _ in range(6):
+        delay = miner._schedule_header_retry(27464, now=100.0)
+    assert delay == module.HEADER_RETRY_CAP_SECONDS
+    assert miner._next_header_retry_at == 400.0
 
 
 def test_plain_text_400_is_terminal_and_surfaces_body(monkeypatch):

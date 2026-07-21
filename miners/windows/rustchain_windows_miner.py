@@ -21,6 +21,7 @@ import statistics
 import uuid
 import subprocess
 import re
+import random
 try:
     import tkinter as tk
     from tkinter import ttk, messagebox, scrolledtext
@@ -814,7 +815,7 @@ class RustChainMiner:
         """Return whether an HTTP response represents a temporary failure."""
         if status_code in HEADER_RETRYABLE_STATUS_CODES:
             return True
-        return isinstance(status_code, int) and 500 <= status_code <= 599
+        return 500 <= status_code <= 599
 
     def _header_submission_due(self, slot, now=None):
         """Return whether *slot* can be submitted under the retry policy."""
@@ -833,8 +834,15 @@ class RustChainMiner:
             self._header_retry_attempts = 0
         self._header_retry_attempts += 1
         exponent = min(self._header_retry_attempts - 1, 10)
-        delay = min(
+        base_delay = min(
             HEADER_RETRY_BASE_SECONDS * (2 ** exponent),
+            HEADER_RETRY_CAP_SECONDS,
+        )
+        # Spread miners across the retry window after a shared node outage.
+        # Preserve the hard upper bound even once exponential backoff reaches
+        # the cap.
+        delay = min(
+            base_delay * random.uniform(0.75, 1.25),
             HEADER_RETRY_CAP_SECONDS,
         )
         if now is None:
