@@ -2671,7 +2671,7 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
         is_apple_silicon = (
             "apple m" in cpu_brand_lower or "apple_silicon" in arch.lower()
             or any(f"m{n}" in cpu_brand_lower for n in ("1", "2", "3", "4"))
-            or device.get("platform_system", "").lower() == "darwin"
+            or str(device.get("platform_system") or "").lower() == "darwin"
             or "mac" in str(device.get("model") or device.get("device_model") or "").lower()
         )
         if is_apple_silicon:
