@@ -732,14 +732,14 @@
         img.alt = `BCOS Badge for ${certId}`;
 
         img.onload = () => {
-          previewArea.innerHTML = '';
+          previewArea.replaceChildren();
           previewArea.appendChild(img);
           resolve();
         };
 
         img.onerror = () => {
           // For demo purposes, show a placeholder if endpoint is unavailable
-          previewArea.innerHTML = '';
+          previewArea.replaceChildren();
           const container = document.createElement('div');
           container.style.textAlign = 'left';
 
@@ -808,7 +808,11 @@
     function setLoading(loading) {
       if (loading) {
         generateBtn.disabled = true;
-        generateBtn.innerHTML = '<span class="spinner"></span>Generating...';
+        generateBtn.replaceChildren();
+        const spinner = document.createElement('span');
+        spinner.className = 'spinner';
+        generateBtn.appendChild(spinner);
+        generateBtn.appendChild(document.createTextNode('Generating...'));
       } else {
         generateBtn.disabled = false;
         generateBtn.textContent = 'Generate Badge';
@@ -821,7 +825,7 @@
       currentStyle = 'flat';
       styleBtns.forEach(b => b.classList.remove('active'));
       styleBtns[0].classList.add('active');
-      previewArea.innerHTML = '';
+      previewArea.replaceChildren();
       const span = document.createElement('span');
       span.className = 'preview-placeholder';
       span.textContent = 'Enter a Certificate ID and click "Generate Preview" to see your badge';
