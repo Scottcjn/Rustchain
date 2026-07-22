@@ -701,13 +701,18 @@ def process_claims_batch(
     if old_verifying:
         print(f"[SETTLEMENT] WARNING: {len(old_verifying)} claims stuck in 'verifying' "
               f"for >{max_wait_seconds // 2}s — flagging for manual review")
-        for claim in old_verifying:
-            update_claim_status(
-                db_path=db_path,
-                claim_id=claim["claim_id"],
-                status="review_required",
-                details={"reason": "verification_timeout", "auto_approved": False}
-            )
+        # Flagging moves claims 'verifying' -> 'review_required', a persistent
+        # state change that removes them from the automated settlement pipeline.
+        # A dry run must "just report what would be done" (see docstring): never
+        # mutate claim state, or a preview would stall legitimate payouts.
+        if not dry_run:
+            for claim in old_verifying:
+                update_claim_status(
+                    db_path=db_path,
+                    claim_id=claim["claim_id"],
+                    status="review_required",
+                    details={"reason": "verification_timeout", "auto_approved": False}
+                )
 
     # Only process properly approved claims
     all_claims = pending_claims
