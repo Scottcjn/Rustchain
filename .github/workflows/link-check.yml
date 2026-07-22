@@ -1,0 +1,23 @@
+name: Link Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check relative links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >
+            --exclude 'https://*' --exclude 'http://*' --exclude 'mailto:*'
+            --no-progress --verbose
+            './**/*.md' './**/*.html'
+          fail: true
+          jobSummary: true
