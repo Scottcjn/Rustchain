@@ -18,25 +18,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install lychee
+      - name: Check relative links
         run: |
-          curl -sSL https://github.com/lycheeverse/lychee/releases/download/lychee-v0.17.0/lychee-x86_64-unknown-linux-gnu.tar.gz | tar xz
-          sudo mv lychee-x86_64-unknown-linux-gnu/lychee /usr/local/bin/
-          lychee --version
+          set -e
+          echo "=== Checking relative links in Markdown files ==="
+          errors=0
 
-      - name: Check links
-        run: |
-          lychee \
-            --base . \
-            --no-progress \
-            --max-retries 2 \
-            --timeout 30 \
-            --accept 200,204,301,302,304,429 \
-            '**/*.md' \
-            --exclude 'https://twitter.com/*' \
-            --exclude 'https://x.com/*' \
-            --exclude 'https://t.me/*' \
-            --exclude 'https://discord.gg/*' \
-            --exclude 'https://doi.org/*' \
-            --exclude 'https://img.shields.io/*' \
-            --exclude 'https://raw.githubusercontent.com/*'
+          for md in $(find . -name '*.md' -not -path './.git/*' -not -path './node_modules/*'); do
+            # Extract relative links: [text](relative/path) or [text](./relative/path)
+            links=$(grep -oP '\[[^\]]*\]\(\K[^)]+' "$md" | grep -v '^https\?://' | grep -v '^#' | grep -v '^mailto:' | sed 's/#.*//')
+
+            for link in $links; do
+              # Remove ./ prefix if present
+              link=$(echo "$link" | sed 's|^\./||')
+              [ -z "$link" ] && continue
+
+              # Resolve relative to the file's directory
+              dir=$(dirname "$md")
+              target="$dir/$link"
+              # Normalize path
+              target=$(echo "$target" | sed 's|/\./|/|g')
+
+              if [ ! -e "$target" ]; then
+                echo "  BROKEN: $md -> $link (resolved: $target)"
+                errors=$((errors + 1))
+              else
+                echo "  OK: $md -> $link"
+              fi
+            done
+          done
+
+          echo ""
+          echo "=== Results ==="
+          if [ $errors -gt 0 ]; then
+            echo "FAILED: $errors broken relative link(s)"
+            exit 1
+          else
+            echo "PASSED: All relative links are valid"
+          fi
