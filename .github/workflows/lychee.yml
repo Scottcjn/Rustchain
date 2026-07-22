@@ -11,7 +11,7 @@ jobs:
   linkcheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Check relative links
         uses: lycheeverse/lychee-action@v2
         with:
