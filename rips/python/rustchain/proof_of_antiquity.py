@@ -309,14 +309,13 @@ class ProofOfAntiquity:
         total_distributed = 0
 
         for proof in self.pending_proofs:
-            # Normalize each miner's score to its proportional share of total AS,
-            # then scale by miner count so a lone miner with score=AS_MAX earns
-            # the same as `calculate_reward(AS_MAX, ...)` would independently.
+            # Split the single fixed block reward proportionally to each miner's
+            # share of the total Antiquity Score, matching the reference formula
+            # `miner_reward = BLOCK_REWARD * miner_share` (rips/src/proof_of_antiquity.rs).
+            # The sum of shares is 1, so the block mints exactly one block reward
+            # regardless of miner count.
             share = proof.antiquity_score / total_as
-            reward = calculate_reward(
-                proof.antiquity_score * share * len(self.pending_proofs),
-                BLOCK_REWARD_AMOUNT
-            )
+            reward = TokenAmount(int(BLOCK_REWARD_AMOUNT.amount * share))
             total_distributed += reward.amount
 
             miners.append(BlockMiner(
