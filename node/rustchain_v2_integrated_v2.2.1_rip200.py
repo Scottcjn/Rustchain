@@ -2864,9 +2864,12 @@ def _derive_enroll_weight_device(
     oracle_arch = str(oracle.get("arch") or "").lower()
     oracle_mismatches = oracle.get("mismatch_reasons")
     oracle_confidence = oracle.get("confidence")
+    oracle_flags = oracle.get("flags_sample")
     oracle_complete = (
         oracle_arch in ("i386", "i486", "i586", "i686", "x86", "x86_64", "amd64")
         and oracle_mismatches == []
+        and isinstance(oracle_flags, list)
+        and all(isinstance(flag, str) and flag.strip() for flag in oracle_flags)
         and _attest_metric_is_valid(oracle_confidence)
         and float(oracle_confidence) >= 0.6
     )
@@ -2902,7 +2905,14 @@ def _derive_enroll_weight_device(
         _simd_measurement_exceeds_vintage_arch(data, claimed_arch)
         for data in simd_observations
     )
-    modern_simd = has_avx or unsupported_sse or (
+    # The age oracle independently samples /proc/cpuinfo flags. It is not
+    # positive measurement evidence, but impossible generations remain
+    # authoritative contradictions even when the dedicated SIMD check is
+    # missing or its observation was truncated differently.
+    oracle_simd = {"sample_flags": oracle_flags} if isinstance(oracle_flags, list) else {}
+    oracle_has_avx = _simd_measurement_has_feature(oracle_simd, "avx")
+    oracle_unsupported_sse = _simd_measurement_exceeds_vintage_arch(oracle_simd, claimed_arch)
+    modern_simd = has_avx or oracle_has_avx or unsupported_sse or oracle_unsupported_sse or (
         has_sse
         and claimed_arch not in {"pentium_iii", "pentium_m_banias", "pentium_m_dothan", "pentium_m_yonah"}
     )

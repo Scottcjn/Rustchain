@@ -18,7 +18,7 @@ def _fingerprint(brand, family, measurements=True, **extra_checks):
     checks = {
         "device_age_oracle": _check(
             cpu_model=brand, cpu_family=str(family), arch="i686",
-            mismatch_reasons=[], confidence=0.8,
+            flags_sample=[], mismatch_reasons=[], confidence=0.8,
         ),
     }
     if measurements:
@@ -175,6 +175,21 @@ class X86VintageRewardValidationTest(unittest.TestCase):
             "Am486DX4", 4,
             simd_identity=_check(False, sample_flags=["avx2"], fail_reason="mismatch"),
         )
+        self.assertEqual(self._reward("486", fp)["device_arch"], "default")
+
+    def test_age_oracle_avx_sample_is_negative_evidence(self):
+        fp = _fingerprint("Am486DX4", 4)
+        fp["checks"]["device_age_oracle"]["data"]["flags_sample"] = ["avx2"]
+        self.assertEqual(self._reward("486", fp)["device_arch"], "default")
+
+    def test_age_oracle_sse_generation_must_fit_claimed_cpu(self):
+        fp = _fingerprint("Intel Pentium III 800MHz", 6)
+        fp["checks"]["device_age_oracle"]["data"]["flags_sample"] = ["sse2"]
+        self.assertEqual(self._reward("pentium_iii", fp)["device_arch"], "default")
+
+    def test_age_oracle_requires_current_flags_sample_field(self):
+        fp = _fingerprint("Am486DX4", 4)
+        del fp["checks"]["device_age_oracle"]["data"]["flags_sample"]
         self.assertEqual(self._reward("486", fp)["device_arch"], "default")
 
     def test_sse2_is_not_original_sse_and_clamps_pentium_ii(self):
