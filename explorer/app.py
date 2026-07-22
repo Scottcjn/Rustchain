@@ -26,6 +26,69 @@ def _upstream_node_unavailable(include_miners=False):
         payload["miners"] = []
     return jsonify(payload), 500
 
+
+_LAST_SEEN_KEYS = ('last_seen', 'last_attest')
+
+
+def _miner_last_seen_ts(miner):
+    """Return the miner's freshness timestamp, or None if it can't be read.
+
+    The node's /api/miners payload calls this field 'last_attest'; 'last_seen'
+    is checked first for any other producer that uses that name. Reading only
+    'last_seen' means the real node payload never matches.
+    """
+    for key in _LAST_SEEN_KEYS:
+        if key not in miner:
+            continue
+        try:
+            return float(miner[key])
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def _miner_is_online(miner):
+    """Return True if the miner attested within the last 5 minutes.
+
+    The raw node payload carries no 'status' field — it is derived here and in
+    get_miners(). Network stats must derive it the same way instead of reading
+    a key the node never sends.
+    """
+    last_seen = _miner_last_seen_ts(miner)
+    if last_seen is None:
+        return False
+    return (datetime.now().timestamp() - last_seen) < 300
+
+
+def _annotate_miner_freshness(miner):
+    """Add 'last_seen_formatted' and 'status' derived from the freshness field.
+
+    An unreadable timestamp still formats as 'Unknown'; a miner carrying no
+    freshness field at all gets no 'last_seen_formatted' key, matching what
+    clients already expect.
+    """
+    last_seen = _miner_last_seen_ts(miner)
+
+    if last_seen is not None:
+        try:
+            timestamp = datetime.fromtimestamp(last_seen)
+            miner['last_seen_formatted'] = timestamp.strftime('%Y-%m-%d %H:%M:%S')
+        except (OSError, OverflowError, ValueError):
+            miner['last_seen_formatted'] = 'Unknown'
+    elif any(key in miner for key in _LAST_SEEN_KEYS):
+        miner['last_seen_formatted'] = 'Unknown'
+
+    if last_seen is None:
+        miner['status'] = 'unknown'
+    else:
+        time_diff = datetime.now().timestamp() - last_seen
+        if time_diff < 300:  # 5 minutes
+            miner['status'] = 'online'
+        elif time_diff < 3600:  # 1 hour
+            miner['status'] = 'idle'
+        else:
+            miner['status'] = 'offline'
+
 @app.route('/')
 def dashboard():
     return render_template('dashboard.html')
@@ -43,27 +106,8 @@ def get_miners():
                 if 'uptime' in miner:
                     miner['uptime_percentage'] = min(100, (miner['uptime'] / 86400) * 100)
                 
-                # Format last seen timestamp
-                if 'last_seen' in miner:
-                    try:
-                        timestamp = datetime.fromtimestamp(miner['last_seen'])
-                        miner['last_seen_formatted'] = timestamp.strftime('%Y-%m-%d %H:%M:%S')
-                    except (TypeError, ValueError, OSError, OverflowError):
-                        miner['last_seen_formatted'] = 'Unknown'
-                
-                # Set status based on last seen
-                try:
-                    last_seen = float(miner['last_seen'])
-                except (KeyError, TypeError, ValueError):
-                    miner['status'] = 'unknown'
-                else:
-                    time_diff = datetime.now().timestamp() - last_seen
-                    if time_diff < 300:  # 5 minutes
-                        miner['status'] = 'online'
-                    elif time_diff < 3600:  # 1 hour
-                        miner['status'] = 'idle'
-                    else:
-                        miner['status'] = 'offline'
+                # Format last seen timestamp and derive status
+                _annotate_miner_freshness(miner)
             
             return jsonify(miners_data)
         else:
@@ -81,7 +125,7 @@ def get_network_stats():
             
             # Calculate network statistics
             total_miners = len(miners)
-            active_miners = len([m for m in miners if m.get('status') == 'online'])
+            active_miners = len([m for m in miners if _miner_is_online(m)])
             total_hashrate = sum([m.get('hashrate', 0) for m in miners])
             
             # Calculate average block time (mock data for now)
@@ -122,28 +166,9 @@ def get_miner_detail(miner_id):
             miner = next((m for m in miners if m.get('id') == miner_id), None)
             
             if miner:
-                # Enhance miner data
-                if 'last_seen' in miner:
-                    try:
-                        timestamp = datetime.fromtimestamp(miner['last_seen'])
-                        miner['last_seen_formatted'] = timestamp.strftime('%Y-%m-%d %H:%M:%S')
-                    except (TypeError, ValueError, OSError, OverflowError):
-                        miner['last_seen_formatted'] = 'Unknown'
-                
-                # Calculate status
-                try:
-                    last_seen = float(miner['last_seen'])
-                except (KeyError, TypeError, ValueError):
-                    miner['status'] = 'unknown'
-                else:
-                    time_diff = datetime.now().timestamp() - last_seen
-                    if time_diff < 300:
-                        miner['status'] = 'online'
-                    elif time_diff < 3600:
-                        miner['status'] = 'idle'
-                    else:
-                        miner['status'] = 'offline'
-                
+                # Enhance miner data: formatted timestamp + derived status
+                _annotate_miner_freshness(miner)
+
                 return jsonify(miner)
             else:
                 return jsonify({'error': 'Miner not found'}), 404
