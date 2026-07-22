@@ -2794,6 +2794,34 @@ def _simd_measurement_has_feature(data: dict, feature: str) -> bool:
     return any(flag.startswith(feature) for flag in normalized)
 
 
+def _simd_measurement_exceeds_vintage_arch(data: dict, claimed_arch: str) -> bool:
+    """Reject sampled x86 SIMD generations newer than the claimed CPU.
+
+    ``has_sse`` is intentionally broad in the current producer (SSE2 and
+    SSSE3 also set it), so it cannot distinguish the original SSE bit from a
+    later generation.  Use the measured flag names for that distinction and
+    fail closed when they exceed the vintage architecture's real ceiling.
+    """
+    flags = data.get("sample_flags")
+    if not isinstance(flags, list):
+        return False
+    normalized = {
+        flag.strip().lower().replace(".", "_") for flag in flags
+        if isinstance(flag, str) and flag.strip()
+    }
+    sse_generations = {
+        flag for flag in normalized
+        if re.fullmatch(r"(?:sse(?:[2-4](?:_[12])?)?|ssse3)", flag)
+    }
+    allowed = {
+        "pentium_iii": {"sse"},
+        "pentium_m_banias": {"sse", "sse2"},
+        "pentium_m_dothan": {"sse", "sse2"},
+        "pentium_m_yonah": {"sse", "sse2", "sse3"},
+    }.get(claimed_arch, set())
+    return bool(sse_generations - allowed)
+
+
 def _classify_validated_x86_brand(cpu_brand: str):
     """Map an anchored CPU brand to (reward arch, CPUID family)."""
     brand = " ".join(str(cpu_brand or "").strip().split()).lower()
@@ -2870,7 +2898,11 @@ def _derive_enroll_weight_device(
     # a contradiction for older tiers. AVX contradicts every vintage tier.
     has_avx = any(_simd_measurement_has_feature(data, "avx") for data in simd_observations)
     has_sse = any(_simd_measurement_has_feature(data, "sse") for data in simd_observations)
-    modern_simd = has_avx or (
+    unsupported_sse = any(
+        _simd_measurement_exceeds_vintage_arch(data, claimed_arch)
+        for data in simd_observations
+    )
+    modern_simd = has_avx or unsupported_sse or (
         has_sse
         and claimed_arch not in {"pentium_iii", "pentium_m_banias", "pentium_m_dothan", "pentium_m_yonah"}
     )

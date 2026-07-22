@@ -177,12 +177,45 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         )
         self.assertEqual(self._reward("486", fp)["device_arch"], "default")
 
-    def test_sse2_does_not_count_as_original_sse(self):
+    def test_sse2_is_not_original_sse_and_clamps_pentium_ii(self):
         fp = _fingerprint(
             "Intel Pentium II 450MHz", 6,
             simd_identity=_check(sample_flags=["sse2"]),
         )
-        self.assertEqual(self._reward("pentium_ii", fp)["device_arch"], "pentium_ii")
+        self.assertEqual(self._reward("pentium_ii", fp)["device_arch"], "default")
+
+    def test_failed_sse2_observation_clamps_486(self):
+        fp = _fingerprint(
+            "Am486DX4", 4,
+            simd_identity=_check(False, sample_flags=["sse2"], fail_reason="mismatch"),
+        )
+        self.assertEqual(self._reward("486", fp)["device_arch"], "default")
+
+    def test_sse2_clamps_pentium_iii_but_is_valid_for_dothan(self):
+        p3 = _fingerprint(
+            "Intel Pentium III 800MHz", 6,
+            simd_identity=_check(sample_flags=["sse2"]),
+        )
+        self.assertEqual(self._reward("pentium_iii", p3)["device_arch"], "default")
+
+        dothan = _fingerprint(
+            "Intel Pentium M 2000MHz", 6,
+            simd_identity=_check(sample_flags=["sse2"]),
+        )
+        self.assertEqual(self._reward("pentium_m_dothan", dothan)["device_arch"], "pentium_m_dothan")
+
+    def test_later_sse_generations_exceed_pentium_m_subtypes(self):
+        dothan = _fingerprint(
+            "Intel Pentium M 2000MHz", 6,
+            simd_identity=_check(sample_flags=["sse3"]),
+        )
+        self.assertEqual(self._reward("pentium_m_dothan", dothan)["device_arch"], "default")
+
+        yonah = _fingerprint(
+            "Intel Pentium M 2.0GHz", 6,
+            simd_identity=_check(sample_flags=["ssse3"]),
+        )
+        self.assertEqual(self._reward("pentium_m_yonah", yonah)["device_arch"], "default")
 
     def test_pentium_iii_sse_is_legitimate(self):
         fp = _fingerprint(
