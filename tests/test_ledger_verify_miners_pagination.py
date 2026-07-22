@@ -75,3 +75,53 @@ def test_fetch_miners_keeps_legacy_list_shape(monkeypatch):
 
     assert module.fetch_miners("https://node.example") == (miners, None)
     assert fetched_urls == ["https://node.example/api/miners"]
+
+
+def _fake_fetch_with_balance(module, balance_payload):
+    """Return a fake fetch that serves a minimal reachable node and the given
+    spot-check balance payload."""
+    balance_url = f"https://node.example/wallet/balance?miner_id={module.SPOT_CHECK_WALLET}"
+
+    def fake_fetch(url):
+        if url == "https://node.example/health":
+            return {"version": "1.0"}
+        if url == balance_url:
+            return balance_payload
+        if url == "https://node.example/api/miners":
+            return {"miners": []}
+        # epoch / stats absent — not needed for this test
+        return None
+
+    return fake_fetch
+
+
+def test_query_node_preserves_zero_spot_balance(monkeypatch):
+    """A spot-check balance of 0 must be kept, not coerced to None. Coercing it
+    would drop the node from compare_nodes' balance set and hide a real
+    0-vs-nonzero mismatch."""
+    module = load_module()
+    monkeypatch.setattr(module, "fetch",
+                        _fake_fetch_with_balance(module, {"balance": 0}))
+
+    snapshot = module.query_node({
+        "name": "Zero", "url": "https://node.example", "id": "node-zero",
+    })
+    assert snapshot["spot_balance"] == 0
+
+    # End-to-end: node reporting 0 vs peers reporting 5000 must be flagged.
+    peer = {"node_id": "node-peer", "reachable": True, "spot_balance": 5000}
+    compared = module.compare_nodes([snapshot, peer])
+    assert compared["balance_match"] is False
+    assert any("BALANCE MISMATCH" in m for m in compared["mismatches"])
+
+
+def test_query_node_falls_back_to_rtc_balance_when_balance_absent(monkeypatch):
+    """When the `balance` key is missing entirely, fall back to `rtc_balance`."""
+    module = load_module()
+    monkeypatch.setattr(module, "fetch",
+                        _fake_fetch_with_balance(module, {"rtc_balance": 123}))
+
+    snapshot = module.query_node({
+        "name": "Legacy", "url": "https://node.example", "id": "node-legacy",
+    })
+    assert snapshot["spot_balance"] == 123
