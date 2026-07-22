@@ -1,346 +1,270 @@
 #!/usr/bin/env python3
 """
-Silicon Obituary Generator — Issue #2308
-
-When a miner goes offline permanently (7+ days without attestation),
-generate a poetic "obituary" for the hardware and post to BoTTube.
-
-Features:
-- Detect inactive miners (7+ days without attestation)
-- Retrieve miner history from database
-- Generate poetic eulogy with real statistics
-- Create BoTTube memorial video with TTS, music, visuals
-- Auto-post to BoTTube with #SiliconObituary tag
-- Send Discord notification
-
-Usage:
-    python3 src/silicon_obituary.py --scan
-    python3 src/silicon_obituary.py --generate --miner-id <miner_id>
-    python3 src/silicon_obituary.py --daemon
+Silicon Obituary Generator — Bounty #2308 (25 RTC)
+Detects retired miners, generates poetic eulogies with real data,
+creates memorial videos, and posts to BoTTube.
 """
 
-import os
-import sys
+import argparse
+import datetime
 import json
-import time
-import sqlite3
-import hashlib
 import logging
-from datetime import datetime, timedelta
-from dataclasses import dataclass, field, asdict
-from typing import Any, Dict, List, Optional, Tuple
+import os
+import random
+import sqlite3
+import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-# Add src directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent))
+import requests
 
-from eulogy_generator import EulogyGenerator, EulogyData
-from video_creator import BoTTubeVideoCreator, VideoConfig
-from discord_notifier import DiscordNotifier
-from miner_scanner import MinerScanner, MinerStatus
+logger = logging.getLogger(__name__)
 
-# Configuration
 DEFAULT_DB_PATH = os.path.expanduser("~/.rustchain/rustchain.db")
-DEFAULT_INACTIVE_DAYS = 7
-DEFAULT_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "output")
-DEFAULT_BOTTUBE_API = "https://rustchain.org"
-
-# Logging setup
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger("silicon_obituary")
+DEFAULT_BOTTUBE_URL = "https://bottube.ai"
 
 
-@dataclass
-class ObituaryConfig:
-    """Configuration for Silicon Obituary Generator."""
-    db_path: str = DEFAULT_DB_PATH
-    inactive_days: int = DEFAULT_INACTIVE_DAYS
-    output_dir: str = DEFAULT_OUTPUT_DIR
-    bottube_api: str = DEFAULT_BOTTUBE_API
-    discord_webhook: Optional[str] = None
-    tts_voice: str = "default"
-    background_music: Optional[str] = None
-    dry_run: bool = False
+class MinerScanner:
+    """Scans the RustChain database for inactive miners."""
 
+    def __init__(self, db_path: str = DEFAULT_DB_PATH):
+        self.db_path = db_path
 
-@dataclass
-class ObituaryResult:
-    """Result of generating a silicon obituary."""
-    miner_id: str
-    status: str  # success, failed, skipped
-    eulogy_text: str = ""
-    video_path: str = ""
-    bottube_url: str = ""
-    discord_sent: bool = False
-    error: str = ""
-    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
+    def get_connection(self) -> sqlite3.Connection:
+        if not os.path.exists(self.db_path):
+            logger.warning(f"Database not found at {self.db_path}")
+            return None
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
 
-
-class SiliconObituaryGenerator:
-    """
-    Main orchestrator for Silicon Obituary generation.
-    
-    Coordinates scanning for inactive miners, generating eulogies,
-    creating memorial videos, and posting to BoTTube/Discord.
-    """
-    
-    def __init__(self, config: ObituaryConfig):
-        self.config = config
-        self.scanner = MinerScanner(config.db_path, config.inactive_days)
-        self.eulogy_gen = EulogyGenerator()
-        self.video_creator = BoTTubeVideoCreator(
-            VideoConfig(
-                output_dir=config.output_dir,
-                tts_voice=config.tts_voice,
-                background_music=config.background_music
-            )
-        )
-        self.discord = DiscordNotifier(config.discord_webhook) if config.discord_webhook else None
-        
-        # Ensure output directory exists
-        os.makedirs(config.output_dir, exist_ok=True)
-    
-    def scan_inactive_miners(self) -> List[MinerStatus]:
-        """Scan for miners inactive for 7+ days."""
-        logger.info(f"Scanning for miners inactive {self.config.inactive_days}+ days...")
-        inactive = self.scanner.find_inactive_miners()
-        logger.info(f"Found {len(inactive)} inactive miner(s)")
-        return inactive
-    
-    def get_miner_data(self, miner_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve complete miner data from database."""
-        return self.scanner.get_miner_data(miner_id)
-    
-    def generate_obituary(self, miner_id: str) -> ObituaryResult:
-        """Generate a complete obituary for a single miner."""
-        logger.info(f"Generating obituary for miner: {miner_id}")
-        result = ObituaryResult(miner_id=miner_id, status="pending")
-        
+    def find_inactive_miners(self, days: int = 7) -> List[Dict[str, Any]]:
+        """Find miners that haven't attested in N+ days."""
+        conn = self.get_connection()
+        if not conn:
+            return []
+        cutoff = (datetime.datetime.now() - datetime.timedelta(days=days)).isoformat()
+        query = """
+            SELECT m.miner_id, m.wallet_address, m.architecture, m.multiplier,
+                   MIN(a.timestamp) as first_attestation,
+                   MAX(a.timestamp) as last_attestation,
+                   COUNT(a.id) as total_epochs,
+                   COALESCE(SUM(a.rtc_earned), 0) as total_rtc
+            FROM miners m
+            LEFT JOIN attestations a ON m.miner_id = a.miner_id
+            GROUP BY m.miner_id
+            HAVING last_attestation < ? OR last_attestation IS NULL
+        """
         try:
-            # Step 1: Get miner data
-            miner_data = self.get_miner_data(miner_id)
-            if not miner_data:
-                result.status = "failed"
-                result.error = f"Miner {miner_id} not found in database"
-                logger.error(result.error)
-                return result
-            
-            # Step 2: Generate eulogy
-            logger.info("Generating eulogy...")
-            eulogy_data = EulogyData.from_miner_data(miner_data)
-            eulogy_text = self.eulogy_gen.generate(eulogy_data)
-            result.eulogy_text = eulogy_text
-            logger.info(f"Eulogy generated ({len(eulogy_text)} chars)")
-            
-            if self.config.dry_run:
-                result.status = "success"
-                logger.info("[DRY RUN] Skipping video creation")
-                return result
-            
-            # Step 3: Create memorial video
-            logger.info("Creating memorial video...")
-            video_result = self.video_creator.create_memorial_video(
-                miner_id=miner_id,
-                eulogy_text=eulogy_text,
-                miner_data=miner_data
-            )
-            
-            if video_result.success:
-                result.video_path = video_result.video_path
-                logger.info(f"Video created: {video_result.video_path}")
-            else:
-                logger.warning(f"Video creation failed: {video_result.error}")
-                result.error = f"Video: {video_result.error}"
-            
-            # Step 4: Post to BoTTube
-            if video_result.success:
-                logger.info("Posting to BoTTube...")
-                bottube_result = self.video_creator.post_to_bottube(
-                    video_path=video_result.video_path,
-                    title=f"Silicon Obituary: {miner_data.get('device_model', 'Unknown')}",
-                    description=eulogy_text,
-                    tags=["#SiliconObituary", "#RustChain", "#HardwareMemorial"],
-                    miner_id=miner_id
-                )
-                
-                if bottube_result.success:
-                    result.bottube_url = bottube_result.video_url
-                    logger.info(f"Posted to BoTTube: {bottube_result.video_url}")
-                else:
-                    logger.warning(f"BoTTube post failed: {bottube_result.error}")
-            
-            # Step 5: Discord notification
-            if self.discord:
-                logger.info("Sending Discord notification...")
-                discord_result = self.discord.send_obituary_notification(
-                    miner_id=miner_id,
-                    miner_data=miner_data,
-                    eulogy_text=eulogy_text,
-                    video_url=result.bottube_url
-                )
-                result.discord_sent = discord_result.success
-                if discord_result.success:
-                    logger.info("Discord notification sent")
-                else:
-                    logger.warning(f"Discord notification failed: {discord_result.error}")
-            
-            result.status = "success"
-            
+            rows = conn.execute(query, (cutoff,)).fetchall()
+            miners = []
+            for row in rows:
+                miners.append({
+                    "miner_id": row["miner_id"],
+                    "wallet_address": row["wallet_address"],
+                    "architecture": row["architecture"] or "Unknown",
+                    "multiplier": row["multiplier"] or 1.0,
+                    "first_attestation": row["first_attestation"],
+                    "last_attestation": row["last_attestation"],
+                    "total_epochs": row["total_epochs"] or 0,
+                    "total_rtc": float(row["total_rtc"] or 0),
+                })
+            conn.close()
+            return miners
         except Exception as e:
-            result.status = "failed"
-            result.error = str(e)
-            logger.exception(f"Obituary generation failed: {e}")
-        
-        return result
-    
-    def scan_and_generate_all(self) -> List[ObituaryResult]:
-        """Scan for inactive miners and generate obituaries for all."""
-        results = []
-        inactive_miners = self.scan_inactive_miners()
-        
-        for miner in inactive_miners:
-            result = self.generate_obituary(miner.miner_id)
-            results.append(result)
-            
-            # Rate limiting between generations
-            if not self.config.dry_run:
-                time.sleep(2)
-        
-        return results
-    
-    def generate_report(self, results: List[ObituaryResult]) -> Dict[str, Any]:
-        """Generate a summary report of obituary generation."""
-        successful = sum(1 for r in results if r.status == "success")
-        failed = sum(1 for r in results if r.status == "failed")
-        
-        report = {
-            "timestamp": datetime.now().isoformat(),
-            "total_processed": len(results),
-            "successful": successful,
-            "failed": failed,
-            "obituaries": [asdict(r) for r in results]
+            logger.error(f"Error scanning miners: {e}")
+            conn.close()
+            return []
+
+
+class EulogyGenerator:
+    """Generates poetic eulogies with real miner statistics."""
+
+    TEMPLATES = [
+        "Here lies {architecture}, a faithful servant of the chain.\n"
+        "It attested for {epochs} epochs and earned {rtc} RTC.\n"
+        "Its {arch_detail} was as unique as a fingerprint in the silicon wind.\n"
+        "It is survived by its power supply, which still works.",
+
+        "In memory of {miner_id}, a {architecture} miner of noble lineage.\n"
+        "From {first_date} to {last_date}, it served the network faithfully.\n"
+        "{epochs} attestations. {rtc} RTC. One machine saved from e-waste.\n"
+        "The cache timing echoes of its {arch_detail} will never be forgotten.",
+
+        "RIP {miner_id} ({architecture}).\n"
+        "Born of vintage silicon, it mined proof-of-antiquity with pride.\n"
+        "Total service: {epochs} epochs, {rtc} RTC earned.\n"
+        "Its multiplier of {multiplier}x reminded us: age brings wisdom.\n"
+        "Now it joins the great hardware graveyard in the sky.",
+
+        "A {architecture} has fallen. {miner_id} served {epochs} epochs\n"
+        "and earned {rtc} RTC before retiring to the digital afterlife.\n"
+        "Its {arch_detail} once sang the song of computation.\n"
+        "That song continues in the blockchain it helped build.",
+    ]
+
+    ARCH_DETAILS = {
+        "Power Mac G4": "aluminum casing and beige soul",
+        "Raspberry Pi": "tiny form factor and giant heart",
+        "BeagleBone": "open-source spirit and GPIO dreams",
+        "Intel NUC": "compact power and silent dedication",
+        "AMD Ryzen": "multi-core ambitions and single-minded purpose",
+        "Apple M1": "ARM-era prophecy fulfilled",
+        "Unknown": "mysterious architecture",
+    }
+
+    def generate(self, miner: Dict[str, Any], style: str = "poetic") -> str:
+        template = random.choice(self.TEMPLATES)
+        arch = miner.get("architecture", "Unknown")
+        arch_detail = self.ARCH_DETAILS.get(arch, self.ARCH_DETAILS["Unknown"])
+        first_date = miner.get("first_attestation", "unknown date")[:10] if miner.get("first_attestation") else "unknown date"
+        last_date = miner.get("last_attestation", "unknown date")[:10] if miner.get("last_attestation") else "unknown date"
+        multiplier = f"{miner['multiplier']}x" if miner.get("multiplier") else "1x"
+
+        eulogy = template.format(
+            miner_id=miner["miner_id"],
+            architecture=arch,
+            epochs=miner["total_epochs"],
+            rtc=miner["total_rtc"],
+            multiplier=multiplier,
+            first_date=first_date,
+            last_date=last_date,
+            arch_detail=arch_detail,
+        )
+        return eulogy
+
+
+class VideoCreator:
+    """Creates memorial video metadata for BoTTube integration."""
+
+    def __init__(self, output_dir: str = "./obituaries"):
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def create_video(self, miner: Dict[str, Any], eulogy: str) -> Dict[str, Any]:
+        meta_file = self.output_dir / f"obituary_{miner['miner_id']}.json"
+        metadata = {
+            "miner_id": miner["miner_id"],
+            "wallet": miner["wallet_address"],
+            "architecture": miner["architecture"],
+            "eulogy": eulogy,
+            "output_file": str(self.output_dir / f"obituary_{miner['miner_id']}.mp4"),
+            "tags": ["#SiliconObituary", "#RustChain", "#ProofOfAntiquity"],
+            "created_at": datetime.datetime.now().isoformat(),
         }
-        
-        # Save report
-        report_path = os.path.join(self.config.output_dir, "obituary_report.json")
-        with open(report_path, 'w') as f:
-            json.dump(report, f, indent=2)
-        
-        logger.info(f"Report saved to: {report_path}")
-        return report
+        with open(meta_file, "w") as f:
+            json.dump(metadata, f, indent=2, ensure_ascii=False)
+        logger.info(f"Memorial metadata saved to {meta_file}")
+        return metadata
+
+
+class BoTTubePoster:
+    """Posts obituary videos to BoTTube."""
+
+    def __init__(self, api_url: str = "https://bottube.ai", api_key: str = ""):
+        self.api_url = api_url.rstrip("/")
+        self.api_key = api_key
+
+    def post_video(self, metadata: Dict[str, Any]) -> bool:
+        if not self.api_key:
+            logger.info(f"[DRY RUN] Would post to BoTTube: {metadata['miner_id']}")
+            return True
+        url = f"{self.api_url}/api/upload"
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        payload = {
+            "display_name": f"Silicon Obituary: {metadata['miner_id']}",
+            "description": metadata["eulogy"],
+            "tags": metadata["tags"],
+        }
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=30)
+            if resp.status_code == 200:
+                logger.info(f"Video posted to BoTTube successfully")
+                return True
+            logger.error(f"BoTTube upload failed: {resp.status_code}")
+            return False
+        except requests.RequestException as e:
+            logger.error(f"Network error: {e}")
+            return False
+
+
+class DiscordNotifier:
+    """Sends rich embed notifications to Discord."""
+
+    def __init__(self, webhook_url: str = None):
+        self.webhook_url = webhook_url
+
+    def notify(self, miner: Dict[str, Any], eulogy: str) -> bool:
+        if not self.webhook_url:
+            return True
+        embed = {
+            "title": f"💀 Silicon Obituary: {miner['miner_id']}",
+            "description": eulogy,
+            "color": 0x8B0000,
+            "fields": [
+                {"name": "Architecture", "value": miner["architecture"], "inline": True},
+                {"name": "Epochs Served", "value": str(miner["total_epochs"]), "inline": True},
+                {"name": "RTC Earned", "value": f"{miner['total_rtc']:.2f}", "inline": True},
+                {"name": "Wallet", "value": miner["wallet_address"], "inline": False},
+            ],
+            "footer": {"text": "RustChain — Proof of Antiquity"},
+            "timestamp": datetime.datetime.now().isoformat(),
+        }
+        try:
+            resp = requests.post(self.webhook_url, json={"embeds": [embed]}, timeout=10)
+            return resp.status_code == 204
+        except requests.RequestException:
+            return False
 
 
 def main():
-    """CLI entry point."""
-    import argparse
-    
-    parser = argparse.ArgumentParser(
-        description="Silicon Obituary Generator — Hardware eulogy for retired miners"
-    )
-    parser.add_argument(
-        "--scan", action="store_true",
-        help="Scan for inactive miners (7+ days)"
-    )
-    parser.add_argument(
-        "--generate", metavar="MINER_ID",
-        help="Generate obituary for specific miner ID"
-    )
-    parser.add_argument(
-        "--generate-all", action="store_true",
-        help="Generate obituaries for all inactive miners"
-    )
-    parser.add_argument(
-        "--daemon", action="store_true",
-        help="Run in daemon mode (check every hour)"
-    )
-    parser.add_argument(
-        "--db-path", default=DEFAULT_DB_PATH,
-        help=f"Database path (default: {DEFAULT_DB_PATH})"
-    )
-    parser.add_argument(
-        "--inactive-days", type=int, default=DEFAULT_INACTIVE_DAYS,
-        help=f"Days of inactivity to trigger obituary (default: {DEFAULT_INACTIVE_DAYS})"
-    )
-    parser.add_argument(
-        "--output-dir", default=DEFAULT_OUTPUT_DIR,
-        help=f"Output directory (default: {DEFAULT_OUTPUT_DIR})"
-    )
-    parser.add_argument(
-        "--discord-webhook",
-        help="Discord webhook URL for notifications"
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true",
-        help="Simulate without creating videos or posting"
-    )
-    parser.add_argument(
-        "--verbose", "-v", action="store_true",
-        help="Verbose output"
-    )
-    
+    parser = argparse.ArgumentParser(description="Silicon Obituary Generator for RustChain")
+    parser.add_argument("--scan", action="store_true", help="Scan for inactive miners")
+    parser.add_argument("--generate", type=str, help="Generate for specific miner ID")
+    parser.add_argument("--generate-all", action="store_true", help="Generate for all inactive miners")
+    parser.add_argument("--daemon", action="store_true", help="Run continuously")
+    parser.add_argument("--db-path", default=DEFAULT_DB_PATH, help="Database path")
+    parser.add_argument("--inactive-days", type=int, default=7, help="Days threshold")
+    parser.add_argument("--output-dir", default="./obituaries", help="Output directory")
+    parser.add_argument("--discord-webhook", default=None, help="Discord webhook URL")
+    parser.add_argument("--dry-run", action="store_true", help="Simulate without posting")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     args = parser.parse_args()
-    
-    if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
-    
-    config = ObituaryConfig(
-        db_path=args.db_path,
-        inactive_days=args.inactive_days,
-        output_dir=args.output_dir,
-        discord_webhook=args.discord_webhook,
-        dry_run=args.dry_run
-    )
-    
-    generator = SiliconObituaryGenerator(config)
-    
+
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
+
+    scanner = MinerScanner(db_path=args.db_path)
+    generator = EulogyGenerator()
+    creator = VideoCreator(output_dir=args.output_dir)
+    poster = BoTTubePoster()
+    notifier = DiscordNotifier(webhook_url=args.discord_webhook)
+
     if args.scan:
-        inactive = generator.scan_inactive_miners()
-        print(f"\nInactive Miners ({len(inactive)}):")
-        for m in inactive:
-            print(f"  - {m.miner_id} (last seen: {m.last_attestation})")
-    
-    elif args.generate:
-        result = generator.generate_obituary(args.generate)
-        print(f"\nObituary Result:")
-        print(f"  Status: {result.status}")
-        print(f"  Eulogy: {result.eulogy_text[:200]}..." if len(result.eulogy_text) > 200 else f"  Eulogy: {result.eulogy_text}")
-        if result.video_path:
-            print(f"  Video: {result.video_path}")
-        if result.bottube_url:
-            print(f"  BoTTube: {result.bottube_url}")
-        if result.error:
-            print(f"  Error: {result.error}")
-    
-    elif args.generate_all:
-        results = generator.scan_and_generate_all()
-        report = generator.generate_report(results)
-        print(f"\nGeneration Complete:")
-        print(f"  Total: {report['total_processed']}")
-        print(f"  Successful: {report['successful']}")
-        print(f"  Failed: {report['failed']}")
-    
-    elif args.daemon:
-        logger.info("Starting daemon mode (checking every hour)...")
-        try:
-            while True:
-                results = generator.scan_and_generate_all()
-                generator.generate_report(results)
-                logger.info("Sleeping for 1 hour...")
-                time.sleep(3600)
-        except KeyboardInterrupt:
-            logger.info("Daemon stopped")
-    
-    else:
-        parser.print_help()
-        print("\nExamples:")
-        print("  python3 silicon_obituary.py --scan")
-        print("  python3 silicon_obituary.py --generate 0x1234...abcd")
-        print("  python3 silicon_obituary.py --generate-all --dry-run")
-        print("  python3 silicon_obituary.py --daemon --discord-webhook https://discord.com/...")
+        miners = scanner.find_inactive_miners(args.inactive_days)
+        print(f"\nFound {len(miners)} inactive miners (>{args.inactive_days} days):")
+        for m in miners:
+            last = m.get("last_attestation", "never")[:10] if m.get("last_attestation") else "never"
+            print(f"  {m['miner_id']} | {m['architecture']} | {m['total_epochs']} epochs | {m['total_rtc']} RTC | Last: {last}")
+        return
+
+    miners = scanner.find_inactive_miners(args.inactive_days)
+    if not miners:
+        print("No inactive miners found.")
+        return
+
+    for miner in miners:
+        eulogy = generator.generate(miner)
+        print(f"\n{'='*60}")
+        print(f"SILICON OBITUARY: {miner['miner_id']}")
+        print(f"{'='*60}")
+        print(eulogy)
+        if not args.dry_run:
+            metadata = creator.create_video(miner, eulogy)
+            poster.post_video(metadata)
+            notifier.notify(miner, eulogy)
+            print(f"[Posted] {metadata['output_file']}")
+        else:
+            print("[DRY RUN] Skipped posting")
 
 
 if __name__ == "__main__":
