@@ -21,7 +21,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install ruff mypy pytest pytest-mock bandit flask beacon-skill
+        pip install ruff mypy pytest pytest-mock bandit flask beacon-skill "openapi-spec-validator>=0.7,<0.8"
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
         if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi
 
@@ -33,6 +33,17 @@ jobs:
 
     - name: Security scan (tests)
       run: bandit -r tests --severity-level medium --confidence-level high -c pyproject.toml
+
+    - name: Read-only API contract and docs gate
+      run: python -m compatibility_lab ci
+
+    - name: Installed compatibility CLI smoke test
+      run: |
+        python -m pip wheel --no-deps --wheel-dir /tmp/rustchain-wheel .
+        python -m venv /tmp/rustchain-compat-venv
+        /tmp/rustchain-compat-venv/bin/pip install --force-reinstall /tmp/rustchain-wheel/rustchain-*.whl
+        cd /tmp
+        /tmp/rustchain-compat-venv/bin/rustchain-compat validate
 
     - name: Attestation fuzz regression gate
       env:

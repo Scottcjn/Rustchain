@@ -338,6 +338,7 @@ Developers can build and run RustChain locally from a fresh checkout:
 1. Install prerequisites and run Python/Rust checks with the [Build Guide](docs/BUILD.md).
 2. Start a single-node local devnet with [Local Devnet](docs/DEVNET.md).
 3. Create a development wallet and simulate a transfer with the [CLI Wallet Walkthrough](docs/CLI.md).
+4. Validate read-only API compatibility with the [Compatibility Lab](compatibility_lab/README.md).
 
 These guides keep local state in `.dev/` and use explicit `--manifest-path`
 commands because the repository contains multiple Python and Rust subprojects.
@@ -422,7 +423,7 @@ Emission is a fixed 1.5 RTC per epoch and does not halve. It continues at that r
 
 ### Reference rate climbs as holder count grows
 
-The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates. The live rate is always at [`/api/tokenomics`](https://rustchain.org/api/tokenomics).
+The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates. There is currently no registered live API for that internal reference rate; the table and linked policy issue below are the published source. For machine-readable chain emission values, [`GET /epoch`](docs/READ_ONLY_API_CONTRACT.md#get-epoch) returns the confirmed epoch pot, epoch size, enrollment count, and fixed total supply. This distinction resolves the broken endpoint claim reported in [#7910](https://github.com/Scottcjn/Rustchain/issues/7910).
 
 | Holder count | Reference rate | Bounty rate scale |
 |--------------|----------------|-------------------|
