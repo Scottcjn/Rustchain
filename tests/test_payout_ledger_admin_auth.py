@@ -222,3 +222,55 @@ def test_ledger_status_update_rejects_terminal_overwrite(tmp_path, monkeypatch):
     }
     assert record["status"] == "confirmed"
     assert record["tx_hash"] == "tx-1"
+
+
+def test_status_advance_preserves_tx_hash_and_notes(tmp_path, monkeypatch):
+    """A status advance that omits tx_hash/notes must not blank them.
+
+    Regression: the lifecycle create(notes) → pending(tx_hash) → confirmed
+    used to overwrite the audit columns with "" whenever a transition did not
+    re-supply them, so a confirmed payout lost the on-chain tx_hash proof.
+    """
+    client, _db_path = _make_client(tmp_path, monkeypatch)
+    headers = {"X-Admin-Key": ADMIN_KEY}
+    payout_ledger.init_payout_ledger_tables()
+    record_id = payout_ledger.ledger_create(
+        "bug-1", "alice", 25, notes="approved by maintainer"
+    )
+
+    # Operator broadcasts the payout and records the hash (no notes resent).
+    pending = client.patch(
+        f"/api/ledger/{record_id}/status",
+        headers=headers,
+        json={"status": "pending", "tx_hash": "0xDEADBEEF"},
+    )
+    # After confirmations the caller sends only the status.
+    confirmed = client.patch(
+        f"/api/ledger/{record_id}/status",
+        headers=headers,
+        json={"status": "confirmed"},
+    )
+
+    record = payout_ledger.ledger_get(record_id)
+    assert pending.status_code == 200
+    assert confirmed.status_code == 200
+    assert record["status"] == "confirmed"
+    assert record["tx_hash"] == "0xDEADBEEF"   # preserved through confirm
+    assert record["notes"] == "approved by maintainer"  # preserved through pending
+
+
+def test_status_update_can_still_clear_field_with_explicit_empty(tmp_path, monkeypatch):
+    """An explicit empty string still overwrites (preserve-on-None only)."""
+    client, _db_path = _make_client(tmp_path, monkeypatch)
+    headers = {"X-Admin-Key": ADMIN_KEY}
+    payout_ledger.init_payout_ledger_tables()
+    record_id = payout_ledger.ledger_create("bug-1", "alice", 25, notes="typo note")
+
+    resp = client.patch(
+        f"/api/ledger/{record_id}/status",
+        headers=headers,
+        json={"status": "pending", "notes": ""},
+    )
+    record = payout_ledger.ledger_get(record_id)
+    assert resp.status_code == 200
+    assert record["notes"] == ""
