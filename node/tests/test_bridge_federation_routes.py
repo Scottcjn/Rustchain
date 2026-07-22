@@ -70,7 +70,12 @@ def _seed(db_path, rows):
                 "status": row.get("status", "pending"),
                 "lock_epoch": row.get("lock_epoch", 1),
                 "created_at": row.get("created_at", now - i),
-                "updated_at": row.get("updated_at", now - i),
+                # A transfer that has never changed state carries
+                # updated_at == created_at (bridge_api stamps both with the
+                # same `now` on insert). Defaulting updated_at to "now"
+                # regardless of created_at describes a row that just changed
+                # state, which is not what these fixtures mean by an old row.
+                "updated_at": row.get("updated_at", row.get("created_at", now - i)),
                 "tx_hash": row.get("tx_hash", f"hash_{i}"),
                 "completed_at": row.get("completed_at"),
             }
@@ -238,6 +243,63 @@ def test_events_window_seconds_clamps_old_rows(client, db_path):
     ])
     body = client.get("/bridge/events?window_seconds=100").get_json()
     assert [e["tx_hash"] for e in body["events"]] == ["recent"]
+
+
+def test_events_includes_transfer_created_before_window_but_completed_inside_it(client, db_path):
+    """A long-lived lock that completes today is an event today.
+
+    Keying the window on created_at hid it: /bridge/state counted the
+    completion in last_event_at while /bridge/events reported nothing.
+    """
+    base = int(time.time())
+    _seed(db_path, [{
+        "created_at": base - 25 * 3600,   # opened outside the 24h window
+        "updated_at": base - 60,          # completed one minute ago
+        "completed_at": base - 60,
+        "status": "completed",
+        "tx_hash": "long_lived_lock_just_completed",
+    }])
+
+    body = client.get("/bridge/events").get_json()
+    assert [e["tx_hash"] for e in body["events"]] == ["long_lived_lock_just_completed"]
+
+    # and the two public surfaces now agree about when that event happened
+    state = client.get("/bridge/state").get_json()["state"]
+    assert body["events"][0]["event_at"] == state["last_event_at"] == base - 60
+    assert body["events"][0]["created_at"] == base - 25 * 3600
+
+
+def test_events_excludes_transfer_whose_state_change_is_outside_the_window(client, db_path):
+    """The window still clamps: an old row that has not changed state stays out."""
+    base = int(time.time())
+    _seed(db_path, [
+        {"created_at": base - 10_000, "updated_at": base - 10_000, "tx_hash": "stale"},
+        {"created_at": base - 10_000, "updated_at": base - 10, "status": "voided",
+         "tx_hash": "voided_just_now"},
+    ])
+    body = client.get("/bridge/events?window_seconds=100").get_json()
+    assert [e["tx_hash"] for e in body["events"]] == ["voided_just_now"]
+
+
+def test_events_ordered_by_state_change_not_creation(client, db_path):
+    base = int(time.time())
+    _seed(db_path, [
+        {"created_at": base - 10, "updated_at": base - 10, "tx_hash": "created_last_still_pending"},
+        {"created_at": base - 900, "updated_at": base - 5, "completed_at": base - 5,
+         "status": "completed", "tx_hash": "created_first_completed_last"},
+    ])
+    body = client.get("/bridge/events").get_json()
+    assert [e["tx_hash"] for e in body["events"]] == [
+        "created_first_completed_last",
+        "created_last_still_pending",
+    ]
+
+
+def test_events_event_at_equals_created_at_for_untouched_transfer(client, db_path):
+    base = int(time.time())
+    _seed(db_path, [{"created_at": base - 30, "updated_at": base - 30, "tx_hash": "untouched"}])
+    e = client.get("/bridge/events").get_json()["events"][0]
+    assert e["event_at"] == e["created_at"] == base - 30
 
 
 def test_events_limit_clamped_to_max(client, db_path):
