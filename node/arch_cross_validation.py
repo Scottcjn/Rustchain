@@ -285,7 +285,11 @@ def extract_all_features(fingerprint: Dict) -> Dict[str, Any]:
     if isinstance(checks, dict):
         for check_name, check_value in checks.items():
             if isinstance(check_value, dict):
-                data = check_value.get("data", {})
+                # A wrapped check nests its payload under "data"; a flat check IS
+                # the payload (no "data" key). Fall back to the value itself so
+                # the flat-fingerprint branch above is not silently emptied —
+                # matching the X.get("data", X) pattern the extract_* helpers use.
+                data = check_value.get("data", check_value)
                 if isinstance(data, dict):
                     all_features[check_name] = data
             elif isinstance(check_value, bool):

@@ -36,6 +36,31 @@ def test_g4_real_hardware():
     assert score >= 0.8, f"G4 real hardware scored too low: {score}"
     print(f"  G4 real hardware: PASS (score={score})")
 
+def test_g4_flat_fingerprint_not_flagged():
+    # Same legitimate G4 evidence as test_g4_real_hardware, but in the FLAT
+    # form (no "checks" wrapper, no per-check "data" key). extract_all_features
+    # explicitly supports this layout, so it must score identically to the
+    # wrapped form and NOT be falsely flagged as spoofed.
+    wrapped = {
+        "checks": {
+            "simd_identity": {"passed": True, "data": {"has_altivec": True, "has_sse": False, "has_neon": False, "simd_type": "altivec"}},
+            "clock_drift": {"passed": True, "data": {"cv": 0.05, "samples": 200}},
+            "cache_timing": {"passed": True, "data": {"latencies": {"4KB": {"random_ns": 1.0}, "32KB": {"random_ns": 2.0}, "256KB": {"random_ns": 5.0}, "1024KB": {"random_ns": 10.0}}, "tone_ratios": [2.0, 2.5, 2.0]}},
+            "thermal_drift": {"passed": True, "data": {"thermal_drift_pct": 5.0}}
+        }
+    }
+    flat = {
+        "simd_identity": {"has_altivec": True, "has_sse": False, "has_neon": False, "simd_type": "altivec"},
+        "clock_drift": {"cv": 0.05, "samples": 200},
+        "cache_timing": {"latencies": {"4KB": {"random_ns": 1.0}, "32KB": {"random_ns": 2.0}, "256KB": {"random_ns": 5.0}, "1024KB": {"random_ns": 10.0}}, "tone_ratios": [2.0, 2.5, 2.0]},
+        "thermal_drift": {"thermal_drift_pct": 5.0}
+    }
+    wrapped_score, _ = validate_arch_consistency(wrapped, "g4")
+    flat_score, _ = validate_arch_consistency(flat, "g4")
+    assert flat_score >= 0.8, f"flat G4 fingerprint falsely flagged: {flat_score}"
+    assert flat_score == wrapped_score, f"flat {flat_score} != wrapped {wrapped_score}"
+    print(f"  G4 flat fingerprint: PASS (score={flat_score})")
+
 def test_g4_x86_spoofing():
     fp = {
         "checks": {
@@ -128,6 +153,7 @@ if __name__ == "__main__":
     print("\n=== arch_cross_validation unit tests ===\n")
     test_normalize_arch()
     test_g4_real_hardware()
+    test_g4_flat_fingerprint_not_flagged()
     test_g4_x86_spoofing()
     test_modern_x86_real()
     test_apple_silicon_real()
