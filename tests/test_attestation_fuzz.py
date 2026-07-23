@@ -140,6 +140,7 @@ def _client_fixture(monkeypatch, *, strict_security_path=False):
         monkeypatch.setattr(_replay_mod, "get_db_path", lambda: str(db_path))
         _init_replay_schema()
 
+    monkeypatch.setenv("RTC_ALLOW_UNSIGNED_ATTEST", "true")
     monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
     monkeypatch.setattr(integrated_node, "check_ip_rate_limit", lambda client_ip, miner_id: (True, "ok"))
     monkeypatch.setattr(integrated_node, "record_attestation_success", lambda *args, **kwargs: None)

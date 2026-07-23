@@ -230,13 +230,16 @@ class TestAttestSignatureVerification(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body["code"], "INVALID_SIGNATURE")
 
-    def test_missing_signature_allowed(self):
-        """Backward compatibility: submissions without signature should still be accepted.
+    def test_missing_signature_rejected(self):
+        """Unsigned attestations must be rejected to prevent wallet impersonation (#8016).
 
-        This allows the simpler miner path (miners/rust/src/main.rs) to continue
-        working while operators migrate to the signed attestation flow.
+        Previously, omitting both signature and public_key skipped the entire
+        verification block. Now we reject unless RTC_ALLOW_UNSIGNED_ATTEST is set.
         """
         mod, _ = self._load_module("rustchain_attest_sig_missing", "sig_missing.db")
+
+        # Make sure the compat flag is not set
+        prev = os.environ.pop("RTC_ALLOW_UNSIGNED_ATTEST", None)
 
         nonce = self._get_challenge(mod)
 
@@ -255,9 +258,45 @@ class TestAttestSignatureVerification(unittest.TestCase):
         }
         status, body = self._submit(mod, payload)
 
-        # Should succeed — no signature provided, so no verification attempted
+        self.assertEqual(status, 400)
+        self.assertEqual(body["code"], "MISSING_SIGNATURE")
+
+        # Restore env
+        if prev is not None:
+            os.environ["RTC_ALLOW_UNSIGNED_ATTEST"] = prev
+
+    def test_unsigned_allowed_via_compat_flag(self):
+        """When RTC_ALLOW_UNSIGNED_ATTEST=true, unsigned attestations are accepted
+        for backward compatibility with older miners."""
+        mod, _ = self._load_module("rustchain_attest_sig_compat", "sig_compat.db")
+
+        prev = os.environ.get("RTC_ALLOW_UNSIGNED_ATTEST")
+        os.environ["RTC_ALLOW_UNSIGNED_ATTEST"] = "true"
+
+        nonce = self._get_challenge(mod)
+
+        payload = {
+            "miner": "RTC_COMPAT_MINER",
+            "report": {"nonce": nonce, "commitment": "deadbeef"},
+            "device": {"family": "x86_64", "arch": "default", "model": "test-box", "cores": 4},
+            "signals": {"hostname": "test-host", "macs": []},
+            "fingerprint": {
+                "checks": {
+                    "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+                    "clock_drift": {"passed": True, "data": {"cv": 0.05, "samples": 64}},
+                },
+                "all_passed": True,
+            },
+        }
+        status, body = self._submit(mod, payload)
+
         self.assertEqual(status, 200)
         self.assertTrue(body["ok"])
+
+        if prev is None:
+            os.environ.pop("RTC_ALLOW_UNSIGNED_ATTEST", None)
+        else:
+            os.environ["RTC_ALLOW_UNSIGNED_ATTEST"] = prev
 
     def test_non_string_signature_rejected_before_handler_crash(self):
         """Non-string signature values must be validation failures, not 500s."""

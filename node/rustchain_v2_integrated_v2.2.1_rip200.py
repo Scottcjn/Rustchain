@@ -4490,6 +4490,21 @@ def _submit_attestation_impl():
     pubkey_hex = (raw_pubkey or '').strip().lower()
     miner_id_raw = _attest_valid_miner(data.get('miner_id')) or miner
     commitment = report.get('commitment') or ''
+
+    # Reject unsigned attestations to prevent wallet impersonation (#8016).
+    # Previously, omitting both signature and public_key skipped the entire
+    # verification block, letting anyone submit attestations as any wallet.
+    allow_unsigned_attest = os.environ.get(
+        'RTC_ALLOW_UNSIGNED_ATTEST', ''
+    ).lower() in ('1', 'true', 'yes')
+    if (not sig_hex or not pubkey_hex) and not allow_unsigned_attest:
+        return jsonify({
+            "ok": False,
+            "error": "missing_signature",
+            "message": "Ed25519 signature and public_key are required",
+            "code": "MISSING_SIGNATURE"
+        }), 400
+
     if sig_hex and pubkey_hex:
         if HAVE_NACL:
             # Type-guard signature_type too — reject a non-string value with 400,
