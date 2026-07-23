@@ -9,6 +9,7 @@ integrated_node = sys.modules["integrated_node"]
 
 def test_init_db_creates_attestation_submit_tables(tmp_path, monkeypatch):
     db_path = tmp_path / "fresh-rustchain.db"
+    monkeypatch.setenv("RTC_ALLOW_UNSIGNED_ATTEST", "true")
     monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
     monkeypatch.setattr(integrated_node, "HAVE_REPLAY_DEFENSE", False)
     monkeypatch.setattr(integrated_node, "HAVE_WARTHOG", False)
