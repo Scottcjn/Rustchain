@@ -38,6 +38,7 @@ def test_init_db_creates_attestation_submit_tables(tmp_path, monkeypatch):
 
 
 def test_fresh_db_attestation_submit_does_not_crash_on_missing_schema(
+    monkeypatch.setenv("RTC_ALLOW_UNSIGNED_ATTEST", "true")
     tmp_path, monkeypatch
 ):
     db_path = tmp_path / "fresh-attest-route.db"
