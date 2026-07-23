@@ -110,6 +110,7 @@ def attest_client(monkeypatch):
     db_path = local_tmp_dir / f"{uuid.uuid4().hex}.sqlite3"
     _init_attestation_db(db_path)
 
+    monkeypatch.setenv("RTC_ALLOW_UNSIGNED_ATTEST", "true")
     monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
     monkeypatch.setattr(integrated_node, "HW_BINDING_V2", False, raising=False)
     monkeypatch.setattr(integrated_node, "HW_PROOF_AVAILABLE", False, raising=False)
