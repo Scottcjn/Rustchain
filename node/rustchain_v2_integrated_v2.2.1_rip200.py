@@ -2645,6 +2645,365 @@ def _detect_x86_vintage(cpu_brand: str, machine: str, simd_data: dict):
     return None
 
 
+_X86_VINTAGE_REWARD_ARCHES = {
+    "386", "486", "pentium", "pentium_mmx", "pentium_pro",
+    "pentium_ii", "pentium_iii", "pentium_m_banias",
+    "pentium_m_dothan", "pentium_m_yonah",
+}
+
+
+def _passed_fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
+    """Return measurement data only for an explicitly passed check."""
+    item = _fingerprint_checks_map(fingerprint).get(check_name, {})
+    if not isinstance(item, dict) or item.get("passed") is not True:
+        return {}
+    data = item.get("data")
+    return data if isinstance(data, dict) and data else {}
+
+
+def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
+    """Return raw check data regardless of the client-reported result.
+
+    Failed checks are not positive evidence, but their observations can still
+    disprove a vintage claim (for example a failed SIMD check that saw AVX).
+    """
+    item = _fingerprint_checks_map(fingerprint).get(check_name, {})
+    if not isinstance(item, dict):
+        return {}
+    data = item.get("data")
+    return data if isinstance(data, dict) and data else {}
+
+
+def _is_positive_measurement(value) -> bool:
+    """Return true only for a concrete, finite, positive measurement."""
+    return (
+        value is not None
+        and value != ""
+        and not isinstance(value, bool)
+        and _attest_metric_is_valid(value)
+        and float(value) > 0
+    )
+
+
+def _measurement_close(actual, expected, relative_tolerance: float = 0.02) -> bool:
+    """Compare a reported derived metric to values recomputed by the node."""
+    if not _is_positive_measurement(actual) or not _is_positive_measurement(expected):
+        return False
+    actual_f = float(actual)
+    expected_f = float(expected)
+    return abs(actual_f - expected_f) <= max(0.001, abs(expected_f) * relative_tolerance)
+
+
+def _canonical_attestation_signer_owns_miner(pubkey_hex: str, miner: str) -> bool:
+    """Require canonical measurement evidence to be signed by its RTC owner.
+
+    A valid Ed25519 signature proves only that *some* key signed the payload.
+    Reward evidence must additionally bind that key to the credited identity;
+    otherwise an arbitrary key can authenticate fabricated measurements for a
+    caller-chosen RTC address.  Named/legacy miners remain valid attestations,
+    but cannot use that unrelated signature as vintage-reward evidence.
+    """
+    if not isinstance(pubkey_hex, str) or not isinstance(miner, str):
+        return False
+    pubkey_hex = pubkey_hex.strip().lower()
+    miner = miner.strip()
+    if not pubkey_hex or not miner:
+        return False
+    try:
+        return miner.lower() == pubkey_hex or address_from_pubkey(pubkey_hex) == miner
+    except Exception:
+        return False
+
+
+def _has_validated_x86_measurement(check_name: str, data: dict) -> bool:
+    """Recompute pass invariants for measurement-bearing producer output.
+
+    A client-provided ``passed`` bit and correctly named fields are insufficient.
+    Require the complete current producer schema and independently verify the
+    same relationships used by ``fingerprint_checks.py``.
+    """
+    if check_name == "cache_timing":
+        l1, l2, l3 = data.get("l1_ns"), data.get("l2_ns"), data.get("l3_ns")
+        l2_l1 = data.get("l2_l1_ratio")
+        l3_l2 = data.get("l3_l2_ratio")
+        if not all(_is_positive_measurement(v) for v in (l1, l2, l3, l2_l1, l3_l2)):
+            return False
+        return (
+            _measurement_close(l2_l1, float(l2) / float(l1))
+            and _measurement_close(l3_l2, float(l3) / float(l2))
+            and (float(l2_l1) >= 1.01 or float(l3_l2) >= 1.01)
+        )
+
+    if check_name in ("simd_identity", "simd_bias"):
+        flags = data.get("sample_flags")
+        count = data.get("simd_flags_count")
+        if not isinstance(flags, list) or not flags or not _is_positive_measurement(count):
+            return False
+        normalized = [flag.strip().lower() for flag in flags if isinstance(flag, str) and flag.strip()]
+        if len(normalized) != len(flags) or float(count) < len(normalized):
+            return False
+        observed = {
+            "sse": any("sse" in flag for flag in normalized),
+            "avx": any("avx" in flag for flag in normalized),
+            "altivec": any("altivec" in flag for flag in normalized),
+            "neon": any("neon" in flag for flag in normalized),
+        }
+        return all(data.get(f"has_{feature}") is value for feature, value in observed.items())
+
+    if check_name == "thermal_drift":
+        cold, hot = data.get("cold_avg_ns"), data.get("hot_avg_ns")
+        cold_sd, hot_sd = data.get("cold_stdev"), data.get("hot_stdev")
+        ratio = data.get("drift_ratio")
+        if not all(_is_positive_measurement(v) for v in (cold, hot, ratio)):
+            return False
+        if not all(v is not None and not isinstance(v, bool) and _attest_metric_is_valid(v)
+                   and float(v) >= 0 for v in (cold_sd, hot_sd)):
+            return False
+        return (
+            (float(cold_sd) > 0 or float(hot_sd) > 0)
+            and _measurement_close(ratio, float(hot) / float(cold))
+        )
+
+    if check_name == "instruction_jitter":
+        averages = (data.get("int_avg_ns"), data.get("fp_avg_ns"), data.get("branch_avg_ns"))
+        deviations = (data.get("int_stdev"), data.get("fp_stdev"), data.get("branch_stdev"))
+        if not all(_is_positive_measurement(v) for v in averages):
+            return False
+        if not all(v is not None and not isinstance(v, bool) and _attest_metric_is_valid(v)
+                   and float(v) >= 0 for v in deviations):
+            return False
+        return any(float(v) > 0 for v in deviations)
+
+    return False
+
+
+def _simd_measurement_has_feature(data: dict, feature: str) -> bool:
+    """Read SIMD contradictions from booleans and the measured flag sample."""
+    if data.get(f"has_{feature}") is True:
+        return True
+    flags = data.get("sample_flags")
+    if not isinstance(flags, list):
+        return False
+    normalized = {
+        flag.strip().lower() for flag in flags
+        if isinstance(flag, str) and flag.strip()
+    }
+    if feature == "sse":
+        # SSE2/SSSE3 are not evidence that the original SSE bit was observed.
+        return "sse" in normalized
+    return any(flag.startswith(feature) for flag in normalized)
+
+
+def _has_complete_x86_simd_observation(data: dict) -> bool:
+    """Require the current producer's full-count and boolean SIMD schema.
+
+    The dedicated producer computes feature booleans from the complete CPU flag
+    list even though ``sample_flags`` is bounded. Requiring this observation
+    prevents a caller from omitting SIMD entirely and using another measurement
+    to hide modern flags beyond the age oracle's truncated sample.
+    """
+    flags = data.get("sample_flags")
+    count = data.get("simd_flags_count")
+    feature_values = tuple(
+        data.get(f"has_{feature}") for feature in ("sse", "avx", "altivec", "neon")
+    )
+    if not isinstance(flags, list) or not _is_positive_measurement(count):
+        return False
+    normalized = [
+        flag.strip().lower() for flag in flags
+        if isinstance(flag, str) and flag.strip()
+    ]
+    return (
+        bool(normalized)
+        and len(normalized) == len(flags)
+        and len(normalized) <= float(count)
+        and all(isinstance(value, bool) for value in feature_values)
+    )
+
+
+def _simd_measurement_exceeds_vintage_arch(data: dict, claimed_arch: str) -> bool:
+    """Reject sampled x86 SIMD generations newer than the claimed CPU.
+
+    ``has_sse`` is intentionally broad in the current producer (SSE2 and
+    SSSE3 also set it), so it cannot distinguish the original SSE bit from a
+    later generation.  Use the measured flag names for that distinction and
+    fail closed when they exceed the vintage architecture's real ceiling.
+    """
+    flags = data.get("sample_flags")
+    if not isinstance(flags, list):
+        return False
+    normalized = {
+        flag.strip().lower().replace(".", "_") for flag in flags
+        if isinstance(flag, str) and flag.strip()
+    }
+    # Linux exposes SSE3 as ``pni`` on many x86 CPUs; AMD exposes its later
+    # non-Intel generation as ``sse4a``. Both must participate in the same
+    # ceiling as the more obvious SSE spellings.
+    sse_generations = {
+        "sse3" if flag == "pni" else flag
+        for flag in normalized
+        if re.fullmatch(r"(?:sse(?:[2-4](?:_[12])?|4a)?|ssse3|pni)", flag)
+    }
+    allowed = {
+        "pentium_iii": {"sse"},
+        "pentium_m_banias": {"sse", "sse2"},
+        "pentium_m_dothan": {"sse", "sse2"},
+        "pentium_m_yonah": {"sse", "sse2", "sse3"},
+    }.get(claimed_arch, set())
+    return bool(sse_generations - allowed)
+
+
+def _classify_validated_x86_brand(cpu_brand: str):
+    """Map an anchored CPU brand to (reward arch, CPUID family)."""
+    brand = " ".join(str(cpu_brand or "").strip().split()).lower()
+    vendor = r"(?:(?:genuineintel|authenticamd|intel(?:\(r\))?|amd)\s+)?"
+    patterns = (
+        ("386", 3, rf"^{vendor}(?:i?80386|i?386|am386)(?:[\s/-]?[a-z0-9]+)*$"),
+        ("486", 4, rf"^{vendor}(?:i?80486|i?486|am486)(?:[\s/-]?[a-z0-9]+)*$"),
+        ("pentium_mmx", 5, rf"^{vendor}pentium(?:\(r\))?\s+mmx(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        ("pentium_pro", 6, rf"^{vendor}pentium(?:\(r\))?\s+pro(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        ("pentium_iii", 6, rf"^{vendor}pentium(?:\(r\))?\s+iii(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        ("pentium_ii", 6, rf"^{vendor}pentium(?:\(r\))?\s+ii(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        ("pentium_m", 6, rf"^{vendor}pentium(?:\(r\))?\s+m(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        ("pentium", 5, rf"^{vendor}pentium(?:\(r\))?(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+    )
+    for arch, cpu_family, pattern in patterns:
+        if re.fullmatch(pattern, brand, flags=re.IGNORECASE):
+            return arch, cpu_family
+    return None
+
+
+def _derive_enroll_weight_device(
+    verified_device: dict, fingerprint: dict, fingerprint_passed: bool = True,
+    measurement_report_verified: bool = False,
+) -> dict:
+    """Fail closed for vintage-x86 reward tiers without rewriting identity.
+
+    The general device classifier remains useful to APIs and inventory.  Only
+    the epoch-enrollment reward lookup calls this helper, so a rejected reward
+    claim cannot mutate the stored device family or architecture.
+    """
+    family = str(verified_device.get("device_family") or "")
+    claimed_arch = str(verified_device.get("device_arch") or "").lower()
+    if family.lower() not in ("x86", "x86_64") or claimed_arch not in _X86_VINTAGE_REWARD_ARCHES:
+        return verified_device
+
+    if not fingerprint_passed or not measurement_report_verified:
+        return {"device_family": "x86", "device_arch": "default"}
+
+    oracle = _passed_fingerprint_check_data(fingerprint, "device_age_oracle")
+    oracle_arch = str(oracle.get("arch") or "").lower()
+    oracle_mismatches = oracle.get("mismatch_reasons")
+    oracle_confidence = oracle.get("confidence")
+    oracle_flags = oracle.get("flags_sample")
+    oracle_complete = (
+        oracle_arch in ("i386", "i486", "i586", "i686", "x86", "x86_64", "amd64")
+        and oracle_mismatches == []
+        and isinstance(oracle_flags, list)
+        and all(isinstance(flag, str) and flag.strip() for flag in oracle_flags)
+        and _attest_metric_is_valid(oracle_confidence)
+        and float(oracle_confidence) >= 0.6
+    )
+    brand_result = _classify_validated_x86_brand(oracle.get("cpu_model"))
+    try:
+        observed_family = int(str(oracle.get("cpu_family", "")).strip())
+    except (TypeError, ValueError):
+        observed_family = None
+
+    measurement_names = (
+        "cache_timing", "simd_identity", "simd_bias",
+        "thermal_drift", "instruction_jitter",
+    )
+    measurements = {
+        name: _passed_fingerprint_check_data(fingerprint, name)
+        for name in measurement_names
+    }
+    has_measurement = any(
+        _has_validated_x86_measurement(name, data)
+        for name, data in measurements.items()
+    )
+    # Contradictions are authoritative even when their check failed. A failed
+    # check cannot earn a tier, but it must not erase a modern feature it saw.
+    simd_observations = (
+        _fingerprint_check_data(fingerprint, "simd_identity"),
+        _fingerprint_check_data(fingerprint, "simd_bias"),
+    )
+    simd_observation_complete = any(
+        _has_complete_x86_simd_observation(data)
+        for data in simd_observations
+    )
+    # SSE is legitimate positive evidence on Pentium III and Pentium M, but is
+    # a contradiction for older tiers. AVX contradicts every vintage tier.
+    has_avx = any(_simd_measurement_has_feature(data, "avx") for data in simd_observations)
+    has_sse = any(_simd_measurement_has_feature(data, "sse") for data in simd_observations)
+    unsupported_sse = any(
+        _simd_measurement_exceeds_vintage_arch(data, claimed_arch)
+        for data in simd_observations
+    )
+    # The age oracle independently samples /proc/cpuinfo flags. It is not
+    # positive measurement evidence, but impossible generations remain
+    # authoritative contradictions even when the dedicated SIMD check is
+    # missing or its observation was truncated differently.
+    oracle_simd = {"sample_flags": oracle_flags} if isinstance(oracle_flags, list) else {}
+    oracle_has_avx = _simd_measurement_has_feature(oracle_simd, "avx")
+    oracle_unsupported_sse = _simd_measurement_exceeds_vintage_arch(oracle_simd, claimed_arch)
+    modern_simd = has_avx or oracle_has_avx or unsupported_sse or oracle_unsupported_sse or (
+        has_sse
+        and claimed_arch not in {"pentium_iii", "pentium_m_banias", "pentium_m_dothan", "pentium_m_yonah"}
+    )
+
+    if (
+        not oracle_complete
+        or not brand_result
+        or not has_measurement
+        or not simd_observation_complete
+        or modern_simd
+    ):
+        return {"device_family": "x86", "device_arch": "default"}
+
+    observed_arch, expected_family = brand_result
+    if observed_family != expected_family:
+        return {"device_family": "x86", "device_arch": "default"}
+
+    if observed_arch == "pentium_m":
+        model = str(oracle.get("cpu_model") or "").lower()
+        mhz_match = re.search(r"(\d+)\s*mhz", model)
+        ghz_match = re.search(r"(\d+(?:\.\d+)?)\s*ghz", model)
+        speed_mhz = int(mhz_match.group(1)) if mhz_match else (
+            int(float(ghz_match.group(1)) * 1000) if ghz_match else None
+        )
+        if oracle_arch in ("x86_64", "amd64"):
+            observed_arch = "pentium_m_yonah"
+        elif speed_mhz is not None and speed_mhz <= 1700:
+            observed_arch = "pentium_m_banias"
+        elif speed_mhz is not None:
+            observed_arch = "pentium_m_dothan"
+        else:
+            # An undifferentiated Pentium M cannot justify the highest subtype.
+            observed_arch = "pentium_m_yonah"
+
+        if claimed_arch.startswith("pentium_m_"):
+            chosen = min(
+                (claimed_arch, observed_arch),
+                key=lambda arch: HARDWARE_WEIGHTS["x86"].get(arch, 1.0),
+            )
+            return {"device_family": "x86", "device_arch": chosen}
+        return {"device_family": "x86", "device_arch": "default"}
+
+    # A plain Pentium observation can only downgrade an MMX claim. Conversely,
+    # an MMX observation never upgrades a plain Pentium claim.
+    if {claimed_arch, observed_arch} <= {"pentium", "pentium_mmx"}:
+        chosen = min(
+            (claimed_arch, observed_arch),
+            key=lambda arch: HARDWARE_WEIGHTS["x86"].get(arch, 1.0),
+        )
+        return {"device_family": "x86", "device_arch": chosen}
+
+    if claimed_arch != observed_arch:
+        return {"device_family": "x86", "device_arch": "default"}
+    return {"device_family": "x86", "device_arch": claimed_arch}
+
+
 def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: bool) -> dict:
     family, arch = _claimed_family_and_arch(device)
     cpu_brand = _cpu_brand_string(device)
@@ -3413,7 +3772,10 @@ KNOWN_VM_SIGNATURES = {
     "bhyve", "openvz", "virtuozzo", "systemd-nspawn",
 }
 
-def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) -> tuple:
+def validate_fingerprint_data(
+    fingerprint: dict, claimed_device: dict = None,
+    allow_tscless_x86_reward: bool = False,
+) -> tuple:
     """
     Server-side validation of miner fingerprint check results.
     Returns: (passed: bool, reason: str)
@@ -3459,7 +3821,11 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
                      "genesis_68000", "sms_z80", "saturn_sh2",
                      "gameboy_z80", "gameboy_color_z80", "ps1_mips",
                      "6502", "65c816", "z80", "sh2"}
-    is_vintage = claimed_arch_lower in vintage_relaxed_archs
+    # 386/486 predate RDTSC. Relax their clock requirement only for the
+    # attestation reward path; other validator consumers keep the strict rule.
+    is_vintage = claimed_arch_lower in vintage_relaxed_archs or (
+        allow_tscless_x86_reward and claimed_arch_lower in {"386", "486"}
+    )
     is_console = claimed_arch_lower in console_archs
 
     # RIP-304: Console miners use Pico bridge fingerprinting (ctrl_port_timing
@@ -4488,6 +4854,7 @@ def _submit_attestation_impl():
 
     sig_hex = (raw_sig or '').strip().lower()
     pubkey_hex = (raw_pubkey or '').strip().lower()
+    canonical_payload_verified = False
     miner_id_raw = _attest_valid_miner(data.get('miner_id')) or miner
     commitment = report.get('commitment') or ''
     if sig_hex and pubkey_hex:
@@ -4523,6 +4890,9 @@ def _submit_attestation_impl():
                 ).encode('utf-8')
                 if verify_rtc_signature(pubkey_hex, canonical_msg, sig_hex):
                     verified = True
+                    canonical_payload_verified = _canonical_attestation_signer_owns_miner(
+                        pubkey_hex, miner
+                    )
 
             # Scheme 2: v2 legacy 4-field MAC (backward compat) — but ONLY for
             # callers that did NOT explicitly claim the stronger v3 scheme. A
@@ -4774,7 +5144,9 @@ def _submit_attestation_impl():
 
     # FIX #305: Always validate - pass None/empty to validator which rejects them
     if fingerprint is not None:
-        fingerprint_passed, fingerprint_reason = validate_fingerprint_data(fingerprint, claimed_device=device)
+        fingerprint_passed, fingerprint_reason = validate_fingerprint_data(
+            fingerprint, claimed_device=device, allow_tscless_x86_reward=True,
+        )
     else:
         fingerprint_reason = "no_fingerprint_submitted"
 
@@ -4874,8 +5246,14 @@ def _submit_attestation_impl():
             if not _device2.get("machine"):
                 _device2["machine"] = "ppc64le" if "power8" in _miner_lower2 else "ppc"
         verified_device = derive_verified_device(_device2, fingerprint if isinstance(fingerprint, dict) else {}, fingerprint_passed)
-        family = verified_device["device_family"]
-        arch_for_weight = verified_device["device_arch"]
+        reward_device = _derive_enroll_weight_device(
+            verified_device,
+            fingerprint if isinstance(fingerprint, dict) else {},
+            fingerprint_passed=fingerprint_passed,
+            measurement_report_verified=canonical_payload_verified,
+        )
+        family = reward_device["device_family"]
+        arch_for_weight = reward_device["device_arch"]
         hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0))
         miner_id = _attest_valid_miner(data.get("miner_id")) or miner
 
