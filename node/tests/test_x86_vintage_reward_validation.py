@@ -26,6 +26,11 @@ def _fingerprint(brand, family, measurements=True, **extra_checks):
             l1_ns=40.0, l2_ns=80.0, l3_ns=240.0,
             l2_l1_ratio=2.0, l3_l2_ratio=3.0,
         )
+        checks["simd_identity"] = _check(
+            arch="i686", simd_flags_count=1,
+            has_sse=False, has_avx=False, has_altivec=False, has_neon=False,
+            sample_flags=["fpu"],
+        )
     checks.update(extra_checks)
     return {"checks": checks}
 
@@ -117,7 +122,11 @@ class X86VintageRewardValidationTest(unittest.TestCase):
     def test_inconsistent_derived_cache_ratios_are_not_evidence(self):
         fp = _fingerprint("Am486DX4", 4)
         fp["checks"]["cache_timing"]["data"]["l2_l1_ratio"] = 9.0
-        self.assertEqual(self._reward("486", fp)["device_arch"], "default")
+        self.assertFalse(
+            self.mod._has_validated_x86_measurement(
+                "cache_timing", fp["checks"]["cache_timing"]["data"]
+            )
+        )
 
     def test_unsigned_measurement_report_never_gets_vintage_weight(self):
         fp = _fingerprint("Am486DX4", 4)
@@ -147,6 +156,18 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         fp = _fingerprint("Am486DX4", 4, measurements=False)
         fp["checks"]["simd_identity"] = {"data": {"has_sse": False}}
         self.assertEqual(self._reward("486", fp)["device_arch"], "default")
+
+    def test_missing_current_simd_observation_cannot_hide_modern_flags(self):
+        fp = _fingerprint("Intel Pentium III 800MHz", 6)
+        del fp["checks"]["simd_identity"]
+        self.assertEqual(self._reward("pentium_iii", fp)["device_arch"], "default")
+
+    def test_incomplete_simd_observation_cannot_hide_modern_flags(self):
+        fp = _fingerprint("Intel Pentium III 800MHz", 6)
+        fp["checks"]["simd_identity"] = _check(
+            simd_flags_count=32, sample_flags=["fpu"],
+        )
+        self.assertEqual(self._reward("pentium_iii", fp)["device_arch"], "default")
 
     def test_modern_passed_simd_clamps_vintage_claim(self):
         fp = _fingerprint(
@@ -215,7 +236,11 @@ class X86VintageRewardValidationTest(unittest.TestCase):
 
         dothan = _fingerprint(
             "Intel Pentium M 2000MHz", 6,
-            simd_identity=_check(sample_flags=["sse2"]),
+            simd_identity=_check(
+                arch="i686", simd_flags_count=1,
+                has_sse=True, has_avx=False, has_altivec=False, has_neon=False,
+                sample_flags=["sse2"],
+            ),
         )
         self.assertEqual(self._reward("pentium_m_dothan", dothan)["device_arch"], "pentium_m_dothan")
 
@@ -232,10 +257,36 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         )
         self.assertEqual(self._reward("pentium_m_yonah", yonah)["device_arch"], "default")
 
+    def test_linux_pni_alias_exceeds_dothan(self):
+        fp = _fingerprint(
+            "Intel Pentium M 2000MHz", 6,
+            simd_identity=_check(
+                arch="i686", simd_flags_count=2,
+                has_sse=True, has_avx=False, has_altivec=False, has_neon=False,
+                sample_flags=["sse2", "pni"],
+            ),
+        )
+        self.assertEqual(self._reward("pentium_m_dothan", fp)["device_arch"], "default")
+
+    def test_amd_sse4a_alias_exceeds_all_pentium_m_subtypes(self):
+        fp = _fingerprint(
+            "Intel Pentium M 2.0GHz", 6,
+            simd_identity=_check(
+                arch="i686", simd_flags_count=2,
+                has_sse=True, has_avx=False, has_altivec=False, has_neon=False,
+                sample_flags=["sse2", "sse4a"],
+            ),
+        )
+        self.assertEqual(self._reward("pentium_m_yonah", fp)["device_arch"], "default")
+
     def test_pentium_iii_sse_is_legitimate(self):
         fp = _fingerprint(
             "Intel(R) Pentium(R) III 800MHz", 6,
-            simd_identity=_check(has_sse=True, has_avx=False, sample_flags=["sse"]),
+            simd_identity=_check(
+                arch="i686", simd_flags_count=1,
+                has_sse=True, has_avx=False, has_altivec=False, has_neon=False,
+                sample_flags=["sse"],
+            ),
         )
         self.assertEqual(self._reward("pentium_iii", fp)["device_arch"], "pentium_iii")
 

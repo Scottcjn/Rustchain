@@ -2794,6 +2794,33 @@ def _simd_measurement_has_feature(data: dict, feature: str) -> bool:
     return any(flag.startswith(feature) for flag in normalized)
 
 
+def _has_complete_x86_simd_observation(data: dict) -> bool:
+    """Require the current producer's full-count and boolean SIMD schema.
+
+    The dedicated producer computes feature booleans from the complete CPU flag
+    list even though ``sample_flags`` is bounded. Requiring this observation
+    prevents a caller from omitting SIMD entirely and using another measurement
+    to hide modern flags beyond the age oracle's truncated sample.
+    """
+    flags = data.get("sample_flags")
+    count = data.get("simd_flags_count")
+    feature_values = tuple(
+        data.get(f"has_{feature}") for feature in ("sse", "avx", "altivec", "neon")
+    )
+    if not isinstance(flags, list) or not _is_positive_measurement(count):
+        return False
+    normalized = [
+        flag.strip().lower() for flag in flags
+        if isinstance(flag, str) and flag.strip()
+    ]
+    return (
+        bool(normalized)
+        and len(normalized) == len(flags)
+        and len(normalized) <= float(count)
+        and all(isinstance(value, bool) for value in feature_values)
+    )
+
+
 def _simd_measurement_exceeds_vintage_arch(data: dict, claimed_arch: str) -> bool:
     """Reject sampled x86 SIMD generations newer than the claimed CPU.
 
@@ -2809,9 +2836,13 @@ def _simd_measurement_exceeds_vintage_arch(data: dict, claimed_arch: str) -> boo
         flag.strip().lower().replace(".", "_") for flag in flags
         if isinstance(flag, str) and flag.strip()
     }
+    # Linux exposes SSE3 as ``pni`` on many x86 CPUs; AMD exposes its later
+    # non-Intel generation as ``sse4a``. Both must participate in the same
+    # ceiling as the more obvious SSE spellings.
     sse_generations = {
-        flag for flag in normalized
-        if re.fullmatch(r"(?:sse(?:[2-4](?:_[12])?)?|ssse3)", flag)
+        "sse3" if flag == "pni" else flag
+        for flag in normalized
+        if re.fullmatch(r"(?:sse(?:[2-4](?:_[12])?|4a)?|ssse3|pni)", flag)
     }
     allowed = {
         "pentium_iii": {"sse"},
@@ -2897,6 +2928,10 @@ def _derive_enroll_weight_device(
         _fingerprint_check_data(fingerprint, "simd_identity"),
         _fingerprint_check_data(fingerprint, "simd_bias"),
     )
+    simd_observation_complete = any(
+        _has_complete_x86_simd_observation(data)
+        for data in simd_observations
+    )
     # SSE is legitimate positive evidence on Pentium III and Pentium M, but is
     # a contradiction for older tiers. AVX contradicts every vintage tier.
     has_avx = any(_simd_measurement_has_feature(data, "avx") for data in simd_observations)
@@ -2917,7 +2952,13 @@ def _derive_enroll_weight_device(
         and claimed_arch not in {"pentium_iii", "pentium_m_banias", "pentium_m_dothan", "pentium_m_yonah"}
     )
 
-    if not oracle_complete or not brand_result or not has_measurement or modern_simd:
+    if (
+        not oracle_complete
+        or not brand_result
+        or not has_measurement
+        or not simd_observation_complete
+        or modern_simd
+    ):
         return {"device_family": "x86", "device_arch": "default"}
 
     observed_arch, expected_family = brand_result
