@@ -23,46 +23,73 @@ from typing import List, Tuple, Dict
 logger = logging.getLogger(__name__)
 
 try:
-    from rip_309_measurement_rotation import get_reward_active_fingerprint_checks
+    from rip_309_measurement_rotation import (
+        ALL_FP_CHECKS,
+        derive_reward_measurement_nonce,
+        get_reward_active_fingerprint_checks,
+    )
 except ImportError:  # package-style import from repo root
-    from .rip_309_measurement_rotation import get_reward_active_fingerprint_checks
+    from .rip_309_measurement_rotation import (
+        ALL_FP_CHECKS,
+        derive_reward_measurement_nonce,
+        get_reward_active_fingerprint_checks,
+    )
 
-ROTATING_FINGERPRINT_CHECKS = (
-    "clock_drift",
-    "cache_timing",
-    "simd_bias",
-    "thermal_drift",
-    "instruction_jitter",
-    "anti_emulation",
-)
+# FIX 2026-07-25: previously used "simd_bias" while payloads and the reward
+# path use "simd_identity". Canonical names now come from
+# rip_309_measurement_rotation.ALL_FP_CHECKS.
+ROTATING_FINGERPRINT_CHECKS = tuple(ALL_FP_CHECKS)
 ACTIVE_FINGERPRINT_CHECK_COUNT = 4
 
 
+def _mirror_simd_aliases(checks_map: dict) -> dict:
+    """Mirror simd_bias <-> simd_identity so maps keyed by either name
+    evaluate identically against the canonical active-check names."""
+    if not isinstance(checks_map, dict):
+        return {}
+    if "simd_bias" in checks_map and "simd_identity" not in checks_map:
+        checks_map["simd_identity"] = checks_map["simd_bias"]
+    if "simd_identity" in checks_map and "simd_bias" not in checks_map:
+        checks_map["simd_bias"] = checks_map["simd_identity"]
+    return checks_map
+
+
 def derive_measurement_nonce(previous_epoch_block_hash: str) -> str:
-    previous_epoch_block_hash = (previous_epoch_block_hash or ("0" * 64)).strip().lower()
-    seed = f"rip-309:{previous_epoch_block_hash}".encode()
-    return hashlib.sha256(seed).hexdigest()
+    """Canonical RIP-309 nonce (hex). Delegates to rip_309_measurement_rotation.
+
+    FIX 2026-07-25: previously sha256("rip-309:" + hash), which diverged from
+    the settlement/reward nonce sha256(hash_bytes + b"measurement_nonce").
+    """
+    normalized = (previous_epoch_block_hash or ("0" * 64)).strip().lower()
+    try:
+        hash_bytes = bytes.fromhex(normalized)
+    except ValueError:
+        hash_bytes = bytes.fromhex("0" * 64)
+    return derive_reward_measurement_nonce(hash_bytes).hex()
 
 
 def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_count: int = ACTIVE_FINGERPRINT_CHECK_COUNT) -> Tuple[str, ...]:
     # T3.6: fail CLOSED — activate ALL checks — when the previous block hash is
-    # unavailable (empty, or the all-zeros fallback used by derive_measurement_nonce).
-    # A predictable rotation seed would otherwise let an attacker know exactly which
-    # 4-of-6 subset is active and pass only those. Mirrors the integrated node's
-    # select_active_fingerprint_checks and the reward path's
-    # get_reward_active_fingerprint_checks (which already fail closed on no prev hash).
-    # This selector is a legacy/duplicate — the live reward path uses
-    # get_reward_active_fingerprint_checks — hardened for consistency so an alternate
-    # import can't reintroduce the predictable subset.
+    # unavailable (empty, all-zeros fallback, or not valid hex). A predictable
+    # rotation seed would otherwise let an attacker know exactly which 4-of-6
+    # subset is active and pass only those.
+    #
+    # FIX 2026-07-25: this legacy/duplicate selector now DELEGATES to the tested
+    # canonical helper get_reward_active_fingerprint_checks so an alternate
+    # import cannot reintroduce a divergent subset.
+    if active_count != ACTIVE_FINGERPRINT_CHECK_COUNT:
+        raise ValueError(
+            f"select_active_fingerprint_checks only supports the canonical "
+            f"{ACTIVE_FINGERPRINT_CHECK_COUNT}-of-{len(ROTATING_FINGERPRINT_CHECKS)} rotation"
+        )
     normalized = (previous_epoch_block_hash or "").strip().lower()
     if not normalized or normalized == ("0" * 64):
         return tuple(ROTATING_FINGERPRINT_CHECKS)
-    nonce = derive_measurement_nonce(previous_epoch_block_hash)
-    ranked = sorted(
-        ROTATING_FINGERPRINT_CHECKS,
-        key=lambda name: hashlib.sha256(f"{nonce}:{name}".encode()).hexdigest(),
-    )
-    return tuple(ranked[:active_count])
+    try:
+        hash_bytes = bytes.fromhex(normalized)
+    except ValueError:
+        return tuple(ROTATING_FINGERPRINT_CHECKS)
+    return tuple(get_reward_active_fingerprint_checks(hash_bytes))
 
 # Genesis timestamp (adjust to actual genesis block timestamp)
 GENESIS_TIMESTAMP = 1764706927  # First actual block (Dec 2, 2025)
@@ -742,6 +769,7 @@ def calculate_epoch_rewards_time_aged(
             checks_map = json.loads(checks_json) if checks_json else {}
         except Exception:
             checks_map = {}
+        checks_map = _mirror_simd_aliases(checks_map)
         active_passed = all(checks_map.get(c, True) for c in active_checks)
         if not active_passed:
             print(f"[RIP-309] {miner_id[:20]}... failed active check(s) -> weight=0")

@@ -23,6 +23,23 @@ try:
 except ImportError:
     from node.db_helpers import fetch_page
 
+# RIP-309 canonical rotation algorithm. The enroll side, finalize_epoch and the
+# reward path (rip_200_round_robin_1cpu1vote.calculate_epoch_rewards_time_aged)
+# must all agree on which 4-of-6 fingerprint checks are active for an epoch,
+# so they all delegate to this single tested implementation.
+try:
+    from rip_309_measurement_rotation import (
+        ALL_FP_CHECKS as RIP309_ALL_FP_CHECKS,
+        derive_reward_measurement_nonce as rip309_derive_reward_measurement_nonce,
+        get_reward_active_fingerprint_checks as rip309_get_reward_active_fingerprint_checks,
+    )
+except ImportError:
+    from node.rip_309_measurement_rotation import (
+        ALL_FP_CHECKS as RIP309_ALL_FP_CHECKS,
+        derive_reward_measurement_nonce as rip309_derive_reward_measurement_nonce,
+        get_reward_active_fingerprint_checks as rip309_get_reward_active_fingerprint_checks,
+    )
+
 # Hardware Binding v2.0 - Anti-Spoof with Entropy Validation
 try:
     from hardware_binding_v2 import bind_hardware_v2, extract_entropy_profile
@@ -2173,22 +2190,47 @@ def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
     return {}
 
 
-RIP309_ROTATING_FINGERPRINT_CHECKS = (
-    "clock_drift",
-    "cache_timing",
-    "simd_bias",
-    "thermal_drift",
-    "instruction_jitter",
-    "anti_emulation",
-)
+# FIX 2026-07-25: this tuple previously used "simd_bias" while the settlement
+# and reward paths (and the miner payloads) use "simd_identity". The canonical
+# name list now comes from rip_309_measurement_rotation.ALL_FP_CHECKS.
+# _fingerprint_checks_map() still mirrors simd_bias <-> simd_identity so
+# payloads using either name evaluate identically.
+RIP309_ROTATING_FINGERPRINT_CHECKS = tuple(RIP309_ALL_FP_CHECKS)
 RIP309_ACTIVE_FINGERPRINT_CHECKS = 4
 RIP309_NONCE_FALLBACK = "0" * 64
 
 
+def _rip309_prev_hash_bytes(previous_epoch_block_hash: str):
+    """Normalize a hex previous-block-hash string to bytes.
+
+    Returns None when the hash is unavailable: empty, whitespace, the
+    all-zeros fallback, or not valid hex. Callers fail CLOSED (all checks
+    active) on None.
+    """
+    normalized = (previous_epoch_block_hash or "").strip().lower()
+    if not normalized or normalized == RIP309_NONCE_FALLBACK:
+        return None
+    try:
+        return bytes.fromhex(normalized)
+    except ValueError:
+        return None
+
+
 def derive_measurement_nonce(previous_epoch_block_hash: str) -> str:
-    previous_epoch_block_hash = (previous_epoch_block_hash or RIP309_NONCE_FALLBACK).strip().lower()
-    seed = f"rip-309:{previous_epoch_block_hash}".encode()
-    return hashlib.sha256(seed).hexdigest()
+    """Canonical RIP-309 measurement nonce (hex string).
+
+    FIX 2026-07-25: this previously computed sha256("rip-309:" + hash) while
+    finalize_epoch and the reward path computed
+    sha256(hash_bytes + b"measurement_nonce"), so the enroll side and the
+    settlement side rotated DIFFERENT 4-of-6 subsets for the same epoch.
+    Now delegates to rip_309_measurement_rotation.derive_reward_measurement_nonce
+    so all paths agree. Unavailable/invalid hashes hash the all-zeros bytes
+    (the selection path fails closed to all checks regardless).
+    """
+    hash_bytes = _rip309_prev_hash_bytes(previous_epoch_block_hash)
+    if hash_bytes is None:
+        hash_bytes = bytes.fromhex(RIP309_NONCE_FALLBACK)
+    return rip309_derive_reward_measurement_nonce(hash_bytes).hex()
 
 
 def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_count: int = RIP309_ACTIVE_FINGERPRINT_CHECKS) -> tuple:
@@ -2196,19 +2238,23 @@ def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_coun
     # read error → the all-zeros fallback), the rotation seed is fully predictable, so
     # an attacker would know exactly which 4-of-6 subset is active and could prepare to
     # pass only those, leaving the other two checks effectively optional. Fail CLOSED —
-    # activate ALL checks — matching the sibling paths that already do so when no prev
-    # hash is available: the reward path
+    # activate ALL checks — matching the reward path
     # (rip_309_measurement_rotation.get_reward_active_fingerprint_checks) and
-    # finalize_epoch's inline selection both activate all six on an empty hash.
-    normalized = (previous_epoch_block_hash or "").strip().lower()
-    if not normalized or normalized == RIP309_NONCE_FALLBACK:
+    # finalize_epoch, which activate all six on an empty hash.
+    #
+    # FIX 2026-07-25: selection now DELEGATES to the tested canonical helper
+    # rip_309_measurement_rotation.get_reward_active_fingerprint_checks instead
+    # of the old sorted-per-name-hash algorithm, so the subset granted weight at
+    # enroll is the same subset vetoed against at settlement.
+    if active_count != RIP309_ACTIVE_FINGERPRINT_CHECKS:
+        raise ValueError(
+            f"select_active_fingerprint_checks only supports the canonical "
+            f"{RIP309_ACTIVE_FINGERPRINT_CHECKS}-of-{len(RIP309_ROTATING_FINGERPRINT_CHECKS)} rotation"
+        )
+    hash_bytes = _rip309_prev_hash_bytes(previous_epoch_block_hash)
+    if hash_bytes is None:
         return tuple(RIP309_ROTATING_FINGERPRINT_CHECKS)
-    nonce = derive_measurement_nonce(previous_epoch_block_hash)
-    ranked = sorted(
-        RIP309_ROTATING_FINGERPRINT_CHECKS,
-        key=lambda name: hashlib.sha256(f"{nonce}:{name}".encode()).hexdigest(),
-    )
-    return tuple(ranked[:active_count])
+    return tuple(rip309_get_reward_active_fingerprint_checks(hash_bytes))
 
 
 def _fingerprint_check_passed(check_entry) -> bool:
@@ -3531,9 +3577,32 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
             print(f"[FINGERPRINT] REJECT: anti_emulation claims pass but has no raw evidence")
             return False, "anti_emulation_no_evidence"
 
-        if anti_emu_check.get("passed") == False:
+        anti_emu_passed = anti_emu_check.get("passed")
+        if anti_emu_passed is False:
             vm_indicators = anti_emu_data.get("vm_indicators", [])
             return False, f"vm_detected:{vm_indicators}"
+
+        # FIX 2026-07-25: inspect the evidence CONTENT, not just its presence.
+        # Previously {"passed": true, "data": {"vm_indicators": ["qemu"]}}
+        # satisfied has_evidence and was ACCEPTED — the server held the string
+        # "qemu" and never looked at it. Non-empty vm_indicators means the
+        # client's own check found a VM, whatever the claimed verdict says.
+        # Honest real hardware reports vm_indicators: [] (empty list), so this
+        # rejects nothing legitimate.
+        vm_indicators = anti_emu_data.get("vm_indicators")
+        if isinstance(vm_indicators, list) and vm_indicators:
+            print(f"[FINGERPRINT] REJECT: anti_emulation evidence lists VM indicators despite claimed pass: {vm_indicators}")
+            return False, f"vm_self_reported:{vm_indicators}"
+        if anti_emu_data.get("is_likely_vm"):
+            print(f"[FINGERPRINT] REJECT: anti_emulation evidence sets is_likely_vm despite claimed pass")
+            return False, "vm_self_reported:is_likely_vm"
+
+        # FIX 2026-07-25: "== False" let a payload that OMITS the verdict key
+        # skip both the pass and fail branches entirely. Anything other than a
+        # literal true verdict is now rejected. (This dict branch does not
+        # affect the bool-format C miners handled below.)
+        if anti_emu_passed is not True:
+            return False, "anti_emulation_no_verdict"
     elif isinstance(anti_emu_check, bool):
         # C miner simple bool - accept for now but flag for reduced weight
         if not anti_emu_check:
@@ -3559,8 +3628,14 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
         if cv < 0.0001 and cv != 0:
             return False, "timing_too_uniform"
 
-        if clock_check.get("passed") == False:
+        clock_passed = clock_check.get("passed")
+        if clock_passed is False:
             return False, f"clock_drift_failed:{clock_data.get('fail_reason', 'unknown')}"
+        # FIX 2026-07-25: "== False" let an omitted verdict key skip both
+        # branches. A dict-format clock_drift check must carry a literal true
+        # verdict. (Bool-format C miner checks are handled in the elif below.)
+        if clock_passed is not True:
+            return False, "clock_drift_no_verdict"
 
         # Cross-validate: vintage hardware should have MORE drift
         claimed_arch = (claimed_device.get("device_arch") or
@@ -3572,6 +3647,27 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     elif isinstance(clock_check, bool):
         if not clock_check:
             return False, "clock_drift_failed_bool"
+
+    # ── PHASE 1.5: verdict/evidence contradiction scan (FIX 2026-07-25) ──
+    # Same presence-not-content pattern as anti_emulation, generalized: every
+    # check's data can carry a fail_reason (cache_timing, simd_identity,
+    # thermal_drift, instruction_jitter, rom_fingerprint, device_age_oracle,
+    # pico bridge fail_reasons). A check whose data records a failure while its
+    # verdict claims pass is self-contradictory: the client ran the check,
+    # logged the failure, and flipped the flag. Honest clients only set
+    # fail_reason when passed is false, so this rejects nothing legitimate.
+    for _cname, _centry in checks.items():
+        if not isinstance(_centry, dict):
+            continue
+        _cdata = _centry.get("data", {})
+        if not isinstance(_cdata, dict):
+            continue
+        if _centry.get("passed") is True:
+            _freason = _cdata.get("fail_reason")
+            _freasons = _cdata.get("fail_reasons")
+            if _freason or (isinstance(_freasons, list) and _freasons):
+                print(f"[FINGERPRINT] REJECT: {_cname} claims pass but data records failure: {_freason or _freasons}")
+                return False, f"check_self_reported_failure:{_cname}:{_freason or _freasons}"
 
     # ── PHASE 2: Cross-validate device claims against fingerprint ──
     # FIX #1147: Defensive type checking for claimed_arch
@@ -3607,28 +3703,50 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
             return False, f"missing_powerpc_cache_profile:{claimed_arch}"
 
     # ── PHASE 3: ROM fingerprint (retro platforms) ──
-    rom_passed, rom_data = get_check_status(checks.get("rom_fingerprint"))
+    rom_check = checks.get("rom_fingerprint")
+    rom_passed, rom_data = get_check_status(rom_check)
     if not isinstance(rom_data, dict):
         rom_data = {}
-    if rom_passed == False:
+    if rom_passed is False:
         return False, f"rom_check_failed:{rom_data.get('fail_reason', 'unknown')}"
+    # FIX 2026-07-25: "== False" let a dict rom check with "passed": null (or
+    # any other non-true verdict) skip both branches. A missing rom check, or
+    # a dict without a "passed" key, still defaults to pass via
+    # get_check_status — only an explicit non-true verdict is rejected here.
+    if rom_passed is not True:
+        return False, "rom_check_no_verdict"
     if rom_data.get("emulator_detected"):
         return False, f"known_emulator_rom:{rom_data.get('detection_details', [])}"
+    # FIX 2026-07-25: content check — the client only records detection_details
+    # when it matched a known emulator ROM. Non-empty details with a forged
+    # emulator_detected=false is still an emulator self-report.
+    if rom_data.get("detection_details"):
+        return False, f"known_emulator_rom:{rom_data.get('detection_details')}"
 
-    # ── PHASE 4: Overall check with hard/soft distinction ──
-    if fingerprint.get("all_passed") == False:
-        SOFT_CHECKS = {"cache_timing"}
-        # FIX 2026-02-28: For vintage archs, clock_drift is soft (may not be available)
-        if is_vintage:
-            SOFT_CHECKS = SOFT_CHECKS | {"clock_drift"}
-        failed_checks = []
-        for k, v in checks.items():
-            passed, _ = get_check_status(v)
-            if not passed:
-                failed_checks.append(k)
-        hard_failures = [c for c in failed_checks if c not in SOFT_CHECKS]
-        if hard_failures:
-            return False, f"checks_failed:{hard_failures}"
+    # ── PHASE 4: Per-check verdict scan with hard/soft distinction ──
+    # FIX 2026-07-25: previously this entire scan was gated on
+    # fingerprint.get("all_passed") == False, so a payload that claimed
+    # all_passed=true (or omitted the key) while embedding individually failed
+    # checks (thermal_drift, instruction_jitter, simd_identity, ...) was
+    # accepted as "valid". The checks themselves are now scanned regardless of
+    # the client's self-reported overall verdict.
+    SOFT_CHECKS = {"cache_timing"}
+    # FIX 2026-02-28: For vintage archs, clock_drift is soft (may not be available)
+    if is_vintage:
+        SOFT_CHECKS = SOFT_CHECKS | {"clock_drift"}
+    failed_checks = []
+    for k, v in checks.items():
+        passed, _ = get_check_status(v)
+        if not passed:
+            failed_checks.append(k)
+    hard_failures = [c for c in failed_checks if c not in SOFT_CHECKS]
+    if hard_failures:
+        return False, f"checks_failed:{hard_failures}"
+    if fingerprint.get("all_passed") is False and not failed_checks:
+        # Client reports an overall failure but shows no failed check —
+        # internally inconsistent payload.
+        return False, "all_passed_false_unattributed"
+    if failed_checks:
         print(f"[FINGERPRINT] Soft check failures only (OK): {failed_checks}")
         return True, f"soft_checks_warn:{failed_checks}"
 
@@ -3985,15 +4103,12 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             print(f"[SECURITY] No valid miners for epoch {epoch} after filtering")
             return
         
-        # RIP-309: Determine active fingerprint checks for this epoch
-        fp_checks = ['clock_drift', 'cache_timing', 'simd_identity',
-                     'thermal_drift', 'instruction_jitter', 'anti_emulation']
-        if prev_block_hash:
-            nonce = hashlib.sha256(prev_block_hash + b"measurement_nonce").digest()
-            seed = int.from_bytes(nonce[:4], 'big')
-            active_checks = set(__import__('random').Random(seed).sample(fp_checks, 4))
-        else:
-            active_checks = set(fp_checks)
+        # RIP-309: Determine active fingerprint checks for this epoch.
+        # FIX 2026-07-25: delegate to the canonical tested helper instead of an
+        # inline copy of the algorithm. Behavior is identical (same nonce, same
+        # random.Random sample, same empty-hash all-active fallback); this just
+        # removes one of the divergent implementations.
+        active_checks = set(rip309_get_reward_active_fingerprint_checks(prev_block_hash))
         print(f"[RIP-309] finalize_epoch {epoch} active checks: {sorted(active_checks)}")
 
         # Adjust weights based on active fingerprint checks
@@ -4019,6 +4134,16 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                             checks_map = json.loads(fp_row[0])
                         except Exception:
                             pass
+                    # FIX 2026-07-25: mirror simd_bias <-> simd_identity so a
+                    # stored map keyed by either name is evaluated against the
+                    # canonical active-check names.
+                    if isinstance(checks_map, dict):
+                        if "simd_bias" in checks_map and "simd_identity" not in checks_map:
+                            checks_map["simd_identity"] = checks_map["simd_bias"]
+                        if "simd_identity" in checks_map and "simd_bias" not in checks_map:
+                            checks_map["simd_bias"] = checks_map["simd_identity"]
+                    else:
+                        checks_map = {}
                     active_passed = all(checks_map.get(chk, True) for chk in active_checks)
                     if not active_passed:
                         print(f"[RIP-309] {pk[:20]}... failed active check(s) in finalize_epoch -> weight=0")
