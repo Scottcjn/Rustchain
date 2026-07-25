@@ -9001,11 +9001,21 @@ def _backup_age_hours():
     return None
 
 def _tip_age_slots():
-    """Check tip freshness - query DB directly to avoid Response object"""
+    """Check tip freshness - query DB directly to avoid Response object
+
+    Returns the number of slots since the most recent header, or None if
+    the headers table is empty or the query fails.  A healthy chain that
+    produces one block per slot should have an age of 0-2 slots.
+    """
     try:
         with sqlite3.connect(DB_PATH, timeout=3) as db:
             row = db.execute("SELECT slot FROM headers ORDER BY slot DESC LIMIT 1").fetchone()
-        return 0 if row else None
+        if row is None:
+            return None
+        latest_slot = row[0]
+        now_slot = current_slot()
+        age = now_slot - latest_slot
+        return max(0, age)
     except Exception:
         return None
 
