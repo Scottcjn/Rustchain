@@ -2922,7 +2922,7 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
                 device_arch = excluded.device_arch,
                 source_ip = excluded.source_ip,
                 fingerprint_passed = MAX(miner_attest_recent.fingerprint_passed, excluded.fingerprint_passed),
-                signing_pubkey = excluded.signing_pubkey,
+                signing_pubkey = COALESCE(miner_attest_recent.signing_pubkey, excluded.signing_pubkey),
                 fingerprint_checks_json = excluded.fingerprint_checks_json
         """, (miner, now, verified_device["device_family"], verified_device["device_arch"], entropy_score, new_fp, source_ip, signing_pubkey, fingerprint_checks_json))
         _ = append_fingerprint_snapshot(conn, miner, fingerprint if isinstance(fingerprint, dict) else {}, now)
@@ -4100,6 +4100,69 @@ def _submit_attestation_impl():
     pubkey_hex = (raw_pubkey or '').strip().lower()
     miner_id_raw = _attest_valid_miner(data.get('miner_id')) or miner
     commitment = report.get('commitment') or ''
+
+    # ── Signature enforcement (#8016) ──────────────────────────────
+    # Unsigned attestations used to bypass all verification, allowing anyone
+    # to impersonate a wallet. Now we scope the exemption per-miner:
+    # unsigned is accepted only when the miner has NO signing key on file
+    # (trust-on-first-use), or when explicitly listed in the operator allowlist.
+    # Once a key is pinned, all future attestations for that miner must be signed
+    # and the public key must derive to the miner's own RTC address.
+    has_signature = bool(sig_hex and pubkey_hex)
+    stored_signing_pubkey = None
+    try:
+        with closing(sqlite3.connect(DB_PATH)) as _sk_conn:
+            _row = _sk_conn.execute(
+                "SELECT signing_pubkey FROM miner_attest_recent WHERE miner = ?",
+                (miner,)
+            ).fetchone()
+            if _row and _row[0]:
+                stored_signing_pubkey = _row[0]
+    except Exception:
+        pass  # Table or column may not exist yet
+
+    if not has_signature:
+        _allowlist_raw = os.environ.get('RTC_UNSIGNED_ATTEST_ALLOWLIST', '')
+        _allowlist = {a.strip().lower() for a in _allowlist_raw.split(',') if a.strip()}
+        if stored_signing_pubkey and miner.lower() not in _allowlist:
+            return jsonify({
+                "ok": False,
+                "error": "missing_signature",
+                "message": "Ed25519 signature required — a signing key is already on file for this wallet",
+                "code": "MISSING_SIGNATURE",
+            }), 400
+        # unsigned is acceptable for first-time miners and allowlisted vintage hardware
+    else:
+        # Bind the provided public key to the claimed wallet identity.
+        # For RTC-format addresses the key must derive to the miner address,
+        # preventing key substitution attacks.
+        if miner.startswith('RTC'):
+            try:
+                derived = address_from_pubkey(pubkey_hex)
+                if derived != miner:
+                    print(f"[ATTEST/SIG] PUBKEY-ADDRESS MISMATCH: miner={miner[:20]}... "
+                          f"derived={derived[:20]}...")
+                    return jsonify({
+                        "ok": False,
+                        "error": "pubkey_address_mismatch",
+                        "message": "The public key does not correspond to this wallet address",
+                        "code": "PUBKEY_ADDRESS_MISMATCH",
+                    }), 400
+            except Exception:
+                pass  # Malformed pubkey — will be caught by signature verification below
+
+        # If a key is already stored, the provided key must match it.
+        # This prevents key rotation via a freshly generated keypair.
+        if stored_signing_pubkey and pubkey_hex != stored_signing_pubkey:
+            print(f"[ATTEST/SIG] KEY ROTATION BLOCKED: miner={miner[:20]}... "
+                  f"provided={pubkey_hex[:16]}... stored={stored_signing_pubkey[:16]}...")
+            return jsonify({
+                "ok": False,
+                "error": "signing_key_mismatch",
+                "message": "The provided signing key does not match the key on file",
+                "code": "SIGNING_KEY_MISMATCH",
+            }), 400
+
     if sig_hex and pubkey_hex:
         if HAVE_NACL:
             sign_message = '{}|{}|{}|{}'.format(miner_id_raw, miner, nonce, commitment)
