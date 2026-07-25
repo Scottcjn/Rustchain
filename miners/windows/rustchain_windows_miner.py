@@ -60,21 +60,16 @@ except Exception as e:
 # wallet-hijack via MITM — fingerprint validation still passes but the
 # server has no crypto binding between wallet field and sender.
 try:
-    from miner_crypto import get_or_create_keypair, sign_payload  # noqa: F401
+    from miner_crypto import (  # noqa: F401
+        address_from_pubkey,
+        canonical_json,
+        get_or_create_keypair,
+        sign_payload,
+    )
     CRYPTO_AVAILABLE = True
 except ImportError:
     CRYPTO_AVAILABLE = False
-
-# Shared pipe-message builder (PR #6839 review)
-try:
-    from miners.signing_helpers import build_pipe_sign_message
-    _SIGNING_HELPERS = True
-except ImportError:
-    try:
-        from signing_helpers import build_pipe_sign_message
-        _SIGNING_HELPERS = True
-    except ImportError:
-        _SIGNING_HELPERS = False
+    address_from_pubkey = canonical_json = get_or_create_keypair = sign_payload = None
 
 # Configuration
 RUSTCHAIN_API = "http://50.28.86.131:8088"
@@ -109,13 +104,22 @@ class RustChainWallet:
             return self.create_new_wallet()
 
     def create_new_wallet(self):
-        """Create new wallet with address"""
-        timestamp = str(int(time.time()))
-        random_data = os.urandom(32).hex()
-        wallet_seed = hashlib.sha256(f"{timestamp}{random_data}".encode()).hexdigest()
+        """Create a wallet identity controlled by the persisted signing key."""
+        if CRYPTO_AVAILABLE:
+            keypair = get_or_create_keypair()
+            address = address_from_pubkey(keypair["public_key"])
+        else:
+            # Preserve unsigned legacy operation on minimal installations.
+            # Such an address cannot qualify signed measurements for vintage
+            # reward weight until the operator installs PyNaCl and explicitly
+            # migrates to a key-controlled RTC address.
+            timestamp = str(int(time.time()))
+            random_data = os.urandom(32).hex()
+            wallet_seed = hashlib.sha256(f"{timestamp}{random_data}".encode()).hexdigest()
+            address = f"{wallet_seed[:40]}RTC"
 
         wallet_data = {
-            "address": f"{wallet_seed[:40]}RTC",
+            "address": address,
             "balance": 0.0,
             "created": datetime.now().isoformat(),
             "transactions": []
@@ -571,26 +575,17 @@ class RustChainMiner:
             attestation["pow_proof"] = self._pow_proof
 
         # ── Ed25519 signature ──
-        # Sign the pipe-delimited message that the node verifier reconstructs
-        # (miner_id|miner|nonce|commitment). Previous code signed the canonical
-        # JSON of the full attestation, but the server verifies the pipe-string,
-        # causing every signed attestation to fail with INVALID_SIGNATURE.
-        # See issue #6798.
+        # Sign the exact canonical JSON payload before adding signature fields.
+        # The full-payload binding is required before hardware measurements can
+        # affect vintage reward weight.
         if CRYPTO_AVAILABLE and self.keypair:
             try:
-                if _SIGNING_HELPERS:
-                    sign_msg = build_pipe_sign_message(attestation)
-                else:
-                    sign_msg = "{}|{}|{}|{}".format(
-                        attestation["miner_id"],
-                        attestation["miner"],
-                        attestation["nonce"],
-                        attestation["report"]["commitment"],
-                    ).encode("utf-8")
-                signature = sign_payload(sign_msg, self.keypair["private_key"])
+                signature = sign_payload(
+                    canonical_json(attestation), self.keypair["private_key"]
+                )
                 attestation["signature"] = signature
                 attestation["public_key"] = self.public_key
-                attestation["signature_type"] = "ed25519"
+                attestation["signature_type"] = "canonical_json"
             except Exception as exc:
                 logging.warning(
                     "attestation signing failed; falling through unsigned: %s", exc

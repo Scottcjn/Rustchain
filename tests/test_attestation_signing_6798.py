@@ -1,22 +1,19 @@
 """
-Regression test for issue #6798:
-Miners must sign the pipe-delimited message (miner_id|miner|nonce|commitment)
-that the node verifier reconstructs, NOT the canonical JSON of the full attestation.
+Regression tests for attestation signing compatibility.
 
-Before the fix, both miners signed canonical JSON, but the server verified
-a pipe-delimited string, causing every signed attestation to fail with
-INVALID_SIGNATURE.
-
-This test imports the actual signing helper used by both miners so that a
-regression in the miner code would be caught here (tri-brain review feedback
-on PR #6839).
+Legacy miners may still use the narrow pipe-delimited MAC, but current stock
+miners must sign canonical JSON over the complete payload so device and
+fingerprint measurements are cryptographically bound to the credited RTC
+identity.
 """
 import json
 import hashlib
 import importlib.util
 import sys
 import os
+import tempfile
 import unittest
+from pathlib import Path
 
 # Add miners/ to path so we can import signing_helpers
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -155,8 +152,8 @@ class TestAttestationSigningMessage(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_pipe_sign_message({"miner_id": "x", "miner": "y"})
 
-    def test_windows_miner_signs_report_nonce(self):
-        """Windows omits top-level nonce but must still submit Ed25519 fields."""
+    def test_windows_miner_signs_full_canonical_payload(self):
+        """Windows must bind device and fingerprint data, not only four fields."""
         spec = importlib.util.spec_from_file_location(
             "windows_miner_report_nonce_signing_test",
             WINDOWS_MINER_PATH,
@@ -190,8 +187,10 @@ class TestAttestationSigningMessage(unittest.TestCase):
 
         miner_mod.FINGERPRINT_AVAILABLE = False
         miner_mod.CRYPTO_AVAILABLE = True
-        miner_mod._SIGNING_HELPERS = True
         miner_mod.sign_payload = fake_sign_payload
+        miner_mod.canonical_json = lambda payload: json.dumps(
+            payload, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
         miner_mod.get_or_create_keypair = lambda: {
             "private_key": "priv",
             "public_key": "pub",
@@ -209,12 +208,48 @@ class TestAttestationSigningMessage(unittest.TestCase):
         attestation = captured["attestation"]
         self.assertNotIn("nonce", attestation)
         self.assertEqual(attestation["signature"], "sig")
-        self.assertEqual(attestation["signature_type"], "ed25519")
+        self.assertEqual(attestation["signature_type"], "canonical_json")
+        signed_payload = {
+            key: value
+            for key, value in attestation.items()
+            if key not in {"signature", "public_key", "signature_type"}
+        }
         self.assertEqual(
             captured["message"],
-            self._node_verifier_reconstruction(attestation).encode("utf-8"),
+            json.dumps(
+                signed_payload, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8"),
         )
         self.assertEqual(captured["private_key"], "priv")
+
+    def test_windows_default_wallet_is_controlled_by_signing_key(self):
+        """Fresh stock wallets must equal address_from_pubkey(public_key)."""
+        spec = importlib.util.spec_from_file_location(
+            "windows_miner_wallet_identity_test",
+            WINDOWS_MINER_PATH,
+        )
+        miner_mod = importlib.util.module_from_spec(spec)
+        self.assertIsNotNone(spec.loader)
+        spec.loader.exec_module(miner_mod)
+
+        public_key = "22" * 32
+        expected = "RTC" + hashlib.sha256(bytes.fromhex(public_key)).hexdigest()[:40]
+        miner_mod.CRYPTO_AVAILABLE = True
+        miner_mod.get_or_create_keypair = lambda: {
+            "private_key": "priv",
+            "public_key": public_key,
+        }
+        miner_mod.address_from_pubkey = (
+            lambda value: "RTC"
+            + hashlib.sha256(bytes.fromhex(value)).hexdigest()[:40]
+        )
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            miner_mod.WALLET_DIR = Path(tmpdir)
+            miner_mod.WALLET_FILE = Path(tmpdir) / "wallet.json"
+            wallet = miner_mod.RustChainWallet()
+
+        self.assertEqual(wallet.wallet_data["address"], expected)
 
 
 if __name__ == "__main__":

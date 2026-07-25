@@ -78,10 +78,11 @@ def _rtc_address_from_public_key(public_key_hex):
     return "RTC" + hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
 
 
-def _attestation_sign_message(attest_miner_id, wallet, nonce, commitment):
-    """Canonical attestation sign-message the node verifies (pipe-delimited):
-    ``miner_id|miner|nonce|commitment``. Must match server verification exactly."""
-    return "{}|{}|{}|{}".format(attest_miner_id, wallet, nonce, commitment)
+def _canonical_attestation_bytes(attestation):
+    """Return the exact full-payload bytes verified by the node."""
+    return json.dumps(
+        attestation, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
 
 
 # DER tag bytes for the Ed25519 algorithm OID (1.3.101.112).
@@ -812,11 +813,16 @@ class MacMiner:
         }
 
         if self.signing_key:
-            sign_message = _attestation_sign_message(
-                attest_miner_id, self.wallet, nonce, commitment
-            )
             attestation["public_key"] = self.signing_pubkey_hex
-            attestation["signature"] = self.signing_key.sign(sign_message.encode()).signature.hex()
+            sign_message = _canonical_attestation_bytes(
+                {
+                    key: value
+                    for key, value in attestation.items()
+                    if key != "public_key"
+                }
+            )
+            attestation["signature"] = self.signing_key.sign(sign_message).signature.hex()
+            attestation["signature_type"] = "canonical_json"
 
         try:
             resp = self.transport.post("/attest/submit", json=attestation, timeout=30)

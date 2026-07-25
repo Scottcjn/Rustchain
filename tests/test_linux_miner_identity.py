@@ -85,6 +85,35 @@ def test_local_miner_can_use_ephemeral_keypair_without_persisting(monkeypatch):
     assert calls == {"ephemeral": 1, "persisted": 0}
 
 
+def test_default_wallet_is_controlled_by_signing_key(monkeypatch):
+    miner = load_miner_module()
+    public_key = "11" * 32
+    expected_wallet = "RTC" + __import__("hashlib").sha256(
+        bytes.fromhex(public_key)
+    ).hexdigest()[:40]
+
+    monkeypatch.setattr(miner, "CRYPTO_AVAILABLE", True)
+    monkeypatch.setattr(miner, "FINGERPRINT_AVAILABLE", False)
+    monkeypatch.setattr(
+        miner,
+        "address_from_pubkey",
+        lambda value: "RTC" + __import__("hashlib").sha256(
+            bytes.fromhex(value)
+        ).hexdigest()[:40],
+    )
+    monkeypatch.setattr(
+        miner,
+        "get_or_create_keypair",
+        lambda: {"private_key": "private", "public_key": public_key},
+    )
+    monkeypatch.setattr(miner, "get_hardware_serial", lambda: "test-serial")
+
+    instance = miner.LocalMiner()
+
+    assert instance.wallet == expected_wallet
+    assert instance.wallet == miner.address_from_pubkey(public_key)
+
+
 def test_main_dry_run_disables_key_persistence(monkeypatch):
     miner = load_miner_module()
     seen = {}

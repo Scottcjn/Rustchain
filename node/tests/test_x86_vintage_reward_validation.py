@@ -63,6 +63,27 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         )
         self.assertTrue(passed, reason)
 
+    def test_honest_tscless_386_486_can_report_failed_clock_drift(self):
+        for arch, brand, family in (
+            ("386", "Am386DX", 3),
+            ("486", "Am486DX4", 4),
+        ):
+            with self.subTest(arch=arch):
+                fp = _fingerprint(brand, family)
+                fp["checks"]["anti_emulation"] = _check(
+                    vm_indicators=[], paths_checked=["/proc/cpuinfo"]
+                )
+                fp["checks"]["clock_drift"] = _check(
+                    False, fail_reason="rdtsc_unavailable"
+                )
+                fp["all_passed"] = False
+                passed, reason = self.mod.validate_fingerprint_data(
+                    fp,
+                    {"family": "x86", "arch": arch},
+                    allow_tscless_x86_reward=True,
+                )
+                self.assertTrue(passed, reason)
+
     def test_tscless_relaxation_is_not_global(self):
         fp = _fingerprint("Am486DX4", 4)
         fp["checks"]["anti_emulation"] = _check(vm_indicators=[], paths_checked=["/proc/cpuinfo"])
@@ -304,6 +325,24 @@ class X86VintageRewardValidationTest(unittest.TestCase):
     def test_real_world_486_dx_slash_brand_is_accepted(self):
         fp = _fingerprint("486 DX/2", 4)
         self.assertEqual(self._reward("486", fp)["device_arch"], "486")
+
+    def test_kernel_model_name_table_vintage_brands_are_accepted(self):
+        cases = (
+            ("Pentium III (Coppermine)", 6, "pentium_iii"),
+            ("Pentium III (Katmai)", 6, "pentium_iii"),
+            ("Pentium II (Deschutes)", 6, "pentium_ii"),
+            ("Pentium II (Klamath)", 6, "pentium_ii"),
+            ("Mobile Pentium II", 6, "pentium_ii"),
+            ("Pentium 75 - 200", 5, "pentium"),
+            ("Pentium 60/66", 5, "pentium"),
+            ("Am5x86-WT", 4, "486"),
+            ("Cyrix Cx486DX2", 4, "486"),
+            ("Intel(R) Pentium(R) III CPU family 1400MHz", 6, "pentium_iii"),
+        )
+        for brand, family, arch in cases:
+            with self.subTest(brand=brand):
+                fp = _fingerprint(brand, family)
+                self.assertEqual(self._reward(arch, fp)["device_arch"], arch)
 
     def test_pentium_m_claim_is_disambiguated_down_only(self):
         fp = _fingerprint("Intel(R) Pentium(R) M processor 1600MHz", 6)

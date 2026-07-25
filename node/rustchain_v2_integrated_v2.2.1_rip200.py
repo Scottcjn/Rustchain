@@ -2857,15 +2857,33 @@ def _classify_validated_x86_brand(cpu_brand: str):
     """Map an anchored CPU brand to (reward arch, CPUID family)."""
     brand = " ".join(str(cpu_brand or "").strip().split()).lower()
     vendor = r"(?:(?:genuineintel|authenticamd|intel(?:\(r\))?|amd)\s+)?"
+    speed = r"\d+(?:\.\d+)?(?:\s*[-/]\s*\d+(?:\.\d+)?)?\s*(?:mhz|ghz)?"
     patterns = (
         ("386", 3, rf"^{vendor}(?:i?80386|i?386|am386)(?:[\s/-]?[a-z0-9]+)*$"),
-        ("486", 4, rf"^{vendor}(?:i?80486|i?486|am486)(?:[\s/-]?[a-z0-9]+)*$"),
+        (
+            "486",
+            4,
+            rf"^{vendor}(?:(?:i?80486|i?486|am486)(?:[\s/-]?[a-z0-9]+)*|"
+            rf"am5x86(?:-[a-z0-9]+)?|cyrix\s+cx486(?:[a-z0-9/-]+)?)$",
+        ),
         ("pentium_mmx", 5, rf"^{vendor}pentium(?:\(r\))?\s+mmx(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
         ("pentium_pro", 6, rf"^{vendor}pentium(?:\(r\))?\s+pro(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
-        ("pentium_iii", 6, rf"^{vendor}pentium(?:\(r\))?\s+iii(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
-        ("pentium_ii", 6, rf"^{vendor}pentium(?:\(r\))?\s+ii(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        (
+            "pentium_iii",
+            6,
+            rf"^{vendor}pentium(?:\(r\))?\s+iii"
+            rf"(?:\s+\((?:katmai|coppermine|tualatin)\)|"
+            rf"(?:\s+(?:cpu|processor))?(?:\s+family)?(?:\s+{speed})?)$",
+        ),
+        (
+            "pentium_ii",
+            6,
+            rf"^{vendor}(?:mobile\s+)?pentium(?:\(r\))?\s+ii"
+            rf"(?:\s+\((?:klamath|deschutes|dixon)\)|"
+            rf"(?:\s+(?:cpu|processor))?(?:\s+{speed})?)$",
+        ),
         ("pentium_m", 6, rf"^{vendor}pentium(?:\(r\))?\s+m(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
-        ("pentium", 5, rf"^{vendor}pentium(?:\(r\))?(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        ("pentium", 5, rf"^{vendor}pentium(?:\(r\))?(?:\s+(?:cpu|processor))?(?:\s+{speed})?$"),
     )
     for arch, cpu_family, pattern in patterns:
         if re.fullmatch(pattern, brand, flags=re.IGNORECASE):
@@ -3860,8 +3878,9 @@ def validate_fingerprint_data(
         if isinstance(check_entry, dict) and not check_entry.get("data"):
             return False, f"empty_check_data:{check_name}"
 
-    # If vintage and clock_drift IS present, still validate it (do not skip)
-    # This only relaxes the REQUIREMENT, not the validation
+    # If vintage and clock_drift IS present, its raw metrics are still
+    # validated. A plain unavailable/failed result is soft only for the
+    # pre-RDTSC 386/486 reward path.
 
     def get_check_status(check_data):
         """Handle both bool and dict formats for check results"""
@@ -3925,7 +3944,13 @@ def validate_fingerprint_data(
         if cv < 0.0001 and cv != 0:
             return False, "timing_too_uniform"
 
-        if clock_check.get("passed") == False:
+        if (
+            clock_check.get("passed") == False
+            and not (
+                allow_tscless_x86_reward
+                and claimed_arch_lower in {"386", "486"}
+            )
+        ):
             return False, f"clock_drift_failed:{clock_data.get('fail_reason', 'unknown')}"
 
         # Cross-validate: vintage hardware should have MORE drift
@@ -3936,7 +3961,13 @@ def validate_fingerprint_data(
             print(f"[FINGERPRINT] SUSPICIOUS: claims {claimed_arch} but cv={cv:.6f} is too stable for vintage")
             return False, f"vintage_timing_too_stable:cv={cv}"
     elif isinstance(clock_check, bool):
-        if not clock_check:
+        if (
+            not clock_check
+            and not (
+                allow_tscless_x86_reward
+                and claimed_arch_lower in {"386", "486"}
+            )
+        ):
             return False, "clock_drift_failed_bool"
 
     # ── PHASE 2: Cross-validate device claims against fingerprint ──
@@ -4827,7 +4858,8 @@ def _submit_attestation_impl():
     #   1. v3 canonical-JSON (current rustchain-miner, GPT-5.4 audit finding #2):
     #      miner signs canonical_json(attestation_dict) BEFORE adding the
     #      signature/signature_type fields — covers the full payload including
-    #      device, fingerprint, signals. signature_type='ed25519'.
+    #      device, fingerprint, signals. signature_type is 'ed25519' or
+    #      the more explicit 'canonical_json'.
     #   2. v2 legacy 4-field MAC: miner signs "miner_id|wallet|nonce|commitment".
     #      Narrower coverage — wallet hijack protection only.
     # The canonical-JSON scheme is verified first; legacy is the fallback.
@@ -4874,8 +4906,8 @@ def _submit_attestation_impl():
             verified = False
 
             # Scheme 1: v3 canonical-JSON full-payload signature.
-            # Try when signature_type is 'ed25519' or unspecified (the v3 miner
-            # always sets signature_type='ed25519'; older callers may omit it).
+            # Try when signature_type is 'ed25519', 'canonical_json', or
+            # unspecified (older callers may omit it).
             # IMPORTANT: the miner adds 'signature', 'public_key', AND
             # 'signature_type' to the dict AFTER signing (see miner lines
             # 515-517). All three must be stripped to reproduce the canonical
