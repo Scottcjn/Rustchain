@@ -32,11 +32,17 @@ except ImportError:
 
 # Import fingerprint checks
 try:
-    from fingerprint_checks import validate_all_checks
+    # Try platform-prefixed path first (works from any working directory)
+    from miners.linux.fingerprint_checks import validate_all_checks
     FINGERPRINT_AVAILABLE = True
 except ImportError:
-    FINGERPRINT_AVAILABLE = False
-    print("[WARN] fingerprint_checks.py not found - fingerprint attestation disabled")
+    try:
+        # Fall back to direct import (works when running from miners/linux/)
+        from fingerprint_checks import validate_all_checks
+        FINGERPRINT_AVAILABLE = True
+    except ImportError:
+        FINGERPRINT_AVAILABLE = False
+        print("[WARN] fingerprint_checks.py not found - fingerprint attestation disabled")
 
 # Import Warthog dual-mining sidecar
 try:
