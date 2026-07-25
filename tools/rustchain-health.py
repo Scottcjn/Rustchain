@@ -71,8 +71,8 @@ def _ssl_ctx() -> ssl.SSLContext:
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
 
-def fetch(url: str, timeout: int = 8) -> Tuple[bool, Any, float]:
-    """GET *url*, return (ok, parsed_json_or_None, latency_ms)."""
+def fetch(url: str, timeout: int = 8) -> Tuple[bool, Any, float, Optional[int]]:
+    """GET *url*, return (ok, parsed_json_or_None, latency_ms, http_status)."""
     t0 = time.time()
     try:
         req = Request(url, headers={
@@ -82,18 +82,22 @@ def fetch(url: str, timeout: int = 8) -> Tuple[bool, Any, float]:
         with urlopen(req, timeout=timeout, context=_ssl_ctx()) as resp:
             body = resp.read(2 * 1024 * 1024).decode("utf-8", errors="replace")
             latency = (time.time() - t0) * 1000
+            status = getattr(resp, "status", None) or resp.getcode()
             try:
-                return True, json.loads(body), latency
+                return True, json.loads(body), latency, status
             except json.JSONDecodeError:
-                return True, body.strip(), latency
-    except (HTTPError, URLError, OSError) as exc:
+                return True, body.strip(), latency, status
+    except HTTPError as exc:
         latency = (time.time() - t0) * 1000
-        return False, str(exc), latency
+        return False, str(exc), latency, exc.code
+    except (URLError, OSError) as exc:
+        latency = (time.time() - t0) * 1000
+        return False, str(exc), latency, None
 
 # ── individual checks ──────────────────────────────────────────────────────
 
 def check_health(base: str, timeout: int) -> Dict[str, Any]:
-    ok, data, ms = fetch(f"{base}/health", timeout)
+    ok, data, ms, _status = fetch(f"{base}/health", timeout)
     result: Dict[str, Any] = {"reachable": ok, "latency_ms": round(ms, 1)}
     if ok and isinstance(data, dict):
         result["ok"] = data.get("ok", False)
@@ -110,7 +114,7 @@ def check_health(base: str, timeout: int) -> Dict[str, Any]:
     return result
 
 def check_epoch(base: str, timeout: int) -> Dict[str, Any]:
-    ok, data, ms = fetch(f"{base}/epoch", timeout)
+    ok, data, ms, _status = fetch(f"{base}/epoch", timeout)
     result: Dict[str, Any] = {"reachable": ok, "latency_ms": round(ms, 1)}
     if ok and isinstance(data, dict):
         result["epoch"] = data.get("epoch")
@@ -126,7 +130,7 @@ def check_epoch(base: str, timeout: int) -> Dict[str, Any]:
     return result
 
 def check_miners(base: str, timeout: int) -> Dict[str, Any]:
-    ok, data, ms = fetch(f"{base}/api/miners", timeout)
+    ok, data, ms, _status = fetch(f"{base}/api/miners", timeout)
     result: Dict[str, Any] = {"reachable": ok, "latency_ms": round(ms, 1)}
     if ok and isinstance(data, list):
         result["miner_count"] = len(data)
@@ -142,17 +146,58 @@ def check_miners(base: str, timeout: int) -> Dict[str, Any]:
     return result
 
 def check_tip(base: str, timeout: int) -> Dict[str, Any]:
-    ok, data, ms = fetch(f"{base}/headers/tip", timeout)
+    ok, data, ms, status = fetch(f"{base}/headers/tip", timeout)
     result: Dict[str, Any] = {"reachable": ok, "latency_ms": round(ms, 1)}
     if ok and isinstance(data, dict):
-        result["height"] = data.get("height", data.get("block_height"))
+        # Nodes report the tip position as "height", "block_height", or
+        # (RIP-200 nodes) "slot" -- accept any of them.
+        height = data.get("height", data.get("block_height"))
+        if height is None:
+            height = data.get("slot")
+        result["height"] = height
         result["hash"] = data.get("hash", data.get("block_hash"))
         result["timestamp"] = data.get("timestamp")
     elif ok:
         result["raw"] = str(data)[:200]
     else:
         result["error"] = str(data)
+        # An HTTP 404/405/501 means this node simply does not expose
+        # /headers/tip. That is "not applicable", not "broken" -- record it
+        # so the verdict does not raise a false alarm.
+        if status in (404, 405, 501):
+            result["supported"] = False
     return result
+
+# ── verdict ─────────────────────────────────────────────────────────────────
+# Single source of truth for pass/fail. render() (the STATUS line and the
+# per-row dots) and run_once() (the process exit code) must both go through
+# these predicates so the display and the exit code can never drift apart.
+
+def health_ok(h: Dict[str, Any]) -> bool:
+    return bool(h.get("reachable")) and bool(h.get("ok", False))
+
+def epoch_ok(e: Dict[str, Any]) -> bool:
+    return bool(e.get("reachable")) and e.get("epoch") is not None
+
+def miners_ok(m: Dict[str, Any]) -> bool:
+    return bool(m.get("reachable"))
+
+def tip_verdict(t: Dict[str, Any]) -> Optional[bool]:
+    """True = tip check passed, False = failed, None = endpoint not
+    implemented on this node (does not count against the verdict)."""
+    if t.get("supported") is False:
+        return None
+    if not t.get("reachable"):
+        return False
+    return t.get("height") is not None
+
+def overall_ok(snapshot: Dict[str, Any]) -> bool:
+    """Overall verdict: every applicable check must pass."""
+    if not (health_ok(snapshot["health"])
+            and epoch_ok(snapshot["epoch"])
+            and miners_ok(snapshot["miners"])):
+        return False
+    return tip_verdict(snapshot["tip"]) is not False
 
 # ── aggregator ──────────────────────────────────────────────────────────────
 
@@ -201,7 +246,7 @@ def render(snapshot: Dict[str, Any]) -> str:
 
     # ── Health ───
     h = snapshot["health"]
-    h_ok = h.get("ok", False) and h["reachable"]
+    h_ok = health_ok(h)
     lines.append(f"  {status_dot(h_ok)}  {bold('Health')}          "
                  f"{green('healthy') if h_ok else red('UNHEALTHY')}  "
                  f"{dim(str(round(h['latency_ms'])) + ' ms')}")
@@ -218,7 +263,7 @@ def render(snapshot: Dict[str, Any]) -> str:
 
     # ── Epoch ───
     e = snapshot["epoch"]
-    e_ok = e["reachable"] and e.get("epoch") is not None
+    e_ok = epoch_ok(e)
     lines.append(f"  {status_dot(e_ok)}  {bold('Epoch')}           "
                  f"{green(str(e.get('epoch', '?'))) if e_ok else red('unavailable')}  "
                  f"{dim(str(round(e['latency_ms'])) + ' ms')}")
@@ -237,11 +282,20 @@ def render(snapshot: Dict[str, Any]) -> str:
 
     # ── Chain Tip ───
     t = snapshot["tip"]
-    t_ok = t["reachable"] and t.get("height") is not None
-    lines.append(f"  {status_dot(t_ok)}  {bold('Chain Tip')}       "
-                 f"{'#' + str(t.get('height', '?')) if t_ok else yellow('unknown')}  "
+    t_verdict = tip_verdict(t)
+    if t_verdict is True:
+        tip_label = "#" + str(t.get("height", "?"))
+        tip_dot = green("●")
+    elif t_verdict is None:
+        tip_label = yellow("n/a (endpoint not supported)")
+        tip_dot = yellow("●")
+    else:
+        tip_label = red("FAILED")
+        tip_dot = red("●")
+    lines.append(f"  {tip_dot}  {bold('Chain Tip')}       "
+                 f"{tip_label}  "
                  f"{dim(str(round(t['latency_ms'])) + ' ms')}")
-    if t_ok:
+    if t_verdict is True:
         lines.append(f"     Hash           : {_trunc_hash(t.get('hash'))}")
         if t.get("timestamp"):
             lines.append(f"     Timestamp      : {t['timestamp']}")
@@ -273,9 +327,7 @@ def render(snapshot: Dict[str, Any]) -> str:
     lines.append("")
 
     # ── Overall ───
-    all_ok = (h.get("ok", False) and h["reachable"]
-              and e["reachable"]
-              and m["reachable"])
+    all_ok = overall_ok(snapshot)
     lines.append(dim("  " + "─" * w))
     if all_ok:
         lines.append(f"  {green(bold('STATUS: ALL SYSTEMS OPERATIONAL'))}")
@@ -354,12 +406,8 @@ def main() -> int:
             print(json.dumps(snapshot, indent=2))
         else:
             print(render(snapshot))
-        # exit 0 if healthy, 1 otherwise
-        all_ok = (snapshot["health"].get("ok", False)
-                  and snapshot["health"]["reachable"]
-                  and snapshot["epoch"]["reachable"]
-                  and snapshot["miners"]["reachable"])
-        return 0 if all_ok else 1
+        # exit 0 if healthy, 1 otherwise -- same predicate the display uses
+        return 0 if overall_ok(snapshot) else 1
 
     if args.watch > 0:
         try:
