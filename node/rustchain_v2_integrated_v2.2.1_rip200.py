@@ -5024,6 +5024,56 @@ def get_proposer_duty_calendar():
     )
 
 @app.route('/epoch/enroll', methods=['POST'])
+def resolve_enroll_hw_weight(db_path, miner_pk, miner_id=None):
+    """Resolve enrollment reward weight from the SERVER-DERIVED device.
+
+    The request body must never decide reward weight. A caller can put any
+    family/arch in it and self-grant a multiplier: HARDWARE_WEIGHTS["ARM"]["arm2"]
+    is 4.0 against an honest modern x86_64 at 0.8, a 5x uplift and higher than a
+    real G4. Because epoch_enroll is INSERT OR IGNORE, that forged row would also
+    win against the honest auto-enroll that follows.
+
+    The attestation path already runs derive_verified_device() and stores the
+    result, and check_enrollment_requirements() mandates an attestation no older
+    than ENROLL_TICKET_TTL_S, so a row is expected to exist here.
+
+    Returns (hw_weight, family, arch, source).
+    """
+    family, arch, source = "x86", "default", "no_attestation"
+    try:
+        with closing(sqlite3.connect(db_path, timeout=5)) as conn:
+            row = None
+            for key in (k for k in (miner_pk, miner_id) if k):
+                row = conn.execute(
+                    "SELECT device_family, device_arch FROM miner_attest_recent WHERE miner = ?",
+                    (key,),
+                ).fetchone()
+                if row:
+                    source = "attested"
+                    break
+        if row:
+            family = row[0] or "x86"
+            arch = row[1] or "default"
+    except Exception:
+        # Fail soft: an unreadable attestation row must not hand out a bonus tier,
+        # and must not deny enrolment either. The default bucket is neutral.
+        pass
+
+    bucket = HARDWARE_WEIGHTS.get(family, {})
+    if arch in bucket:
+        return bucket[arch], family, arch, source
+    # x86_64 and Windows carry only modern/default; their vintage archs (core2,
+    # retro, pentium_m...) live in the x86 bucket. Without this the macOS miner,
+    # which reports family x86_64 with arch core2, would be paid 0.8 instead of 1.3.
+    if family in ("x86_64", "Windows", "x86"):
+        x86_bucket = HARDWARE_WEIGHTS.get("x86", {})
+        if arch in x86_bucket:
+            return x86_bucket[arch], family, arch, source
+    if "default" in bucket:
+        return bucket["default"], family, arch, source
+    return 1.0, family, arch, source
+
+
 def enroll_epoch():
     """Enroll in current epoch"""
     data = request.get_json(silent=True)
@@ -5183,10 +5233,10 @@ def enroll_epoch():
         ENROLL_REJ[reason] = ENROLL_REJ.get(reason, 0) + 1
         return jsonify(check_result), 412
 
-    # Calculate weight based on hardware
-    family = device.get('family', 'x86')
-    arch = device.get('arch', 'default')
-    hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch, 1.0)
+    # Calculate weight from the SERVER-DERIVED device, never the request body.
+    # See resolve_enroll_hw_weight: trusting device.get('family'/'arch') here let a
+    # caller self-grant up to 5x, and INSERT OR IGNORE made the forged row stick.
+    hw_weight, family, arch, _hw_src = resolve_enroll_hw_weight(DB_PATH, miner_pk, data.get('miner_id'))
 
     # RIP-PoA Phase 2: failed fingerprints are tracked but receive zero rewards.
     fingerprint_failed = check_result.get('fingerprint_failed', False)
