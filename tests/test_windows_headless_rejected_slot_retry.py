@@ -10,8 +10,8 @@ and had to attach a debugger to learn the underlying HTTP reason.
 
 These tests prove:
 
-* ``submit_header`` records the slot as handled on both success and
-  failure paths, so a rejected slot is not retried.
+* ``submit_header`` records terminal rejections as handled, while temporary
+  failures remain eligible for bounded exponential-backoff retries.
 * The share event passed to the headless callback carries the safe
   ``last_header_error`` diagnostic when a submission fails.
 * ``_format_headless_event`` includes both the slot and the diagnostic
@@ -64,13 +64,17 @@ def test_submit_header_marks_slot_handled_on_http_rejection(monkeypatch):
     assert success is False
     # The slot is recorded even though the node rejected the header.
     assert miner._last_submitted_slot == 27455
+    assert miner.last_header_retryable is False
+    assert miner._header_submission_due(27455, now=999999.0) is False
     assert "HTTP 403" in miner.last_header_error
     assert "no pubkey registered for miner" in miner.last_header_error
 
 
-def test_submit_header_marks_slot_handled_on_connection_failure(monkeypatch):
+def test_submit_header_backs_off_on_connection_failure(monkeypatch):
     module = _load_windows_miner()
     miner = module.RustChainMiner("RTC02811ff5e2bb4bb4b95eee44c5429cd9525496e7")
+    monkeypatch.setattr(module.time, "monotonic", lambda: 100.0)
+    monkeypatch.setattr(module.random, "uniform", lambda *_args: 1.0)
 
     def fake_post(*_args, **_kwargs):
         raise ConnectionError("connection refused")
@@ -80,9 +84,77 @@ def test_submit_header_marks_slot_handled_on_connection_failure(monkeypatch):
     assert miner._last_submitted_slot is None
     success = miner.submit_header({"header": {"slot": 27456}})
     assert success is False
-    assert miner._last_submitted_slot == 27456
+    assert miner._last_submitted_slot is None
+    assert miner.last_header_retryable is True
+    assert miner.header_retry_in_seconds == 10
+    assert miner._header_submission_due(27456, now=109.9) is False
+    assert miner._header_submission_due(27456, now=110.0) is True
     assert "header request failed" in miner.last_header_error
     assert "connection refused" in miner.last_header_error
+
+
+def test_temporary_http_failures_use_bounded_exponential_backoff(monkeypatch):
+    module = _load_windows_miner()
+    miner = module.RustChainMiner("RTC02811ff5e2bb4bb4b95eee44c5429cd9525496e7")
+    monkeypatch.setattr(module.time, "monotonic", lambda: 200.0)
+    monkeypatch.setattr(module.random, "uniform", lambda *_args: 1.0)
+
+    def fake_post(*_args, **_kwargs):
+        return _StubResponse(503, {"ok": False, "error": "node restarting"})
+
+    monkeypatch.setattr(module.requests, "post", fake_post)
+
+    delays = []
+    for _ in range(7):
+        assert miner.submit_header({"header": {"slot": 27456}}) is False
+        delays.append(miner.header_retry_in_seconds)
+
+    assert delays == [10, 20, 40, 80, 160, 300, 300]
+    assert miner._last_submitted_slot is None
+    assert miner.last_header_retryable is True
+    assert "HTTP 503" in miner.last_header_error
+    assert "node restarting" in miner.last_header_error
+
+
+def test_header_retry_adds_jitter_without_exceeding_cap(monkeypatch):
+    module = _load_windows_miner()
+    miner = module.RustChainMiner("RTC02811ff5e2bb4bb4b95eee44c5429cd9525496e7")
+
+    monkeypatch.setattr(module.random, "uniform", lambda low, high: high)
+
+    assert miner._schedule_header_retry(27464, now=100.0) == 12.5
+    assert miner._next_header_retry_at == 112.5
+
+    # Even the maximum positive jitter remains bounded by the 300 s cap.
+    for _ in range(6):
+        delay = miner._schedule_header_retry(27464, now=100.0)
+    assert delay == module.HEADER_RETRY_CAP_SECONDS
+    assert miner._next_header_retry_at == 400.0
+
+
+def test_plain_text_400_is_terminal_and_surfaces_body(monkeypatch):
+    module = _load_windows_miner()
+    miner = module.RustChainMiner("RTC02811ff5e2bb4bb4b95eee44c5429cd9525496e7")
+
+    class PlainTextResponse:
+        status_code = 400
+        text = "malformed signed header"
+
+        @staticmethod
+        def json():
+            raise ValueError("not JSON")
+
+    monkeypatch.setattr(
+        module.requests,
+        "post",
+        lambda *_args, **_kwargs: PlainTextResponse(),
+    )
+
+    assert miner.submit_header({"header": {"slot": 27463}}) is False
+    assert miner._last_submitted_slot == 27463
+    assert miner.last_header_retryable is False
+    assert "HTTP 400" in miner.last_header_error
+    assert "body=malformed signed header" in miner.last_header_error
 
 
 def test_submit_header_records_slot_on_success(monkeypatch):
@@ -98,6 +170,9 @@ def test_submit_header_records_slot_on_success(monkeypatch):
     assert success is True
     assert miner._last_submitted_slot == 27457
     assert miner.last_header_error == ""
+    assert miner.last_header_retryable is False
+    assert miner._header_retry_slot is None
+    assert miner._header_retry_attempts == 0
 
 
 def test_share_event_carries_diagnostic_on_failure(monkeypatch):
@@ -128,10 +203,14 @@ def test_share_event_carries_diagnostic_on_failure(monkeypatch):
     }
     if not success and miner.last_header_error:
         share_event["error"] = miner.last_header_error
+        share_event["retryable"] = miner.last_header_retryable
+        if miner.last_header_retryable:
+            share_event["retry_in_seconds"] = miner.header_retry_in_seconds
     events.append(share_event)
 
     assert events[0]["success"] is False
     assert events[0]["slot"] == 27458
+    assert events[0]["retryable"] is False
     assert "no pubkey registered for miner" in events[0]["error"]
 
 
@@ -178,6 +257,23 @@ def test_format_headless_event_includes_slot_and_diagnostic():
     assert "slot=27460" in line
     assert "FAIL" in line
     assert "error=HTTP 403 error=no pubkey registered for miner" in line
+    assert "class=terminal no_retry" in line
+
+
+def test_format_headless_event_shows_retry_delay():
+    module = _load_windows_miner()
+    line = module._format_headless_event({
+        "type":             "share",
+        "slot":             27462,
+        "submitted":        7,
+        "accepted":         6,
+        "success":          False,
+        "error":            "HTTP 503 error=node restarting",
+        "retryable":        True,
+        "retry_in_seconds": 40,
+    })
+    assert "class=retryable" in line
+    assert "retry_in=40s" in line
 
 
 def test_format_headless_event_omits_diagnostic_on_success():

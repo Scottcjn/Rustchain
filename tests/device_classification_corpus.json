@@ -1,0 +1,306 @@
+[
+  {
+    "id": "intel-486-dx2",
+    "category": "vintage_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel0000480_486_CPUID.txt",
+    "device": {"family": "x86", "arch": "486", "machine": "i486", "cpu": "Intel 486DX2"},
+    "expected": {"device_family": "x86", "device_arch": "486"}
+  },
+  {
+    "id": "intel-p5-60",
+    "category": "vintage_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel0000517_P5_CPUID.txt",
+    "device": {"family": "x86", "arch": "pentium", "machine": "i586", "cpu": "Intel Pentium 60"},
+    "expected": {"device_family": "x86", "device_arch": "pentium"}
+  },
+  {
+    "id": "intel-p54c",
+    "category": "vintage_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel0000525_P54C_CPUID.txt",
+    "device": {"family": "x86", "arch": "pentium", "machine": "i586", "cpu": "Intel Pentium P54C"},
+    "expected": {"device_family": "x86", "device_arch": "pentium"}
+  },
+  {
+    "id": "intel-pentium-mmx",
+    "category": "vintage_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel0000543_P55C_CPUID.txt",
+    "device": {"family": "x86", "arch": "modern", "machine": "i586", "cpu": "Intel Pentium MMX"},
+    "expected": {"device_family": "x86", "device_arch": "pentium_mmx"}
+  },
+  {
+    "id": "amd-k6-233",
+    "category": "vintage_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/AuthenticAMD/AuthenticAMD0000562_K6_CPUID.txt",
+    "device": {"family": "x86", "arch": "retro", "machine": "i586", "cpu": "AMD-K6tm w/ multimedia extensions"},
+    "expected": {"device_family": "x86", "device_arch": "retro"}
+  },
+  {
+    "id": "amd-k6-iii-400",
+    "category": "vintage_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/AuthenticAMD/AuthenticAMD0000591_K6_Sharptooth_CPUID.txt",
+    "device": {"family": "x86", "arch": "retro", "machine": "i586", "cpu": "AMD-K6(tm) 3D+ Processor"},
+    "expected": {"device_family": "x86", "device_arch": "retro"}
+  },
+  {
+    "id": "intel-pentium-ii-klamath",
+    "category": "vintage_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel0000633_P2_Klamath_CPUID.txt",
+    "device": {"family": "x86", "arch": "modern", "machine": "i686", "cpu": "Intel(R) Pentium(R) II"},
+    "expected": {"device_family": "x86", "device_arch": "pentium_ii"}
+  },
+  {
+    "id": "intel-pentium-iii-katmai",
+    "category": "vintage_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel0000673_P3_Katmai_CPUID.txt",
+    "device": {"family": "x86", "arch": "modern", "machine": "i686", "cpu": "Intel(R) Pentium(R) III"},
+    "expected": {"device_family": "x86", "device_arch": "pentium_iii"}
+  },
+  {
+    "id": "intel-pentium-iii-coppermine",
+    "category": "vintage_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel0000686_P3_Coppermine_CPUID.txt",
+    "device": {"family": "x86", "arch": "modern", "machine": "i686", "cpu": "Intel(R) Pentium(R) III CPU family 6 model 8"},
+    "expected": {"device_family": "x86", "device_arch": "pentium_iii"}
+  },
+  {
+    "id": "intel-pentium-m-banias",
+    "category": "vintage_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel0000695_PM_Banias_CPUID.txt",
+    "device": {"family": "x86", "arch": "modern", "machine": "i686", "cpu": "Intel(R) Pentium(R) M processor 1500MHz"},
+    "expected": {"device_family": "x86", "device_arch": "pentium_m_banias"}
+  },
+  {
+    "id": "intel-pentium-m-dothan",
+    "category": "vintage_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel00006D8_PM_Dothan_CPUID.txt",
+    "device": {"family": "x86", "arch": "modern", "machine": "i686", "cpu": "Intel(R) Pentium(R) M processor 2.00GHz"},
+    "expected": {"device_family": "x86", "device_arch": "pentium_m_dothan"}
+  },
+  {
+    "id": "intel-core2-conroe",
+    "category": "modern_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel00006F6_Conroe_CPUID.txt",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "Intel(R) Core(TM)2 CPU 6600 @ 2.40GHz"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "intel-nehalem",
+    "category": "modern_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel00106A4_Bloomfield_CPUID.txt",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "Intel(R) Core(TM) i7 CPU 920 @ 2.67GHz"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "intel-sandy-bridge",
+    "category": "modern_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel00206A7_SandyBridge_CPUID.txt",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "Intel(R) Core(TM) i7-2600K CPU @ 3.40GHz"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "intel-ivy-bridge",
+    "category": "modern_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel00306A9_IvyBridge_CPUID.txt",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "Intel(R) Core(TM) i7-3770 CPU @ 3.40GHz"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "intel-haswell",
+    "category": "modern_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel00306C3_Haswell_CPUID.txt",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "Intel(R) Core(TM) i7-4770 CPU @ 3.40GHz"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "intel-skylake",
+    "category": "modern_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel00506E3_Skylake_CPUID.txt",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "Intel(R) Core(TM) i7-6700K CPU @ 4.00GHz"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "intel-kaby-lake",
+    "category": "modern_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel00906E9_KabyLake_01_CPUID.txt",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "Intel(R) Core(TM) i7-7700K CPU @ 4.20GHz"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "intel-alder-lake",
+    "category": "modern_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/GenuineIntel/GenuineIntel0090672_AlderLake_02_CPUID.txt",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "12th Gen Intel(R) Core(TM) i9-12900K"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "amd-zen2-matisse",
+    "category": "modern_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/AuthenticAMD/AuthenticAMD0870F10_K17_Matisse_CPUID.txt",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "AMD Ryzen 7 3700X 8-Core Processor"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "amd-zen3-vermeer",
+    "category": "modern_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/AuthenticAMD/AuthenticAMD0A20F12_K19_Vermeer_00_CPUID.txt",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "AMD Ryzen 9 5950X 16-Core Processor"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "amd-epyc-rome",
+    "category": "modern_x86",
+    "provenance": "measured_cpuid",
+    "source": "https://github.com/InstLatx64/InstLatx64/blob/ae88464b1b88e364579083ff4445acd505ead471/AuthenticAMD/AuthenticAMD0830F10_K17_Rome_CPUID.txt",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "AMD EPYC 7742 64-Core Processor"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "raspberry-pi-3",
+    "category": "arm_sbc",
+    "provenance": "published_hardware_facts",
+    "source": "https://github.com/Arksine/moonraker/blob/d5ee17128bb88434aacdab90c2e9e990e2b64e4a/docs/external_api/machine.md",
+    "device": {"family": "x86", "arch": "modern", "machine": "armv7l", "cpu": "ARMv7 Processor rev 4 (v7l)", "model": "Raspberry Pi 3 Model B Rev 1.2"},
+    "expected": {"device_family": "ARM", "device_arch": "armv7"}
+  },
+  {
+    "id": "raspberry-pi-4-aarch64",
+    "category": "arm_sbc",
+    "provenance": "published_hardware_facts",
+    "source": "https://github.com/linuxhw/HWInfo/tree/31b81aef173d9530eee80e016b90a4bd5c908e59/SBC/Raspberry-Pi-Foundation",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "aarch64", "cpu": "Cortex-A72", "model": "Raspberry Pi 4 Model B"},
+    "expected": {"device_family": "ARM", "device_arch": "aarch64"}
+  },
+  {
+    "id": "raspberry-pi-5-aarch64",
+    "category": "arm_sbc",
+    "provenance": "published_hardware_facts",
+    "source": "https://github.com/linuxhw/HWInfo/tree/31b81aef173d9530eee80e016b90a4bd5c908e59/SBC/Raspberry-Pi-Foundation",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "aarch64", "cpu": "Cortex-A76", "model": "Raspberry Pi 5 Model B"},
+    "expected": {"device_family": "ARM", "device_arch": "aarch64"}
+  },
+  {
+    "id": "orange-pi-5",
+    "category": "arm_sbc",
+    "provenance": "published_hardware_facts",
+    "source": "https://github.com/linuxhw/HWInfo/tree/31b81aef173d9530eee80e016b90a4bd5c908e59/SBC/Xunlong",
+    "device": {"family": "x86", "arch": "modern", "machine": "aarch64", "cpu": "Rockchip RK3588", "model": "Orange Pi 5"},
+    "expected": {"device_family": "ARM", "device_arch": "aarch64"}
+  },
+  {
+    "id": "jetson-nano",
+    "category": "arm_sbc",
+    "provenance": "published_hardware_facts",
+    "source": "https://github.com/jetsonhacks/jetsonUtilities/blob/9521a4be908966008de3fa98ac3d1ce2fe38efc8/jetsonInfo.py",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "aarch64", "cpu": "ARM Cortex-A57", "model": "NVIDIA Jetson Nano"},
+    "expected": {"device_family": "ARM", "device_arch": "aarch64"}
+  },
+  {
+    "id": "aws-graviton2",
+    "category": "arm_sbc",
+    "provenance": "published_cloud_inventory",
+    "source": "https://github.com/amazonlinux/amazon-linux-2023/blob/91175b5dfe13f8ba895060c017c9f1aac7c27d10/README.md",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "aarch64", "cpu": "Neoverse-N1", "model": "AWS Graviton2"},
+    "expected": {"device_family": "ARM", "device_arch": "aarch64"}
+  },
+  {
+    "id": "powerpc-g3-750",
+    "category": "powerpc",
+    "provenance": "project_honest_hardware_table",
+    "source": "https://github.com/Scottcjn/Rustchain/blob/fb4c163effbb7352d37d6dda99e42669dfb0674a/docs/zh-CN/VINTAGE_MINING_EXPLAINED.md",
+    "device": {"family": "PowerPC", "arch": "g3", "machine": "ppc", "cpu": "PowerPC G3 750"},
+    "expected": {"device_family": "PowerPC", "device_arch": "G3"}
+  },
+  {
+    "id": "powerpc-g4-7450",
+    "category": "powerpc",
+    "provenance": "project_honest_hardware_table",
+    "source": "https://github.com/Scottcjn/Rustchain/blob/fb4c163effbb7352d37d6dda99e42669dfb0674a/docs/zh-CN/VINTAGE_MINING_EXPLAINED.md",
+    "device": {"family": "PowerPC", "arch": "g4", "machine": "ppc", "cpu": "PowerPC G4 7450"},
+    "expected": {"device_family": "PowerPC", "device_arch": "G4"}
+  },
+  {
+    "id": "powerpc-g4-7447",
+    "category": "powerpc",
+    "provenance": "project_honest_hardware_table",
+    "source": "https://github.com/Scottcjn/Rustchain/blob/fb4c163effbb7352d37d6dda99e42669dfb0674a/docs/zh-CN/VINTAGE_MINING_EXPLAINED.md",
+    "device": {"family": "PowerPC", "arch": "g4", "machine": "powerpc", "cpu": "PowerPC G4 7447A"},
+    "expected": {"device_family": "PowerPC", "device_arch": "G4"}
+  },
+  {
+    "id": "powerpc-g5-970",
+    "category": "powerpc",
+    "provenance": "project_honest_hardware_table",
+    "source": "https://github.com/Scottcjn/Rustchain/blob/fb4c163effbb7352d37d6dda99e42669dfb0674a/docs/zh-CN/VINTAGE_MINING_EXPLAINED.md",
+    "device": {"family": "PowerPC", "arch": "g5", "machine": "ppc64", "cpu": "PowerPC G5 970"},
+    "expected": {"device_family": "PowerPC", "device_arch": "G5"}
+  },
+  {
+    "id": "ibm-power8-s824",
+    "category": "powerpc",
+    "provenance": "project_honest_hardware_table",
+    "source": "https://github.com/Scottcjn/Rustchain/blob/fb4c163effbb7352d37d6dda99e42669dfb0674a/docs/zh-CN/VINTAGE_MINING_EXPLAINED.md",
+    "device": {"family": "PowerPC", "arch": "power8", "machine": "ppc64le", "cpu": "IBM POWER8 8286"},
+    "expected": {"device_family": "PowerPC", "device_arch": "POWER8"}
+  },
+  {
+    "id": "qemu-virtual-cpu-2-5",
+    "category": "vm_qemu",
+    "provenance": "published_vm_inventory",
+    "source": "https://github.com/openstack/ironic/blob/751fa53d8d3b1ac330ac0082cdf68d11bb523228/api-ref/source/samples/node-inventory-response.json",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "QEMU Virtual CPU version 2.5+"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "qemu-standard-pc",
+    "category": "vm_qemu",
+    "provenance": "published_vm_inventory",
+    "source": "https://github.com/libremesh/lime-app/blob/6d4ab7cb07fe0bc97353a420eeaee1e671993e29/plugins/lime-plugin-fbw/src/FbwPage.spec.js",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "QEMU Virtual CPU version 2.5+", "model": "QEMU Standard PC (i440FX + PIIX, 1996)"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "kvm-common-processor",
+    "category": "vm_qemu",
+    "provenance": "published_hypervisor_model",
+    "source": "https://github.com/unicorn-engine/unicorn/blob/7c5db94191defc1e04a4f66f4eb1220903cba837/qemu/target/i386/cpu.c",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "Common KVM processor"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "kvm-common-32-bit",
+    "category": "vm_qemu",
+    "provenance": "published_vm_fixture",
+    "source": "https://github.com/chef/ohai/blob/b7033361b2c67838606de7a0a1772076d79857f9/spec/unit/plugins/bsd/virtualization_spec.rb",
+    "device": {"family": "x86", "arch": "modern", "machine": "i686", "cpu": "Common 32-bit KVM processor"},
+    "expected": {"device_family": "x86", "device_arch": "modern"}
+  },
+  {
+    "id": "qemu-core2duo-model",
+    "category": "vm_qemu",
+    "provenance": "published_hypervisor_model",
+    "source": "https://github.com/i3boyacc/QEMU-Panel/blob/1a1dd6ded00803968bdda43581b9e3860475e085/emu_x86.cs",
+    "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "Intel(R) Core(TM)2 Duo CPU T7700 @ 2.40GHz", "model": "QEMU Standard PC"},
+    "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  }
+]

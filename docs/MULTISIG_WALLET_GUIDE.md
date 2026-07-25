@@ -554,7 +554,8 @@ curl -sk "https://rustchain.org/health"
 ### 社区支持
 
 - **GitHub Issues**: https://github.com/Scottcjn/Rustchain/issues
-- **Discord**: https://discord.gg/VqVVS2CW9Q
+- **Discord**: https://discord.gg/XnRp7M5gBW
+- **Telegram**: https://t.me/+l8dHTjXCBNM1MTIx
 - **开发者论坛**: https://github.com/Scottcjn/Rustchain/discussions
 
 ### 延伸阅读
