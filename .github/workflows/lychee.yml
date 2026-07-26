@@ -20,7 +20,6 @@ jobs:
             --verbose
             --no-progress
             --exclude-all-private
-            --exclude-mail
             --exclude "https?://(twitter|x)\\.com"
             --exclude "https://github.com/Scottcjn/Rustchain/actions"
             --exclude "https://github.com/waterWang/Rustchain/actions"
