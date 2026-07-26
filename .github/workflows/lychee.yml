@@ -5,6 +5,7 @@ on:
     paths:
       - '**.md'
       - 'docs/**'
+      - '.github/workflows/*.yml'
   workflow_dispatch:
 
 jobs:
