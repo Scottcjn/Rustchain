@@ -34,7 +34,6 @@ jobs:
             --no-progress
             --include-fragments
             --exclude-all-private
-            --exclude-mail
             --exclude "https?://(twitter|x)\\.com"
             --exclude "https?://(www\\.)?(linkedin|facebook|instagram|tiktok|youtube)\\.com"
             --exclude "https://github.com/Scottcjn/Rustchain/actions"
