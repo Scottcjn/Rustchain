@@ -6,11 +6,7 @@ set "PYTHON_URL=https://www.python.org/ftp/python/3.11.5/python-3.11.5-amd64.exe
 set "PYTHON_INSTALLER=%SCRIPT_DIR%python-3.11.5-amd64.exe"
 set "MINER_URL=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/rustchain_windows_miner.py"
 set "MINER_SCRIPT=%SCRIPT_DIR%rustchain_windows_miner.py"
-<<<<<<< HEAD
-set "MINER_SHA256=99ac84a489ebc8c1987eddc02dfbaf8672a9d440cc2cc9e1166c6ba25f4e8184"
-=======
-set "MINER_SHA256=ba34f8369e16312426fdddfb31656d250c14a979269ac966eee882ca082f6704"
->>>>>>> fe25b9c (fix: update MINER_SHA256 to match modified rustchain_windows_miner.py)
+set "MINER_SHA256=86bd4f9704d89864055df8f572f594535c22f8cc98f20d5d11bdd081b27da3b6"
 set "CRYPTO_URL=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/miner_crypto.py"
 set "CRYPTO_SCRIPT=%SCRIPT_DIR%miner_crypto.py"
 set "CRYPTO_SHA256=f00a048b05994dcabc336fb530fe1c1c3564e13e6f064f7e80daddd048299707"
