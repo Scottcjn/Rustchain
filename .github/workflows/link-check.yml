@@ -33,8 +33,6 @@ jobs:
             --verbose
             --no-progress
             --max-redirects 5
-            --include-fragments
-            --include-mail
             --exclude-all-private
             --exclude "https?://(twitter|x)\\.com"
             --exclude "https?://(www\\.)?(linkedin|facebook|instagram|tiktok|youtube)\\.com"
