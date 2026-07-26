@@ -19,8 +19,8 @@ jobs:
           args: >
             --verbose
             --no-progress
-            --include-fragments
             --exclude-all-private
+            --exclude-mail
             --exclude "https?://(twitter|x)\\.com"
             --exclude "https://github.com/Scottcjn/Rustchain/actions"
             --exclude "https://github.com/waterWang/Rustchain/actions"
@@ -28,6 +28,7 @@ jobs:
             --exclude "https://dexscreener\\.com"
             --exclude "https://github\\.com/Scottcjn/Rustchain/stargazers"
             --exclude "https://img\\.shields\\.io"
+            --exclude "https://github\\.com/altermenta/nucleus-verify"
             --exclude "https://rustchain\\.org/bcos"
             --exclude "https://rustchain\\.org/green"
             --exclude "https://rustchain\\.org/install"
@@ -42,6 +43,10 @@ jobs:
             --exclude "https://rustchain\\.org/fossils"
             --exclude "https://rustchain\\.org/light-client"
             --exclude "https://rustchain\\.org/museum"
+            --exclude "https://rustchain\\.org/images"
+            --exclude "https://rustchain\\.org/blog"
+            --exclude "https://rustchain\\.org/wallet"
+            --exclude "http://rustchain\\.org:8088"
             --exclude "https://linearb\\.io"
             --exclude "https?://50\\.28\\.86\\.1[0-9][0-9]"
             --exclude "https://scottcjn\\.github\\.io/elyan-labs-site"
@@ -49,6 +54,10 @@ jobs:
             --exclude "https://www\\.qanplatform\\.com"
             --exclude "https://basescan\\.org"
             --exclude "https://sepolia\\.basescan\\.org"
+            --exclude "https://bottube\\.ai"
+            --exclude "https://api\\.ergoplatform\\.com"
+            --exclude "https://api\\.testnet\\.ergoplatform\\.com"
+            --exclude "https://www\\.python\\.org/ftp/python"
             --exclude "http://your-server"
             --exclude-path "explorer/"
             --exclude-path "web/"
