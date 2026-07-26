@@ -56,8 +56,7 @@ jobs:
             --exclude-path "otc-bridge/static/"
             --exclude-path "passport/templates/"
             --exclude-path "status/templates/"
-            --exclude-path "tools/explorer/"
-            --exclude-path "tools/{{BASE_URL}}"
+            --exclude-path "tools/"
             --exclude-path "assets/"
             -- './**/*.md' './**/*.html'
         env:
