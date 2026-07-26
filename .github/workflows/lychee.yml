@@ -66,6 +66,7 @@ jobs:
             --exclude-path "status/templates/"
             --exclude-path "tools/"
             --exclude-path "assets/"
+            --exclude-path "loadtest/results/"
             -- './**/*.md' './**/*.html'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
