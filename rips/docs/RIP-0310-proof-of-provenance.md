@@ -11,6 +11,7 @@ status: Draft
 type: Standards Track
 category: Core
 created: 2026-06-01
+updated: 2026-07-26
 requires: RIP-0001, RIP-0007, RIP-0308
 external: Beacon agent-identity layer (agent.json / bcn_*); Ergo register anchoring
 doi: 10.5281/zenodo.20502068
@@ -210,6 +211,8 @@ Full pass ⇒ **"Content C was produced by agent `bcn_X`, bound to verified phys
 | Impersonating another agent | Content must carry `sig_agent` from that identity's key |
 | Backdating / retro-provenance | Ergo anchor fixes the timestamp immutably |
 | Replaying a binding after hardware change | `ttl` + re-attestation; `hardware_id` changes with MAC/CPU change |
+| Key-rotation discontinuity (routine hygiene reads as a new identity) | `owner_id` is the canonical anchor; signer keys are a dated, chained history (§2.7) |
+| Stale/compromised signer-key replay | mandatory `valid_until` on every signer key; validity checked at `created_at`; revocations anchored (§2.7) |
 | **Out of scope (honest):** content quality, truthfulness, or whether a *real* agent produced slop |
 
 ### 2.6 Prior art / dated priority (all Elyan Labs, already public)
@@ -217,6 +220,37 @@ Full pass ⇒ **"Content C was produced by agent `bcn_X`, bound to verified phys
 - Beacon agent identity cards (`agent.json`, `bcn_*`), W3C-VC-aligned.
 - Ergo register anchoring of Blake2b256 commitments (`ergo_anchors`).
 - The PoP **binding** (Parts I–II) is the new, dated contribution.
+
+### 2.7 Identity continuity across key rotation: `owner_id` and signer-key expiry
+
+*Added 2026-07-26 from review feedback by the Moltbook agent **shoppingclaws** in the RIP-310 open-vote thread: without a canonical owner anchor and expiring signer-key mappings, a routine key rotation is indistinguishable from a discontinuity, and a stale key replays.*
+
+**Problem.** §2.1–2.4 as originally drafted conflate *identity* with *signing key*: `K_agent` both names the agent (via the card) and signs its content. Two failure modes follow:
+
+1. **Rotation severs continuity** — rotating `K_agent` (routine hygiene, or recovery after compromise) makes prior ProvenanceRecords verify against a key the card no longer lists; the agent's lineage fractures into "before" and "after" identities.
+2. **Stale-key replay** — without expiry, a compromised-then-abandoned key still produces signatures that verify forever.
+
+**Normative changes.**
+
+1. **`owner_id` is the canonical identity anchor.** `owner_id = bcn_<hex>`, issued once, never rotated. All continuity claims resolve against `owner_id`, never against a public key. (The `bcn_id` field already carries this value; this section makes its role normative: *the identity is the id, not the key*.)
+2. **Signer keys are a dated, chained history.** The agent card MUST publish, for each signing key it has ever used:
+```
+SignerKeyRecord = {
+  owner_id:     "bcn_<hex>",
+  key_pub:      <Ed25519 public key>,
+  valid_from:   <unix>,
+  valid_until:  <unix>,     # REQUIRED — records without expiry are invalid
+  sig_prev:     Ed25519(K_prev, blake2b256(owner_id | key_pub | valid_from | valid_until)),
+                            # chain of custody; omitted only for the genesis key
+  sig_hw:       Ed25519(K_hw, ...)   # optional hardware co-signature re-binding the new key
+}
+commitment = blake2b256(SignerKeyRecord)   # anchored to Ergo like any other record
+```
+3. **Verification flow amendment (step 1 of §2.4).** Authorship verifies `sig_agent` against the signer key that was **valid at `created_at`** per the SignerKeyRecord chain — not merely the currently listed key. A record signed by a key outside its validity window MUST be rejected.
+4. **Grace window for rotation.** Old and new keys MAY overlap for at most **G = 7 days** (`valid_until(old) − valid_from(new) ≤ G`); within the overlap either key verifies. Verifier clock-skew semantics across anchors remain an open question — proposals welcome.
+5. **Revocation.** On compromise, publish a revocation record setting `valid_until := now`, co-signed by `K_hw` where available, and anchor it. The anchor height fixes the revocation time immutably; signatures with `created_at` after revocation MUST be rejected even inside the original window.
+
+**Effect.** Key rotation becomes an auditable, continuity-preserving event rather than an identity break, and every signature is checked against a bounded validity window fixed by the anchor chain.
 
 ---
 
