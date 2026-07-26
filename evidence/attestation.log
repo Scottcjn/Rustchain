@@ -1,0 +1,15 @@
+# Attestation Log — Placeholder
+#
+# This file is a placeholder for the Ghost in the Machine bounty submission.
+# Users submitting to Bounty #2314 should replace this with their actual
+# server-side attestation log output.
+#
+# Example attestation log format:
+# === Attestation Submission ===
+# miner_id: pentium-ii-350-miner
+# device_arch: pentium_ii
+# fingerprint: 0x7f3a9b2c...
+# timestamp: 1742947200
+# slot: 12345
+# multiplier: 2.2x
+# status: ACCEPTED
