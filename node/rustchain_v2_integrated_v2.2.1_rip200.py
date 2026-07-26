@@ -9005,7 +9005,12 @@ def _tip_age_slots():
     try:
         with sqlite3.connect(DB_PATH, timeout=3) as db:
             row = db.execute("SELECT slot FROM headers ORDER BY slot DESC LIMIT 1").fetchone()
-        return 0 if row else None
+        if row is None:
+            return None
+        latest_slot = row[0]
+        now_slot = current_slot()
+        age = now_slot - latest_slot
+        return max(0, age)
     except Exception:
         return None
 
