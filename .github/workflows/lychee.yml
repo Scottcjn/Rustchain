@@ -36,7 +36,6 @@ jobs:
             --exclude "https://rustchain\.org/api-zh"
             --exclude "https://rustchain\.org/beginner"
             --exclude "https://linearb\.io"
-            --exclude-mail
             -- './**/*.md' './**/*.html'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
