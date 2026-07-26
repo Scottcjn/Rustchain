@@ -57,6 +57,7 @@ jobs:
             --exclude "https://api\\.ergoplatform\\.com"
             --exclude "https://api\\.testnet\\.ergoplatform\\.com"
             --exclude "https://solscan\\.io"
+            --exclude "https://mainnet\\.base\\.org"
             --exclude "https://www\\.raspberrypi\\.com"
             --exclude "https://www\\.intel\\.com/content/www/us/en"
             --exclude "https://wiki\\.osdev\\.org"
