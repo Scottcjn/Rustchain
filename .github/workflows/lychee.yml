@@ -23,6 +23,18 @@ jobs:
             --exclude "https?://(twitter|x)\.com"
             --exclude "https://github.com/Scottcjn/Rustchain/actions"
             --exclude "https?://(www\.)?(linkedin|facebook|instagram|tiktok)"
+            --exclude "https://dexscreener\.com"
+            --exclude "https://github\.com/Scottcjn/Rustchain/stargazers"
+            --exclude "https://rustchain\.org/bcos"
+            --exclude "https://rustchain\.org/green"
+            --exclude "https://rustchain\.org/install"
+            --exclude "https://rustchain\.org/machines"
+            --exclude "https://rustchain\.org/manifesto"
+            --exclude "https://rustchain\.org/principles"
+            --exclude "https://rustchain\.org/whitepaper"
+            --exclude "https://rustchain\.org/api-zh"
+            --exclude "https://rustchain\.org/beginner"
+            --exclude "https://linearb\.io"
             --exclude-mail
             -- './**/*.md' './**/*.html'
         env:
