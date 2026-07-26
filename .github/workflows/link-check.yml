@@ -32,14 +32,23 @@ jobs:
           args: >
             --verbose
             --no-progress
+            --max-redirects 5
             --include-fragments
+            --include-mail
             --exclude-all-private
             --exclude "https?://(twitter|x)\\.com"
             --exclude "https?://(www\\.)?(linkedin|facebook|instagram|tiktok|youtube)\\.com"
             --exclude "https://github.com/Scottcjn/Rustchain/actions"
             --exclude "https://github.com/waterWang/Rustchain/actions"
             --exclude "https://img\\.shields\\.io"
-            -- "./**/*.md" "./**/*.html"
+            --exclude "https?://50\\.28\\.86\\.13[13]/"
+            --exclude "http://your-server"
+            --exclude "http://your-server-ip"
+            --exclude-path "website/"
+            --exclude-path "web/style.css"
+            --exclude-path "assets/favicon"
+            --exclude-path "tools/%7B%7BBASE_URL%7D%7D"
+            -- ".{{docs,bounties,contracts,tests,fuzz,tools,rips}}/**/*.md" "./README*.md" "./BCOS.md"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
