@@ -1,12 +1,12 @@
 # BCOS — Beacon Certified Open Source
 
-[![BCOS Certified](https://img.shields.io/badge/BCOS-Certified-brightgreen?style=flat)](https://rustchain.org/bcos/)
+[![BCOS Certified](https://img.shields.io/badge/BCOS-Certified-brightgreen?style=flat)](docs/BEACON_CERTIFIED_OPEN_SOURCE.md)
 
 This repository is certified under the **Beacon Certified Open Source (BCOS)** program by [Elyan Labs](https://elyanlabs.ai).
 
 ## Verification
 
-Verify this repository's certification at: **[rustchain.org/bcos/](https://rustchain.org/bcos/)**
+Verify this repository's certification at: **[docs/BEACON_CERTIFIED_OPEN_SOURCE.md](docs/BEACON_CERTIFIED_OPEN_SOURCE.md)**
 
 ```bash
 python3 -m pip install clawrtc

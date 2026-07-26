@@ -1,10 +1,17 @@
 name: Link Check
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '**.md'
+      - 'docs/**'
   pull_request:
     paths:
       - '**.md'
       - 'docs/**'
+  schedule:
+    - cron: '0 6 * * 1'  # Every Monday at 06:00 UTC
   workflow_dispatch:
 
 jobs:
@@ -12,7 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check relative links
+
+      - name: Check relative and external links
         uses: lycheeverse/lychee-action@v2
         with:
           args: >
@@ -20,13 +28,17 @@ jobs:
             --no-progress
             --include-fragments
             --exclude-all-private
-            --exclude "https?://(twitter|x)\.com"
+            --exclude "https?://(twitter|x)\\.com"
             --exclude "https://github.com/Scottcjn/Rustchain/actions"
-            --exclude "https?://(www\.)?(linkedin|facebook|instagram|tiktok)"
+            --exclude "https?://(www\\.)?(linkedin|facebook|instagram|tiktok)"
+            --exclude "https?://(localhost|127\\.0\\.0\\.1)(:[0-9]+)?"
             --exclude-mail
             -- './**/*.md' './**/*.html'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Fail on broken relative links
+
+      - name: Fail on broken links
         if: failure()
-        run: exit 1
+        run: |
+          echo "::error::Broken links found. Check the lychee output above for details."
+          exit 1
