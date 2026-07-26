@@ -290,6 +290,10 @@ Payments run over the [Beacon](https://github.com/Scottcjn/beacon-skill) RustCha
 | Integer-overflow finding fixed in wolfSSL (via their #9954) | [wolfSSL/wolfssl#9984](https://github.com/wolfSSL/wolfssl/pull/9984) |
 | Open PRs on Ghidra (e200 VLE PowerPC), wolfSSL (POWER8 AES), LLVM, PyTorch, vLLM | Listed in the upstream project PR trackers |
 
+### First Commercial Anchoring Engagement (July 2026)
+
+RustChain is the attestation chain for a live U.S. legal-corpus determinism engagement run by [Elyan Labs](https://elyanlabs.ai/verifiable-compute.html) for a research client: over one million units of federal and state law, roughly 1.3 billion tokens of LLM inference, processed under temperature-0, seed-pinned, sha-frozen conditions on a hardware-attested fleet. Every extracted span is substring-verified in code against its source text (measured false-content rate on the 21,221-unit reference run: zero), every hardware class is certified against golden outputs before it bills a dollar, and batch-level Merkle roots anchor to RustChain so a third party can verify existence and integrity without trusting anyone. Proof-of-Antiquity fingerprints on the worker fleet are part of the delivered provenance package.
+
 ---
 
 ## Quickstart
