@@ -2106,6 +2106,11 @@ HARDWARE_WEIGHTS = {
     "console": {"nes_6502": 2.8, "snes_65c816": 2.7, "n64_mips": 2.5,
                 "genesis_68000": 2.5, "gameboy_z80": 2.6, "ps1_mips": 2.8,
                 "saturn_sh2": 2.6, "gba_arm7": 2.3, "default": 2.5},
+    # Standalone vintage microcomputers (Apple II, CP/M boxes) — RIP-309b.
+    # Values mirror the same silicon in the console table above
+    # (nes_6502 2.8, snes_65c816 2.7, gameboy_z80 2.6).
+    "MOS": {"6502": 2.8, "65c816": 2.7, "default": 2.5},
+    "Zilog": {"z80": 2.6, "default": 2.5},
 }
 
 # === WELCOME BONUS & STREAK REWARDS ===
@@ -2219,6 +2224,207 @@ def _fingerprint_check_passed(check_entry) -> bool:
     return False
 
 
+# ── RIP-309b: capability-aware three-state fingerprint evaluation ──────────
+#
+# Some device classes structurally CANNOT perform some of the six rotating
+# RIP-309 checks. A MOS 6502 has no SIMD unit, a 386/486 has no TSC for the
+# clock-drift measurement, and a Pico console bridge cannot run cache-timing
+# sweeps on the console CPU. Treating an absent check as FAILED zeroed the
+# entire vintage/console fleet; treating it as PASSED would be a fail-open
+# hole for spoofers. So checks get a third state:
+#
+#   passed     - measured and passed            -> counts for the miner
+#   failed     - measured and failed            -> counts against the miner
+#   unmeasured - hardware structurally cannot   -> NEUTRAL: excluded from the
+#                perform the measurement           active_ratio denominator
+#
+# The unmeasured state is only granted from the SERVER-derived device class
+# (derive_verified_device), and only when _capability_contradiction() finds
+# no evidence that the device is actually a fuller-capability platform.
+# anti_emulation is NEVER neutralized: a reported anti-emulation failure is
+# real evidence of emulation regardless of claimed class.
+
+# Standalone vintage micros: 8/16-bit CPUs and pre-Pentium x86. None of these
+# can run any of the six rotating checks (no TSC, no SIMD, no thermal MSRs,
+# no high-resolution timer for cache/jitter sweeps).
+MICRO_LIMITED_ARCHES = {
+    "6502", "65c816", "z80", "sh2",
+    "i386", "386", "80386",
+    "i486", "486", "80486",
+    "8086", "8088", "286", "80286", "i286",
+}
+
+# Console miners attested through a Pico serial bridge. The bridge supplies
+# its own checks (ctrl_port_timing, rom_execution_timing, bus_jitter) plus
+# anti_emulation; of the six rotating names only anti_emulation is measurable.
+CONSOLE_BRIDGE_ARCHES = {
+    "nes_6502", "snes_65c816", "n64_mips", "gba_arm7",
+    "genesis_68000", "sms_z80", "saturn_sh2",
+    "gameboy_z80", "gameboy_color_z80", "ps1_mips",
+}
+
+# Canonical (family, arch) for standalone micro claims, mapped onto existing
+# HARDWARE_WEIGHTS entries where they exist (x86 386/486/retro tiers).
+MICRO_ARCH_CANONICAL = {
+    "6502": ("MOS", "6502"),
+    "65c816": ("MOS", "65c816"),
+    "z80": ("Zilog", "z80"),
+    "i386": ("x86", "386"), "386": ("x86", "386"), "80386": ("x86", "386"),
+    "i486": ("x86", "486"), "486": ("x86", "486"), "80486": ("x86", "486"),
+    "8086": ("x86", "retro"), "8088": ("x86", "retro"),
+    "286": ("x86", "retro"), "80286": ("x86", "retro"), "i286": ("x86", "retro"),
+}
+
+# Evidence that the submitting machine is a modern/full-capability platform
+# and therefore must NOT receive a capability-limited (unmeasured) profile.
+MODERN_MACHINE_TOKENS = {
+    "x86_64", "amd64", "i686", "i586",
+    "aarch64", "arm64", "arm64e", "armv7l", "armv8l",
+    "ppc64le", "ppc64", "riscv64", "mips64", "s390x",
+}
+MODERN_CPU_BRAND_TOKENS = (
+    "ryzen", "epyc", "threadripper", "xeon", "core(tm)",
+    "core i3", "core i5", "core i7", "core i9",
+    "apple m1", "apple m2", "apple m3", "apple m4",
+    "snapdragon", "graviton", "neoverse",
+)
+
+# Top-level evidence fields the flat vintage C miners send (miners/apple2,
+# miners/i386). These are device-native measurements, not rotating checks.
+FLAT_MICRO_EVIDENCE_FIELDS = (
+    "cycle_count", "clock_ticks", "ram_kb", "aux_ram",
+    "cpu_flags", "has_cpuid", "cpuid_max_leaf", "hw_fingerprint",
+)
+_MICRO_NATIVE_EVIDENCE_EXCLUDE = {"checks", "all_passed", "bridge_type"}
+
+
+def _capability_contradiction(claimed_device, fingerprint):
+    """Return a reason string if a capability-limited claim is contradicted.
+
+    A device claiming to be a 6502/386/486/console bridge while presenting
+    evidence of a modern platform (64-bit machine field, modern CPU brand,
+    x86/PowerPC SIMD features in the fingerprint) must not receive the
+    neutral 'unmeasured' treatment. Returns None when no contradiction is
+    found. Deliberately conservative: 'GenuineIntel' on a claimed 486 is NOT
+    a contradiction (late 486s have CPUID), but SSE/AVX evidence is.
+    """
+    device = claimed_device if isinstance(claimed_device, dict) else {}
+    fp = fingerprint if isinstance(fingerprint, dict) else {}
+
+    machine = str(device.get("machine") or "").lower()
+    if machine in MODERN_MACHINE_TOKENS:
+        return f"modern_machine_field:{machine}"
+
+    platform_system = str(device.get("platform_system") or "").lower()
+    if platform_system in ("windows", "darwin"):
+        return f"modern_platform:{platform_system}"
+
+    cpu_brand = _cpu_brand_string(device)
+    for token in MODERN_CPU_BRAND_TOKENS:
+        if token in cpu_brand:
+            return f"modern_cpu_brand:{token}"
+
+    simd_data = _fingerprint_check_data(fp, "simd_identity")
+    x86_features = simd_data.get("x86_features")
+    if (isinstance(x86_features, list) and x86_features) or \
+            simd_data.get("has_sse") or simd_data.get("has_avx"):
+        return "x86_simd_evidence"
+    if simd_data.get("altivec") or simd_data.get("vsx") or simd_data.get("has_altivec"):
+        return "powerpc_simd_evidence"
+
+    return None
+
+
+def _structurally_unmeasurable_checks(device_arch, fingerprint=None) -> frozenset:
+    """Rotating checks a device class structurally cannot perform.
+
+    Keyed by the SERVER-derived arch (never a raw client claim). Bare micro
+    archs attested via a Pico bridge get the console profile (the bridge does
+    measure anti_emulation); standalone micros get all six as unmeasurable —
+    their attestation validity rests on device-native evidence instead
+    (see validate_fingerprint_data micro path).
+    """
+    arch = str(device_arch or "").lower()
+    bridge_type = ""
+    if isinstance(fingerprint, dict):
+        bt = fingerprint.get("bridge_type")
+        bridge_type = bt if isinstance(bt, str) else ""
+    if arch in CONSOLE_BRIDGE_ARCHES or bridge_type == "pico_serial":
+        return frozenset(RIP309_ROTATING_FINGERPRINT_CHECKS) - {"anti_emulation"}
+    if arch in MICRO_LIMITED_ARCHES:
+        return frozenset(RIP309_ROTATING_FINGERPRINT_CHECKS)
+    return frozenset()
+
+
+def _fingerprint_check_state(check_entry, check_name=None, unmeasurable=frozenset()) -> str:
+    """Three-state evaluation of one rotating check: passed/failed/unmeasured.
+
+    For checks the (verified) device class can perform, behavior is identical
+    to _fingerprint_check_passed: absent or malformed counts as failed.
+    For structurally unmeasurable checks, an absent check — or an honestly
+    reported failure such as a 486 with no usable TSC — is neutral. A
+    reported PASS is still evaluated normally, and anti_emulation failures
+    are never neutralized.
+    """
+    structurally_unmeasurable = check_name in unmeasurable
+    if isinstance(check_entry, bool):
+        passed = check_entry
+    elif isinstance(check_entry, dict):
+        passed = bool(check_entry.get("passed", True))
+    else:
+        # Absent or malformed entry
+        return "unmeasured" if structurally_unmeasurable else "failed"
+    if passed:
+        return "passed"
+    if structurally_unmeasurable and check_name != "anti_emulation":
+        return "unmeasured"
+    return "failed"
+
+
+def _micro_native_evidence(fingerprint) -> list:
+    """List device-native evidence fields in a flat micro fingerprint.
+
+    Flat vintage miners (Apple II 6502, i386) send raw measurements
+    (cycle_count, clock_ticks, ram_kb, ...) instead of a checks map. Scalar
+    non-empty fields outside the reserved keys count as evidence.
+    """
+    if not isinstance(fingerprint, dict):
+        return []
+    fields = []
+    for key, value in fingerprint.items():
+        if key in _MICRO_NATIVE_EVIDENCE_EXCLUDE:
+            continue
+        if isinstance(value, (bool, int, float)):
+            fields.append(key)
+        elif isinstance(value, str) and value.strip():
+            fields.append(key)
+    return fields
+
+
+def _flat_micro_fingerprint(data, device) -> dict:
+    """Rebuild a fingerprint dict from flat top-level payload fields.
+
+    The i386 miner (miners/i386/miner386.c) sends its evidence
+    (clock_ticks, ram_kb, hw_fingerprint, ...) at the top level of the
+    attestation body with no nested fingerprint object at all. Only applied
+    for micro-class arch claims; returns {} otherwise. The result carries no
+    'checks' key on purpose — none of these fields is a rotating check.
+    """
+    if not isinstance(data, dict) or not isinstance(device, dict):
+        return {}
+    arch = str(device.get("device_arch") or device.get("arch") or "").lower()
+    if arch not in MICRO_LIMITED_ARCHES:
+        return {}
+    evidence = {}
+    for field in FLAT_MICRO_EVIDENCE_FIELDS:
+        value = data.get(field)
+        if isinstance(value, (bool, int, float)):
+            evidence[field] = value
+        elif isinstance(value, str) and value.strip():
+            evidence[field] = value.strip()
+    return evidence
+
+
 def get_previous_epoch_block_hash(conn, epoch: int) -> str:
     if epoch <= 0:
         return RIP309_NONCE_FALLBACK
@@ -2285,24 +2491,56 @@ def get_epoch_fingerprint_rotation(conn, epoch: int) -> dict:
     }
 
 
-def evaluate_rotating_fingerprint_checks(conn, epoch: int, fingerprint: dict) -> dict:
+def evaluate_rotating_fingerprint_checks(conn, epoch: int, fingerprint: dict,
+                                         verified_device: dict = None,
+                                         claimed_device: dict = None) -> dict:
+    """Evaluate the epoch's active rotating checks against a fingerprint.
+
+    RIP-309b: when the SERVER-derived device class (verified_device) is a
+    capability-limited platform — a console bridge or a standalone vintage
+    micro — checks the hardware structurally cannot perform are 'unmeasured'
+    and NEUTRAL: excluded from the active_ratio denominator, neither credit
+    nor penalty. The neutral profile is vetoed entirely when
+    _capability_contradiction() finds modern-platform evidence, so a modern
+    box cannot gain anything by claiming to be capability-limited. Callers
+    that pass no verified_device get the legacy strict behavior (absent =
+    failed), so nothing is weakened for hardware that CAN measure.
+    """
     rotation = get_epoch_fingerprint_rotation(conn, epoch)
     checks = _fingerprint_checks_map(fingerprint)
-    active_results = {
-        name: _fingerprint_check_passed(checks.get(name))
+    fp = fingerprint if isinstance(fingerprint, dict) else {}
+    unmeasurable = frozenset()
+    capability_veto = None
+    if isinstance(verified_device, dict):
+        capability_veto = _capability_contradiction(claimed_device or {}, fp)
+        if capability_veto is None:
+            unmeasurable = _structurally_unmeasurable_checks(
+                verified_device.get("device_arch"), fp)
+    active_states = {
+        name: _fingerprint_check_state(checks.get(name), name, unmeasurable)
         for name in rotation["active_checks"]
     }
-    passed_active = [name for name, passed in active_results.items() if passed]
-    failed_active = [name for name, passed in active_results.items() if not passed]
+    passed_active = [n for n, s in active_states.items() if s == "passed"]
+    failed_active = [n for n, s in active_states.items() if s == "failed"]
+    unmeasured_active = [n for n, s in active_states.items() if s == "unmeasured"]
     total_active = len(rotation["active_checks"])
-    active_ratio = (len(passed_active) / total_active) if total_active else 1.0
+    measured_total = len(passed_active) + len(failed_active)
+    # Neutral means neutral: only measured checks form the denominator. A
+    # class with zero measurable active checks neither gains nor loses here;
+    # its validity is decided by validate_fingerprint_data (native evidence,
+    # anti-spoof cross-checks) before any weight is granted.
+    active_ratio = (len(passed_active) / measured_total) if measured_total else 1.0
     return {
         **rotation,
-        "active_results": active_results,
+        "active_results": {n: (s == "passed") for n, s in active_states.items()},
+        "active_states": active_states,
         "passed_active_checks": passed_active,
         "failed_active_checks": failed_active,
+        "unmeasured_active_checks": unmeasured_active,
         "active_pass_count": len(passed_active),
         "active_total": total_active,
+        "measured_total": measured_total,
+        "capability_veto": capability_veto,
         "active_ratio": active_ratio,
     }
 
@@ -2645,12 +2883,68 @@ def _detect_x86_vintage(cpu_brand: str, machine: str, simd_data: dict):
     return None
 
 
+def _detect_capability_limited_device(device: dict, fingerprint: dict) -> Optional[dict]:
+    """Classify console-bridge and standalone-micro claims (RIP-309b).
+
+    Runs BEFORE exotic/ARM detection in derive_verified_device:
+    - the 'reverse x86' ARM heuristic otherwise reclassifies an Apple II
+      (family defaults to x86, brand 'MOS6502' unrecognized) as ARM/aarch64;
+    - MIPS-brand console CPUs (N64 VR4300, PS1 R3000A) otherwise land in a
+      generic MIPS family with no console multiplier.
+
+    Anti-spoof: a limited claim contradicted by modern-platform evidence is
+    NOT honored. With ARM evidence it falls through to the ARM override
+    (0.0005x); otherwise it is downgraded to x86_64/default, so the claim
+    can never beat the claimant's honest classification.
+    """
+    family, arch = _claimed_family_and_arch(device)
+    family_lower = family.lower()
+    arch_lower = arch.lower()
+    is_console_claim = family_lower == "console" or arch_lower in CONSOLE_BRIDGE_ARCHES
+    is_micro_claim = arch_lower in MICRO_ARCH_CANONICAL
+    if not (is_console_claim or is_micro_claim):
+        return None
+    fp = fingerprint if isinstance(fingerprint, dict) else {}
+    contradiction = _capability_contradiction(device, fp)
+    if contradiction:
+        # POSITIVE ARM evidence (machine field, brand token, NEON) — not the
+        # reverse-inference heuristic — falls through so the ARM override
+        # applies its 0.0005x penalty instead of the milder x86_64 downgrade.
+        machine = str(device.get("machine") or "").lower()
+        cpu_brand = _cpu_brand_string(device)
+        simd_data = _fingerprint_check_data(fp, "simd_identity")
+        positive_arm = (
+            machine in ("aarch64", "arm64", "armv7l", "armv6l", "armhf", "arm")
+            or _has_any_token(cpu_brand, ARM_CPU_BRANDS)
+            or bool(simd_data.get("has_neon"))
+        )
+        if positive_arm:
+            print(f"[CAPABILITY] REJECT: claims {family}/{arch} but {contradiction} "
+                  f"+ ARM evidence -> ARM override path")
+            return None
+        print(f"[CAPABILITY] REJECT spoof: claims {family}/{arch} but {contradiction} -> x86_64/default")
+        return {"device_family": "x86_64", "device_arch": "default"}
+    if is_console_claim:
+        canon_arch = arch_lower if arch_lower in CONSOLE_BRIDGE_ARCHES else "default"
+        print(f"[CAPABILITY] console claim: {family}/{arch} -> console/{canon_arch}")
+        return {"device_family": "console", "device_arch": canon_arch}
+    canon_family, canon_arch = MICRO_ARCH_CANONICAL[arch_lower]
+    print(f"[CAPABILITY] micro claim: {family}/{arch} -> {canon_family}/{canon_arch}")
+    return {"device_family": canon_family, "device_arch": canon_arch}
+
+
 def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: bool) -> dict:
     family, arch = _claimed_family_and_arch(device)
     cpu_brand = _cpu_brand_string(device)
     machine = str(device.get("machine") or "").lower()
     print(f"[DERIVE_DEBUG] family={family}, arch={arch}, machine={machine}, cpu_brand={cpu_brand[:50]}, platform={device.get('platform_system','?')}")
     simd_data = _fingerprint_check_data(fingerprint, "simd_identity")
+
+    # RIP-309b: console-bridge / standalone-micro classification (with its
+    # own contradiction veto) runs first — see _detect_capability_limited_device.
+    limited = _detect_capability_limited_device(device, fingerprint)
+    if limited:
+        return limited
 
     # Exotic arch detection — SPARC, MIPS, RISC-V, SH, 68K, Cell, Itanium, etc.
     # Must run BEFORE ARM detection so vintage chips don't get misclassified.
@@ -3437,15 +3731,14 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     checks = _fingerprint_checks_map(fingerprint)
     claimed_device = claimed_device if isinstance(claimed_device, dict) else {}
 
-    # FIX #305: Reject empty fingerprint payloads (e.g. fingerprint={} or checks={})
-    if not checks:
-        return False, "empty_fingerprint_checks"
-
     # FIX #305: Require at least anti_emulation and clock_drift evidence
     # FIX 2026-02-28: PowerPC/legacy miners may not support clock_drift
     # (time.perf_counter_ns requires Python 3.7+, old Macs run Python 2.x)
     # For known vintage architectures, relax clock_drift if anti_emulation passes.
     # FIX #1147: Defensive type checking for claimed_arch_lower
+    # RIP-309b: class determination MUST happen before the empty-checks bail
+    # below, or capability-limited devices (Apple II 6502, i386) get rejected
+    # with empty_fingerprint_checks before their evidence is ever considered.
     claimed_arch = (claimed_device.get("device_arch") or
                    claimed_device.get("arch", "modern"))
     if not isinstance(claimed_arch, str):
@@ -3455,12 +3748,23 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
                              "powerpc g4", "powerpc g5", "powerpc g3",
                              "power8", "power9", "68k", "m68k"}
     # RIP-304: Console miners via Pico bridge have their own fingerprint checks
-    console_archs = {"nes_6502", "snes_65c816", "n64_mips", "gba_arm7",
-                     "genesis_68000", "sms_z80", "saturn_sh2",
-                     "gameboy_z80", "gameboy_color_z80", "ps1_mips",
-                     "6502", "65c816", "z80", "sh2"}
+    console_archs = CONSOLE_BRIDGE_ARCHES | {"6502", "65c816", "z80", "sh2"}
     is_vintage = claimed_arch_lower in vintage_relaxed_archs
     is_console = claimed_arch_lower in console_archs
+    is_micro = claimed_arch_lower in MICRO_LIMITED_ARCHES
+
+    # RIP-309b: a capability-limited claim contradicted by modern-platform
+    # evidence loses ALL class relaxations and is held to the full standard
+    # requirements. This is what stops a modern x86 box from gaining anything
+    # by claiming to be a 6502/386/console.
+    capability_veto = None
+    if is_console or is_micro:
+        capability_veto = _capability_contradiction(claimed_device, fingerprint)
+        if capability_veto:
+            print(f"[FINGERPRINT] capability profile VETOED for claimed "
+                  f"{claimed_arch_lower}: {capability_veto}")
+            is_console = False
+            is_micro = False
 
     # RIP-304: Console miners use Pico bridge fingerprinting (ctrl_port_timing
     # replaces clock_drift; anti_emulation still required via timing CV)
@@ -3468,16 +3772,44 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     bridge_type = fingerprint.get("bridge_type", "")
     if not isinstance(bridge_type, str):
         bridge_type = ""
-    if is_console or bridge_type == "pico_serial":
+    if capability_veto:
+        bridge_type = ""
+
+    # RIP-309b: the set of rotating checks this (unvetoed) class structurally
+    # cannot perform. Used below to keep an honest incapacity report (e.g. a
+    # 486 failing clock_drift because it has no TSC) neutral instead of fatal.
+    micro_unmeasurable = _structurally_unmeasurable_checks(claimed_arch_lower, fingerprint) if is_micro else frozenset()
+
+    # FIX #305 / RIP-309b: Reject empty fingerprint payloads (fingerprint={}
+    # or checks={}) — EXCEPT for standalone micro classes, whose miners send
+    # flat device-native evidence (cycle_count, clock_ticks, ram_kb, ...)
+    # because none of the standard checks is measurable on that silicon.
+    if not checks:
+        if is_micro:
+            native = _micro_native_evidence(fingerprint)
+            if len(native) >= 2:
+                print(f"[FINGERPRINT] Micro arch {claimed_arch_lower} - accepted on "
+                      f"{len(native)} native evidence fields: {sorted(native)}")
+                return True, f"micro_native_evidence:{claimed_arch_lower}"
+            return False, "micro_insufficient_native_evidence"
+        return False, "empty_fingerprint_checks"
+
+    has_bridge_checks = "ctrl_port_timing" in checks or "anti_emulation" in checks
+    if (is_console or bridge_type == "pico_serial") and (has_bridge_checks or not is_micro):
         # Console: accept ctrl_port_timing OR anti_emulation
         # Pico bridge provides its own set of checks
-        has_ctrl_timing = "ctrl_port_timing" in checks
-        has_anti_emu = "anti_emulation" in checks
-        if has_ctrl_timing or has_anti_emu:
+        if has_bridge_checks:
             required_checks = [k for k in ["ctrl_port_timing", "anti_emulation"] if k in checks]
             print(f"[FINGERPRINT] Console arch {claimed_arch_lower} (bridge={bridge_type}) - using Pico bridge checks")
         else:
             return False, "console_no_bridge_checks"
+    elif is_micro:
+        # Standalone micro that DID send a checks map: nothing in the standard
+        # set is required (all structurally unmeasurable), but whatever was
+        # sent is still validated by the phases below — a reported
+        # anti_emulation failure or emulator ROM still hard-fails.
+        required_checks = []
+        print(f"[FINGERPRINT] Micro arch {claimed_arch_lower} - capability-limited, no required standard checks")
     elif is_vintage:
         # Vintage: only anti_emulation is strictly required
         required_checks = ["anti_emulation"]
@@ -3525,7 +3857,10 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
             "dmesg_scanned" in anti_emu_data or
             "paths_checked" in anti_emu_data or
             "cpuinfo_flags" in anti_emu_data or
-            isinstance(anti_emu_data.get("vm_indicators"), list)
+            isinstance(anti_emu_data.get("vm_indicators"), list) or
+            # RIP-304/309b: the Pico console bridge reports its raw evidence
+            # under 'emulator_indicators' (see miners/pico_bridge).
+            isinstance(anti_emu_data.get("emulator_indicators"), list)
         )
         if not has_evidence and anti_emu_check.get("passed") == True:
             print(f"[FINGERPRINT] REJECT: anti_emulation claims pass but has no raw evidence")
@@ -3560,7 +3895,13 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
             return False, "timing_too_uniform"
 
         if clock_check.get("passed") == False:
-            return False, f"clock_drift_failed:{clock_data.get('fail_reason', 'unknown')}"
+            # RIP-309b: an honest incapacity report from a class that cannot
+            # measure clock drift (386/486: no TSC) is neutral, not fatal.
+            if "clock_drift" in micro_unmeasurable:
+                print(f"[FINGERPRINT] Micro arch {claimed_arch_lower} - clock_drift "
+                      f"failure treated as unmeasured (no usable TSC)")
+            else:
+                return False, f"clock_drift_failed:{clock_data.get('fail_reason', 'unknown')}"
 
         # Cross-validate: vintage hardware should have MORE drift
         claimed_arch = (claimed_device.get("device_arch") or
@@ -3570,7 +3911,7 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
             print(f"[FINGERPRINT] SUSPICIOUS: claims {claimed_arch} but cv={cv:.6f} is too stable for vintage")
             return False, f"vintage_timing_too_stable:cv={cv}"
     elif isinstance(clock_check, bool):
-        if not clock_check:
+        if not clock_check and "clock_drift" not in micro_unmeasurable:
             return False, "clock_drift_failed_bool"
 
     # ── PHASE 2: Cross-validate device claims against fingerprint ──
@@ -3621,6 +3962,11 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
         # FIX 2026-02-28: For vintage archs, clock_drift is soft (may not be available)
         if is_vintage:
             SOFT_CHECKS = SOFT_CHECKS | {"clock_drift"}
+        # RIP-309b: structurally unmeasurable checks are soft for micro classes
+        # (anti_emulation is never in micro_unmeasurable's soft treatment —
+        # _fingerprint_check_state and the phase-1 gate above keep it hard).
+        if micro_unmeasurable:
+            SOFT_CHECKS = SOFT_CHECKS | (set(micro_unmeasurable) - {"anti_emulation"})
         failed_checks = []
         for k, v in checks.items():
             passed, _ = get_check_status(v)
@@ -4456,6 +4802,19 @@ def _submit_attestation_impl():
     nonce = report.get('nonce') or _attest_text(data.get('nonce'))
     device = _normalize_attestation_device(data.get('device'))
 
+    # RIP-309b: flat vintage C miners (miners/i386/miner386.c) send arch and
+    # cpu_vendor at the top level of the payload with no nested device object.
+    # Fold them in so class determination sees the real claim instead of the
+    # 'modern' default.
+    if not (device.get("arch") or device.get("device_arch")):
+        flat_arch = _attest_text(data.get("arch"))
+        if flat_arch:
+            device["arch"] = flat_arch
+    if not device.get("cpu"):
+        flat_vendor = _attest_text(data.get("cpu_vendor"))
+        if flat_vendor:
+            device["cpu"] = flat_vendor
+
     # SECURITY: Verify Ed25519 signature on attestation report if present.
     # We accept TWO signing schemes for backward compatibility:
     #   1. v3 canonical-JSON (current rustchain-miner, GPT-5.4 audit finding #2):
@@ -4626,6 +4985,14 @@ def _submit_attestation_impl():
         }), http_status
     signals = _normalize_attestation_signals(data.get('signals'))
     fingerprint = _attest_mapping(data.get('fingerprint'))  # NEW: Extract fingerprint
+
+    # RIP-309b: the i386 miner sends its hardware evidence (clock_ticks,
+    # ram_kb, hw_fingerprint, ...) flat at the top level with no fingerprint
+    # object at all. Rebuild a fingerprint dict from those fields — micro-class
+    # arch claims only, and still subject to the full validation and
+    # contradiction veto in validate_fingerprint_data.
+    if not fingerprint:
+        fingerprint = _flat_micro_fingerprint(data, device)
 
     # SECURITY: Check wallet review / block registry
     review_gate = wallet_review_gate_response(miner)
@@ -4884,6 +5251,10 @@ def _submit_attestation_impl():
                 enroll_conn,
                 epoch,
                 fingerprint if isinstance(fingerprint, dict) else {},
+                # RIP-309b: server-derived class enables neutral 'unmeasured'
+                # treatment for checks this hardware cannot perform.
+                verified_device=verified_device,
+                claimed_device=_device2,
             )
             if not fingerprint_passed:
                 enroll_weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
@@ -5192,13 +5563,19 @@ def enroll_epoch():
     fingerprint_failed = check_result.get('fingerprint_failed', False)
 
     with sqlite3.connect(DB_PATH) as c:
+        # Fall back to the stored attestation fingerprint when the enroll
+        # body omits one, so a signed-but-fingerprint-less enrollment does
+        # not collapse to zero weight under the rotating check.
+        resolved_fp = resolve_enroll_fingerprint(c, miner_pk, data)
+        claimed_dev = device if isinstance(device, dict) else {}
         rotation_eval = evaluate_rotating_fingerprint_checks(
             c,
             epoch,
-            # Fall back to the stored attestation fingerprint when the enroll
-            # body omits one, so a signed-but-fingerprint-less enrollment does
-            # not collapse to zero weight under the rotating check.
-            resolve_enroll_fingerprint(c, miner_pk, data),
+            resolved_fp,
+            # RIP-309b: capability profile keys off the SERVER-derived class,
+            # never the raw client claim (contradiction-vetoed inside).
+            verified_device=derive_verified_device(claimed_dev, resolved_fp, not fingerprint_failed),
+            claimed_device=claimed_dev,
         )
         if fingerprint_failed:
             weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
