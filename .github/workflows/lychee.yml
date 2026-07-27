@@ -21,6 +21,7 @@ jobs:
             --verbose
             --no-progress
             --exclude-all-private
+            --exclude "https://glama\.ai"
             --exclude "https?://(twitter|x)\\.com"
             --exclude "https://github.com/Scottcjn/Rustchain/actions"
             --exclude "https://github.com/waterWang/Rustchain/actions"

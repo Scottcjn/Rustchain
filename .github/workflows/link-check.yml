@@ -34,6 +34,7 @@ jobs:
             --no-progress
             --max-redirects 5
             --exclude-all-private
+            --exclude "https://glama\.ai"
             --exclude "https?://(twitter|x)\\.com"
             --exclude "https?://(www\.)?(linkedin|facebook|instagram|tiktok|youtube)\.com"
             --exclude "https://github.com/Scottcjn/Rustchain/actions"
