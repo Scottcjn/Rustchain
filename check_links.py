@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: MIT
+"""Link checker for RustChain documentation."""
+
 import re
 import requests
 from urllib.parse import urljoin, urlparse
