@@ -37,10 +37,19 @@ except Exception:  # pragma: no cover
     Mnemonic = None
 
 # Exit codes for consistent error handling
+#
+# Scheme (documented for --help):
+#   0 = success (EXIT_SUCCESS)
+#   1 = usage / input error (EXIT_USAGE_ERROR)
+#   2 = network / connectivity error (EXIT_NETWORK_ERROR)
+#   3 = bad / unexpected response from server (EXIT_BAD_RESPONSE)
+#   4 = wallet not found (EXIT_WALLET_NOT_FOUND)
+#   5 = authentication / decryption failure (EXIT_AUTH_ERROR)
+#   6 = unexpected internal error (EXIT_UNKNOWN_ERROR)
 EXIT_SUCCESS = 0
 EXIT_USAGE_ERROR = 1
 EXIT_NETWORK_ERROR = 2
-EXIT_BAD_RESPONSE = 1
+EXIT_BAD_RESPONSE = 3
 EXIT_WALLET_NOT_FOUND = 4
 EXIT_AUTH_ERROR = 5
 EXIT_UNKNOWN_ERROR = 6
@@ -330,11 +339,12 @@ def cmd_balance(args):
         return rc
 
     if "amount_rtc" not in data:
-        print("ERROR: Response missing 'amount_rtc' field", file=sys.stderr)
-        return EXIT_BAD_RESPONSE
-
-    if "amount_rtc" not in data and "balance_rtc" in data:
-        data["amount_rtc"] = data.get("balance_rtc")
+        # Fallback: accept "balance_rtc" as an alias
+        if "balance_rtc" in data:
+            data["amount_rtc"] = data["balance_rtc"]
+        else:
+            print("ERROR: Response missing 'amount_rtc' field", file=sys.stderr)
+            return EXIT_BAD_RESPONSE
     data["wallet_id"] = args.wallet_id
     print(json.dumps(data, indent=2))
     return EXIT_SUCCESS
@@ -431,7 +441,21 @@ def cmd_epoch(args):
 
 
 def build_parser():
-    p = argparse.ArgumentParser(prog="rustchain-wallet", description="RustChain Wallet CLI")
+    p = argparse.ArgumentParser(
+        prog="rustchain-wallet",
+        description="RustChain Wallet CLI",
+        epilog=(
+            "Exit codes:\n"
+            "  0  success\n"
+            "  1  usage / input error\n"
+            "  2  network / connectivity error\n"
+            "  3  bad / unexpected response from server\n"
+            "  4  wallet not found\n"
+            "  5  authentication / decryption failure\n"
+            "  6  unexpected internal error\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     p_create = sub.add_parser("create", help="Generate new wallet (24-word mnemonic + encrypted keystore)")

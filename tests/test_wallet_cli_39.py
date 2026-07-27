@@ -92,7 +92,7 @@ def test_safe_json_object_rejects_array_payload(capsys):
     data, rc = cli._safe_json_object(FakeResponse([{"amount_rtc": 1.0}]))
 
     assert data is None
-    assert rc == 1
+    assert rc == cli.EXIT_BAD_RESPONSE
     assert "not an object" in capsys.readouterr().err
 
 
@@ -101,7 +101,116 @@ def test_cmd_balance_rejects_non_object_json(monkeypatch, capsys):
 
     rc = cli.cmd_balance(SimpleNamespace(wallet_id="RTCabc"))
 
-    assert rc == 1
+    assert rc == cli.EXIT_BAD_RESPONSE
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "not an object" in captured.err
+
+
+# ─────────────────────────────────────────────────────────────────
+# Comprehensive cmd_balance failure-path tests
+# ─────────────────────────────────────────────────────────────────
+
+def test_cmd_balance_happy_path(monkeypatch, capsys):
+    """Happy path: valid response with amount_rtc."""
+
+    def fake_get(url, **kwargs):
+        return FakeResponse({"amount_rtc": 42.5, "nonce": 7})
+
+    monkeypatch.setattr(cli.requests, "get", fake_get)
+
+    rc = cli.cmd_balance(SimpleNamespace(wallet_id="RTCtest"))
+
+    assert rc == cli.EXIT_SUCCESS
+    out = capsys.readouterr().out
+    assert "42.5" in out
+    assert "RTCtest" in out
+
+
+def test_cmd_balance_network_error(monkeypatch, capsys):
+    """Network error → exit code 2, clear stderr."""
+
+    def fake_get(url, **kwargs):
+        raise cli.requests.exceptions.ConnectionError("Connection refused")
+
+    monkeypatch.setattr(cli.requests, "get", fake_get)
+
+    rc = cli.cmd_balance(SimpleNamespace(wallet_id="RTCnet"))
+
+    assert rc == cli.EXIT_NETWORK_ERROR
+    assert "Network error" in capsys.readouterr().err
+
+
+def test_cmd_balance_not_found(monkeypatch, capsys):
+    """404 response → exit code 4, clear stderr."""
+
+    def fake_get(url, **kwargs):
+        return FakeResponse({"error": "not found"}, ok=False, status_code=404)
+
+    monkeypatch.setattr(cli.requests, "get", fake_get)
+
+    rc = cli.cmd_balance(SimpleNamespace(wallet_id="RTCunknown"))
+
+    assert rc == cli.EXIT_WALLET_NOT_FOUND
+    assert "not found" in capsys.readouterr().err.lower()
+
+
+def test_cmd_balance_server_error(monkeypatch, capsys):
+    """Non-200, non-404 response → exit code 3 (bad response)."""
+
+    def fake_get(url, **kwargs):
+        return FakeResponse({"error": "internal"}, ok=False, status_code=500)
+
+    monkeypatch.setattr(cli.requests, "get", fake_get)
+
+    rc = cli.cmd_balance(SimpleNamespace(wallet_id="RTCerr"))
+
+    assert rc == cli.EXIT_BAD_RESPONSE
+    assert "HTTP 500" in capsys.readouterr().err
+
+
+def test_cmd_balance_malformed_json(monkeypatch, capsys):
+    """Non-JSON response body → exit code 3."""
+
+    class RawResponse:
+        status_code = 200
+        ok = True
+
+        def json(self):
+            raise ValueError("Expecting value")
+
+    monkeypatch.setattr(cli.requests, "get", lambda *a, **kw: RawResponse())
+
+    rc = cli.cmd_balance(SimpleNamespace(wallet_id="RTCbadjson"))
+
+    assert rc == cli.EXIT_BAD_RESPONSE
+    err = capsys.readouterr().err
+    assert "non-JSON body" in err
+
+
+def test_cmd_balance_missing_amount_rtc(monkeypatch, capsys):
+    """Response lacks amount_rtc → exit code 3."""
+
+    def fake_get(url, **kwargs):
+        return FakeResponse({"nonce": 0})  # no amount_rtc
+
+    monkeypatch.setattr(cli.requests, "get", fake_get)
+
+    rc = cli.cmd_balance(SimpleNamespace(wallet_id="RTCmissing"))
+
+    assert rc == cli.EXIT_BAD_RESPONSE
+    assert "amount_rtc" in capsys.readouterr().err
+
+
+def test_cmd_balance_timeout(monkeypatch, capsys):
+    """Timeout → exit code 2."""
+
+    def fake_get(url, **kwargs):
+        raise cli.requests.exceptions.Timeout("timed out")
+
+    monkeypatch.setattr(cli.requests, "get", fake_get)
+
+    rc = cli.cmd_balance(SimpleNamespace(wallet_id="RTCtimeout"))
+
+    assert rc == cli.EXIT_NETWORK_ERROR
+    assert "Network error" in capsys.readouterr().err
