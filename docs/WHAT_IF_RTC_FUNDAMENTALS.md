@@ -35,7 +35,7 @@ inflated, or conservative?**
 | Held by the 4 founder wallets | 286,275 RTC | Explorer: `founder_founders`, `founder_dev_fund`, `founder_team_bounty`, `founder_community` |
 | **External circulating float** | **~158,743 RTC** | Issued minus founder-held |
 | Holders with positive balance | 1,248 | `facts.json` → `activity_density` |
-| New emission | 1.5 RTC per ~24h epoch ≈ **548 RTC/year** max | `PER_BLOCK_RTC` in node source; halvings (README §Tokenomics) only *lower* this |
+| New emission | 1.5 RTC per ~24h epoch ≈ **548 RTC/year** max | `PER_BLOCK_RTC` in node source; no halving — emission is a fixed 1.5 RTC per epoch |
 | Public repo, core code | 562,200 lines (excl. `bounties/` submissions) | `git clone` this repo and count |
 | Deployed node codebase | ~84,000 lines (overlapping + node-local) | Operator-attested |
 | On-chain bounty payouts | 670 payouts, 21,130 RTC from `founder_team_bounty` | `participation.json`; ledger debits in explorer |
