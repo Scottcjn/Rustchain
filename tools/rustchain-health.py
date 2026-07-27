@@ -275,7 +275,8 @@ def render(snapshot: Dict[str, Any]) -> str:
     # ── Overall ───
     all_ok = (h.get("ok", False) and h["reachable"]
               and e["reachable"]
-              and m["reachable"])
+              and m["reachable"]
+              and t["reachable"])
     lines.append(dim("  " + "─" * w))
     if all_ok:
         lines.append(f"  {green(bold('STATUS: ALL SYSTEMS OPERATIONAL'))}")
@@ -358,7 +359,8 @@ def main() -> int:
         all_ok = (snapshot["health"].get("ok", False)
                   and snapshot["health"]["reachable"]
                   and snapshot["epoch"]["reachable"]
-                  and snapshot["miners"]["reachable"])
+                  and snapshot["miners"]["reachable"]
+                  and snapshot["tip"]["reachable"])
         return 0 if all_ok else 1
 
     if args.watch > 0:
