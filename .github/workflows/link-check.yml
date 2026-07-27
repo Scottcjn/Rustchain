@@ -1,0 +1,61 @@
+name: Link Check
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  # Also run on schedule to catch external link rot
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sunday
+
+jobs:
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Install lychee
+      run: |
+        curl -sLO https://github.com/lycheeverse/lychee/releases/latest/download/lychee-x86_64-unknown-linux-gnu.tar.gz
+        tar xzf lychee-x86_64-unknown-linux-gnu.tar.gz
+        sudo mv lychee /usr/local/bin/
+        rm lychee-x86_64-unknown-linux-gnu.tar.gz
+
+    - name: Check relative links in docs
+      run: |
+        # Check all markdown files for broken relative links
+        find . -name "*.md" -not -path "./.git/*" | while read file; do
+          echo "Checking $file..."
+          # Extract relative links and check if they exist
+          grep -oE '\[([^\]]*)\]\(([^)]+)\)' "$file" | while IFS= read -r link; do
+            url=$(echo "$link" | sed 's/.*](\([^)]*\)).*/\1/')
+            # Skip anchors, mailto, and http links
+            if [[ "$url" == \#* ]] || [[ "$url" == mailto:* ]] || [[ "$url" == http* ]]; then
+              continue
+            fi
+            # Check if file exists
+            if [ ! -f "$url" ] && [ ! -d "$url" ]; then
+              echo "❌ Broken link in $file: $url"
+              exit 1
+            fi
+          done
+        done
+        echo "✅ All relative links are valid"
+
+    - name: Check external links (lychee)
+      run: |
+        # Check external links with lychee (allow retries, skip local files)
+        lychee --verbose --no-progress --accept 200,204,301,302 \
+          --exclude-loopback \
+          --exclude 'github.com/Scottcjn/Rustchain/actions' \
+          --exclude 'github.com/Scottcjn/Rustchain/stargazers' \
+          README.md docs/*.md 2>&1 || true
+      # Don't fail on external link errors - they might be transient
+      continue-on-error: true
+
+    - name: Summary
+      run: |
+        echo "Link check completed."
+        echo "Relative links: enforced (must pass)"
+        echo "External links: checked but non-blocking (may be transient)"
