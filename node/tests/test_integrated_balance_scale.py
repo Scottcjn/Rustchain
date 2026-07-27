@@ -177,6 +177,50 @@ class TestIntegratedBalanceScale(unittest.TestCase):
         self.assertEqual(amount_i64, int(1.44 * self.mod.ACCOUNT_UNIT))
         self.assertAlmostEqual(balance_rtc, 1.44)
 
+    def test_finalize_epoch_supports_legacy_balance_schema_with_utxo_dual_write(self):
+        """Legacy balance tables must not make UTXO reward settlement fail."""
+        with closing(sqlite3.connect(self.db_path)) as db:
+            db.execute("DROP TABLE balances")
+            db.execute(
+                "CREATE TABLE balances ("
+                "miner_pk TEXT PRIMARY KEY, "
+                "balance_rtc REAL DEFAULT 0)"
+            )
+            db.execute(
+                "INSERT INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
+                ("miner-scale",),
+            )
+            db.commit()
+
+        calls = []
+
+        class FakeUtxoDB:
+            def __init__(self, db_path):
+                self.db_path = db_path
+
+            def apply_transaction(self, tx, height, conn=None):
+                calls.append((tx, height, conn is not None))
+                return True
+
+        original_dual_write = self.mod.UTXO_DUAL_WRITE
+        original_utxo_db = self.mod.UtxoDB
+        self.mod.UTXO_DUAL_WRITE = True
+        self.mod.UtxoDB = FakeUtxoDB
+        try:
+            self.mod.finalize_epoch(7, 0.01, b"")
+        finally:
+            self.mod.UTXO_DUAL_WRITE = original_dual_write
+            self.mod.UtxoDB = original_utxo_db
+
+        with closing(sqlite3.connect(self.db_path)) as db:
+            balance = db.execute(
+                "SELECT balance_rtc FROM balances WHERE miner_pk = ?",
+                ("miner-scale",),
+            ).fetchone()[0]
+        self.assertAlmostEqual(balance, 1.44)
+        self.assertEqual(len(calls), 1)
+        self.assertTrue(calls[0][2])
+
     def test_finalize_epoch_keeps_utxo_rewards_in_nano_rtc(self):
         calls = []
 
