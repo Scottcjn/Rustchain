@@ -3604,9 +3604,33 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
         if anti_emu_passed is not True:
             return False, "anti_emulation_no_verdict"
     elif isinstance(anti_emu_check, bool):
-        # C miner simple bool - accept for now but flag for reduced weight
+        # A bare boolean carries no evidence at all. It exists for the C miners
+        # (Apple II 6502, i386, console bridges) that cannot serialise a nested
+        # object, and for those it is the only thing they can send.
+        #
+        # It must not be accepted from hardware that CAN run the stock probe.
+        # anti_emulation is not another measurement channel like cache timing:
+        # it is the VM gate, and the design says a VM earns nothing. Accepting
+        # `"anti_emulation": true` from a modern client let a Proxmox guest
+        # attest with fingerprint_passed=1 and earn 0.8x on production, because
+        # `not True` is false and the branch fell straight through.
+        #
+        # The old comment here said "flag for reduced weight". No reduced
+        # weight was ever applied anywhere.
         if not anti_emu_check:
             return False, "anti_emulation_failed_bool"
+        _dev = claimed_device if isinstance(claimed_device, dict) else {}
+        _fam = str(_dev.get("device_family") or _dev.get("family") or "").lower()
+        _arch = str(_dev.get("device_arch") or _dev.get("arch") or "").lower()
+        # Classes that genuinely cannot produce a nested evidence object.
+        _bool_ok = (
+            _fam in ("mos", "zilog", "6502", "console", "dos")
+            or _arch in ("6502", "z80", "386", "486", "console", "retro")
+            or "apple2" in _fam or "pico" in _fam or "nes" in _fam
+        )
+        if not _bool_ok:
+            # Modern-capable hardware must affirmatively pass with evidence.
+            return False, "anti_emulation_bool_not_accepted_for_capable_device"
 
     # Clock drift: MUST have statistical data if present
     if isinstance(clock_check, dict):
