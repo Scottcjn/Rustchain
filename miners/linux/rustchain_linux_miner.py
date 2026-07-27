@@ -17,22 +17,18 @@ from datetime import datetime
 # Without signing, miner falls back to legacy sha512 / unsigned — server
 # accepts with WARNING but offers no wallet-hijack protection.
 try:
-    from miner_crypto import generate_keypair, get_or_create_keypair, sign_payload  # noqa: F401
+    from miner_crypto import (  # noqa: F401
+        address_from_pubkey,
+        canonical_json,
+        generate_keypair,
+        get_or_create_keypair,
+        sign_payload,
+    )
     CRYPTO_AVAILABLE = True
 except ImportError:
     CRYPTO_AVAILABLE = False
+    address_from_pubkey = canonical_json = None
     generate_keypair = get_or_create_keypair = sign_payload = None
-
-# Shared pipe-message builder (PR #6839 review)
-try:
-    from miners.signing_helpers import build_pipe_sign_message
-    _SIGNING_HELPERS = True
-except ImportError:
-    try:
-        from signing_helpers import build_pipe_sign_message
-        _SIGNING_HELPERS = True
-    except ImportError:
-        _SIGNING_HELPERS = False
 
 # Import fingerprint checks
 try:
@@ -256,7 +252,6 @@ class LocalMiner:
                  bzminer_path=None, manage_bzminer=False, verbose=False, show_payload=False,
                  persist_key=True):
         self.node_url = NODE_URL
-        self.wallet = wallet or self._gen_wallet()
         self.hw_info = {}
         self.enrolled = False
         self.attestation_valid_until = 0
@@ -277,6 +272,11 @@ class LocalMiner:
                 if verbose:
                     print("[CRYPTO] Using ephemeral keypair for dry-run; not saving miner_key.json")
             self.public_key = self.keypair.get("public_key", "")
+        self.wallet = wallet or (
+            address_from_pubkey(self.public_key)
+            if self.public_key and address_from_pubkey
+            else self._gen_wallet()
+        )
         self.fingerprint_passed = False
         self.verbose = verbose
         self.show_payload = show_payload
@@ -645,27 +645,16 @@ class LocalMiner:
         }
 
         # ── Ed25519 signature ──
-        # Sign the pipe-delimited message that the node verifier reconstructs
-        # (miner_id|miner|nonce|commitment). Previous code signed the canonical
-        # JSON of the full attestation, but the server verifies the pipe-string,
-        # causing every signed attestation to fail with INVALID_SIGNATURE.
-        # See issue #6798.
+        # Sign the exact canonical JSON payload before adding signature fields.
+        # The full-payload binding is required before hardware measurements can
+        # affect vintage reward weight.
         if CRYPTO_AVAILABLE and self.keypair:
             try:
-                if _SIGNING_HELPERS:
-                    sign_msg = build_pipe_sign_message(attestation)
-                else:
-                    sign_msg = "{}|{}|{}|{}".format(
-                        attestation["miner_id"],
-                        attestation["miner"],
-                        attestation["nonce"],
-                        attestation["report"]["commitment"],
-                    ).encode("utf-8")
                 attestation["signature"] = sign_payload(
-                    sign_msg, self.keypair["private_key"]
+                    canonical_json(attestation), self.keypair["private_key"]
                 )
                 attestation["public_key"] = self.public_key
-                attestation["signature_type"] = "ed25519"
+                attestation["signature_type"] = "canonical_json"
             except Exception as exc:
                 logging.warning(
                     "attestation signing failed; falling through unsigned: %s", exc

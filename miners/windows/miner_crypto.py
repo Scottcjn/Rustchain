@@ -148,6 +148,14 @@ def canonical_json(obj: dict) -> bytes:
     return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
+def address_from_pubkey(public_key_hex: str) -> str:
+    """Derive the canonical RTC identity controlled by an Ed25519 public key."""
+    public_key = bytes.fromhex(public_key_hex)
+    if len(public_key) != 32:
+        raise ValueError("Ed25519 public key must be exactly 32 bytes")
+    return f"RTC{hashlib.sha256(public_key).hexdigest()[:40]}"
+
+
 if __name__ == "__main__":
     print("RustChain Miner Crypto Module")
     print("=" * 50)

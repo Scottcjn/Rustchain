@@ -6,10 +6,10 @@ set "PYTHON_URL=https://www.python.org/ftp/python/3.11.5/python-3.11.5-amd64.exe
 set "PYTHON_INSTALLER=%SCRIPT_DIR%python-3.11.5-amd64.exe"
 set "MINER_URL=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/rustchain_windows_miner.py"
 set "MINER_SCRIPT=%SCRIPT_DIR%rustchain_windows_miner.py"
-set "MINER_SHA256=54dd1fd20111976a1616e01a7dbd87cb2cba312dfe3e8c3b993566583ea4969c"
+set "MINER_SHA256=99ac84a489ebc8c1987eddc02dfbaf8672a9d440cc2cc9e1166c6ba25f4e8184"
 set "CRYPTO_URL=https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/miner_crypto.py"
 set "CRYPTO_SCRIPT=%SCRIPT_DIR%miner_crypto.py"
-set "CRYPTO_SHA256=ffe2e4c78fdc3f53c129a2ef820cc84549a5720655140e69a3e0baf1f7f385fa"
+set "CRYPTO_SHA256=f00a048b05994dcabc336fb530fe1c1c3564e13e6f064f7e80daddd048299707"
 
 echo.
 echo === RustChain Windows Miner Bootstrap ===

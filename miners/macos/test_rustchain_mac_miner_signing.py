@@ -138,16 +138,32 @@ class MacMinerSigningTests(unittest.TestCase):
 
 @unittest.skipIf(SigningKey is None, "PyNaCl unavailable")
 class AttestationSignMessageTests(unittest.TestCase):
-    def test_sign_message_matches_node_pipe_format(self):
+    def test_canonical_attestation_bytes_are_deterministic(self):
         module = load_miner_module()
-        msg = module._attestation_sign_message("miner-1", "RTCabc", "nonce-xyz", "commit-hash")
-        self.assertEqual(msg, "miner-1|RTCabc|nonce-xyz|commit-hash")
+        attestation = {
+            "miner": "RTCabc",
+            "miner_id": "miner-1",
+            "report": {"nonce": "nonce-xyz", "commitment": "commit-hash"},
+            "device": {"arch": "pentium_iii"},
+        }
+        self.assertEqual(
+            module._canonical_attestation_bytes(attestation),
+            json.dumps(
+                attestation, sort_keys=True, separators=(",", ":")
+            ).encode("utf-8"),
+        )
 
-    def test_signature_over_sign_message_verifies(self):
+    def test_signature_over_canonical_attestation_verifies(self):
         module = load_miner_module()
         sk = SigningKey.generate()
-        msg = module._attestation_sign_message("RTCwallet", "RTCwallet", "n1", "c1")
-        sk.verify_key.verify(msg.encode(), sk.sign(msg.encode()).signature)
+        msg = module._canonical_attestation_bytes(
+            {
+                "miner": "RTCwallet",
+                "miner_id": "RTCwallet",
+                "report": {"nonce": "n1", "commitment": "c1"},
+            }
+        )
+        sk.verify_key.verify(msg, sk.sign(msg).signature)
 
 
 class ExtractPkcs8Tests(unittest.TestCase):
