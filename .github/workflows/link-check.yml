@@ -15,11 +15,9 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "0 6 * * 1"  # Every Monday at 6:00 UTC
-
 permissions:
   contents: read
   issues: write
-
 jobs:
   link-check:
     runs-on: ubuntu-latest
@@ -29,44 +27,42 @@ jobs:
       - name: Check all markdown and HTML files for broken links
         uses: lycheeverse/lychee-action@v2
         with:
-          args: >
+          args: >-
             --verbose
             --no-progress
             --max-redirects 5
             --exclude-all-private
-            --exclude "https://glama\\.ai"
-            --exclude "https://altermenta\\.com"
-            --exclude "https?://(twitter|x)\\.com"
-            --exclude "https?://(www\.)?(linkedin|facebook|instagram|tiktok|youtube)\.com"
-            --exclude "https://github.com/Scottcjn/Rustchain/actions"
-            --exclude "https://github.com/waterWang/Rustchain/actions"
-            --exclude "https://img\.shields\.io"
-            --exclude "https://dexscreener\.com"
-            --exclude "https://github\.com/Scottcjn/Rustchain/stargazers"
-            --exclude "https://rustchain\.org/bcos"
-            --exclude "https://rustchain\.org/green"
-            --exclude "https://rustchain\.org/install"
-            --exclude "https://rustchain\.org/machines"
-            --exclude "https://rustchain\.org/manifesto"
-            --exclude "https://rustchain\.org/principles"
-            --exclude "https://rustchain\.org/whitepaper"
-            --exclude "https://rustchain\.org/api-zh"
-            --exclude "https://rustchain\.org/beginner"
-            --exclude "https://glama\\.ai"
-            --exclude "https://altermenta\\.com"
-            --exclude "https?://(twitter|x)\\.com"
-            --exclude "http://your-server"
-            --exclude "http://your-server-ip"
-            --exclude "https://secureum\.xyz"
-            --exclude "https://www\.techconsumerguide\.com/a-simple-guide-to-amd-ryzen-naming-scheme"
-            --exclude "http://38\.76\.217\.189:8099/health"
-            --exclude "http://76\.8\.228\.245:8099/health"
-            --exclude "https://wirework\.dev"
-            --exclude-path "website/"
-            --exclude-path "web/style.css"
-            --exclude-path "assets/favicon"
-            --exclude-path "tools/%7B%7BBASE_URL%7D%7D"
-            -- ".{{docs,bounties,contracts,tests,fuzz,tools,rips}}/**/*.md" "./README*.md" "./BCOS.md"
+            --exclude 'https://glama\.ai'
+            --exclude 'https://altermenta\.com'
+            --exclude 'https?://(twitter|x)\.com'
+            --exclude 'https?://(www\.)?(linkedin|facebook|instagram|tiktok|youtube)\.com'
+            --exclude 'https://github.com/Scottcjn/Rustchain/actions'
+            --exclude 'https://github.com/waterWang/Rustchain/actions'
+            --exclude 'https://img\.shields\.io'
+            --exclude 'https://dexscreener\.com'
+            --exclude 'https://github\.com/Scottcjn/Rustchain/stargazers'
+            --exclude 'https://rustchain\.org/bcos'
+            --exclude 'https://rustchain\.org/green'
+            --exclude 'https://rustchain\.org/install'
+            --exclude 'https://rustchain\.org/machines'
+            --exclude 'https://rustchain\.org/manifesto'
+            --exclude 'https://rustchain\.org/principles'
+            --exclude 'https://rustchain\.org/whitepaper'
+            --exclude 'https://rustchain\.org/api-zh'
+            --exclude 'https://rustchain\.org/beginner'
+            --exclude 'http://your-server'
+            --exclude 'http://your-server-ip'
+            --exclude 'https://secureum\.xyz'
+            --exclude 'https://www\.techconsumerguide\.com/a-simple-guide-to-amd-ryzen-naming-scheme'
+            --exclude 'http://38\.76\.217\.189:8099/health'
+            --exclude 'http://76\.8\.228\.245:8099/health'
+            --exclude 'https://wirework\.dev'
+            --exclude 'https://linearb\.io'
+            --exclude-path 'website/'
+            --exclude-path 'web/style.css'
+            --exclude-path 'assets/favicon'
+            --exclude-path 'tools/%7B%7BBASE_URL%7D%7D'
+            -- '.{{docs,bounties,contracts,tests,fuzz,tools,rips}}/**/*.md' './README*.md' './BCOS.md'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
