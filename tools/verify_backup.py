@@ -90,6 +90,15 @@ class CheckResult:
     recency_ok: bool | None = None
     checks: list[dict[str, Any]] = None  # type: ignore[assignment]  # filled by __post_init__
 
+    @property
+    def lines(self) -> list[str]:
+        """Return the human-readable result formatted as a list of lines.
+
+        Kept as a compatibility shim for test assertions that iterate over
+        individual output lines.
+        """
+        return format_human(self).splitlines()
+
     def __post_init__(self) -> None:
         if self.checks is None:
             self.checks = []
