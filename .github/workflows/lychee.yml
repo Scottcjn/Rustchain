@@ -30,6 +30,7 @@ jobs:
             --exclude "https://github\\.com/Scottcjn/Rustchain/stargazers"
             --exclude "https://img\\.shields\\.io"
             --exclude "https://github\\.com/altermenta/nucleus-verify"
+            --exclude "https://altermenta\\.com"
             --exclude "https://rustchain\\.org/bcos"
             --exclude "https://rustchain\\.org/green"
             --exclude "https://rustchain\\.org/install"
