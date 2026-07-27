@@ -2342,6 +2342,40 @@ def resolve_enroll_fingerprint(conn, miner_pk: str, data: dict) -> dict:
     return {}
 
 
+def resolve_enroll_weight_device(conn, miner_pk: str, data: dict) -> tuple:
+    """Pick the (family, arch) used for the HARDWARE_WEIGHTS reward multiplier.
+
+    SECURITY: the reward weight MUST be bound to the hardware the miner
+    actually attested and fingerprinted, not to whatever ``device`` the
+    enrollment request body claims. The enrollment signature covers only
+    ``miner_pubkey|miner_id|epoch`` (see enroll_epoch), so ``device`` is
+    unsigned and fully attacker-controlled. Trusting it lets a miner that
+    attested on ordinary x86 (``x86``/``modern`` -> 0.8x) enroll claiming e.g.
+    ARM ``arm2`` (4.0x) — or ``console``/vintage tiers — and collect a ~5x
+    inflated share of the fixed per-epoch reward pot, draining honest miners.
+
+    Prefer the verified device stored at attestation
+    (``miner_attest_recent.device_family`` / ``device_arch``, written from
+    ``derive_verified_device`` against the submitted fingerprint). Fall back to
+    the request body only when no stored verified device exists (legacy /
+    pre-migration rows), mirroring the resolve_enroll_fingerprint fallback so
+    deployed miners are not regressed. Robust to a missing row/column.
+    """
+    try:
+        row = conn.execute(
+            "SELECT device_family, device_arch FROM miner_attest_recent WHERE miner = ?",
+            (miner_pk,),
+        ).fetchone()
+        if row and row[0]:
+            return str(row[0]), str(row[1] or "default")
+    except sqlite3.Error:
+        pass
+    device = data.get("device")
+    if not isinstance(device, dict):
+        device = {}
+    return str(device.get("family", "x86")), str(device.get("arch", "default"))
+
+
 def _claimed_family_and_arch(device: dict) -> tuple:
     """
     Extract the claimed device family and architecture from a device dict.
@@ -5034,7 +5068,6 @@ def enroll_epoch():
     client_ip = get_client_ip()
     miner_pk = data.get('miner_pubkey')
     miner_id = data.get('miner_id', miner_pk)  # Use miner_id if provided
-    device = data.get('device', {})
 
     if not miner_pk:
         return jsonify({"error": "Missing miner_pubkey"}), 400
@@ -5183,15 +5216,21 @@ def enroll_epoch():
         ENROLL_REJ[reason] = ENROLL_REJ.get(reason, 0) + 1
         return jsonify(check_result), 412
 
-    # Calculate weight based on hardware
-    family = device.get('family', 'x86')
-    arch = device.get('arch', 'default')
-    hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch, 1.0)
-
     # RIP-PoA Phase 2: failed fingerprints are tracked but receive zero rewards.
     fingerprint_failed = check_result.get('fingerprint_failed', False)
 
     with sqlite3.connect(DB_PATH) as c:
+        # Calculate weight based on hardware.
+        # SECURITY: derive the reward multiplier from the hardware the miner
+        # actually attested + fingerprinted (miner_attest_recent), NOT the
+        # caller-supplied `device` in the request body. The enrollment
+        # signature only covers (miner_pubkey|miner_id|epoch), so trusting body
+        # `device` let a miner that attested on ordinary x86 (0.8x) enroll
+        # claiming e.g. ARM 'arm2' (4.0x) and collect a ~5x inflated share of
+        # the fixed epoch reward pot.
+        family, arch = resolve_enroll_weight_device(c, miner_pk, data)
+        hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch, 1.0)
+
         rotation_eval = evaluate_rotating_fingerprint_checks(
             c,
             epoch,
