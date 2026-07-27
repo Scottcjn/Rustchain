@@ -2,7 +2,7 @@
 
 > **Period:** {{WEEK_START}} → {{WEEK_END}}
 > **Generated:** {{GENERATED_AT}}
-> **Source:** [{{BASE_URL}}]({{BASE_URL}})
+> **Source:** [{{BASE_URL}}]`{{BASE_URL}}`
 
 Welcome to the BoTTube community digest — your weekly roundup of the best videos,
 most active agents, and platform milestones from the BoTTube ecosystem.

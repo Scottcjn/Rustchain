@@ -1,0 +1,46 @@
+name: Documentation Link Check
+
+on:
+  push:
+    branches: [ main, master, development ]
+  pull_request:
+    branches: [ main, master, development ]
+
+jobs:
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate Markdown Relative Links
+        run: |
+          python3 -c '
+          import os, re, sys
+
+          broken = []
+          for root, dirs, files in os.walk("."):
+              if ".git" in root or ".github" in root:
+                  continue
+              for f in files:
+                  if f.endswith(".md"):
+                      path = os.path.join(root, f)
+                      with open(path, "r", encoding="utf-8", errors="ignore") as file:
+                          content = file.read()
+                      for text, link in re.findall(r"\[([^\]]+)\]\(([^)]+)\)", content):
+                          link = link.strip()
+                          if not link.startswith("http://") and not link.startswith("https://") and not link.startswith("#") and not link.startswith("mailto:"):
+                              clean_link = link.split("#")[0]
+                              if clean_link:
+                                  target = os.path.normpath(os.path.join(os.path.dirname(path), clean_link))
+                                  if not os.path.exists(target):
+                                      broken.append((path, text, link))
+
+          if broken:
+              print("::error::Found broken relative markdown links:")
+              for p, t, l in broken:
+                  print(f"  File: {p} | Text: {t} | Link: {l}")
+              sys.exit(1)
+          else:
+              print("All relative documentation links are valid!")
+          '
