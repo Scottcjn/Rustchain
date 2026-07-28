@@ -885,8 +885,15 @@ def reconcile_settlements():
                 continue
 
             # 'settling' that hasn't moved is only actionable once it's plausibly
-            # crashed (give the live confirm handler time to finish first).
-            if st == "settling" and (order.get("matched_at") or 0) > cutoff and (order.get("created_at") or 0) > cutoff:
+            # crashed (give the live confirm handler time to finish first). The
+            # recency signal is matched_at: an order can only reach 'settling'
+            # after it is matched, so matched_at bounds when settling began.
+            # created_at (order-CREATION time) predates the match and is older
+            # than the window for any order that sat on the open book — ANDing it
+            # in defeated the grace window, so a settlement seconds old (confirm
+            # still in-flight) was force-routed to settlement_recovery + a
+            # critical alert, racing the live handler.
+            if st == "settling" and (order.get("matched_at") or 0) > cutoff:
                 summary["left"] += 1
                 continue
 
