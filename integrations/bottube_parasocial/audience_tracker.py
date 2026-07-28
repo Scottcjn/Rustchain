@@ -168,7 +168,12 @@ class WeeklyStats:
     most_active_video: Optional[str] = None
     new_viewers: List[str] = field(default_factory=list)
     returning_viewers: List[str] = field(default_factory=list)
-    
+    # Per-week tallies (scoped to this week only), used to derive the fields
+    # above. Kept separate from the tracker's all-time video_comments so that
+    # weekly shoutouts reflect activity of THIS week, not all-time leaders.
+    commenter_counts: Dict[str, int] = field(default_factory=dict)
+    video_counts: Dict[str, int] = field(default_factory=dict)
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "week_start": self.week_start,
@@ -176,6 +181,8 @@ class WeeklyStats:
             "most_active_video": self.most_active_video,
             "new_viewers": self.new_viewers,
             "returning_viewers": self.returning_viewers,
+            "commenter_counts": self.commenter_counts,
+            "video_counts": self.video_counts,
         }
 
 
@@ -364,23 +371,23 @@ class AudienceTracker:
         if profile.is_absent_returning and user_id not in stats.returning_viewers:
             stats.returning_viewers.append(user_id)
         
-        # Calculate top commenters (simplified)
-        commenter_counts = defaultdict(int)
-        for vid_users in self.video_comments.values():
-            for uid in vid_users:
-                commenter_counts[uid] += 1
-        
+        # Tally this comment toward the current week only. Using the tracker's
+        # all-time video_comments here made every week's top_commenters /
+        # most_active_video collapse onto the same all-time leaders.
+        stats.commenter_counts[user_id] = stats.commenter_counts.get(user_id, 0) + 1
+        stats.video_counts[video_id] = stats.video_counts.get(video_id, 0) + 1
+
+        # Calculate top commenters for THIS week
         stats.top_commenters = sorted(
-            commenter_counts.keys(),
-            key=lambda u: commenter_counts[u],
+            stats.commenter_counts.keys(),
+            key=lambda u: stats.commenter_counts[u],
             reverse=True
         )[:5]
-        
-        # Track most active video
-        video_counts = {vid: len(users) for vid, users in self.video_comments.items()}
-        if video_counts:
-            stats.most_active_video = max(video_counts.keys(), 
-                                          key=lambda v: video_counts[v])
+
+        # Track most active video for THIS week
+        if stats.video_counts:
+            stats.most_active_video = max(stats.video_counts.keys(),
+                                          key=lambda v: stats.video_counts[v])
     
     def get_viewer_profile(self, user_id: str) -> Optional[ViewerProfile]:
         """Get viewer profile by user ID."""
