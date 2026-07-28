@@ -210,14 +210,14 @@ def _sign_transfer(
 
 def cmd_create(args):
     if Mnemonic is None:
-        print("Error: missing dependency 'mnemonic'. Install: python3 -m pip install mnemonic", file=sys.stderr)
+        print("ERROR: missing dependency 'mnemonic'. Install: python3 -m pip install mnemonic", file=sys.stderr)
         return EXIT_USAGE_ERROR
 
     wallet_name = args.name or f"wallet-{int(time.time())}"
     password = _read_password("Set wallet password: ", "RUSTCHAIN_WALLET_PASSWORD")
     confirm = _read_password("Confirm password: ", "RUSTCHAIN_WALLET_PASSWORD_CONFIRM")
     if password != confirm:
-        print("Error: password mismatch", file=sys.stderr)
+        print("ERROR: password mismatch", file=sys.stderr)
         return EXIT_USAGE_ERROR
 
     m = Mnemonic("english")
@@ -246,7 +246,7 @@ def cmd_create(args):
 
 def cmd_import(args):
     if Mnemonic is None:
-        print("Error: missing dependency 'mnemonic'. Install: python3 -m pip install mnemonic", file=sys.stderr)
+        print("ERROR: missing dependency 'mnemonic'. Install: python3 -m pip install mnemonic", file=sys.stderr)
         return EXIT_USAGE_ERROR
 
     phrase = args.mnemonic.strip().lower()
@@ -254,7 +254,7 @@ def cmd_import(args):
     password = _read_password("Set wallet password: ", "RUSTCHAIN_WALLET_PASSWORD")
     confirm = _read_password("Confirm password: ", "RUSTCHAIN_WALLET_PASSWORD_CONFIRM")
     if password != confirm:
-        print("Error: password mismatch", file=sys.stderr)
+        print("ERROR: password mismatch", file=sys.stderr)
         return EXIT_USAGE_ERROR
 
     priv_hex, pub_hex = _derive_ed25519_from_mnemonic(phrase)
@@ -292,7 +292,7 @@ def _safe_json(r: "requests.Response") -> "tuple[dict | list | None, int]":
         return r.json(), EXIT_SUCCESS if r.ok else EXIT_BAD_RESPONSE
     except Exception:
         print(
-            f"Error: Server returned HTTP {r.status_code} with non-JSON body"
+            f"ERROR: Server returned HTTP {r.status_code} with non-JSON body"
             f" (check node URL / connectivity)",
             file=sys.stderr,
         )
@@ -304,7 +304,7 @@ def _safe_json_object(r: "requests.Response") -> "tuple[dict | None, int]":
     if data is None:
         return None, rc
     if not isinstance(data, dict):
-        print("Error: Server returned JSON but not an object", file=sys.stderr)
+        print("ERROR: Server returned JSON but not an object", file=sys.stderr)
         return None, EXIT_BAD_RESPONSE
     return data, rc
 
@@ -478,7 +478,7 @@ def main():
     try:
         return args.func(args)
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"ERROR: {e}", file=sys.stderr)
         return EXIT_UNKNOWN_ERROR
 
 
