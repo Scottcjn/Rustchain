@@ -52,11 +52,17 @@ except Exception:
 
 # Import fingerprint checks
 try:
-    from fingerprint_checks import validate_all_checks
+    # Try platform-prefixed path first (works from any working directory)
+    from miners.macos.fingerprint_checks import validate_all_checks
     FINGERPRINT_AVAILABLE = True
 except ImportError:
-    FINGERPRINT_AVAILABLE = False
-    print(warning("[WARN] fingerprint_checks.py not found - fingerprint attestation disabled"))
+    try:
+        # Fall back to direct import (works when running from miners/macos/)
+        from fingerprint_checks import validate_all_checks
+        FINGERPRINT_AVAILABLE = True
+    except ImportError:
+        FINGERPRINT_AVAILABLE = False
+        print(warning("[WARN] fingerprint_checks.py not found - fingerprint attestation disabled"))
 
 # Import CPU architecture detection
 try:

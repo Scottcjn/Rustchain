@@ -45,13 +45,20 @@ import argparse
 # previously dropped in a refactor and produced silent earning regressions
 # for every v3.1.0/v3.1.1-bundled install. Restored 2026-05-28 for v3.1.2.
 try:
-    from fingerprint_checks import validate_all_checks
+    # Try platform-prefixed path first (works from any working directory)
+    from miners.windows.fingerprint_checks import validate_all_checks
     FINGERPRINT_AVAILABLE = True
     _FP_IMPORT_ERROR = ""
-except Exception as e:
-    FINGERPRINT_AVAILABLE = False
-    _FP_IMPORT_ERROR = str(e)
-    validate_all_checks = None
+except Exception:
+    try:
+        # Fall back to direct import (works when running from miners/windows/)
+        from fingerprint_checks import validate_all_checks
+        FINGERPRINT_AVAILABLE = True
+        _FP_IMPORT_ERROR = ""
+    except Exception as e:
+        FINGERPRINT_AVAILABLE = False
+        _FP_IMPORT_ERROR = str(e)
+        validate_all_checks = None
 
 # ── Ed25519 signing (GPT-5.4 audit finding #2) ──
 # Optional: if miner_crypto.py + PyNaCl are available, sign attestations
