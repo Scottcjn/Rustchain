@@ -158,7 +158,14 @@ class NodeHealthMonitor:
 
         online = [s for s in statuses if s.status != "offline"]
         nodes_online = len(online)
-        total_miners = sum(s.miners or 0 for s in online)
+        # The attestation nodes are replicas of one shared ledger, so each online
+        # node reports the SAME network-wide miner count (the sibling tools
+        # ledger_verify / node_sync_validator flag any divergence as a mismatch).
+        # Summing per-node counts would multiply the true figure by the number of
+        # online nodes, so take the agreed value (max is robust to a node that is
+        # mid-sync and momentarily reporting fewer miners).
+        miner_counts = [s.miners for s in online if s.miners is not None]
+        total_miners = max(miner_counts) if miner_counts else 0
 
         epochs = {s.epoch for s in online if s.epoch is not None}
         consensus_ok = len(epochs) <= 1  # 0 or 1 distinct epoch → consensus holds
