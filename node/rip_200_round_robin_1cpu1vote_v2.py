@@ -208,7 +208,8 @@ def get_device_multiplier(device_info: Dict, db_path: str = None, miner_id: str 
         return base + loyalty
 
 
-def get_time_aged_multiplier(device_arch: str, chain_age_years: float, device_info: Dict = None) -> float:
+def get_time_aged_multiplier(device_arch: str, chain_age_years: float, device_info: Dict = None,
+                             db_path: str = None, miner_id: str = None) -> float:
     """
     Calculate time-aged antiquity multiplier with decay
 
@@ -217,10 +218,12 @@ def get_time_aged_multiplier(device_arch: str, chain_age_years: float, device_in
     - Year 10: Significantly reduced
     - Year 16.67: Vintage bonus fully decayed to modern baseline
 
-    Modern x86 with loyalty bonus does NOT decay (reward for commitment)
+    Modern x86 with loyalty bonus does NOT decay (reward for commitment).
+    Pass db_path + miner_id so the modern-x86 loyalty bonus can be looked up;
+    without them the caller silently gets the un-loyal 0.1x base rate.
     """
     if device_info:
-        base_multiplier = get_device_multiplier(device_info)
+        base_multiplier = get_device_multiplier(device_info, db_path, miner_id)
     else:
         # Fallback to simple lookup
         base_multiplier = BASE_MULTIPLIERS.get(device_arch.lower(), 0.1)
@@ -230,7 +233,7 @@ def get_time_aged_multiplier(device_arch: str, chain_age_years: float, device_in
         return base_multiplier
 
     # Apple Silicon gets slight decay (it's modern hardware)
-    if device_arch.lower() in ["apple_silicon", "m1", "m2", "m3", "arm64_apple"]:
+    if (device_arch or "").lower() in ["apple_silicon", "m1", "m2", "m3", "arm64_apple"]:
         decay_rate = 0.05  # 5% per year (slower decay for premium)
     else:
         decay_rate = DECAY_RATE_PER_YEAR
@@ -336,8 +339,9 @@ def calculate_epoch_rewards_v2(
             "year": year or CURRENT_YEAR
         }
 
-        base_mult = get_device_multiplier(device_info, db_path, miner_id)
-        weight = get_time_aged_multiplier(arch, chain_age_years, device_info)
+        weight = get_time_aged_multiplier(
+            arch, chain_age_years, device_info, db_path, miner_id
+        )
 
         weighted_miners.append((miner_id, weight, device_info))
         total_weight += weight
