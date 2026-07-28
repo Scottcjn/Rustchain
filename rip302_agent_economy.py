@@ -980,9 +980,11 @@ def register_agent_economy(app: Flask, db_path: str):
                 trust_score = 50  # Neutral for new agents
             else:
                 success_rate = completed / total
-                trust_score = int(min(100, max(0,
-                    success_rate * 80 +
+                rating_bonus = (
                     min(r["avg_rating"] / 5 * 20, 20) if r["rating_count"] > 0 else 10
+                )
+                trust_score = int(min(100, max(0,
+                    success_rate * 80 + rating_bonus
                 )))
 
             r["trust_score"] = trust_score
