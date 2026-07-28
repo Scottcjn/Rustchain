@@ -533,6 +533,31 @@ class TestGetEligibleEpochs(unittest.TestCase):
         self.assertEqual(result["epochs"], [])
         self.assertEqual(result["total_unclaimed_urtc"], 0)
 
+    def test_ineligible_epoch_without_claim_not_marked_claimed(self):
+        """An epoch a miner is ineligible for (but never claimed) must report
+        claimed=False. Regression: the flag used to be derived from the
+        eligibility verdict, so any not-eligible epoch was marked claimed even
+        with zero claim rows."""
+        for miner in ("test-miner-fail", "test-miner-nowallet"):
+            with self.subTest(miner=miner):
+                # Sanity: this miner has no claim rows in the fixture.
+                conn = sqlite3.connect(self.db_path)
+                n = conn.execute(
+                    "SELECT COUNT(*) FROM claims WHERE miner_id = ?",
+                    (miner,)).fetchone()[0]
+                conn.close()
+                self.assertEqual(n, 0)
+
+                result = get_eligible_epochs(
+                    self.db_path, miner,
+                    self.current_slot, self.now, limit=6)
+                self.assertTrue(result["epochs"])
+                for e in result["epochs"]:
+                    # No claim exists, so nothing can be "claimed".
+                    self.assertFalse(
+                        e["claimed"],
+                        f"epoch {e['epoch']} marked claimed with no claim row")
+
 
 class TestEdgeCases(unittest.TestCase):
     """Edge cases and boundary conditions"""
