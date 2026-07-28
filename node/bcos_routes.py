@@ -355,8 +355,14 @@ def bcos_attest():
             # ledger via /api/v1/bcos/anchor.
             attested_epoch, _slot = _node_epoch_slot()
 
+            # Plain INSERT (not INSERT OR REPLACE): cert_id is UNIQUE and
+            # immutable once issued. A duplicate must raise IntegrityError so
+            # the 409 guard below fires, rather than silently DELETE+INSERT the
+            # row. INSERT OR REPLACE would also drop anchor_tx/anchored_epoch
+            # (not in this column list), wiping a ledger-anchored certificate's
+            # anchor back to NULL and breaking /api/v1/bcos/anchor idempotency.
             conn.execute("""
-                INSERT OR REPLACE INTO bcos_attestations
+                INSERT INTO bcos_attestations
                 (cert_id, commitment, repo, commit_sha, tier, trust_score,
                  reviewer, report_json, signature, signer_pubkey,
                  attested_epoch, anchored_epoch, created_at)
