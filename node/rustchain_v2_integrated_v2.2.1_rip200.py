@@ -2682,16 +2682,16 @@ def _detect_x86_vintage(cpu_brand: str, machine: str, simd_data: dict):
     if re.search(r"\b(?:i386|80386)\b", cpu_lower):
         return {"device_family": "x86", "device_arch": "386"}
 
-    # 486 (i486, 80486, 486DX, 486SX) — \b boundaries avoid false-matching 586.
-    if re.search(r"\b(?:i486|80486|486dx|486sx|486)\b", cpu_lower):
+    # 486 (i486, 80486, 486DX, 486SX, 486DX2, 486DX4, 486SX2) — \b boundaries avoid false-matching 586.
+    # Use a flexible pattern that handles trailing variant suffixes (dx2, dx4, sx2).
+    if re.search(r"\b(?:i?80?486)(?:[a-z]{0,2}\d?)?\b", cpu_lower):
         return {"device_family": "x86", "device_arch": "486"}
 
-    # Original Pentium (P5) — anchored bare "pentium" or "pentium NNN" with
-    # negative lookahead for known suffixes so it does NOT match "Pentium III",
-    # "Pentium II", "Pentium Pro", "Pentium MMX", "Pentium M", "Pentium 4",
-    # "Pentium D".  Handles mixed-case brands like "Pentium 200", "Pentium 75".
-    if re.search(r"\bpentium\b(?!\s+(?:iii|ii|pro|mmx|m\b|4\b|d\b))", cpu_lower):
-        return {"device_family": "x86", "device_arch": "pentium"}
+    # Original Pentium (P5) — NOT detected here. Main deliberately classifies
+    # "Intel Pentium 166" as modern (see corpus test), and the bare "pentium"
+    # pattern catches modern CPUs like Pentium Gold/Silver/Dual-Core that carry
+    # "(R)" in the brand string. A separate PR should update the corpus if the
+    # intent is to change this classification.
 
     return None
 
