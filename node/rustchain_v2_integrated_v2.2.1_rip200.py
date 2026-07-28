@@ -2670,11 +2670,28 @@ def _detect_x86_vintage(cpu_brand: str, machine: str, simd_data: dict):
     if re.search(r"\bpentium(?:\(r\))?\s+ii\b(?!i)", cpu_lower):
         return {"device_family": "x86", "device_arch": "pentium_ii"}
 
-    if re.search(r"\bpentium(?:\(r\))?\s+pro\b", cpu_lower):
+    if re.search(r"\bpentium(?:\s*\(r\))?\s+pro\b", cpu_lower):
         return {"device_family": "x86", "device_arch": "pentium_pro"}
 
-    if re.search(r"\bpentium(?:\(r\))?\s+mmx\b", cpu_lower):
+    # Pentium MMX — match after Pentium Pro so PPro doesn't match MMX pattern.
+    # \b boundary avoids false-matching "Pentium M" or "Pentium 4" as MMX.
+    if re.search(r"\bpentium\b(?:\s*\(r\))?\s+mmx\b", cpu_lower):
         return {"device_family": "x86", "device_arch": "pentium_mmx"}
+
+    # 386 (i386, 80386) — earliest vintage x86, maximum multiplier.
+    if re.search(r"\b(?:i386|80386)\b", cpu_lower):
+        return {"device_family": "x86", "device_arch": "386"}
+
+    # 486 (i486, 80486, 486DX, 486SX, 486DX2, 486DX4, 486SX2) — \b boundaries avoid false-matching 586.
+    # Use a flexible pattern that handles trailing variant suffixes (dx2, dx4, sx2).
+    if re.search(r"\b(?:i?80?486)(?:[a-z]{0,2}\d?)?\b", cpu_lower):
+        return {"device_family": "x86", "device_arch": "486"}
+
+    # Original Pentium (P5) — NOT detected here. Main deliberately classifies
+    # "Intel Pentium 166" as modern (see corpus test), and the bare "pentium"
+    # pattern catches modern CPUs like Pentium Gold/Silver/Dual-Core that carry
+    # "(R)" in the brand string. A separate PR should update the corpus if the
+    # intent is to change this classification.
 
     return None
 
@@ -3206,6 +3223,57 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
         x86_vintage = _detect_x86_vintage(cpu_brand, machine, simd_data)
         if x86_vintage:
             return x86_vintage
+
+    # ANTI-SPOOF: Validate claimed vintage x86 arch against fingerprint evidence.
+    # A miner can claim arch="486"/"386" on modern hardware for a ~2.5-3x reward
+    # edge.  Corroborate using fingerprint signals that a real vintage chip CAN
+    # produce (cache-timing, SIMD, thermal, jitter) + cpu_brand.
+    # We do NOT gate on fingerprint_passed because TSC-less vintage hardware
+    # (486, 386) legitimately fails clock-drift.
+    arch_lower = arch.lower()
+    if family.lower() in ("x86", "x86_64") and arch_lower in _X86_VINTAGE_REWARD_ARCHES:
+        # 1. SIMD corroboration: a genuine 386/486/Pentium has no SIMD at all.
+        #    Check BOTH passed checks (trusted measurements) and raw data
+        #    (a failed check may still have observed SSE/AVX features).
+        simd_modern_features = {"has_sse", "has_sse2", "has_sse3", "has_sse4",
+                                "has_avx", "has_avx2", "has_avx512",
+                                "has_neon", "has_altivec"}
+        for simd_source, source_label in [
+            (_passed_fingerprint_check_data(fingerprint, "simd_identity"), "passed"),
+            (_fingerprint_check_data(fingerprint, "simd_identity"), "raw"),
+        ]:
+            if simd_source and any(simd_source.get(f) for f in simd_modern_features):
+                print(f"[X86_VINTAGE_ANTI_SPOOF] REJECT: claimed {family}/{arch} "
+                      f"but {source_label} SIMD has modern features -> x86/default")
+                return {"device_family": "x86", "device_arch": "default"}
+
+        # 2. Brand corroboration: the CPU brand string must contain the vintage
+        #    identifier.  A miner claiming arch="486" with brand "Intel Core i7"
+        #    is clearly spoofing.  Use anchored matching to avoid false positives.
+        brand_has_vintage = False
+        if arch_lower == "386":
+            brand_has_vintage = bool(re.search(r"\b(?:i386|80386|386)\b", cpu_brand))
+        elif arch_lower == "486":
+            brand_has_vintage = bool(re.search(r"\b(?:i486|80486|486dx|486sx|486)\b", cpu_brand))
+        elif arch_lower == "pentium":
+            # Anchored: bare "pentium" or "pentium NNN" but NOT "pentium III/II/Pro/MMX/M/4/D"
+            brand_has_vintage = bool(re.search(
+                r"\bpentium\b(?!\s+(?:iii|ii|pro|mmx|m\b|4\b|d\b))", cpu_brand))
+        elif arch_lower in ("pentium_mmx",):
+            brand_has_vintage = bool(re.search(r"\bpentium\b(?:\s*\(r\))?\s+mmx\b", cpu_brand))
+        elif arch_lower in ("pentium_pro",):
+            brand_has_vintage = bool(re.search(r"\bpentium\b(?:\s*\(r\))?\s+pro\b", cpu_brand))
+        elif arch_lower in ("pentium_ii",):
+            brand_has_vintage = bool(re.search(r"\bpentium\b(?:\s*\(r\))?\s+ii\b", cpu_brand))
+        elif arch_lower in ("pentium_iii",):
+            brand_has_vintage = bool(re.search(r"\bpentium\b(?:\s*\(r\))?\s+iii\b", cpu_brand))
+        elif arch_lower in ("pentium_m_banias", "pentium_m_dothan", "pentium_m_yonah"):
+            brand_has_vintage = bool(re.search(r"\bpentium\b(?:\s*\(r\))?\s+m\b", cpu_brand))
+
+        if not brand_has_vintage:
+            print(f"[X86_VINTAGE_ANTI_SPOOF] REJECT: claimed {family}/{arch} "
+                  f"but brand {cpu_brand[:60]!r} lacks vintage identifier -> x86/default")
+            return {"device_family": "x86", "device_arch": "default"}
 
     # Non-PowerPC, non-ARM, non-exotic — return claimed values
     return {"device_family": family, "device_arch": arch}
