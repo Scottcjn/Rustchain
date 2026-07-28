@@ -27,6 +27,7 @@ def db_path(tmp_path, monkeypatch):
         rec.init_reconciliation_schema(conn.cursor())
         conn.commit()
     monkeypatch.setenv("DB_PATH", str(p))
+    monkeypatch.delenv("RUSTCHAIN_DB_PATH", raising=False)
     return str(p)
 
 
@@ -286,3 +287,36 @@ def test_schema_has_unique_epoch_constraint(db_path):
                 "voided_in_rtc, bridged_supply_committed, state_hash"
                 ") VALUES (1, 0, 0.0, 0.0, 0.0, 0.0, 'x')"
             )
+
+
+# ---------- DB path resolution ----------------------------------------------
+
+
+def test_get_db_path_prefers_rustchain_db_path(monkeypatch):
+    """Snapshots are written to the node's DB (RUSTCHAIN_DB_PATH); the read
+    routes must open that same file, not ./rustchain_v2.db."""
+    monkeypatch.setenv("RUSTCHAIN_DB_PATH", "/tmp/node_real.db")
+    monkeypatch.delenv("DB_PATH", raising=False)
+    assert rec._get_db_path() == "/tmp/node_real.db"
+
+
+def test_reconciliation_routes_read_the_db_the_operator_configured(tmp_path, monkeypatch):
+    """Write a snapshot the way POST /rewards/settle does, then read it back
+    over HTTP with only RUSTCHAIN_DB_PATH set, as docs/DEVNET.md instructs."""
+    p = tmp_path / "devnet.db"
+    with sqlite3.connect(p) as conn:
+        ba.init_bridge_schema(conn.cursor())
+        rec.init_reconciliation_schema(conn.cursor())
+        conn.commit()
+        rec.record_reconciliation_snapshot(conn, epoch=7)
+        conn.commit()
+    monkeypatch.setenv("RUSTCHAIN_DB_PATH", str(p))
+    monkeypatch.delenv("DB_PATH", raising=False)
+
+    a = Flask(__name__)
+    a.config["TESTING"] = True
+    rec.register_reconciliation_routes(a)
+    resp = a.test_client().get("/bridge/reconciliation/latest")
+
+    assert resp.status_code == 200
+    assert resp.get_json()["snapshot"]["epoch"] == 7

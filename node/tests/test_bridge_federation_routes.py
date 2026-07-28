@@ -29,6 +29,7 @@ def db_path(tmp_path, monkeypatch):
         ba.init_bridge_schema(conn.cursor())
         conn.commit()
     monkeypatch.setenv("DB_PATH", str(p))
+    monkeypatch.delenv("RUSTCHAIN_DB_PATH", raising=False)
     return str(p)
 
 
@@ -347,3 +348,54 @@ def test_routes_ignore_admin_key_when_present(client, db_path):
     for path in ("/bridge/state", "/bridge/events", "/bridge/transfers/recent"):
         resp = client.get(path, headers=headers)
         assert resp.status_code == 200
+
+
+# ---------- DB path resolution ----------------------------------------------
+
+
+def test_get_db_path_prefers_rustchain_db_path(monkeypatch):
+    """The node resolves RUSTCHAIN_DB_PATH first; these routes must agree.
+
+    docs/DEVNET.md and docs/NODE_OPERATOR_GUIDE.md tell the operator to set
+    RUSTCHAIN_DB_PATH. Reading only DB_PATH opened a different file than the
+    bridge writes to.
+    """
+    monkeypatch.setenv("RUSTCHAIN_DB_PATH", "/tmp/node_real.db")
+    monkeypatch.delenv("DB_PATH", raising=False)
+    assert fed._get_db_path() == "/tmp/node_real.db"
+
+
+def test_get_db_path_rustchain_wins_over_db_path(monkeypatch):
+    """Same precedence as the node, which ORs them in this order."""
+    monkeypatch.setenv("RUSTCHAIN_DB_PATH", "/tmp/node_real.db")
+    monkeypatch.setenv("DB_PATH", "/tmp/other.db")
+    assert fed._get_db_path() == "/tmp/node_real.db"
+
+
+def test_get_db_path_falls_back_to_db_path_then_default(monkeypatch):
+    monkeypatch.delenv("RUSTCHAIN_DB_PATH", raising=False)
+    monkeypatch.setenv("DB_PATH", "/tmp/only_db_path.db")
+    assert fed._get_db_path() == "/tmp/only_db_path.db"
+    monkeypatch.delenv("DB_PATH", raising=False)
+    assert fed._get_db_path() == "rustchain_v2.db"
+
+
+def test_routes_read_the_db_the_operator_configured(tmp_path, monkeypatch):
+    """End-to-end: operator sets RUSTCHAIN_DB_PATH only, as the docs say."""
+    p = tmp_path / "devnet.db"
+    with sqlite3.connect(p) as conn:
+        ba.init_bridge_schema(conn.cursor())
+        conn.commit()
+    monkeypatch.setenv("RUSTCHAIN_DB_PATH", str(p))
+    monkeypatch.delenv("DB_PATH", raising=False)
+    _seed(str(p), [{"tx_hash": "real_transfer", "amount_rtc": 4.0, "status": "locked"}])
+
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    fed.register_federation_routes(app)
+    client = app.test_client()
+
+    resp = client.get("/bridge/state")
+    assert resp.status_code == 200
+    assert resp.get_json()["state"]["by_status"]["locked"]["total_rtc"] == 4.0
+    assert [e["tx_hash"] for e in client.get("/bridge/events").get_json()["events"]] == ["real_transfer"]
