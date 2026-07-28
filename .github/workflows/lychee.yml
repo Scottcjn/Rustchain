@@ -23,7 +23,6 @@ jobs:
             --exclude "https?://(twitter|x)\.com"
             --exclude "https://github.com/Scottcjn/Rustchain/actions"
             --exclude "https?://(www\.)?(linkedin|facebook|instagram|tiktok)"
-            --exclude-mail
             -- './**/*.md' './**/*.html'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
