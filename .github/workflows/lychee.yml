@@ -23,14 +23,7 @@ jobs:
             --exclude "https?://(twitter|x)\.com"
             --exclude "https://github.com/Scottcjn/Rustchain/actions"
             --exclude "https?://(www\.)?(linkedin|facebook|instagram|tiktok)"
-            --exclude "http://your-server-ip"
-            --exclude "https://dexscreener\.com/solana/"
-            --exclude "https://www\.intel\.com/"
-            --exclude "https://basescan\.org/"
-            --exclude "https://rustchain\.org/(bcos|whitepaper|install|principles|beginner|green|api-zh|machines|manifesto|wallet|images/)"
-            --exclude "https://scottcjn\.github\.io/elyan-labs-site/"
-            --exclude "https://bottube\.ai/settings/api"
-            --exclude "https://api\.testnet\.ergoplatform\.com/"
+            --exclude-mail
             -- './**/*.md' './**/*.html'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
