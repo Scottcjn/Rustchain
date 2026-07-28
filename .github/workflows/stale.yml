@@ -1,5 +1,26 @@
 name: Stale Issue & PR Cleanup
 
+# Why this is shaped the way it is
+#
+# On 2026-07-27 this workflow closed #6749 as not planned. That issue tracked a
+# live cross-path double-credit race in epoch settlement, and the PRs fixing it
+# were open and unreviewed at the time. It also closed a security issue on a
+# sibling repo the same morning, and had armed five more.
+#
+# The mistake was not the label list. It was the assumption that silence means
+# resolved. For a bug report the opposite is usually true: nobody comments on a
+# consensus race for a month precisely because it is hard, and the reward for
+# being hard was deletion. Two days earlier the same class of bug hit the
+# bounty board, where real bounties were unlabelled and therefore unprotected
+# while spam sailed on.
+#
+# So issues are marked stale and never auto-closed. Marking is information; a
+# human can still close in one click. Closing is destruction, and it lands
+# hardest on exactly the work that takes longest to fix.
+#
+# Pull requests still auto-close. They genuinely rot against a moving main,
+# reopening one is cheap, and the branch is not lost.
+
 on:
   schedule:
     - cron: '0 6 * * 1'  # Every Monday at 6 AM UTC
@@ -16,20 +37,49 @@ jobs:
       - uses: actions/stale@v10
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+
           stale-issue-message: |
-            This issue has been inactive for 30 days. It will be closed in 7 days unless there's new activity.
-            If this is still relevant, please comment to keep it open.
+            No activity on this for 45 days, so it is being marked stale to keep the
+            board honest about what is actually moving.
+
+            **It will not be closed automatically.** If it is done, close it. If it is
+            still real, leave it open and it will simply keep this label. A quiet issue
+            is not the same as a resolved one, and this repo has closed real consensus
+            and security work that way before.
           stale-pr-message: |
-            This PR has been inactive for 14 days. It will be closed in 7 days unless updated.
-            Need help finishing? Ask in the PR comments — we're happy to assist!
-          close-issue-message: 'Closed due to inactivity. Feel free to reopen if still needed.'
-          close-pr-message: 'Closed due to inactivity. Feel free to reopen with updates.'
-          days-before-stale: 30
-          days-before-close: 7
-          days-before-pr-stale: 14
-          days-before-pr-close: 7
+            No activity on this PR for 21 days. It will be closed in 14 days unless
+            updated, because open PRs rot against a moving main.
+
+            Closing is not a rejection and nothing is lost: your branch stays, and
+            reopening takes one click. If you are stuck, say so here and someone will
+            help finish it.
+          close-pr-message: |
+            Closing after 35 days without activity. Your branch is untouched and
+            reopening takes one click. If this was still wanted, say so and we will
+            pick it back up.
+
+          # Issues: mark, never close. -1 disables auto-close entirely.
+          days-before-issue-stale: 45
+          days-before-issue-close: -1
+
+          # PRs: still cleaned up, on a longer leash than before.
+          days-before-pr-stale: 21
+          days-before-pr-close: 14
+
           stale-issue-label: 'stale'
           stale-pr-label: 'stale'
-          exempt-issue-labels: 'bounty,security,pinned,critical'
-          exempt-pr-labels: 'security,critical,WIP'
-          operations-per-run: 50
+
+          # Belt and braces. The close path is already disabled for issues, so
+          # these now only control whether the stale LABEL gets applied.
+          exempt-issue-labels: 'bounty,security,pinned,critical,consensus,tracking,operations,bug'
+          exempt-pr-labels: 'security,critical,WIP,bounty,consensus'
+
+          # Anything a human has deliberately triaged is not idle by accident.
+          exempt-all-issue-milestones: true
+          exempt-all-issue-assignees: true
+
+          # 50 could not cover the backlog, so the queue never drained and the
+          # same items were revisited while others were never reached.
+          operations-per-run: 300
+
+          ascending: true
