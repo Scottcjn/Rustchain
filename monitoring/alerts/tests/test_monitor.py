@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Optional
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -141,3 +142,38 @@ def test_watch_ids_filters_miners(monitor):
     miners = [make_miner("a"), make_miner("b"), make_miner("c")]
     ids = monitor._resolve_watch_ids(miners)
     assert ids == {"a", "c"}
+
+
+# ── back-online flag persistence (integration through _check_miner) ────────────
+
+def test_check_miner_persists_cleared_offline_flag(monitor):
+    """After a back-online transition, the persisted offline_alerted flag must be
+    cleared. Regression: _check_offline cleared it via set_offline_alerted(False),
+    but the subsequent upsert_miner re-derived the flag from `prev` and wrote it
+    back to True — so the flag stayed stuck and back_online alerts spammed every
+    poll while a genuine later offline was silenced."""
+    # balance fetch is irrelevant here — make it a no-op that yields no balance
+    monitor.client.wallet_balance = AsyncMock(side_effect=RuntimeError("no balance"))
+
+    now = int(time.time())
+    miner_id = "miner-1"
+
+    # seed prior state: miner was offline and already alerted
+    monitor.db.upsert_miner(
+        miner_id=miner_id,
+        last_attest=now - 3000,
+        balance_rtc=1.0,
+        offline_alerted=True,
+    )
+
+    # poll: miner is back online (recent attestation)
+    miner = make_miner(miner_id, last_attest=now - 30)
+    asyncio.run(monitor._check_miner(miner, now))
+
+    state = monitor.db.get_miner(miner_id)
+    assert state is not None
+    assert state["offline_alerted"] == 0, "back-online must clear the persisted flag"
+
+    # next poll while still online must NOT re-emit a back_online alert
+    events = monitor._check_offline(miner, now, prev=state)
+    assert events == []
