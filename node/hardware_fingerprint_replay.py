@@ -189,34 +189,26 @@ def compute_entropy_profile_hash(fingerprint: Dict) -> str:
     
     entropy_values = {}
     
-    # Extract clock drift entropy
+    # Extract clock drift entropy - v3 key: 'cv'
     clock_data = checks.get('clock_drift', {}).get('data', {})
     if isinstance(clock_data, dict):
         entropy_values['clock_cv'] = clock_data.get('cv', 0)
-        entropy_values['clock_drift_hash'] = clock_data.get('drift_hash', '')
     
-    # Extract cache timing entropy
+    # Extract cache timing entropy - v3 keys: 'l1_ns', 'l2_ns'
     cache_data = checks.get('cache_timing', {}).get('data', {})
     if isinstance(cache_data, dict):
-        entropy_values['cache_hash'] = cache_data.get('cache_hash', '')
-        entropy_values['cache_l1'] = cache_data.get('L1', 0)
-        entropy_values['cache_l2'] = cache_data.get('L2', 0)
+        entropy_values['cache_l1'] = cache_data.get('l1_ns', 0)
+        entropy_values['cache_l2'] = cache_data.get('l2_ns', 0)
     
-    # Extract thermal drift entropy
+    # Extract thermal drift entropy - v3 key: 'drift_ratio'
     thermal_data = checks.get('thermal_drift', {}).get('data', {})
     if isinstance(thermal_data, dict):
-        entropy_values['thermal_ratio'] = thermal_data.get('ratio', 0)
+        entropy_values['thermal_ratio'] = thermal_data.get('drift_ratio', 0)
     
-    # Extract jitter entropy
+    # Extract jitter entropy - v3 keys: 'int_avg_ns'
     jitter_data = checks.get('instruction_jitter', {}).get('data', {})
     if isinstance(jitter_data, dict):
-        entropy_values['jitter_cv'] = jitter_data.get('cv', 0)
-        jitter_map = jitter_data.get('jitter_map', {})
-        if isinstance(jitter_map, dict):
-            # Hash the jitter map for compact representation
-            entropy_values['jitter_map_hash'] = hashlib.sha256(
-                json.dumps(jitter_map, sort_keys=True).encode()
-            ).hexdigest()[:16]
+        entropy_values['jitter_avg'] = jitter_data.get('int_avg_ns', 0)
     
     # Extract SIMD profile entropy
     simd_data = checks.get('simd_identity', {}).get('data', {})
