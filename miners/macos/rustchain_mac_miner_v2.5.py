@@ -67,7 +67,16 @@ except ImportError:
 
 MINER_VERSION = "2.5.0"
 NODE_URL = os.environ.get("RUSTCHAIN_NODE", "https://rustchain.org")
-PROXY_URL = os.environ.get("RUSTCHAIN_PROXY", "http://192.168.0.160:8089")
+# No default proxy. The previous default pointed at a private lab address
+# (192.168.0.160), which on anyone else's LAN is whatever machine happens to
+# hold that IP. The miner would hand its full attestation, including hardware
+# serial, MAC addresses, hostname and wallet, in cleartext to a stranger.
+PROXY_URL = os.environ.get("RUSTCHAIN_PROXY", "")
+
+# Verification is ON. Old PowerPC Macs genuinely cannot complete a modern
+# TLS handshake, and the escape hatch for them is an explicit opt-out that
+# the operator chooses, not a silent default that ships to everyone.
+TLS_VERIFY = os.environ.get("RUSTCHAIN_TLS_VERIFY", "1") not in ("0", "false", "False")
 BLOCK_TIME = 600  # 10 minutes
 LOTTERY_CHECK_INTERVAL = 10
 
@@ -199,7 +208,7 @@ class NodeTransport:
         try:
             r = requests.get(
                 self.node_url + "/health",
-                timeout=10, verify=False
+                timeout=10, verify=TLS_VERIFY
             )
             if r.status_code == 200:
                 print(success("[TRANSPORT] Direct HTTPS to node: OK"))
@@ -237,14 +246,14 @@ class NodeTransport:
     def get(self, path, **kwargs):
         """GET request through whichever transport works."""
         kwargs.setdefault("timeout", 15)
-        kwargs.setdefault("verify", False)
+        kwargs.setdefault("verify", TLS_VERIFY)
         url = self.base_url + path
         return requests.get(url, **kwargs)
 
     def post(self, path, **kwargs):
         """POST request through whichever transport works."""
         kwargs.setdefault("timeout", 15)
-        kwargs.setdefault("verify", False)
+        kwargs.setdefault("verify", TLS_VERIFY)
         url = self.base_url + path
         return requests.post(url, **kwargs)
 
