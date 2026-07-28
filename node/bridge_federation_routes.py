@@ -45,6 +45,12 @@ MAX_TRANSFERS_LIMIT = 200
 DEFAULT_EVENTS_WINDOW_SECONDS = 24 * 3600
 MAX_EVENTS_WINDOW_SECONDS = 30 * 24 * 3600
 
+# When a transfer last changed state. `created_at` alone is only the moment the
+# transfer was opened; a confirm/complete/void stamps `updated_at` (and
+# `completed_at`) later, so the latest of the three is the event time. One
+# definition, shared by the aggregate and the event feed.
+EVENT_AT_SQL = "max(updated_at, COALESCE(completed_at, 0), created_at)"
+
 
 def _get_db_path() -> str:
     """Resolve DB_PATH the same way bridge_api.py does."""
@@ -112,9 +118,7 @@ def _aggregate_bridge_state(conn: sqlite3.Connection) -> Dict[str, Any]:
     # Per-row max of updated_at / completed_at / created_at so a later status
     # change (confirm, complete, void) is not masked by an older value.
     last_event = cursor.execute(
-        "SELECT COALESCE(MAX("
-        "max(updated_at, COALESCE(completed_at, 0), created_at)"
-        "), 0) FROM bridge_transfers"
+        f"SELECT COALESCE(MAX({EVENT_AT_SQL}), 0) FROM bridge_transfers"
     ).fetchone()  # fetchall-ok: pragma-result (single MAX)
     last_event_at = int(last_event[0]) if last_event else 0
 
@@ -132,6 +136,12 @@ def _aggregate_bridge_state(conn: sqlite3.Connection) -> Dict[str, Any]:
 def _recent_events(conn: sqlite3.Connection, limit: int, window_seconds: int) -> List[Dict[str, Any]]:
     """List recent bridge state-change events, public-safe fields only.
 
+    The window is keyed on when the transfer last CHANGED STATE (`event_at`),
+    not on when it was opened. A long-lived lock that completes or is voided
+    today is an event today, even though it was created last week; keying on
+    `created_at` hid exactly those from the feed while `/bridge/state` counted
+    them in `last_event_at`.
+
     Returns a list of dicts of the form:
 
         {
@@ -143,7 +153,8 @@ def _recent_events(conn: sqlite3.Connection, limit: int, window_seconds: int) ->
             "status": ...,
             "external_confirmations": ...,
             "required_confirmations": ...,
-            "created_at": ...,
+            "created_at": <when the transfer was opened>,
+            "event_at": <when it last changed state; == created_at if untouched>,
         }
 
     Sensitive fields explicitly NOT exposed:
@@ -156,13 +167,14 @@ def _recent_events(conn: sqlite3.Connection, limit: int, window_seconds: int) ->
     cutoff = int(time.time()) - max(0, window_seconds)
     cursor = conn.cursor()
     cursor.execute(
-        """
+        f"""
         SELECT tx_hash, direction, source_chain, dest_chain,
                amount_rtc, status, external_confirmations,
-               required_confirmations, created_at
+               required_confirmations, created_at,
+               {EVENT_AT_SQL} AS event_at
         FROM bridge_transfers
-        WHERE created_at >= ?
-        ORDER BY created_at DESC, id DESC
+        WHERE {EVENT_AT_SQL} >= ?
+        ORDER BY event_at DESC, id DESC
         LIMIT ?
         """,
         (cutoff, limit),
@@ -179,6 +191,7 @@ def _recent_events(conn: sqlite3.Connection, limit: int, window_seconds: int) ->
             "external_confirmations": int(r[6]) if r[6] is not None else 0,
             "required_confirmations": int(r[7]) if r[7] is not None else 0,
             "created_at": int(r[8]),
+            "event_at": int(r[9]),
         }
         for r in rows
     ]
@@ -360,6 +373,7 @@ __all__ = [
     "_recent_events",
     "_recent_transfers_public",
     "PUBLIC_STATUS_VALUES",
+    "EVENT_AT_SQL",
     "DEFAULT_EVENTS_LIMIT",
     "MAX_EVENTS_LIMIT",
     "DEFAULT_EVENTS_WINDOW_SECONDS",
