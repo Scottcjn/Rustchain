@@ -167,6 +167,7 @@ class PayoutWorker:
         """Process a single withdrawal with balance deduction before execution."""
         withdrawal_id = withdrawal['withdrawal_id']
         tx_hash = None
+        funds_debited = False
 
         try:
             logger.info(f"Processing withdrawal {withdrawal_id}")
@@ -240,6 +241,11 @@ class PayoutWorker:
                         (total_deduction, withdrawal['miner_pk'])
                     )
                     conn.execute("COMMIT")
+                    # The debit is durable only now; the outer handler must not
+                    # refund unless this flag is set, or a COMMIT that raises
+                    # (e.g. SQLITE_BUSY) — which rolls the debit back below —
+                    # would trigger a phantom refund that creates money.
+                    funds_debited = True
                 except Exception:
                     conn.execute("ROLLBACK")
                     raise
@@ -277,14 +283,18 @@ class PayoutWorker:
                 self.stats['failed'] += 1
                 return False
 
-            # Refund balance on broadcast failure and mark as failed
+            # Mark as failed. Only refund if the debit actually committed:
+            # if the debit transaction was rolled back (funds_debited is False)
+            # the funds never left the account, so crediting them here would
+            # fabricate balance out of thin air.
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("BEGIN IMMEDIATE")
-                conn.execute(
-                    "UPDATE accounts SET balance = balance + ? WHERE public_key = ?",
-                    (withdrawal['amount'] + withdrawal.get('fee', 0),
-                     withdrawal['miner_pk'])
-                )
+                if funds_debited:
+                    conn.execute(
+                        "UPDATE accounts SET balance = balance + ? WHERE public_key = ?",
+                        (withdrawal['amount'] + withdrawal.get('fee', 0),
+                         withdrawal['miner_pk'])
+                    )
                 conn.execute("""
                     UPDATE withdrawals
                     SET status = 'failed',
