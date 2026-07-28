@@ -23,7 +23,7 @@ docker-compose -f tools/monitoring/docker-compose.monitoring.yml logs -f
 ```
 
 Access services:
-- **Grafana**: http://localhost:3000 (admin/rustchain123)
+- **Grafana**: http://localhost:3000 (admin/$ERGO_WALLET_PASSWORD)
 - **Prometheus**: http://localhost:9090
 
 ## Standalone Python Setup
