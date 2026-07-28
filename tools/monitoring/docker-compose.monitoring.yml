@@ -31,7 +31,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=rustchain123
+      - GF_SECURITY_ADMIN_PASSWORD=${ERGO_WALLET_PASSWORD:?set ERGO_WALLET_PASSWORD}
       - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
