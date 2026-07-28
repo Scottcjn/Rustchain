@@ -248,6 +248,26 @@ def _count_active_miners(db_path: str) -> int:
     return 0
 
 
+def _count_proposal_voters(conn: sqlite3.Connection, proposal_id: int) -> int:
+    """Count distinct miners who voted on a proposal (quorum numerator).
+
+    Quorum measures *participation* — how many distinct miners showed up — so
+    it must be a headcount, matching the ``active_miners`` count-based
+    denominator (and coalition.py, which counts DISTINCT voters the same way).
+    The votes_for/against/abstain columns hold antiquity-weighted sums used for
+    the pass/fail decision, not a participant count.
+    """
+    try:
+        row = conn.execute(
+            "SELECT COUNT(DISTINCT miner_id) FROM governance_votes WHERE proposal_id = ?",
+            (proposal_id,)
+        ).fetchone()
+        return int(row[0]) if row else 0
+    except Exception as e:
+        log.debug("Voter count failed for proposal %s: %s", proposal_id, e)
+        return 0
+
+
 def _is_within_founder_veto_period() -> bool:
     """Return True if still within the 2-year founder veto window."""
     return (time.time() - GENESIS_TIMESTAMP) < FOUNDER_VETO_DURATION
@@ -280,9 +300,9 @@ def _settle_expired_proposals(db_path: str):
             ).fetchall()
 
             for (pid, v_for, v_against, v_abstain) in active:
-                total_votes = v_for + v_against + v_abstain
+                voter_count = _count_proposal_voters(conn, pid)
                 active_miners = _count_active_miners(db_path)
-                quorum_met = (total_votes >= active_miners * QUORUM_THRESHOLD) if active_miners > 0 else False
+                quorum_met = (voter_count >= active_miners * QUORUM_THRESHOLD) if active_miners > 0 else False
                 if not quorum_met:
                     new_status = STATUS_EXPIRED
                 elif v_for > v_against:
@@ -676,14 +696,11 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                     (weight, proposal_id)
                 )
 
-                # Check quorum after vote
-                updated = conn.execute(
-                    "SELECT votes_for, votes_against, votes_abstain FROM governance_proposals WHERE id = ?",
-                    (proposal_id,)
-                ).fetchone()
-                total = sum(updated)
+                # Check quorum after vote — participation is a headcount of
+                # distinct voters, not the antiquity-weighted vote sum.
+                voter_count = _count_proposal_voters(conn, proposal_id)
                 active_miners = _count_active_miners(db_path)
-                quorum_met = (total >= active_miners * QUORUM_THRESHOLD) if active_miners > 0 else False
+                quorum_met = (voter_count >= active_miners * QUORUM_THRESHOLD) if active_miners > 0 else False
                 conn.execute(
                     "UPDATE governance_proposals SET quorum_met = ? WHERE id = ?",
                     (1 if quorum_met else 0, proposal_id)
@@ -722,6 +739,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                 if not proposal:
                     return jsonify({"error": "proposal not found"}), 404
                 p = dict(proposal)
+                voter_count = _count_proposal_voters(conn, proposal_id)
 
         except Exception as e:
             log.error("Get results error: %s", e)
@@ -739,10 +757,11 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
             "votes_against": p["votes_against"],
             "votes_abstain": p["votes_abstain"],
             "total_votes": total_votes,
+            "voters": voter_count,
             "quorum_required": quorum_required,
             "quorum_met": bool(p["quorum_met"]),
             "active_miners": active_miners,
-            "participation_pct": round(total_votes / active_miners * 100, 1) if active_miners > 0 else 0,
+            "participation_pct": round(voter_count / active_miners * 100, 1) if active_miners > 0 else 0,
             "sophia_analysis": p.get("sophia_analysis"),
         }), 200
 
