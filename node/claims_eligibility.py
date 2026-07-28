@@ -351,6 +351,50 @@ def check_pending_claim(
         return False
 
 
+def check_already_claimed(
+    db_path: str,
+    miner_id: str,
+    epoch: int
+) -> bool:
+    """
+    Check whether this miner already has a *settled* (paid-out) claim for
+    this epoch.
+
+    ``check_pending_claim`` intentionally only tracks in-flight claims
+    (pending / verifying / approved), so a claim that already reached the
+    terminal ``settled`` status slips past it. A settled claim is a reward
+    that was paid out, so it must also block a fresh eligibility result —
+    otherwise ``check_claim_eligibility`` reports an already-paid epoch as
+    claimable. (``get_eligible_epochs`` already compensates with its own
+    ``status = 'settled'`` lookup; this makes the core eligibility check
+    authoritative on its own instead of relying on that helper or on the
+    downstream ``UNIQUE(miner_id, epoch)`` insert constraint.)
+
+    Returns:
+        True if a settled claim exists for this miner/epoch, False otherwise
+    """
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT claim_id
+                FROM claims
+                WHERE miner_id = ?
+                AND epoch = ?
+                AND status = 'settled'
+                LIMIT 1
+            """, (miner_id, epoch))
+
+            return cursor.fetchone() is not None
+    except sqlite3.OperationalError:
+        # Claims table doesn't exist yet
+        return False
+    except sqlite3.Error as e:
+        print(f"[CLAIMS] Database error checking settled claims: {e}")
+        return False
+
+
 def is_epoch_settled(
     db_path: str,
     epoch: int,
@@ -593,7 +637,14 @@ def check_claim_eligibility(
         result["checks"]["no_pending_claim"] = False
         result["reason"] = "pending_claim_exists"
         return result
-    
+
+    # Reject epochs whose reward was already claimed and settled (paid out).
+    # check_pending_claim only tracks in-flight statuses, so without this the
+    # eligibility gate would report an already-paid epoch as claimable.
+    if check_already_claimed(db_path, miner_id, epoch):
+        result["reason"] = "already_claimed"
+        return result
+
     # Get fleet status (RIP-0201)
     if HAVE_FLEET_IMMUNE:
         fleet_status = get_fleet_status_for_miner(db_path, miner_id, current_ts)
