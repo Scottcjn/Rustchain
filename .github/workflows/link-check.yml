@@ -25,22 +25,31 @@ jobs:
     - name: Check relative links in docs
       run: |
         # Check all markdown files for broken relative links
-        find . -name "*.md" -not -path "./.git/*" | while read file; do
+        # NOTE: uses process substitution (<()) instead of pipes to avoid
+        # subshell exit-code loss — exit inside the loop properly fails the job.
+        ERRORS=0
+        while IFS= read -r -d '' file; do
           echo "Checking $file..."
-          # Extract relative links and check if they exist
-          grep -oE '\[([^\]]*)\]\(([^)]+)\)' "$file" | while IFS= read -r link; do
-            url=$(echo "$link" | sed 's/.*](\([^)]*\)).*/\1/')
+          while IFS= read -r link; do
+            url="${link#*](}"
+            url="${url%)*}"
             # Skip anchors, mailto, and http links
             if [[ "$url" == \#* ]] || [[ "$url" == mailto:* ]] || [[ "$url" == http* ]]; then
               continue
             fi
-            # Check if file exists
-            if [ ! -f "$url" ] && [ ! -d "$url" ]; then
+            # Check if file exists (relative to repo root)
+            resolved="$url"
+            # Handle any leading ./ or ../ from link target
+            if [ ! -f "$resolved" ] && [ ! -d "$resolved" ]; then
               echo "❌ Broken link in $file: $url"
-              exit 1
+              ERRORS=$((ERRORS + 1))
             fi
-          done
-        done
+          done < <(grep -oE '\[([^\]]*)\]\(([^)]+)\)' "$file")
+        done < <(find . -name "*.md" -not -path "./.git/*" -print0)
+        if [ "$ERRORS" -gt 0 ]; then
+          echo "❌ Found $ERRORS broken relative links"
+          exit 1
+        fi
         echo "✅ All relative links are valid"
 
     - name: Check external links (lychee)
