@@ -2211,12 +2211,25 @@ def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_coun
     return tuple(ranked[:active_count])
 
 
-def _fingerprint_check_passed(check_entry) -> bool:
+def _fingerprint_check_passed(check_entry):
+    """Return True (passed), False (failed), or None (unmeasured).
+
+    Bool-only entries (C miner compat) keep their literal value.
+    Dict entries with {"passed": true} but no "data" key are
+    "unmeasured" (None) — the client asserted a pass without
+    supplying evidence.  Dict entries with {"passed": true, "data": {...}}
+    are passed.  Empty dicts {} are unmeasured (no data at all).
+    """
     if isinstance(check_entry, bool):
         return check_entry
     if isinstance(check_entry, dict):
-        return bool(check_entry.get("passed", True))
-    return False
+        verdict = check_entry.get("passed", True)
+        if verdict is True and "data" not in check_entry:
+            return None  # unmeasured — no evidence submitted
+        if verdict is True and not isinstance(check_entry.get("data"), dict):
+            return None  # unmeasured — data is not a usable object
+        return bool(verdict)
+    return None
 
 
 def get_previous_epoch_block_hash(conn, epoch: int) -> str:
@@ -2292,17 +2305,22 @@ def evaluate_rotating_fingerprint_checks(conn, epoch: int, fingerprint: dict) ->
         name: _fingerprint_check_passed(checks.get(name))
         for name in rotation["active_checks"]
     }
-    passed_active = [name for name, passed in active_results.items() if passed]
-    failed_active = [name for name, passed in active_results.items() if not passed]
-    total_active = len(rotation["active_checks"])
-    active_ratio = (len(passed_active) / total_active) if total_active else 1.0
+    # FIX #8078: unmeasured checks (None) are excluded from the ratio
+    # denominator — they are not passes and not failures.  This
+    # distinguishes "this hardware cannot measure it" from "this client
+    # did not bother to submit evidence".
+    measured = {name: v for name, v in active_results.items() if v is not None}
+    passed_active = [name for name, v in measured.items() if v]
+    failed_active = [name for name, v in measured.items() if not v]
+    measured_count = len(measured)
+    active_ratio = (len(passed_active) / measured_count) if measured_count else 1.0
     return {
         **rotation,
         "active_results": active_results,
         "passed_active_checks": passed_active,
         "failed_active_checks": failed_active,
         "active_pass_count": len(passed_active),
-        "active_total": total_active,
+        "active_total": measured_count,
         "active_ratio": active_ratio,
     }
 
