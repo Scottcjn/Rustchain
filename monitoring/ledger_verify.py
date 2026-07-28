@@ -313,7 +313,15 @@ def query_node(node: dict) -> dict:
     # Spot check wallet balance
     balance_data = fetch(f"{base}/wallet/balance?miner_id={SPOT_CHECK_WALLET}")
     if balance_data:
-        result["spot_balance"] = balance_data.get("balance") or balance_data.get("rtc_balance")
+        # Prefer the `balance` field, falling back to `rtc_balance` only when
+        # `balance` is absent. Using `or` here would coerce a legitimate
+        # balance of 0 to None, which compare_nodes then drops from the
+        # cross-node comparison — silently hiding a real 0-vs-nonzero mismatch,
+        # the exact discrepancy this verifier exists to catch.
+        balance = balance_data.get("balance")
+        if balance is None:
+            balance = balance_data.get("rtc_balance")
+        result["spot_balance"] = balance
         result["raw_data"]["spot_balance"] = balance_data
 
     # Miners list (for Merkle)
