@@ -1,0 +1,11 @@
+{
+  "fixture_version": 1,
+  "operation_id": "listActiveMiners",
+  "status": 429,
+  "content_type": "application/json",
+  "body": {
+    "ok": false,
+    "error": "rate_limited",
+    "limit": "100/60s"
+  }
+}
