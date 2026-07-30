@@ -12,7 +12,7 @@ keywords = ["rustchain", "wallet", "cli", "cryptocurrency", "blockchain"]
 categories = ["command-line-utilities", "cryptography"]
 
 [dependencies]
-rustchain-sdk = { path = "../../sdk", version = "0.1.0" }
+rustchain-sdk = { path = "../rustchain-sdk", version = "0.1.0" }
 tokio = { version = "1.0", features = ["full"] }
 clap = { version = "4.0", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
