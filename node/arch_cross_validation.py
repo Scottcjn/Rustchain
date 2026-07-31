@@ -285,10 +285,13 @@ def extract_all_features(fingerprint: Dict) -> Dict[str, Any]:
     if isinstance(checks, dict):
         for check_name, check_value in checks.items():
             if isinstance(check_value, dict):
+                # Require validated evidence: passed must be True or omitted only if valid measurement data exists
+                if check_value.get("passed") is False:
+                    continue
                 data = check_value.get("data", {})
-                if isinstance(data, dict):
+                if isinstance(data, dict) and data:
                     all_features[check_name] = data
-            elif isinstance(check_value, bool):
+            elif isinstance(check_value, bool) and check_value:
                 all_features[check_name] = {"passed": check_value}
     return all_features
 
@@ -364,6 +367,9 @@ def score_clock_consistency(claimed_arch: str, clock_features: Dict) -> Tuple[fl
     score = 1.0
     cv = clock_features.get("cv", 0)
     if cv == 0:
+        # Don't over-block honest TSC-less vintage (e.g. 486 has no RDTSC)
+        if profile_key in ("vintage_x86", "68k", "g3"):
+            return 1.0, ["tsc_less_vintage_expected"]
         issues.append("no_clock_cv_data")
         return 0.3, issues
     cv_min, cv_max = cv_range
@@ -382,7 +388,6 @@ def score_clock_consistency(claimed_arch: str, clock_features: Dict) -> Tuple[fl
             issues.append(f"modern_arch_{claimed_arch}_too_noisy:{cv:.6f}")
             score -= 0.3
     elif drift_magnitude == "medium":
-        # G4 class: very low cv suggests modern VM or clock-locked environment
         if cv < 0.005:
             issues.append(f"vintage_arch_{claimed_arch}_too_stable:{cv:.6f}")
             score -= 0.3
@@ -409,6 +414,7 @@ def score_thermal_consistency(claimed_arch: str, thermal_features: Dict) -> Tupl
 
 
 def score_cpu_brand_consistency(claimed_arch: str, device_info: Dict) -> Tuple[float, List[str]]:
+    import re
     profile_key = normalize_arch(claimed_arch)
     if not profile_key or profile_key not in ARCHITECTURE_PROFILES:
         return 0.5, ["unknown_architecture"]
@@ -422,10 +428,21 @@ def score_cpu_brand_consistency(claimed_arch: str, device_info: Dict) -> Tuple[f
     for key in ["cpu_brand", "processor", "cpu_model", "brand"]:
         val = device_info.get(key, "")
         if val and isinstance(val, str):
-            cpu_brand = val.lower()
+            cpu_brand = val.lower().strip()
             break
     if cpu_brand:
-        brand_matches = any(brand.lower() in cpu_brand for brand in expected_brands)
+        # Check generation contradictions (Pentium III/4/Pro/M/D claiming vintage_x86/pentium P5)
+        if profile_key in ("vintage_x86", "i386", "i486"):
+            if re.search(r"\b(pentium\s*(ii|iii|iv|4|pro|m|d)|core\s*2|xeon|i[3579])\b", cpu_brand):
+                issues.append(f"cpu_brand_generation_mismatch:brand={cpu_brand}")
+                return 0.0, issues
+
+        brand_matches = False
+        for brand in expected_brands:
+            pattern = r"\b" + re.escape(brand.lower()) + r"\b"
+            if re.search(pattern, cpu_brand):
+                brand_matches = True
+                break
         if not brand_matches:
             issues.append(f"cpu_brand_mismatch:brand={cpu_brand}")
             score -= 0.3
@@ -483,6 +500,8 @@ def validate_arch_consistency(
     weights = {"simd_consistency": 0.30, "cache_consistency": 0.25, "clock_consistency": 0.20,
                "thermal_consistency": 0.15, "cpu_brand_consistency": 0.10}
     overall_score = sum(details["scores"][key] * weights[key] for key in weights)
+    if any(issue.startswith("disqualifying_feature:") or issue.startswith("cpu_brand_generation_mismatch:") for issue in all_issues):
+        overall_score = min(overall_score, 0.2)
     overall_score = round(overall_score, 3)
     details["overall_score"] = overall_score
     if overall_score < 0.3:
