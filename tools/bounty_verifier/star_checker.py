@@ -18,8 +18,6 @@ import requests
 logger = logging.getLogger(__name__)
 
 RUSTCHAIN_NODE_URL = "https://50.28.86.131"
-RUSTCHAIN_REPO_OWNER = "Scottcjn"
-RUSTCHAIN_REPO_NAME = "Rustchain"
 FTC_DISCLOSURE_PHRASE = "i received rtc compensation for this review"
 URL_PATTERN = re.compile(r"https?://[^\s<>\[\]\"')]+", re.IGNORECASE)
 MIN_REVIEW_SENTENCES = 2
@@ -39,8 +37,19 @@ def _response_json_list(resp) -> list:
 
 
 def _count_review_sentences(body: str) -> int:
-    """Count substantive sentences, ignoring URL fragments."""
-    stripped = URL_PATTERN.sub(" ", body)
+    """Count substantive review sentences, ignoring links and disclosure."""
+    stripped = URL_PATTERN.sub(
+        lambda match: match.group(0)[-1]
+        if match.group(0)[-1] in ".!?"
+        else " ",
+        body,
+    )
+    stripped = re.sub(
+        re.escape(FTC_DISCLOSURE_PHRASE),
+        " ",
+        stripped,
+        flags=re.IGNORECASE,
+    )
     return sum(
         1
         for sentence in re.split(r"[.!?]+", stripped)
@@ -49,7 +58,7 @@ def _count_review_sentences(body: str) -> int:
 
 
 def validate_star_review_comment(body: str) -> Tuple[bool, List[str]]:
-    """Validate FTC-compliant star-bounty review comments (issue #773).
+    """Validate compensated review comments for star-based bounties.
 
     Requires:
     - Disclosure: "I received RTC compensation for this review."
