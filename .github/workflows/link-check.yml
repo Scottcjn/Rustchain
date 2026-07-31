@@ -1,0 +1,21 @@
+name: Link Check
+on:
+  push:
+    paths: ['**/*.md']
+  pull_request:
+    paths: ['**/*.md']
+  schedule:
+    - cron: '0 0 * * 1'
+jobs:
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --no-progress --max-concurrency 4 --timeout 10 --max-redirects 5
+            --accept 200,206,429
+            --exclude "doi.org" --exclude "zenodo.org"
+            '**/*.md'
+          fail: false
