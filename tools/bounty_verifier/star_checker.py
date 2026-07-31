@@ -10,13 +10,20 @@ Cherry-picked from LaphoqueRC PR #1712 with fixes:
 """
 
 import logging
-from typing import List, Optional
+import re
+from typing import List, Optional, Tuple
 
 import requests
 
 logger = logging.getLogger(__name__)
 
 RUSTCHAIN_NODE_URL = "https://50.28.86.131"
+RUSTCHAIN_REPO_OWNER = "Scottcjn"
+RUSTCHAIN_REPO_NAME = "Rustchain"
+FTC_DISCLOSURE_PHRASE = "i received rtc compensation for this review"
+URL_PATTERN = re.compile(r"https?://[^\s<>\[\]\"')]+", re.IGNORECASE)
+MIN_REVIEW_SENTENCES = 2
+MIN_REVIEW_SENTENCE_WORDS = 3
 
 
 def _response_json_list(resp) -> list:
@@ -29,6 +36,42 @@ def _response_json_list(resp) -> list:
         logger.warning("GitHub API returned %s JSON, expected list", type(body).__name__)
         return []
     return [item for item in body if isinstance(item, dict)]
+
+
+def _count_review_sentences(body: str) -> int:
+    """Count substantive sentences, ignoring URL fragments."""
+    stripped = URL_PATTERN.sub(" ", body)
+    return sum(
+        1
+        for sentence in re.split(r"[.!?]+", stripped)
+        if len(sentence.split()) >= MIN_REVIEW_SENTENCE_WORDS
+    )
+
+
+def validate_star_review_comment(body: str) -> Tuple[bool, List[str]]:
+    """Validate FTC-compliant star-bounty review comments (issue #773).
+
+    Requires:
+    - Disclosure: "I received RTC compensation for this review."
+    - At least one review link (URL)
+    - At least two substantive sentences
+    """
+    errors: List[str] = []
+
+    if FTC_DISCLOSURE_PHRASE not in body.lower():
+        errors.append(
+            "Missing FTC disclosure: 'I received RTC compensation for this review.'"
+        )
+
+    if not URL_PATTERN.search(body):
+        errors.append("Missing review link (at least one URL required)")
+
+    if _count_review_sentences(body) < MIN_REVIEW_SENTENCES:
+        errors.append(
+            f"Comment must contain at least {MIN_REVIEW_SENTENCES} substantive sentences"
+        )
+
+    return len(errors) == 0, errors
 
 
 def check_user_starred_repo(
