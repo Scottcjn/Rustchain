@@ -2115,6 +2115,18 @@ STREAK_BONUS_PER_DAY = 0.02      # Additional multiplier per consecutive day (ca
 STREAK_MAX_DAYS = 30             # Max streak bonus cap
 STREAK_GRACE_HOURS = 26          # Hours before streak resets (gives timezone flexibility)
 
+# Console arch strings the Pico bridge is allowed to attest for (RIP-304).
+# Deliberately WIDER than the HARDWARE_WEIGHTS["console"] keys: an Apple II
+# reports the bare CPU ("6502"), not a console model, and falls to the console
+# default tier. Keeping one list means the vouching check and the fingerprint
+# relaxation cannot drift apart and quietly cap honest retro hardware.
+CONSOLE_ARCHES = {
+    "nes_6502", "snes_65c816", "n64_mips", "gba_arm7",
+    "genesis_68000", "sms_z80", "saturn_sh2",
+    "gameboy_z80", "gameboy_color_z80", "ps1_mips",
+    "6502", "65c816", "z80", "sh2",
+}
+
 POWERPC_ARCHES = {"g3", "g4", "g5", "power8", "power9", "powerpc", "power macintosh"}
 X86_CPU_BRANDS = {"intel", "xeon", "core", "celeron", "pentium", "amd", "ryzen", "epyc", "athlon", "threadripper"}
 ARM_CPU_BRANDS = {
@@ -2925,6 +2937,129 @@ def _classify_validated_x86_brand(cpu_brand: str):
     return None
 
 
+# === RIP-201: server-side vouching for claimed reward tiers ===
+#
+# derive_verified_device() used to end by handing the miner's own
+# device_family/device_arch straight back. Both reward tables are keyed off
+# whatever it returns. HARDWARE_WEIGHTS on the enrolment path, and
+# ANTIQUITY_MULTIPLIERS (via get_time_aged_multiplier on the stored
+# miner_attest_recent.device_arch) on the settlement path, so a claim that
+# reached the tail collected its tier for free. family="ARM"/arch="arm2" paid
+# 4.0 and family="console"/arch="nes_6502" paid 2.8 against an honest modern
+# x86_64 at 0.8, on plain bare-metal, with no corroborating evidence at all.
+#
+# The rule below is deliberately not an enumeration of good arch strings,
+# because that list rots the moment somebody adds a tier. It is: if the claim
+# would pay MORE than the modern rate and no detection branch above vouched
+# for it, cap it at the modern rate. Being unable to prove you are vintage
+# costs you the bonus, never your participation. An unvouched miner keeps
+# attesting, keeps enrolling and keeps earning, just at 0.8 like any other
+# modern box.
+UNVOUCHED_DEVICE = {"device_family": "x86_64", "device_arch": "modern"}
+
+# The neutral rate both reward tables agree on for a modern machine.
+# HARDWARE_WEIGHTS["x86_64"]["modern"] == 0.8 and
+# get_time_aged_multiplier("modern") == 0.8.
+_NEUTRAL_DEVICE_WEIGHT = 0.8
+
+
+def _console_bridge_evidence(device: dict, fingerprint: dict) -> bool:
+    """True when the payload carries the RIP-304 Pico bridge shape.
+
+    A real console miner cannot run a Python agent on the console itself; it
+    attests through a Pi Pico wired to the controller port, and
+    miners/pico_bridge/pico_bridge_miner.py always stamps bridge_type on both
+    the device and the fingerprint and always emits a ctrl_port_timing check
+    (see check_pico_bridge_attestation in node/fingerprint_checks.py). Asking
+    for that shape is asking for what the honest client already sends.
+
+    This does not make the console tier unforgeable. A determined spoofer can
+    synthesise the bridge fields too, and check_pico_bridge_attestation still
+    has to do the real work of judging cv/samples and ROM timing. It does stop
+    the two-string version, where an ordinary x86 box types "console" and
+    "nes_6502" into its payload and walks off with 2.8.
+    """
+    if not isinstance(device, dict):
+        device = {}
+    if str(device.get("bridge_type") or "").strip().lower() == "pico_serial":
+        return True
+    if isinstance(fingerprint, dict):
+        if str(fingerprint.get("bridge_type") or "").strip().lower() == "pico_serial":
+            return True
+        entry = _fingerprint_checks_map(fingerprint).get("ctrl_port_timing")
+        if isinstance(entry, dict) and entry.get("data"):
+            return True
+        if entry is True:
+            return True
+    return False
+
+
+def _claim_pays_above_neutral(family: str, arch: str) -> bool:
+    """Would honouring this family/arch pay more than a modern machine?
+
+    Checks both reward tables, because they disagree and both are live.
+    HARDWARE_WEIGHTS decides the enrolment weight snapshot; ANTIQUITY_MULTIPLIERS
+    decides the settlement multiplier when calculate_epoch_rewards_time_aged
+    falls back to miner_attest_recent. x86 arch="486" is 2.0 in the first and
+    2.9 in the second, so consulting only one of them would miss half the money.
+    """
+    bucket = HARDWARE_WEIGHTS.get(family, {})
+    if isinstance(bucket, dict):
+        weight = bucket.get(arch)
+        if weight is None:
+            weight = bucket.get("default")
+        if weight is not None and float(weight) > _NEUTRAL_DEVICE_WEIGHT:
+            return True
+    try:
+        from rip_200_round_robin_1cpu1vote import get_time_aged_multiplier
+        if float(get_time_aged_multiplier(arch, 0.0)) > _NEUTRAL_DEVICE_WEIGHT:
+            return True
+    except Exception:
+        # If the antiquity table cannot be consulted, fall back to the
+        # HARDWARE_WEIGHTS answer above rather than failing the attestation.
+        pass
+    return False
+
+
+def _vouch_claimed_device(family: str, arch: str, device: dict, fingerprint: dict) -> dict:
+    """Decide whether the server is willing to stand behind a claimed tier.
+
+    Only reached from the tail of derive_verified_device, i.e. only for claims
+    that no detection branch above recognised. Everything the server derived
+    itself has already returned by this point and never gets here.
+    """
+    family_lower = str(family or "").strip().lower()
+    arch_lower = str(arch or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    # x86 keeps the path it already has: _detect_x86_vintage above, plus the
+    # _derive_enroll_weight_device clamp added by #8022. Left alone on purpose
+    # so this change stays complementary to PR #8087 instead of colliding with
+    # it in the same function. See the PR body for the gap that leaves.
+    if family_lower in ("x86", "x86_64", "windows", ""):
+        return {"device_family": family, "device_arch": arch}
+
+    # Console: honour the retro tier only with the Pico bridge shape behind it.
+    if family_lower == "console":
+        if arch_lower in CONSOLE_ARCHES and _console_bridge_evidence(device, fingerprint):
+            return {"device_family": "console", "device_arch": arch_lower}
+        print(f"[VOUCH] REJECT console claim {arch!r}: no pico bridge evidence -> x86_64/modern")
+        return dict(UNVOUCHED_DEVICE)
+
+    # ARM reaching the tail means _detect_arm_evidence found nothing ARM about
+    # this machine while the payload insists it is ARM. Honest vintage ARM goes
+    # through the vintage_arm_arches branch above and never lands here.
+    if family_lower == "arm":
+        print(f"[VOUCH] REJECT ARM claim {arch!r}: no ARM evidence in payload -> x86_64/modern")
+        return dict(UNVOUCHED_DEVICE)
+
+    if _claim_pays_above_neutral(family, arch_lower):
+        print(f"[VOUCH] REJECT unvouched tier {family}/{arch} -> x86_64/modern")
+        return dict(UNVOUCHED_DEVICE)
+
+    # Pays neutral or less. Nothing to steal, so keep the miner's own label.
+    return {"device_family": family, "device_arch": arch}
+
+
 def _derive_enroll_weight_device(
     verified_device: dict, fingerprint: dict, fingerprint_passed: bool = True,
     measurement_report_verified: bool = False,
@@ -3207,8 +3342,11 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
         if x86_vintage:
             return x86_vintage
 
-    # Non-PowerPC, non-ARM, non-exotic — return claimed values
-    return {"device_family": family, "device_arch": arch}
+    # Nothing above recognised this device, so family/arch are still the
+    # miner's own words. Vouch for the claim or cap it at the modern rate;
+    # see _vouch_claimed_device. Returning the claim verbatim here is what
+    # handed out ARM/arm2 at 4.0 and console/nes_6502 at 2.8 for free.
+    return _vouch_claimed_device(family, arch, device, fingerprint)
 
 # RIP-0146b: Enrollment enforcement config
 ENROLL_REQUIRE_TICKET = os.getenv("ENROLL_REQUIRE_TICKET", "1") == "1"
@@ -3888,16 +4026,22 @@ def validate_fingerprint_data(
                              "powerpc g4", "powerpc g5", "powerpc g3",
                              "power8", "power9", "68k", "m68k"}
     # RIP-304: Console miners via Pico bridge have their own fingerprint checks
-    console_archs = {"nes_6502", "snes_65c816", "n64_mips", "gba_arm7",
-                     "genesis_68000", "sms_z80", "saturn_sh2",
-                     "gameboy_z80", "gameboy_color_z80", "ps1_mips",
-                     "6502", "65c816", "z80", "sh2"}
+    console_archs = CONSOLE_ARCHES
     # 386/486 predate RDTSC. Relax their clock requirement only for the
     # attestation reward path; other validator consumers keep the strict rule.
     is_vintage = claimed_arch_lower in vintage_relaxed_archs or (
         allow_tscless_x86_reward and claimed_arch_lower in {"386", "486"}
     )
-    is_console = claimed_arch_lower in console_archs
+    # The console relaxation drops clock_drift from the required set, so keying
+    # it off the claimed arch string alone meant one word in the request body
+    # skipped a required hardware check: the same payload with no clock_drift
+    # at all returned missing_required_check:clock_drift as "modern" and valid
+    # as "nes_6502". Require the RIP-304 bridge shape the honest Pico client
+    # actually sends before relaxing anything.
+    is_console = (
+        claimed_arch_lower in console_archs
+        and _console_bridge_evidence(claimed_device, fingerprint)
+    )
 
     # RIP-304: Console miners use Pico bridge fingerprinting (ctrl_port_timing
     # replaces clock_drift; anti_emulation still required via timing CV)
