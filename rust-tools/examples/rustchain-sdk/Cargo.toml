@@ -12,6 +12,9 @@ readme = "README.md"
 keywords = ["blockchain", "rustchain", "api", "sdk", "client"]
 categories = ["api-bindings", "cryptography", "web-programming::http-client"]
 
+[features]
+default = []
+
 [dependencies]
 reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
 serde = { version = "1.0", features = ["derive"] }
@@ -28,9 +31,3 @@ hex = "0.4"
 [dev-dependencies]
 tokio-test = "0.4"
 wiremock = "0.5"
-
-[features]
-default = []
-wallet = ["bip39", "ed25519-dalek"]
-bip39 = { version = "2.0", optional = true }
-ed25519-dalek = { version = "2.0", optional = true }
