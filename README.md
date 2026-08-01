@@ -426,7 +426,7 @@ Emission is a fixed 1.5 RTC per epoch and does not halve. It continues at that r
 
 ### Reference rate climbs as holder count grows
 
-The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates. The live rate is always at [`/api/tokenomics`](https://rustchain.org/api/tokenomics).
+The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates. The live rate is always at [`/api/tokenomics`](docs/token-economics.md).
 
 | Holder count | Reference rate | Bounty rate scale |
 |--------------|----------------|-------------------|
