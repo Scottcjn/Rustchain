@@ -32,6 +32,57 @@ CHECKSUM_URL="${BASE_URL}/miners/checksums.sha256"
 NODE_URL="https://rustchain.org"
 VERSION="1.0.0"
 
+# ─── Platform Detection Helpers ──────────────────────────────────────
+# macOS ships bash 3.2 and a BSD userland, so everything below sticks to
+# POSIX-compatible constructs: no associative arrays (`declare -A`), no
+# GNU-only flags (`grep -P`, `readlink -f`, `sed -i ''` differences).
+
+# Miner filenames can be overridden for testing / pinning older releases.
+MAC_MINER_FILE="${RUSTCHAIN_MAC_MINER:-rustchain_mac_miner_v2.5.py}"
+LINUX_MINER_FILE="${RUSTCHAIN_LINUX_MINER:-rustchain_linux_miner.py}"
+
+OS_LABEL=""
+MINER_PATH=""
+FINGERPRINT_PATH=""
+
+unsupported() {
+    echo -e "${RED}  Unsupported platform: $(uname -s) $(uname -m)${NC}" >&2
+    echo "  RustChain's installer supports Linux (x86_64/aarch64/armv7l/ppc64le/riscv64)" >&2
+    echo "  and macOS (Apple Silicon arm64 or Intel x86_64)." >&2
+    echo "  Nothing was installed. See https://github.com/Scottcjn/Rustchain for" >&2
+    echo "  manual instructions or open an issue with the output of 'uname -a'." >&2
+    exit 1
+}
+
+select_platform_paths() {
+    # Files live under miners/<os>/ — never at the root of miners/.
+    case "$OS" in
+        Linux)
+            OS_LABEL="Linux"
+            MINER_PATH="linux/${LINUX_MINER_FILE}"
+            FINGERPRINT_PATH="linux/fingerprint_checks.py"
+            ;;
+        Darwin)
+            case "$ARCH" in
+                arm64|aarch64) OS_LABEL="macOS (Apple Silicon)" ;;
+                x86_64)        OS_LABEL="macOS (Intel)" ;;
+                *)             unsupported ;;
+            esac
+            MINER_PATH="macos/${MAC_MINER_FILE}"
+            FINGERPRINT_PATH="macos/fingerprint_checks.py"
+            ;;
+        *)
+            unsupported
+            ;;
+    esac
+}
+
+default_wallet_name() {
+    host=$(hostname 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-' | head -c 20)
+    arch_lc=$(echo "$ARCH" | tr '[:upper:]' '[:lower:]')
+    echo "${host:-miner}-${arch_lc}"
+}
+
 # ─── Parse Arguments ─────────────────────────────────────────────────
 
 WALLET=""
@@ -70,21 +121,10 @@ if [ "$DRY_RUN" -eq 1 ]; then
     OS=$(uname -s)
     ARCH=$(uname -m)
 
-    case "$OS" in
-        Linux)
-            MINER_PATH="linux/rustchain_linux_miner.py"
-            FINGERPRINT_PATH="linux/fingerprint_checks.py"
-            ;;
-        Darwin)
-            MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
-            FINGERPRINT_PATH="macos/fingerprint_checks.py"
-            ;;
-        *)      echo -e "${RED}Unsupported OS: $OS${NC}"; exit 1 ;;
-    esac
+    select_platform_paths
 
     if [ -z "$WALLET" ]; then
-        HOSTNAME=$(hostname 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-' | head -c 20)
-        WALLET="${HOSTNAME:-miner}-$(echo "$ARCH" | tr '[:upper:]' '[:lower:]')"
+        WALLET=$(default_wallet_name)
     fi
 
     MINER_URL="${BASE_URL}/miners/${MINER_PATH}"
@@ -119,19 +159,8 @@ echo -e "${GREEN}[1/6]${NC} Detecting system..."
 OS=$(uname -s)
 ARCH=$(uname -m)
 
-case "$OS" in
-    Linux)
-        echo "  OS: Linux"
-        MINER_PATH="linux/rustchain_linux_miner.py"
-        FINGERPRINT_PATH="linux/fingerprint_checks.py"
-        ;;
-    Darwin)
-        echo "  OS: macOS"
-        MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
-        FINGERPRINT_PATH="macos/fingerprint_checks.py"
-        ;;
-    *)      echo -e "${RED}  Unsupported OS: $OS${NC}"; exit 1 ;;
-esac
+select_platform_paths
+echo "  OS: $OS_LABEL"
 
 MINER_URL="${BASE_URL}/miners/${MINER_PATH}"
 FINGERPRINT_URL="${BASE_URL}/miners/${FINGERPRINT_PATH}"
@@ -217,13 +246,18 @@ echo -e "${GREEN}[2/6]${NC} Checking Python..."
 
 PYTHON=""
 for cmd in python3 python; do
-    if command -v $cmd &>/dev/null; then
-        ver=$($cmd --version 2>&1 | grep -oP '\d+\.\d+')
-        major=$(echo $ver | cut -d. -f1)
-        minor=$(echo $ver | cut -d. -f2)
-        if [ "$major" -ge 3 ] && [ "$minor" -ge 6 ]; then
+    if command -v "$cmd" >/dev/null 2>&1; then
+        # Portable version parse: BSD grep (macOS) has no -P / \d.
+        ver=$("$cmd" -c 'import sys; print("%d.%d" % sys.version_info[:2])' 2>/dev/null)
+        [ -z "$ver" ] && continue
+        major=${ver%%.*}
+        minor=${ver#*.}
+        case "$major$minor" in
+            *[!0-9]*) continue ;;
+        esac
+        if [ "$major" -gt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -ge 6 ]; }; then
             PYTHON=$cmd
-            echo "  Found: $cmd ($($cmd --version 2>&1))"
+            echo "  Found: $cmd ($("$cmd" --version 2>&1))"
             break
         fi
     fi
@@ -231,7 +265,17 @@ done
 
 if [ -z "$PYTHON" ]; then
     echo -e "${RED}  Python 3.6+ required but not found.${NC}"
-    echo "  Install with: sudo apt install python3 python3-pip"
+    if [ "$OS" = "Darwin" ]; then
+        echo "  Install with: brew install python3   (or download from python.org)"
+    elif command -v apt-get >/dev/null 2>&1; then
+        echo "  Install with: sudo apt-get install python3 python3-pip"
+    elif command -v dnf >/dev/null 2>&1; then
+        echo "  Install with: sudo dnf install python3 python3-pip"
+    elif command -v pacman >/dev/null 2>&1; then
+        echo "  Install with: sudo pacman -S python python-pip"
+    else
+        echo "  Install Python 3.6+ with your system package manager."
+    fi
     exit 1
 fi
 
@@ -250,8 +294,7 @@ echo -e "${GREEN}[3/6]${NC} Wallet setup..."
 
 if [ -z "$WALLET" ]; then
     # Generate a default wallet name from hostname
-    HOSTNAME=$(hostname 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-' | head -c 20)
-    DEFAULT_WALLET="${HOSTNAME:-miner}-$(echo $ARCH | tr '[:upper:]' '[:lower:]')"
+    DEFAULT_WALLET=$(default_wallet_name)
 
     echo "  Enter your wallet name (or press Enter for: $DEFAULT_WALLET)"
     echo -n "  Wallet: "
@@ -305,7 +348,7 @@ cd "$DIR"
 
 PYTHON=""
 for cmd in python3 python; do
-    if command -v $cmd &>/dev/null; then
+    if command -v "$cmd" >/dev/null 2>&1; then
         PYTHON=$cmd
         break
     fi
@@ -374,7 +417,9 @@ echo ""
 echo -e "${CYAN}  ╔══════════════════════════════════════════════════╗"
 echo -e "  ║  ✓ RustChain Miner Installed Successfully!       ║"
 echo -e "  ╠══════════════════════════════════════════════════╣"
-echo -e "  ║  Wallet:  $WALLET$(printf '%*s' $((36 - ${#WALLET})) '')║"
+WALLET_PAD=$((36 - ${#WALLET}))
+[ "$WALLET_PAD" -lt 0 ] && WALLET_PAD=0
+echo -e "  ║  Wallet:  $WALLET$(printf '%*s' "$WALLET_PAD" '')║"
 echo -e "  ║  Install: ~/.rustchain/                          ║"
 echo -e "  ║  CPU:     <0.1% overhead                         ║"
 echo -e "  ║  GPU:     0% impact (proven by benchmark)        ║"
