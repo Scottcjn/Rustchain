@@ -284,9 +284,9 @@ VINTAGE_PROFILES = {
 - Block time adjusted for slower hardware
 
 ## Evidence
-- [Photo](./evidence/photo.jpg)
-- [Screenshot](./evidence/screenshot.png)
-- [Attestation Log](./evidence/attestation.log)
+- Photo (captured at runtime to `./evidence/photo.jpg`)
+- Screenshot (captured at runtime to `./evidence/screenshot.png`)
+- Attestation Log (captured at runtime to `./evidence/attestation.log`)
 
 ## Wallet
 RTC1VintagePentiumIIWallet123456789
