@@ -76,7 +76,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
             FINGERPRINT_PATH="linux/fingerprint_checks.py"
             ;;
         Darwin)
-            MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
+            MINER_PATH="macos/rustchain_mac_miner_v2.5.py"
             FINGERPRINT_PATH="macos/fingerprint_checks.py"
             ;;
         *)      echo -e "${RED}Unsupported OS: $OS${NC}"; exit 1 ;;
@@ -127,7 +127,7 @@ case "$OS" in
         ;;
     Darwin)
         echo "  OS: macOS"
-        MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
+        MINER_PATH="macos/rustchain_mac_miner_v2.5.py"
         FINGERPRINT_PATH="macos/fingerprint_checks.py"
         ;;
     *)      echo -e "${RED}  Unsupported OS: $OS${NC}"; exit 1 ;;
@@ -218,9 +218,9 @@ echo -e "${GREEN}[2/6]${NC} Checking Python..."
 PYTHON=""
 for cmd in python3 python; do
     if command -v $cmd &>/dev/null; then
-        ver=$($cmd --version 2>&1 | grep -oP '\d+\.\d+')
-        major=$(echo $ver | cut -d. -f1)
-        minor=$(echo $ver | cut -d. -f2)
+        ver=$($cmd --version 2>&1 | grep -oE '[0-9]+\.[0-9]+')
+        major=$(echo "$ver" | cut -d. -f1)
+        minor=$(echo "$ver" | cut -d. -f2)
         if [ "$major" -ge 3 ] && [ "$minor" -ge 6 ]; then
             PYTHON=$cmd
             echo "  Found: $cmd ($($cmd --version 2>&1))"
@@ -231,7 +231,7 @@ done
 
 if [ -z "$PYTHON" ]; then
     echo -e "${RED}  Python 3.6+ required but not found.${NC}"
-    echo "  Install with: sudo apt install python3 python3-pip"
+    echo "  Install Python 3.6+ from https://python.org or use your system package manager."
     exit 1
 fi
 
@@ -251,7 +251,7 @@ echo -e "${GREEN}[3/6]${NC} Wallet setup..."
 if [ -z "$WALLET" ]; then
     # Generate a default wallet name from hostname
     HOSTNAME=$(hostname 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-' | head -c 20)
-    DEFAULT_WALLET="${HOSTNAME:-miner}-$(echo $ARCH | tr '[:upper:]' '[:lower:]')"
+    DEFAULT_WALLET="${HOSTNAME:-miner}-$(echo "$ARCH" | tr '[:upper:]' '[:lower:]')"
 
     echo "  Enter your wallet name (or press Enter for: $DEFAULT_WALLET)"
     echo -n "  Wallet: "
