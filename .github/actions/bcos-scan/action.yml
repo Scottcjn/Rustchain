@@ -148,7 +148,7 @@ runs:
             ``,
             `<details><summary>What is BCOS?</summary>`,
             ``,
-            `[Beacon Certified Open Source](https://rustchain.org/bcos/) is a transparent`,
+            `[Beacon Certified Open Source](https://github.com/Scottcjn/Rustchain/blob/main/BCOS.md) is a transparent`,
             `trust scoring system for open-source repositories. Scores are anchored on`,
             `RustChain for tamper-proof verification.`,
             ``,
