@@ -631,3 +631,10 @@ For deeper debugging, see the [CLI Wallet Walkthrough](docs/CLI.md) and [Local D
 [Boudreaux Principles](https://rustchain.org/principles.html) · [Green Tracker](https://rustchain.org/preserved.html) · [Bounties](https://github.com/Scottcjn/rustchain-bounties/issues)
 
 </div>
+
+
+## RustChain bounty #16243
+
+[BOUNTY: 3-5 RTC] Show your real mining rig — photo/video of hardware running RustChain
+
+Submitted by hbotx. See the bounty issue for scope.
