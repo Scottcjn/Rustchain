@@ -1,6 +1,6 @@
 # BCOS v2 GitHub Action
 
-[![BCOS](https://img.shields.io/badge/BCOS-v2-blue)](https://rustchain.org/bcos/)
+[![BCOS](https://img.shields.io/badge/BCOS-v2-blue)](https://github.com/Scottcjn/Rustchain/blob/main/BCOS.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Reusable GitHub Action that any repo can use to run **BCOS v2** (Beacon Certified Open Source) scans.
@@ -175,7 +175,7 @@ Missing tools result in partial credit for affected checks.
 
 ## Verification
 
-Verify attestations at: https://rustchain.org/bcos/
+Verify the BCOS methodology at: https://github.com/Scottcjn/Rustchain/blob/main/BCOS.md
 
 ## License
 
@@ -190,6 +190,6 @@ MIT License - see [LICENSE](LICENSE) file.
 
 ## Support
 
-- Documentation: https://rustchain.org/bcos/
+- Documentation: https://github.com/Scottcjn/Rustchain/blob/main/BCOS.md
 - Issues: https://github.com/Scottcjn/Rustchain/issues
 - Spec: https://github.com/Scottcjn/Rustchain/blob/main/docs/BEACON_CERTIFIED_OPEN_SOURCE.md

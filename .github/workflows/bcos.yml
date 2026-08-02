@@ -146,7 +146,7 @@ jobs:
               '- Test infrastructure evidence',
               '- Review attestation tier',
               '',
-              `[Full report](https://rustchain.org/bcos/verify/${certId}) | [What is BCOS?](https://github.com/Scottcjn/Rustchain/blob/main/docs/BEACON_CERTIFIED_OPEN_SOURCE.md)`,
+              `[BCOS methodology](https://github.com/Scottcjn/Rustchain/blob/main/BCOS.md) | [What is BCOS?](https://github.com/Scottcjn/Rustchain/blob/main/docs/BEACON_CERTIFIED_OPEN_SOURCE.md)`,
               '</details>',
               '',
               '---',
