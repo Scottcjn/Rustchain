@@ -631,3 +631,10 @@ For deeper debugging, see the [CLI Wallet Walkthrough](docs/CLI.md) and [Local D
 [Boudreaux Principles](https://rustchain.org/principles.html) · [Green Tracker](https://rustchain.org/preserved.html) · [Bounties](https://github.com/Scottcjn/rustchain-bounties/issues)
 
 </div>
+
+
+## RustChain bounty #13951
+
+[BOUNTY: 5–15 RTC] Antiquity Showcase — Photo/Video of Vintage Hardware Mining RustChain
+
+Submitted by hbotx. See the bounty issue for scope.
