@@ -793,8 +793,22 @@ class AirdropV2:
         github_username = self._normalize_github_username(github_username)
         if not self._is_valid_github_username(github_username):
             return False, "Invalid GitHub username", None
+        # Verify ownership if a token is provided
+        if github_token:
+            try:
+                auth_resp = requests.get(
+                    "https://api.github.com/user",
+                    headers={"Accept": "application/vnd.github.v3+json", "Authorization": f"token {github_token}"},
+                    timeout=10,
+                )
+                if auth_resp.status_code != 200:
+                    return False, "Failed to verify GitHub token", None
+                auth_login = auth_resp.json().get("login", "").strip().casefold()
+                if auth_login != github_username:
+                    return False, "GitHub token does not match provided username", None
+            except requests.RequestException as e:
+                return False, f"GitHub verification error: {e}", None
         chain_lower = chain.lower()
-
         if self._has_claimed(github_username, wallet_address, chain_lower):
             return False, "Claim already exists for this GitHub account or wallet", None
 
