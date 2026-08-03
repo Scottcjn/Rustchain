@@ -92,11 +92,7 @@ def test_safe_json_object_rejects_array_payload(capsys):
     data, rc = cli._safe_json_object(FakeResponse([{"amount_rtc": 1.0}]))
 
     assert data is None
-<<<<<<< Updated upstream
     assert rc == cli.EXIT_BAD_RESPONSE
-=======
-    assert rc == 3
->>>>>>> Stashed changes
     assert "not an object" in capsys.readouterr().err
 
 
@@ -105,11 +101,7 @@ def test_cmd_balance_rejects_non_object_json(monkeypatch, capsys):
 
     rc = cli.cmd_balance(SimpleNamespace(wallet_id="RTCabc"))
 
-<<<<<<< Updated upstream
     assert rc == cli.EXIT_BAD_RESPONSE
-=======
-    assert rc == 3
->>>>>>> Stashed changes
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "not an object" in captured.err

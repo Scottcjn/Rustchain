@@ -297,16 +297,16 @@ def _safe_json(r: "requests.Response") -> "tuple[dict | list | None, int]":
     response body is not valid JSON or HTTP status is non-200.
     """
     if not r.ok:
-        print(
-            f"Error: Server returned HTTP {r.status_code}",
-            file=sys.stderr,
-        )
+        if r.status_code == 404:
+            print("Error: Server returned HTTP 404 (wallet not found)", file=sys.stderr)
+            return None, EXIT_WALLET_NOT_FOUND
+        print(f"Error: Server returned HTTP {r.status_code}", file=sys.stderr)
         return None, EXIT_BAD_RESPONSE
     try:
         return r.json(), EXIT_SUCCESS
     except Exception as e:
         print(
-            f"Error: Server returned invalid JSON: {e}",
+            f"Error: Server returned invalid JSON / non-JSON body: {e}",
             file=sys.stderr,
         )
         return None, EXIT_BAD_RESPONSE
