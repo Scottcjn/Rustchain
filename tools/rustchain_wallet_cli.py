@@ -293,16 +293,20 @@ def cmd_export(args):
 def _safe_json(r: "requests.Response") -> "tuple[dict | list | None, int]":
     """Parse JSON from a response, returning (data, exit_code).
 
-    Returns (None, 1) with a descriptive error printed to stderr when the
-    response body is not valid JSON (e.g. HTML 502 error pages).  This avoids
-    the opaque ``JSONDecodeError`` that previously surfaced to callers.
+    Returns (None, EXIT_BAD_RESPONSE) with a descriptive error printed to stderr when the
+    response body is not valid JSON or HTTP status is non-200.
     """
+    if not r.ok:
+        if r.status_code == 404:
+            print("Error: Server returned HTTP 404 (wallet not found)", file=sys.stderr)
+            return None, EXIT_WALLET_NOT_FOUND
+        print(f"Error: Server returned HTTP {r.status_code}", file=sys.stderr)
+        return None, EXIT_BAD_RESPONSE
     try:
-        return r.json(), EXIT_SUCCESS if r.ok else EXIT_BAD_RESPONSE
-    except Exception:
+        return r.json(), EXIT_SUCCESS
+    except Exception as e:
         print(
-            f"Error: Server returned HTTP {r.status_code} with non-JSON body"
-            f" (check node URL / connectivity)",
+            f"Error: Server returned invalid JSON / non-JSON body: {e}",
             file=sys.stderr,
         )
         return None, EXIT_BAD_RESPONSE
@@ -315,37 +319,31 @@ def _safe_json_object(r: "requests.Response") -> "tuple[dict | None, int]":
     if not isinstance(data, dict):
         print("Error: Server returned JSON but not an object", file=sys.stderr)
         return None, EXIT_BAD_RESPONSE
-    return data, rc
+    return data, EXIT_SUCCESS
 
 
 def cmd_balance(args):
+    wallet_id = (getattr(args, "wallet_id", "") or "").strip()
+    if not wallet_id:
+        print("Error: Wallet address is required", file=sys.stderr)
+        return EXIT_USAGE_ERROR
     url = f"{NODE_URL}/wallet/balance"
     try:
-        r = requests.get(url, params={"miner_id": args.wallet_id}, timeout=12, verify=VERIFY_SSL)
+        r = requests.get(url, params={"miner_id": wallet_id}, timeout=12, verify=VERIFY_SSL)
     except requests.exceptions.RequestException as e:
-        print(f"ERROR: Network error - {e}", file=sys.stderr)
+        print(f"Error: Network error checking balance: {e}", file=sys.stderr)
         return EXIT_NETWORK_ERROR
-
-    if r.status_code == 404:
-        print(f"ERROR: Wallet '{args.wallet_id}' not found", file=sys.stderr)
-        return EXIT_WALLET_NOT_FOUND
-
-    if r.status_code != 200:
-        print(f"ERROR: Server returned HTTP {r.status_code}", file=sys.stderr)
-        return EXIT_BAD_RESPONSE
 
     data, rc = _safe_json_object(r)
     if data is None:
         return rc
-
     if "amount_rtc" not in data:
-        # Fallback: accept "balance_rtc" as an alias
         if "balance_rtc" in data:
             data["amount_rtc"] = data["balance_rtc"]
         else:
-            print("ERROR: Response missing 'amount_rtc' field", file=sys.stderr)
+            print("Error: Response missing 'amount_rtc' field", file=sys.stderr)
             return EXIT_BAD_RESPONSE
-    data["wallet_id"] = args.wallet_id
+    data["wallet_id"] = wallet_id
     print(json.dumps(data, indent=2))
     return EXIT_SUCCESS
 
