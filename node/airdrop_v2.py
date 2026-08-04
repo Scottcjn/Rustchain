@@ -800,7 +800,7 @@ class AirdropV2:
             try:
                 auth_resp = requests.get(
                     "https://api.github.com/user",
-                    headers={"Accept": "application/vnd.github.v3+json", "Authorization": f"token {github_token}", "User-Agent": "RustChain-Airdrop-Verifier"}
+                    headers={"Accept": "application/vnd.github.v3+json", "Authorization": f"token {github_token}", "User-Agent": "RustChain-Airdrop-Verifier"},
                     timeout=10,
                 )
                 if auth_resp.status_code != 200:
