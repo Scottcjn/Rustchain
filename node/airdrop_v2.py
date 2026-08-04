@@ -4,6 +4,7 @@ RustChain Airdrop V2 - Cross-Chain Distribution Infrastructure
 
 Implements RIP-305: Cross-Chain Airdrop for wRTC on Solana + Base
 
+
 Tracks:
   A: Solana SPL Token (wRTC)
   B: Base ERC-20 Token (wRTC)
@@ -37,6 +38,7 @@ import logging
 import math
 import os
 import re
+import requests
 import sqlite3
 import time
 from dataclasses import dataclass, asdict
@@ -798,7 +800,7 @@ class AirdropV2:
             try:
                 auth_resp = requests.get(
                     "https://api.github.com/user",
-                    headers={"Accept": "application/vnd.github.v3+json", "Authorization": f"token {github_token}"},
+                    headers={"Accept": "application/vnd.github.v3+json", "Authorization": f"token {github_token}", "User-Agent": "RustChain-Airdrop-Verifier"}
                     timeout=10,
                 )
                 if auth_resp.status_code != 200:
@@ -806,8 +808,8 @@ class AirdropV2:
                 auth_login = auth_resp.json().get("login", "").strip().casefold()
                 if auth_login != github_username:
                     return False, "GitHub token does not match provided username", None
-            except requests.RequestException as e:
-                return False, f"GitHub verification error: {e}", None
+            except requests.RequestException:
+                return False, "GitHub verification failed", None
         chain_lower = chain.lower()
         if self._has_claimed(github_username, wallet_address, chain_lower):
             return False, "Claim already exists for this GitHub account or wallet", None
