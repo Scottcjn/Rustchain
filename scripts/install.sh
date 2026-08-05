@@ -604,11 +604,11 @@ CFGEOF
     # --- Generate miner ID ---
     local miner_id
     if command -v sha256sum &>/dev/null; then
-        miner_id=$(echo -n "${wallet}-${arch}-$(hostname)" | sha256sum | cut -c1-16)
+        miner_id=$(printf '%s-%s-%s' "$wallet" "$arch" "$(hostname)" | sha256sum | cut -c1-16)
     elif command -v shasum &>/dev/null; then
-        miner_id=$(echo -n "${wallet}-${arch}-$(hostname)" | shasum -a 256 | cut -c1-16)
+        miner_id=$(printf '%s-%s-%s' "$wallet" "$arch" "$(hostname)" | shasum -a 256 | cut -c1-16)
     elif command -v python3 &>/dev/null; then
-        miner_id=$(python3 -c "import hashlib; print(hashlib.sha256(b'${wallet}-${arch}-' + b'$(hostname)').hexdigest()[:16])" 2>/dev/null || echo "${wallet}")
+        miner_id=$(python3 -c 'import sys, hashlib; print(hashlib.sha256(f"{sys.argv[1]}-{sys.argv[2]}-{sys.argv[3]}".encode()).hexdigest()[:16])' "$wallet" "$arch" "$(hostname)" 2>/dev/null || echo "$wallet")
     else
         miner_id="${wallet}"
     fi
