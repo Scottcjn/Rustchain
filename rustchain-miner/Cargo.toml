@@ -24,8 +24,10 @@ tokio = { version = "1.35", features = ["full"] }
 
 # HTTP/HTTPS (reqwest with rustls TLS)
 # NOTE: reqwest 0.13 renamed the `rustls-tls` feature to `rustls`, and split
-# `.query()` out into its own `query` feature.
-reqwest = { version = "0.13", features = ["json", "rustls", "rustls-native-certs", "query"], default-features = false }
+# `.query()` out into its own `query` feature. The `rustls` feature already
+# pulls in `rustls-platform-verifier`, so the OS trust store is used and no
+# separate native-certs feature exists (or is needed) on 0.13.x.
+reqwest = { version = "0.13", features = ["json", "rustls", "query"], default-features = false }
 
 # Error handling
 thiserror = "2.0"
