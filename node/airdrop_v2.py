@@ -168,6 +168,20 @@ class BridgeLock:
         ).isoformat()
         return result
 
+    def to_public_dict(self) -> Dict[str, Any]:
+        return {
+            "lock_id": self.lock_id,
+            "from_chain": self.from_chain,
+            "to_chain": self.to_chain,
+            "amount_uwrtc": self.amount_uwrtc,
+            "amount_wrtc": self.amount_uwrtc / 1_000_000,
+            "timestamp": self.timestamp,
+            "timestamp_iso": datetime.fromtimestamp(
+                self.timestamp, tz=timezone.utc
+            ).isoformat(),
+            "status": self.status,
+        }
+
 
 # ============================================================================
 # Database Schema
@@ -625,16 +639,20 @@ class AirdropV2:
             if user_resp.status_code != 200:
                 return None
 
-            # Get contributions (PRs merged)
-            # Use GitHub search API for contributions
+            # Get merged PRs authored by this user, scoped to the
+            # RustChain org only.  The old code hit /search/commits with
+            # a bare "author:X merged:true" query, which counts commits
+            # anywhere on GitHub — so any established account cleared the
+            # CORE (5+) tier without ever contributing here.
+            #
+            # /search/issues with is:pr is:merged is the correct endpoint
+            # for counting merged pull requests, and org:Scottcjn keeps the
+            # result bounded to this project's repos.
             contrib_resp = requests.get(
-                f"https://api.github.com/search/commits",
-                headers={
-                    **headers,
-                    "Accept": "application/vnd.github.cloak-preview",
-                },
+                "https://api.github.com/search/issues",
+                headers=headers,
                 params={
-                    "q": f"author:{github_username} merged:true",
+                    "q": f"author:{github_username} org:Scottcjn is:pr is:merged",
                     "per_page": 1,
                 },
                 timeout=10,
@@ -1281,6 +1299,17 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
             return jsonify({"ok": False, "error": "unauthorized"}), 401
         return None
 
+    def has_admin_key():
+        required = os.environ.get("RC_ADMIN_KEY", "").strip()
+        if not required:
+            return False
+        provided = (
+            request.headers.get("X-Admin-Key")
+            or request.headers.get("X-API-Key")
+            or ""
+        ).strip()
+        return bool(provided) and hmac.compare_digest(provided, required)
+
     def parse_json_object_body(require_body: bool = True):
         data = request.get_json(silent=True)
         if data is None:
@@ -1474,6 +1503,12 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
                 400,
             )
 
+        # ── Admin auth: gate bridge lock creation ─────────────────────────────
+        auth_error = require_admin_key()
+        if auth_error:
+            return auth_error
+        # ── Auth passed ──────────────────────────────────────────────────────
+
         amount_uwrtc = int(round(amount_wrtc * 1_000_000))
 
         success, message, lock = airdrop.create_bridge_lock(
@@ -1538,7 +1573,9 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         """Get bridge lock status."""
         lock = airdrop.get_lock(lock_id)
         if lock:
-            return jsonify({"ok": True, "lock": lock.to_dict()})
+            if has_admin_key():
+                return jsonify({"ok": True, "lock": lock.to_dict()})
+            return jsonify({"ok": True, "lock": lock.to_public_dict()})
         return jsonify({"ok": False, "error": "lock_not_found"}), 404
 
 
