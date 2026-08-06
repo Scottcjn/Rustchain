@@ -5050,6 +5050,33 @@ def _submit_attestation_impl():
                 "code": "ED25519_UNAVAILABLE",
             }), 503
 
+    elif sig_hex or pubkey_hex:
+        # Only one of signature/public_key provided — malformed request.
+        # Consistent with the /epoch/enroll handler (line 5640).
+        return jsonify({
+            "ok": False,
+            "error": "incomplete_signature",
+            "message": "Both signature and public_key are required for a signed attestation",
+            "code": "INCOMPLETE_SIGNATURE",
+        }), 400
+    else:
+        # SECURITY: reject unsigned attestations.  The backward-compat path
+        # that accepted empty sig_hex/pubkey_hex allowed an attacker to
+        # enroll arbitrary wallets without proving ownership of the wallet's
+        # private key (see #8178).  Require signature/public_key ownership
+        # proof, matching the /epoch/enroll behaviour.
+        print(f"[ATTEST/SIG] REJECTED unsigned attestation: miner={miner[:20]}... "
+              f"(signature required for security fix #8178)")
+        return jsonify({
+            "ok": False,
+            "error": "signed_attestation_required",
+            "message": (
+                "Attestation requires signature/public_key ownership proof. "
+                "Re-attest with a signing key."
+            ),
+            "code": "SIGNED_ATTESTATION_REQUIRED",
+        }), 401
+
     # IP rate limiting (Security Hardening 2026-02-02)
     ip_ok, ip_reason = check_ip_rate_limit(client_ip, miner)
     if not ip_ok:
