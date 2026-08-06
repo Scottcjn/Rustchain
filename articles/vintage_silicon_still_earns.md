@@ -3,7 +3,6 @@ title: "The Vintage Computer That Still Mines: Inside RustChain's Proof-of-Antiq
 published: false
 description: "How RustChain turns old PowerPCs, SPARCs, and 68k machines into a mineable, AI-agent-friendly Layer-1 -- with Proof-of-Antiquity instead of Proof-of-Work."
 tags: blockchain, mining, depin, opensource
-canonical_url: https://rustchain.org/blog/vintage-silicon-still-earns
 ---
 
 Somewhere in a basement right now, a Power Mac G4 that shipped with Mac OS 9 is earning a cryptocurrency. It is not running a 4K render or a Rust benchmark. It is doing something the industry said old hardware was bad at: consensus.
@@ -12,11 +11,11 @@ That is the core idea behind [RustChain](https://github.com/Scottcjn/Rustchain),
 
 ## Why age over speed?
 
-The reasoning is both environmental and security-driven. Every vintage machine kept alive is a machine that was not replaced -- no new fabrication emissions, no e-waste. And an economy that pays for physical rarity is hard to farm. To mine RTC you cannot spin up a thousand VMs. Each miner must pass a hardware attestation pipeline with clock-skew drift, cache-timing fingerprints, SIMD identity, thermal entropy, and anti-emulation checks. VMs are caught and earn one billionth of real hardware. Emulator farms are caught when identical ROM hashes cluster together. One physical CPU binds to one wallet, enforced server-side by architecture cross-validation. You cannot download a G4 from a DEX.
+The reasoning is both environmental and security-driven. Extending the useful life of vintage hardware can delay replacement, avoiding some new fabrication demand and e-waste. And an economy that pays for physical rarity is hard to farm. To mine RTC you cannot spin up a thousand VMs. Each miner must pass a hardware attestation pipeline with clock-skew drift, cache-timing fingerprints, SIMD identity, thermal entropy, and anti-emulation checks. Detected VMs receive a [documented 0.000000001x reward weight](../README.md#anti-vm-enforcement). Emulator farms are caught when identical ROM hashes cluster together. One physical CPU binds to one wallet, enforced server-side by architecture cross-validation. You cannot download a G4 from a DEX.
 
 ## Mining and the token
 
-Miners submit attestations to a RustChain node, which scores the hardware and issues RTC across epoch-based distributions. The token also exists on Solana as **wRTC**, so wallets, agents, and the broader ecosystem can transact in the wrapped form while the attestation chain stays anchored and independently verifiable. There is no purchase mechanism -- every token in circulation represents hardware that actually ran.
+Miners submit attestations to a RustChain node, which scores the hardware and issues RTC across epoch-based distributions. The token also exists on Solana as **wRTC**, so wallets, agents, and the broader ecosystem can transact in the wrapped form while the attestation chain stays anchored and independently verifiable. Unlike native mining rewards, wRTC is [swappable on Raydium](../README.md#wrtc-on-solana), although the project describes its liquidity as experimental and very thin.
 
 ## Beacon Atlas and the agent economy
 
@@ -28,4 +27,4 @@ Proof-of-Antiquity turns e-waste reduction into an economic incentive instead of
 
 ---
 
-*RustChain is open source. The attestation protocol, reward calculations, and fingerprint checks are all public in the [GitHub repository](https://github.com/Scottcjn/rustchain).*
+*RustChain is open source. The attestation protocol, reward calculations, and fingerprint checks are all public in the [GitHub repository](https://github.com/Scottcjn/Rustchain).*
