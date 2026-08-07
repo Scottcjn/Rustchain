@@ -4,6 +4,8 @@
 
 # RustChain
 
+[![Powered by RustChain](https://img.shields.io/badge/Powered%20by-RustChain-orange)](https://rustchain.org)
+
 ### DePIN for Vintage Hardware — AI-Augmented Proof of Real Machines
 
 **The blockchain where old hardware outearns new hardware.**
