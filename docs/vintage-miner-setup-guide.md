@@ -27,7 +27,7 @@ This guide gets you from "I found an old computer" to "it's earning RTC" in unde
 ### Step 1: Download Python
 Your old Windows XP or Vista laptop needs Python. Download Python 3.8 (last version supporting XP):
 - **Windows XP:** [Python 3.8.10](https://www.python.org/ftp/python/3.8.10/python-3.8.10.exe)
-- **Windows Vista/7:** [Python 3.9](https://www.python.org/ftp/python/3.9.18/python-3.9.18-amd64.exe)
+- **Windows Vista/7:** [Python 3.9](https://www.python.org/downloads/release/python-3918/)
 
 Install it normally. Make sure to check "Add Python to PATH" during installation.
 
@@ -156,7 +156,7 @@ PowerPC G3/G4 Macs get a **2.8x antiquity multiplier** — that's 2.8x more RTC 
 
 ### Step 1: Install Linux on Your PowerPC Mac
 Mac OS X on PowerPC is too old for modern Python. Instead, install:
-- **[Debian PowerPC](https://www.debian.org/ports/powerpc/)** — Works on G3/G4/G5
+- **[Debian PowerPC](https://www.debian.org/ports/)** — Works on G3/G4/G5
 - **[Lubuntu PPC](https://wiki.ubuntu.com/PowerPC)** — Lighter option
 
 ### Step 2: Install and Run
