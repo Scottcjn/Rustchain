@@ -1,3 +1,1 @@
-python-telegram-bot>=20.0
-requests>=2.31
-python-dotenv
+λ^½ιώ»οnµιέήέέχΩντΩντΡ®µλήλΞψοτένέί}ίΝίM
