@@ -11,7 +11,7 @@
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
+[![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain)
 [![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer/)
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
 [![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/WHITEPAPER.md)
@@ -20,7 +20,7 @@
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
 
-> ⭐ **Help us reach 512 stars** — the 2⁹ binary milestone (our supply is 2²³). If Proof-of-Antiquity is your kind of weird, [a star](https://github.com/Scottcjn/Rustchain/stargazers) helps more old machines get found. [Why 512?](https://github.com/Scottcjn/Rustchain/issues/7540)
+> ⭐ **Help us reach 512 stars** — the 2⁹ binary milestone (our supply is 2²³). If Proof-of-Antiquity is your kind of weird, [a star](https://github.com/Scottcjn/Rustchain) helps more old machines get found. [Why 512?](https://github.com/Scottcjn/Rustchain/issues/7540)
 
 [Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [FAQ](https://rustchain.org/faq) · [Hardware Requirements](docs/HARDWARE_REQUIREMENTS.md) · [Manifesto](MANIFESTO.md) · [Whitepaper](docs/WHITEPAPER.md) · [Hire Us](CONSULTING.md)
 
