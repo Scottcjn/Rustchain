@@ -999,7 +999,7 @@ This system is based on extensive research of CPU microarchitecture timelines:
 - [DEC Alpha - Wikipedia](https://en.wikipedia.org/wiki/DEC_Alpha)
 - [PA-RISC - Wikipedia](https://en.wikipedia.org/wiki/PA-RISC)
 - [VAX - Wikipedia](https://en.wikipedia.org/wiki/VAX)
-- [Cell (Microprocessor) - Wikipedia](https://en.wikipedia.org/wiki/Cell_(microprocessor))
+- [Cell (Microprocessor) - Wikipedia](https://en.wikipedia.org/wiki/Cell_(processor))
 - [Transputer - Wikipedia](https://en.wikipedia.org/wiki/Transputer)
 
 ### General

@@ -138,7 +138,7 @@ metric you need to hit. We'll reply with a feasibility read and, if it's a fit,
 a scoped proposal.
 
 Prefer not to use a public issue? Reach out via the sponsor/contact links on the
-[Elyan Labs](https://scottcjn.github.io/elyan-labs-site/) site.
+[Elyan Labs](https://elyanlabs.ai) site.
 
 ---
 
