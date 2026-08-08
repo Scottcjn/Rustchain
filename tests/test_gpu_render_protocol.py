@@ -394,5 +394,96 @@ def test_gpu_protocol_attest_accepts_api_key_header(tmp_path, monkeypatch):
     assert nodes["count"] == 1
 
 
+def test_gpu_protocol_escrow_valid_signature(tmp_path, monkeypatch):
+    client = _route_client(tmp_path, monkeypatch)
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    priv = Ed25519PrivateKey.generate()
+    pub = priv.public_key()
+    
+    # We serialize the public key natively (often 32 bytes for Ed25519)
+    from cryptography.hazmat.primitives import serialization
+    pub_bytes = pub.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw
+    )
+    pub_hex = pub_bytes.hex()
+    message = "test_nonce_timestamp"
+    sig = priv.sign(message.encode())
+    sig_hex = sig.hex()
+    
+    response = client.post(
+        "/render/escrow",
+        json={
+            "job_type": "render",
+            "from_wallet": pub_hex,
+            "to_wallet": "provider",
+            "amount_rtc": 10.0,
+            "signature": sig_hex,
+            "message": message
+        }
+    )
+    
+    assert response.status_code == 201
+    data = response.get_json()
+    assert data["status"] == "locked"
+    assert data["from_wallet"] == pub_hex
+    assert "escrow_secret" not in data
+
+def test_gpu_protocol_escrow_invalid_signature(tmp_path, monkeypatch):
+    client = _route_client(tmp_path, monkeypatch)
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
+    priv = Ed25519PrivateKey.generate()
+    pub = priv.public_key()
+    pub_bytes = pub.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw
+    )
+    pub_hex = pub_bytes.hex()
+    message = "test_nonce"
+    
+    priv2 = Ed25519PrivateKey.generate()
+    sig2 = priv2.sign(message.encode())
+    
+    response = client.post(
+        "/render/escrow",
+        json={
+            "job_type": "render",
+            "from_wallet": pub_hex,
+            "to_wallet": "provider",
+            "amount_rtc": 10.0,
+            "signature": sig2.hex(),
+            "message": message
+        }
+    )
+    
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "Invalid or missing signature for from_wallet"}
+
+def test_gpu_protocol_escrow_missing_signature(tmp_path, monkeypatch):
+    client = _route_client(tmp_path, monkeypatch)
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
+    priv = Ed25519PrivateKey.generate()
+    pub = priv.public_key()
+    pub_bytes = pub.public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw
+    )
+    pub_hex = pub_bytes.hex()
+    
+    response = client.post(
+        "/render/escrow",
+        json={
+            "job_type": "render",
+            "from_wallet": pub_hex,
+            "to_wallet": "provider",
+            "amount_rtc": 10.0
+        }
+    )
+    
+    assert response.status_code == 401
+    assert response.get_json() == {"error": "Invalid or missing signature for from_wallet"}
+
 if __name__ == "__main__":
     unittest.main()
