@@ -126,11 +126,16 @@ class TipBot:
         )
         net_amount = dec_amount - fee_amount
 
-        # Update balances atomically
-        balances[sender] = float(sender_bal - dec_amount)
-        balances[recipient] = float(
-            Decimal(str(balances.get(recipient, 0.0))) + net_amount
+        # Update balances atomically with 8-decimal place precision
+        new_sender_bal = (sender_bal - dec_amount).quantize(
+            Decimal("0.00000001"), rounding=ROUND_HALF_UP
         )
+        new_recipient_bal = (
+            Decimal(str(balances.get(recipient, 0.0))) + net_amount
+        ).quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP)
+
+        balances[sender] = float(new_sender_bal)
+        balances[recipient] = float(new_recipient_bal)
 
         # Direct 8% fee to treasury pool
         self.pool.deposit(fee_amount, source="tipping_fee")
@@ -171,7 +176,7 @@ class RewardCalculator:
                 success=False, error_message="Hardware Beacon ID required to claim rewards"
             )
 
-        if action == SocialActionType.COMMENT and len(comment_text) <= 50:
+        if action == SocialActionType.COMMENT and len(comment_text.strip()) <= 50:
             return RewardResult(
                 success=False,
                 error_message="Comment must be > 50 characters to qualify for rewards",

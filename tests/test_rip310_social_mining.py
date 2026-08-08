@@ -190,6 +190,20 @@ class TestRewardCalculator:
         assert res.success is False
         assert "50 characters" in res.error_message
 
+    def test_whitespace_comment_rejected(self, reward_calc):
+        user = "user_eve"
+        beacon_registry = {user: "BEACON-HW-105"}
+
+        # Comment with > 50 spaces but non-whitespace text <= 50 chars
+        res = reward_calc.claim_reward(
+            user=user,
+            action=SocialActionType.COMMENT,
+            comment_text=" " * 52,
+            beacon_registry=beacon_registry,
+        )
+        assert res.success is False
+        assert "50 characters" in res.error_message
+
 
 class TestRIP309AntiGaming:
     def test_epoch_metric_rotation(self, rip309_anti_gaming):
