@@ -44,6 +44,11 @@ MAX_POOL_SIZE = 10_000
 # Without this, a single tx creates unlimited outputs, bloating the UTXO set.
 MAX_INPUTS = 100
 MAX_OUTPUTS = 100
+
+# coin_select() never returns more than this many inputs: smallest-first is
+# abandoned above it, and largest-first is hard-capped at it. Coin selection
+# therefore only ever needs a bounded slice of a wallet, never all of it.
+COIN_SELECT_MAX_INPUTS = 20
 MAX_DATA_INPUTS = 100
 MAX_UTXO_ADDRESS_BYTES = 256
 MAX_UTXO_METADATA_BYTES = 8_192
@@ -447,6 +452,58 @@ class UtxoDB:
             return [dict(r) for r in rows]
         finally:
             conn.close()
+
+    def get_coin_select_candidates(
+        self, address: str, max_inputs: int = COIN_SELECT_MAX_INPUTS
+    ) -> List[dict]:
+        """Bounded candidate set for coin selection over *address*.
+
+        `coin_select()` reads a wallet in only two orders: smallest-first, which
+        it abandons once the selection exceeds COIN_SELECT_MAX_INPUTS, and
+        largest-first, which it caps at that same bound. So it can never look
+        past the cheapest `max_inputs + 1` boxes or the dearest `max_inputs`,
+        and loading the rest is wasted work.
+
+        That waste is attacker-controlled: anyone may send minimum-value boxes
+        to any address, so an unbounded fetch lets a third party fragment a
+        wallet and make each of the owner's later transfers materialize the
+        whole thing. Fetching a bounded slice keeps the cost of a transfer
+        independent of how fragmented the wallet is.
+
+        Returns the union of both slices, deduplicated by box_id. Feeding this
+        to coin_select() yields the same selection as feeding it every unspent
+        box, because both of its passes see an identical prefix.
+        """
+        if not isinstance(max_inputs, int) or isinstance(max_inputs, bool) or max_inputs < 1:
+            raise ValueError("max_inputs must be a positive integer")
+
+        base = """SELECT * FROM utxo_boxes
+                  WHERE owner_address = ? AND spent_at IS NULL"""
+        conn = self._conn()
+        try:
+            # Smallest-first needs one extra row: it is the row that proves the
+            # selection would have exceeded the cap, sending coin_select() down
+            # its largest-first path.
+            cheapest = conn.execute(
+                base + " ORDER BY value_nrtc ASC, box_id ASC LIMIT ?",
+                (address, max_inputs + 1),
+            ).fetchall()
+            dearest = conn.execute(
+                base + " ORDER BY value_nrtc DESC, box_id DESC LIMIT ?",
+                (address, max_inputs),
+            ).fetchall()
+        finally:
+            conn.close()
+
+        merged: List[dict] = []
+        seen = set()
+        for row in list(cheapest) + list(dearest):
+            box = dict(row)
+            if box["box_id"] in seen:
+                continue
+            seen.add(box["box_id"])
+            merged.append(box)
+        return merged
 
     def count_unspent_for_address(self, address: str) -> int:
         """Count unspent boxes for an address without materializing them."""
