@@ -1592,9 +1592,16 @@ class UtxoDB:
             conn.close()
 
     def mempool_clear_expired(self) -> int:
-        """Remove expired transactions from mempool. Returns count removed."""
+        """Remove expired transactions from mempool. Returns count removed.
+
+        Uses BEGIN IMMEDIATE to ensure the SELECT-then-DELETE sequence is
+        atomic. Without it, a concurrent mempool_add() or apply_transaction()
+        can interleave between the SELECT and the DELETEs, causing mempool
+        state corruption / double-spend (B2, issue #8176).
+        """
         conn = self._conn()
         try:
+            conn.execute("BEGIN IMMEDIATE")
             now = int(time.time())
             try:
                 expired = conn.execute(
@@ -1603,22 +1610,29 @@ class UtxoDB:
                 ).fetchall()
             except sqlite3.OperationalError as exc:
                 if "no such table" in str(exc).lower():
+                    conn.execute("ROLLBACK")
                     return 0
+                conn.execute("ROLLBACK")
                 raise
-            else:
-                count = 0
-                for row in expired:
-                    conn.execute(
-                        "DELETE FROM utxo_mempool_inputs WHERE tx_id = ?",
-                        (row['tx_id'],),
-                    )
-                    conn.execute(
-                        "DELETE FROM utxo_mempool WHERE tx_id = ?",
-                        (row['tx_id'],),
-                    )
-                    count += 1
-                conn.commit()
-                return count
+            count = 0
+            for row in expired:
+                conn.execute(
+                    "DELETE FROM utxo_mempool_inputs WHERE tx_id = ?",
+                    (row['tx_id'],),
+                )
+                conn.execute(
+                    "DELETE FROM utxo_mempool WHERE tx_id = ?",
+                    (row['tx_id'],),
+                )
+                count += 1
+            conn.commit()
+            return count
+        except Exception:
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
         finally:
             conn.close()
 
