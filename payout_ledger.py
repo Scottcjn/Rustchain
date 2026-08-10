@@ -192,16 +192,24 @@ def ledger_create(bounty_id, contributor, amount_rtc,
     return record_id
 
 
-def ledger_update_status(record_id, new_status, tx_hash="", notes=""):
-    """Move a record to a new status (queued → pending → confirmed | voided)."""
+def ledger_update_status(record_id, new_status, tx_hash=None, notes=None):
+    """Move a record to a new status (queued → pending → confirmed | voided).
+
+    ``tx_hash``/``notes`` are preserve-on-None: pass ``None`` (the default) to
+    keep the stored value, an explicit string to overwrite it. A status advance
+    (e.g. pending → confirmed) that does not re-supply the on-chain tx_hash must
+    NOT erase the hash recorded at the pending step.
+    """
     valid = {"queued", "pending", "confirmed", "voided"}
     if new_status not in valid:
         raise ValueError(f"Invalid status: {new_status}. Must be one of {valid}")
     now = int(time.time())
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.execute(
-            "UPDATE payout_ledger SET status=?, tx_hash=?, notes=?, updated_at=? WHERE id=?",
-            (new_status, tx_hash or "", notes or "", now, record_id),
+            "UPDATE payout_ledger SET status=?,"
+            " tx_hash=COALESCE(?, tx_hash), notes=COALESCE(?, notes),"
+            " updated_at=? WHERE id=?",
+            (new_status, tx_hash, notes, now, record_id),
         )
         updated = cursor.rowcount > 0
         conn.commit()
@@ -229,8 +237,12 @@ def ledger_summary():
     }
 
 
-def _ledger_update_status_terminal_guarded(record_id, new_status, tx_hash="", notes=""):
-    """Move a record to a new status without rewriting terminal ledger rows."""
+def _ledger_update_status_terminal_guarded(record_id, new_status, tx_hash=None, notes=None):
+    """Move a record to a new status without rewriting terminal ledger rows.
+
+    ``tx_hash``/``notes`` are preserve-on-None (see ``ledger_update_status``):
+    omitting them on a status advance keeps the audit values already recorded.
+    """
     valid = {"queued", "pending", "confirmed", "voided"}
     if new_status not in valid:
         raise ValueError(f"Invalid status: {new_status}. Must be one of {valid}")
@@ -255,8 +267,10 @@ def _ledger_update_status_terminal_guarded(record_id, new_status, tx_hash="", no
             logger.info("Ledger %s already terminal %s; status update skipped", record_id, new_status)
             return True
         cursor = conn.execute(
-            "UPDATE payout_ledger SET status=?, tx_hash=?, notes=?, updated_at=? WHERE id=?",
-            (new_status, tx_hash or "", notes or "", now, record_id),
+            "UPDATE payout_ledger SET status=?,"
+            " tx_hash=COALESCE(?, tx_hash), notes=COALESCE(?, notes),"
+            " updated_at=? WHERE id=?",
+            (new_status, tx_hash, notes, now, record_id),
         )
         updated = cursor.rowcount > 0
         conn.commit()
@@ -373,8 +387,10 @@ def register_ledger_routes(app):
         try:
             updated = ledger_update_status(
                 record_id, new_status,
-                tx_hash=data.get("tx_hash", ""),
-                notes=data.get("notes", ""),
+                # Omitted fields stay None so a status advance preserves the
+                # tx_hash/notes already on record instead of blanking them.
+                tx_hash=data.get("tx_hash"),
+                notes=data.get("notes"),
             )
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
