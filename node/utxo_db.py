@@ -487,11 +487,11 @@ class UtxoDB:
             cheapest = conn.execute(
                 base + " ORDER BY value_nrtc ASC, box_id ASC LIMIT ?",
                 (address, max_inputs + 1),
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: already-paginated (LIMIT max_inputs + 1)
             dearest = conn.execute(
                 base + " ORDER BY value_nrtc DESC, box_id DESC LIMIT ?",
                 (address, max_inputs),
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: already-paginated (LIMIT max_inputs)
         finally:
             conn.close()
 
