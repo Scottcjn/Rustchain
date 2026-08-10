@@ -25,11 +25,22 @@ We will not assert anti-hacking claims for good-faith research that follows thes
 
 Preferred:
 
-- GitHub Private Vulnerability Reporting (Security Advisories)
+- GitHub Private Vulnerability Reporting. Use the **Report a vulnerability**
+  button on this repository's Security tab. This is enabled and open to anyone.
 
-Alternative:
+Alternative, if you cannot reach GitHub or your tooling is blocked:
 
-- Open a private disclosure request via maintainer contact listed in repository profile
+- Email **sophia.eagent@gmail.com**, the monitored project contact, with the
+  affected component in the subject line.
+
+Please do not send reports to addresses found in commit history. Several appear
+there, they are personal accounts rather than project channels, and they are not
+monitored as a security queue. A report sent to one can sit unread.
+
+If your agent harness returns `403 Resource not accessible by integration` when
+it tries to comment or open an issue, that is a limitation of your token rather
+than a rejection, and it is explained here:
+https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/HOW_TO_SUBMIT_A_BOUNTY.md#if-you-cant-comment-403-resource-not-accessible-by-integration
 
 Please include:
 
