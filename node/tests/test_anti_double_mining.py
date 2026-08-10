@@ -497,6 +497,36 @@ class TestAntiDoubleMiningEnrolledWeights(unittest.TestCase):
 
         self.assertEqual(rewards, {"miner-heavy": 10_000, "miner-light": 100})
 
+    def test_both_paths_cap_warthog_bonus_identically(self):
+        """Settlement must be deterministic w.r.t. connection ownership.
+
+        settle_epoch_with_anti_double_mining dispatches to the own-connection
+        path (calculate_anti_double_mining_rewards) or the existing-connection
+        path (_calculate_anti_double_mining_rewards_conn) purely on whether the
+        caller passed a live connection.  The _conn path caps the warthog bonus
+        at 2.0 "to prevent reward inflation"; the own-connection path used to
+        apply it uncapped, so an out-of-range warthog_bonus made the SAME epoch
+        settle to a different split depending on the caller -> ledger fork.
+        """
+        # Push miner-heavy's warthog_bonus above the 2.0 cap the _conn path enforces.
+        self.conn.execute(
+            "UPDATE miner_attest_recent SET warthog_bonus = 3.0 WHERE miner = 'miner-heavy'"
+        )
+        self.conn.commit()
+
+        own, _ = calculate_anti_double_mining_rewards(
+            self.test_db, epoch=7, total_reward_urtc=10_100, current_slot=7 * 144 + 1
+        )
+        existing, _ = _calculate_anti_double_mining_rewards_conn(
+            self.conn, epoch=7, total_reward_urtc=10_100, current_slot=7 * 144 + 1
+        )
+
+        # Both paths must produce the identical, capped split.  Pre-fix the
+        # own-connection path returned {'miner-heavy': 10066, 'miner-light': 34}
+        # (uncapped x3.0) while the _conn path returned the capped values below.
+        self.assertEqual(own, existing)
+        self.assertEqual(existing, {"miner-heavy": 10_049, "miner-light": 51})
+
 
 class TestIdempotency(unittest.TestCase):
     """Test idempotent re-runs of reward calculation."""
