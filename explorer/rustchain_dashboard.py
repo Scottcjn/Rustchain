@@ -1095,6 +1095,21 @@ def api_reward_analytics():
             # 4) Multiplier impact based on current epoch enrollment.
             if current_epoch > 0 and epoch_pot > 0:
                 try:
+                    # Denominators must reflect the WHOLE epoch enrollment, not the
+                    # top-10 slice we display below. The real payout normalizes each
+                    # miner's share against the full weight sum / miner count (see
+                    # sophia_elya_service SUM(weight) and rip_200 total_weight), so
+                    # summing only the top-10 weights over-states every shown share.
+                    totals = conn.execute(
+                        """
+                        SELECT COUNT(*) AS n, COALESCE(SUM(weight), 0.0) AS total_weight
+                        FROM epoch_enroll
+                        WHERE epoch = ?
+                        """,
+                        (current_epoch,),
+                    ).fetchone()
+                    total_miners = int(totals["n"] or 0)
+                    total_weight = float(totals["total_weight"] or 0.0) or 1.0
                     enroll_rows = conn.execute(
                         """
                         SELECT miner_pk AS miner_id, weight
@@ -1106,8 +1121,7 @@ def api_reward_analytics():
                         (current_epoch,),
                     ).fetchall()
                     if enroll_rows:
-                        total_weight = sum(float(r["weight"] or 0.0) for r in enroll_rows) or 1.0
-                        base_share = epoch_pot / len(enroll_rows)
+                        base_share = epoch_pot / (total_miners or len(enroll_rows))
                         for r in enroll_rows:
                             w = float(r["weight"] or 0.0)
                             weighted_share = epoch_pot * (w / total_weight)
