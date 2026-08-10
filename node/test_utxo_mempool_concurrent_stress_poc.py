@@ -143,9 +143,8 @@ class TestConcurrentMempoolStress(unittest.TestCase):
             block = src[idx:idx + 500]
             has_immediate = 'IMMEDIATE' in block or 'BEGIN' in block
             print(f"[B2] mempool_clear_expired() uses explicit transaction: {has_immediate}")
-            self.assertFalse(has_immediate,
-                "B2: mempool_clear_expired() also lacks BEGIN IMMEDIATE "
-                "— same race pattern as B1, called before the pool count check")
+            self.assertTrue(has_immediate,
+                "B2 FIXED: mempool_clear_expired() should now use BEGIN IMMEDIATE")
 
     def test_b2_clear_expired_also_has_race(self):
         """B2: mempool_clear_expired() also lacks BEGIN IMMEDIATE.
@@ -162,10 +161,82 @@ class TestConcurrentMempoolStress(unittest.TestCase):
         block = src[idx:idx + 400]
         has_immediate = 'IMMEDIATE' in block or 'BEGIN' in block
         print(f"[B2] mempool_clear_expired IMMEDIATE: {has_immediate}")
-        self.assertFalse(has_immediate,
-            "B2 CONFIRMED: mempool_clear_expired() lacks BEGIN IMMEDIATE "
-            "- stale count window before pool cap check")
+        self.assertTrue(has_immediate,
+            "B2 FIXED: mempool_clear_expired() should now have BEGIN IMMEDIATE")
 
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class TestClearExpiredAtomicity(unittest.TestCase):
+    """Regression test for #8176: mempool_clear_expired must use
+    BEGIN IMMEDIATE so concurrent operations can't interleave.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp.close()
+        self.db = UtxoDB(self.tmp.name)
+        self.db.init_tables()
+
+    def tearDown(self):
+        os.unlink(self.tmp.name)
+
+    def test_clear_expired_removes_inputs_and_tx_atomically(self):
+        """Expired txs must have BOTH their inputs and main row removed.
+
+        If the DELETEs are not wrapped in a transaction, a concurrent
+        operation can see the tx row gone but inputs lingering (or vice
+        versa), producing orphan utxo_mempool_inputs entries that hold
+        UTXO locks indefinitely.
+        """
+        import time as _time
+        now = int(_time.time())
+
+        # Insert an already-expired tx directly into the tables
+        conn = self.db._conn()
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            """INSERT OR ABORT INTO utxo_mempool
+               (tx_id, tx_data_json, fee_nrtc, submitted_at, expires_at)
+               VALUES (?,?,?,?,?)""",
+            ('expire_me_001', '{}', 0, now - 7200, now - 3600),
+        )
+        conn.execute(
+            """INSERT OR ABORT INTO utxo_mempool_inputs
+               (tx_id, box_id) VALUES (?,?)""",
+            ('expire_me_001', 'test_box_abc'),
+        )
+        conn.commit()
+        conn.close()
+
+        removed = self.db.mempool_clear_expired()
+        self.assertEqual(removed, 1, "Should have removed 1 expired tx")
+
+        # Both the tx and its inputs must be gone
+        conn = self.db._conn()
+        tx_row = conn.execute(
+            "SELECT tx_id FROM utxo_mempool WHERE tx_id = ?",
+            ('expire_me_001',),
+        ).fetchone()
+        input_row = conn.execute(
+            "SELECT tx_id FROM utxo_mempool_inputs WHERE tx_id = ?",
+            ('expire_me_001',),
+        ).fetchone()
+        conn.close()
+
+        self.assertIsNone(tx_row, "mempool row should be deleted")
+        self.assertIsNone(input_row, "mempool_inputs row should be deleted")
+
+    def test_clear_expired_handles_missing_table(self):
+        """Should return 0 gracefully if tables don't exist yet."""
+        tmp2 = tempfile.NamedTemporaryFile(suffix='.db2', delete=False)
+        tmp2.close()
+        try:
+            db2 = UtxoDB(tmp2.name)
+            # Don't call init_tables() — simulate fresh DB
+            result = db2.mempool_clear_expired()
+            self.assertEqual(result, 0)
+        finally:
+            os.unlink(tmp2.name)
