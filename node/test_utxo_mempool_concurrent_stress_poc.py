@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """
 B2: Concurrent mempool_add stress + pool cap overflow via stale count
+STATUS: FIXED in #8189. The B2 assertions below are inverted from their
+original form and now act as regression guards: they fail if the write lock
+is ever removed again. The description that follows is the original finding.
+
 VULN: mempool_clear_expired() runs OUTSIDE the IMMEDIATE lock, on its own
   connection with no explicit transaction. Between clear_expired() returning
   and the BEGIN IMMEDIATE count check, concurrent adds can fill the gap.
@@ -143,17 +147,22 @@ class TestConcurrentMempoolStress(unittest.TestCase):
             block = src[idx:idx + 500]
             has_immediate = 'IMMEDIATE' in block or 'BEGIN' in block
             print(f"[B2] mempool_clear_expired() uses explicit transaction: {has_immediate}")
-            self.assertFalse(has_immediate,
-                "B2: mempool_clear_expired() also lacks BEGIN IMMEDIATE "
-                "— same race pattern as B1, called before the pool count check")
+            self.assertTrue(has_immediate,
+                "REGRESSION: mempool_clear_expired() lost its BEGIN IMMEDIATE. "
+                "Without it the SELECT-then-DELETE sequence runs unlocked, the "
+                "same race this PoC originally demonstrated (fixed in #8189).")
 
-    def test_b2_clear_expired_also_has_race(self):
-        """B2: mempool_clear_expired() also lacks BEGIN IMMEDIATE.
+    def test_b2_clear_expired_holds_write_lock(self):
+        """B2, now a regression guard: mempool_clear_expired() must hold BEGIN IMMEDIATE.
 
-        Same vulnerability as B1: clears expired entries with no write lock,
-        two-step DELETEs (inputs then metadata) in autocommit mode.
-        Called BEFORE BEGIN IMMEDIATE in mempool_add() — creates a stale
-        count window.
+        Originally this asserted the *absence* of the lock, to demonstrate the
+        vulnerability: expired entries were cleared with no write lock, doing
+        two-step DELETEs (inputs then metadata) in autocommit mode, and the call
+        runs before BEGIN IMMEDIATE in mempool_add(), creating a stale count
+        window ahead of the pool cap check.
+
+        Fixed in #8189, so the assertion is inverted: it now fails if the lock
+        is ever removed again.
         """
         with open(os.path.join(os.path.dirname(__file__), 'utxo_db.py'), 'r') as f:
             src = f.read()
@@ -162,9 +171,9 @@ class TestConcurrentMempoolStress(unittest.TestCase):
         block = src[idx:idx + 400]
         has_immediate = 'IMMEDIATE' in block or 'BEGIN' in block
         print(f"[B2] mempool_clear_expired IMMEDIATE: {has_immediate}")
-        self.assertFalse(has_immediate,
-            "B2 CONFIRMED: mempool_clear_expired() lacks BEGIN IMMEDIATE "
-            "- stale count window before pool cap check")
+        self.assertTrue(has_immediate,
+            "REGRESSION: mempool_clear_expired() lacks BEGIN IMMEDIATE - "
+            "stale count window before pool cap check (fixed in #8189)")
 
 
 if __name__ == '__main__':
