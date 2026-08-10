@@ -403,14 +403,15 @@ class TestRTCTransactionFlow:
 
         assert result["success"] is True
         receipt_data = result["receipt"]
-        # Receipt verification checks signature matches the data
-        # In mock mode, signature is generated from the same data so it should match
+        # The receipt is signed over its own canonical fields, so an untampered
+        # receipt must verify successfully.
         is_valid = verify_receipt(receipt_data)
-        
-        # The receipt is valid if the signature matches the data
-        # Note: Our verify function checks if signature == hash of receipt data
-        # Since we sign the transaction data and store in receipt, this should work
-        assert isinstance(is_valid, bool)
+        assert is_valid is True
+
+        # Tampering with any signed field must invalidate the receipt.
+        tampered = dict(receipt_data)
+        tampered["amount"] = receipt_data["amount"] + 1
+        assert verify_receipt(tampered) is False
     
     def test_mode_switching(self):
         """Test switching between mock and real modes"""

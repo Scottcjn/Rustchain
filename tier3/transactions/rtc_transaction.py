@@ -61,9 +61,13 @@ class TransactionReceipt:
     
     def to_json(self, indent: int = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent)
-    
-    def verify(self) -> bool:
-        """Verify receipt integrity"""
+
+    def _signing_payload(self) -> bytes:
+        """Canonical serialization of the fields covered by the receipt signature.
+
+        Shared by :meth:`sign` and :meth:`verify` so the two can never drift out
+        of sync (which is what previously made every receipt fail verification).
+        """
         data = {
             "tx_id": self.tx_id,
             "timestamp": self.timestamp,
@@ -74,9 +78,16 @@ class TransactionReceipt:
             "to_address": self.to_address,
             "block_height": self.block_height
         }
-        expected_sig = hashlib.sha256(
-            json.dumps(data, sort_keys=True).encode()
-        ).hexdigest()
+        return json.dumps(data, sort_keys=True).encode()
+
+    def sign(self) -> str:
+        """Sign the receipt over its own canonical fields and store the result."""
+        self.signature = hashlib.sha256(self._signing_payload()).hexdigest()
+        return self.signature
+
+    def verify(self) -> bool:
+        """Verify receipt integrity"""
+        expected_sig = hashlib.sha256(self._signing_payload()).hexdigest()
         return self.signature == expected_sig
 
 
@@ -270,11 +281,16 @@ class RTCTransactionFlow:
             amount=tx.amount,
             from_address=tx.from_address,
             to_address=tx.to_address,
-            signature=tx.signature,
+            signature="",  # signed below over the receipt's own fields
             block_height=tx.block_height,
             confirmations=tx.confirmations,
             metadata=tx.metadata
         )
+        # Sign the receipt over its own canonical fields so it can be verified
+        # independently via verify()/verify_receipt(). Copying the transaction's
+        # signature here left every receipt failing verification, because the
+        # transaction was signed over a different set of fields.
+        receipt.sign()
         self.receipts.append(receipt)
         logger.info(f"Generated receipt for transaction {tx.tx_id[:8]}...")
         return receipt
