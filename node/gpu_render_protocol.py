@@ -645,6 +645,25 @@ def register_routes(app):
         if metadata is not None and not isinstance(metadata, dict):
             return jsonify({"error": "metadata must be an object"}), 400
 
+        # ---- Security checks ----
+        # Require Ed25519 signature over a message to authenticate from_wallet.
+        signature_hex, sig_err = _string_field(data, "signature")
+        if sig_err is not None:
+            return sig_err
+        message, msg_err = _string_field(data, "message")
+        if msg_err is not None:
+            return msg_err
+
+        try:
+            from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+            pub_bytes = bytes.fromhex(from_wallet)
+            sig_bytes = bytes.fromhex(signature_hex)
+            Ed25519PublicKey.from_public_bytes(pub_bytes).verify(sig_bytes, message.encode())
+        except Exception as e:
+            logger.warning("Ed25519 signature verification failed: %s", e)
+            return jsonify({"error": "Invalid or missing signature for from_wallet"}), 401
+        # End of security checks
+
         result = protocol.create_escrow(
             job_type=job_type,
             from_wallet=from_wallet,
@@ -652,6 +671,8 @@ def register_routes(app):
             amount_rtc=amount_rtc,
             metadata=metadata,
         )
+        # Remove escrow_secret from API response to avoid leakage
+        result.pop("escrow_secret", None)
         status_code = 201 if "error" not in result else 400
         return jsonify(result), status_code
 
