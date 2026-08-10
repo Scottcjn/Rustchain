@@ -77,7 +77,19 @@ MAX_RECENT_LIMIT = 200
 
 
 def _get_db_path() -> str:
-    return os.environ.get("DB_PATH", "rustchain_v2.db")
+    """Resolve the DB path exactly as the node does.
+
+    The node reads `RUSTCHAIN_DB_PATH` first (rustchain_v2_integrated: DB_PATH
+    = RUSTCHAIN_DB_PATH or DB_PATH or "./rustchain_v2.db"), and that is the
+    variable the operator docs tell you to set (NODE_OPERATOR_GUIDE.md,
+    DEVNET.md). Honouring only DB_PATH here made these read routes open a
+    different file than the one `record_reconciliation_snapshot` writes to.
+    """
+    return (
+        os.environ.get("RUSTCHAIN_DB_PATH")
+        or os.environ.get("DB_PATH")
+        or "rustchain_v2.db"
+    )
 
 
 def init_reconciliation_schema(cursor: sqlite3.Cursor) -> None:
