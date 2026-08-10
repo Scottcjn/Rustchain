@@ -112,7 +112,10 @@ function formatCheckName(value) {
  * @returns {string}
  */
 function formatRtc(urtc) {
-  return (safeNumber(urtc) / 100_000_000).toFixed(6);
+  // reward_urtc is denominated in micro-RTC (10^6 units per RTC), matching the
+  // backend convention in node/claims_submission.py (reward_urtc / 1_000_000).
+  // Dividing by 10^8 here understated every displayed amount by 100x.
+  return (safeNumber(urtc) / 1_000_000).toFixed(6);
 }
 
 /**
