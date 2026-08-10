@@ -334,45 +334,75 @@ class RateLimiter:
             return True, None
 
         if self.redis_client and REDIS_AVAILABLE:
-            return self._record_redis_if_allowed(identifier)
+            return self._record_redis_if_allowed(ip_address, wallet)
 
         return self._record_sqlite_if_allowed(ip_address, wallet, amount)
 
-    def _record_redis_if_allowed(self, identifier: str) -> Tuple[bool, Optional[str]]:
-        """Check and record the Redis rate limit in one atomic script."""
-        key = self._get_key(identifier, 'rl')
-        count_key = self._get_key(identifier, 'count')
+    def _record_redis_if_allowed(self, ip_address: str, wallet: str) -> Tuple[bool, Optional[str]]:
+        """Check and record the Redis rate limit in one atomic script.
+
+        The limit is enforced against an IP bucket AND a wallet bucket, mirroring
+        the SQLite backend's "IP OR wallet" accounting. Keying only on the
+        ``ip:wallet`` pair would let a single machine drain the faucet by
+        supplying a fresh (free-to-generate) wallet address on every request,
+        since each new wallet would mint its own counter.
+        """
+        ip_count_key = self._get_key(f"ip:{ip_address}", 'count')
+        ip_marker_key = self._get_key(f"ip:{ip_address}", 'rl')
+        wallet_count_key = self._get_key(f"wallet:{wallet}", 'count')
+        wallet_marker_key = self._get_key(f"wallet:{wallet}", 'rl')
         max_requests = self.config['rate_limit'].get('max_requests', 1)
         window_seconds = self.config['rate_limit']['window_seconds']
         now_iso = datetime.now().isoformat()
 
         result = self.redis_client.eval(
             """
-            local count_key = KEYS[1]
-            local marker_key = KEYS[2]
+            local ip_count_key = KEYS[1]
+            local ip_marker_key = KEYS[2]
+            local wallet_count_key = KEYS[3]
+            local wallet_marker_key = KEYS[4]
             local max_requests = tonumber(ARGV[1])
             local window_seconds = tonumber(ARGV[2])
             local now_iso = ARGV[3]
 
-            local current = tonumber(redis.call('GET', count_key) or '0')
-            if current >= max_requests then
+            local function ttl_for(marker_key, count_key)
                 local ttl = redis.call('TTL', marker_key)
                 if ttl < 0 then
                     ttl = redis.call('TTL', count_key)
                 end
+                return ttl
+            end
+
+            local ip_count = tonumber(redis.call('GET', ip_count_key) or '0')
+            local wallet_count = tonumber(redis.call('GET', wallet_count_key) or '0')
+            if ip_count >= max_requests or wallet_count >= max_requests then
+                local ttl = 0
+                if ip_count >= max_requests then
+                    ttl = math.max(ttl, ttl_for(ip_marker_key, ip_count_key))
+                end
+                if wallet_count >= max_requests then
+                    ttl = math.max(ttl, ttl_for(wallet_marker_key, wallet_count_key))
+                end
                 return {0, ttl}
             end
 
-            local new_count = redis.call('INCR', count_key)
-            if new_count == 1 or redis.call('TTL', count_key) < 0 then
-                redis.call('EXPIRE', count_key, window_seconds)
+            local function bump(count_key, marker_key)
+                local new_count = redis.call('INCR', count_key)
+                if new_count == 1 or redis.call('TTL', count_key) < 0 then
+                    redis.call('EXPIRE', count_key, window_seconds)
+                end
+                redis.call('SET', marker_key, now_iso, 'EX', window_seconds)
             end
-            redis.call('SET', marker_key, now_iso, 'EX', window_seconds)
-            return {1, redis.call('TTL', marker_key)}
+
+            bump(ip_count_key, ip_marker_key)
+            bump(wallet_count_key, wallet_marker_key)
+            return {1, redis.call('TTL', ip_marker_key)}
             """,
-            2,
-            count_key,
-            key,
+            4,
+            ip_count_key,
+            ip_marker_key,
+            wallet_count_key,
+            wallet_marker_key,
             max_requests,
             window_seconds,
             now_iso,
