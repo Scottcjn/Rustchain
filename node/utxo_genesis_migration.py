@@ -334,6 +334,15 @@ def rollback_genesis(db_path: str) -> int:
     Wrapped in a single BEGIN IMMEDIATE transaction so no partial
     deletion state is possible. Idempotent: safe to call when no
     genesis data exists (returns 0).
+
+    Mempool transactions depending on a genesis box are evicted in the same
+    transaction. They cannot be left behind: genesis box ids are deterministic
+    (see compute_genesis_tx_id / compute_box_id), so re-running the migration
+    over unchanged balances recreates the very same box the stale mempool entry
+    still claims. That box would come back already reserved by a transaction
+    from before the rollback, blocking fresh spends and leaving the old
+    transaction eligible for inclusion. Rolling back has to clear pending
+    intent as well as state, or it is not a rollback.
     """
     utxo_db = UtxoDB(db_path)
     conn = utxo_db._conn()
@@ -349,6 +358,22 @@ def rollback_genesis(db_path: str) -> int:
             raise RuntimeError(
                 "refusing to rollback genesis while non-genesis UTXO state exists"
             )
+
+        # Identify genesis boxes before deleting them, so any mempool
+        # transaction spending or referencing one can be evicted below.
+        genesis_box_ids = [
+            row["box_id"]
+            for row in conn.execute(
+                """SELECT box_id FROM utxo_boxes
+                   WHERE transaction_id IN (
+                       SELECT tx_id FROM utxo_transactions WHERE tx_type = 'genesis'
+                   )"""
+            )
+        ]
+
+        # Drop mempool txs claiming those boxes as inputs or data_inputs.
+        # Same connection, so this is inside the BEGIN IMMEDIATE above.
+        utxo_db._evict_stale_data_input_txs(genesis_box_ids, conn=conn)
 
         # Delete only boxes produced by genesis transactions. A non-genesis
         # box can legitimately have creation_height=0.

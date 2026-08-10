@@ -687,8 +687,11 @@ def utxo_transfer():
     # 28999999.999... → 28999999 lost-rtc bug).
     target_nrtc = amount_nrtc + fee_nrtc
 
-    # Select UTXOs
-    utxos = _utxo_db.get_unspent_for_address(from_address)
+    # Select UTXOs.
+    # Bounded fetch: coin_select() only ever reads the cheapest or the dearest
+    # slice of a wallet, so loading every unspent box let a third party inflate
+    # the cost of this call by sending dust to the sender's address.
+    utxos = _utxo_db.get_coin_select_candidates(from_address)
     selected, change_nrtc = coin_select(utxos, target_nrtc)
 
     if not selected:
