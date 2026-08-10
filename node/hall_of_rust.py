@@ -140,7 +140,11 @@ def calculate_rust_score(machine, current_year=None):
         'retro': 40, 'apple_silicon': 5, 'modern': 0
     }
     arch = machine.get('device_arch', 'modern').lower()
-    for key, bonus in arch_bonus.items():
+    # Match the most specific key first: 'pentium' is a substring of 'pentium4',
+    # so iterating in dict order would match 'pentium' (100) for a Pentium 4 and
+    # never reach 'pentium4' (50), leaving that entry unreachable and inflating
+    # the leaderboard score. Longest key first makes the specific match win.
+    for key, bonus in sorted(arch_bonus.items(), key=lambda kv: -len(kv[0])):
         if key in arch:
             score += bonus
             break
