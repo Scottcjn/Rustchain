@@ -362,15 +362,23 @@ def update_claim_status(
         with sqlite3.connect(db_path) as conn:
             cursor = conn.cursor()
             
-            # Update claim status
+            # Update claim status. verified_at records WHEN a claim was
+            # approved/rejected, so only stamp it on those verification
+            # transitions. Writing it unconditionally clobbered the timestamp
+            # to NULL on every later transition — e.g. the normal
+            # approved -> settled lifecycle wiped the verification time that
+            # settlement/audit reporting relies on.
+            stamps_verified = status in ('approved', 'rejected')
             cursor.execute("""
                 UPDATE claims
-                SET status = ?, updated_at = ?, verified_at = ?
+                SET status = ?, updated_at = ?,
+                    verified_at = CASE WHEN ? THEN ? ELSE verified_at END
                 WHERE claim_id = ?
             """, (
                 status,
                 current_ts,
-                current_ts if status in ['approved', 'rejected'] else None,
+                1 if stamps_verified else 0,
+                current_ts,
                 claim_id
             ))
             if cursor.rowcount == 0:
