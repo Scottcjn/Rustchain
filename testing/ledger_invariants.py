@@ -252,14 +252,25 @@ class SimulatedLedger:
                     ma = miners_in_epoch.get(a)
                     mb = miners_in_epoch.get(b)
                     if ma and mb:
+                        # INV-5 is order-independent: whichever miner has the
+                        # strictly higher multiplier must earn >= the other.
+                        # Check BOTH directions so detection does not depend on
+                        # the (arbitrary) insertion order of epoch.rewards.
                         if ma.antiquity_multiplier > mb.antiquity_multiplier:
-                            if epoch.rewards[a] < epoch.rewards[b]:
-                                violations.append(
-                                    f"VIOLATION INV-5: epoch {epoch.epoch_num} "
-                                    f"{a!r}(mult={ma.antiquity_multiplier}) "
-                                    f"earned {epoch.rewards[a]} uRTC < "
-                                    f"{b!r}(mult={mb.antiquity_multiplier}) "
-                                    f"earned {epoch.rewards[b]} uRTC")
+                            hi, lo = a, b
+                        elif mb.antiquity_multiplier > ma.antiquity_multiplier:
+                            hi, lo = b, a
+                        else:
+                            continue  # equal multipliers — no ordering constraint
+                        mhi = miners_in_epoch[hi]
+                        mlo = miners_in_epoch[lo]
+                        if epoch.rewards[hi] < epoch.rewards[lo]:
+                            violations.append(
+                                f"VIOLATION INV-5: epoch {epoch.epoch_num} "
+                                f"{hi!r}(mult={mhi.antiquity_multiplier}) "
+                                f"earned {epoch.rewards[hi]} uRTC < "
+                                f"{lo!r}(mult={mlo.antiquity_multiplier}) "
+                                f"earned {epoch.rewards[lo]} uRTC")
         return violations
 
     def check_pending_lifecycle(self, current_time: int) -> List[str]:
