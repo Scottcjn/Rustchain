@@ -639,16 +639,15 @@ class AirdropV2:
             if user_resp.status_code != 200:
                 return None
 
-            # Get contributions (PRs merged)
-            # Use GitHub search API for contributions
+            # Count merged PRs scoped to the RustChain org, not global GitHub activity.
             contrib_resp = requests.get(
-                f"https://api.github.com/search/commits",
-                headers={
-                    **headers,
-                    "Accept": "application/vnd.github.cloak-preview",
-                },
+                "https://api.github.com/search/issues",
+                headers=headers,
                 params={
-                    "q": f"author:{github_username} merged:true",
+                    "q": (
+                        f"author:{github_username} org:Scottcjn "
+                        "is:pr is:merged"
+                    ),
                     "per_page": 1,
                 },
                 timeout=10,
