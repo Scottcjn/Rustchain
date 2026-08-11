@@ -230,11 +230,12 @@ class TestAttestSignatureVerification(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertEqual(body["code"], "INVALID_SIGNATURE")
 
-    def test_missing_signature_allowed(self):
-        """Backward compatibility: submissions without signature should still be accepted.
+    def test_unsigned_accepted_for_first_time_miner(self):
+        """First-time miners without a signing key on file can still submit unsigned.
 
-        This allows the simpler miner path (miners/rust/src/main.rs) to continue
-        working while operators migrate to the signed attestation flow.
+        Vintage hardware (Apple II, i386, G5 shell miner, Rust miner) structurally
+        cannot produce Ed25519 signatures. Unsigned is accepted on first attestation
+        so proof-of-antiquity works for these clients.
         """
         mod, _ = self._load_module("rustchain_attest_sig_missing", "sig_missing.db")
 
@@ -255,9 +256,173 @@ class TestAttestSignatureVerification(unittest.TestCase):
         }
         status, body = self._submit(mod, payload)
 
-        # Should succeed — no signature provided, so no verification attempted
+        # First-time unsigned is accepted (no key on file yet)
         self.assertEqual(status, 200)
         self.assertTrue(body["ok"])
+
+    @unittest.skipUnless(HAVE_NACL, "pynacl not installed")
+    def test_unsigned_rejected_after_key_pinned(self):
+        """Once a signing key is on file, unsigned submissions must be rejected.
+
+        Prevents an attacker from stripping the signature field to impersonate
+        a wallet that has already established a signing key.
+        """
+        mod, _ = self._load_module("rustchain_attest_sig_pinned", "sig_pinned.db")
+
+        miner = "vintage-pinned-miner"
+        miner_id = "pinned_001"
+
+        # First attestation: signed, pins the key
+        nonce1 = self._get_challenge(mod)
+        commitment = "deadbeef"
+        sig_hex, pubkey_hex = _sign_message(miner_id, miner, nonce1, commitment)
+
+        # For the pubkey to derive to the miner address we'd need the real
+        # keypair, but for this test we just want to verify the stored key
+        # blocks unsigned follow-ups. Use a non-RTC miner to skip binding.
+        payload1 = {
+            "miner": miner,
+            "miner_id": miner_id,
+            "report": {"nonce": nonce1, "commitment": commitment},
+            "signature": sig_hex,
+            "public_key": pubkey_hex,
+            "device": {"family": "x86_64", "arch": "default", "model": "test-box", "cores": 4},
+            "signals": {"hostname": "test-host", "macs": []},
+            "fingerprint": {
+                "checks": {
+                    "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+                    "clock_drift": {"passed": True, "data": {"cv": 0.05, "samples": 64}},
+                },
+                "all_passed": True,
+            },
+        }
+        status1, body1 = self._submit(mod, payload1)
+
+        # The key is now stored. An unsigned follow-up should be rejected.
+        nonce2 = self._get_challenge(mod)
+        payload2 = {
+            "miner": miner,
+            "report": {"nonce": nonce2, "commitment": "deadbeef"},
+            "device": {"family": "x86_64", "arch": "default", "model": "test-box", "cores": 4},
+            "signals": {"hostname": "test-host", "macs": []},
+            "fingerprint": {
+                "checks": {
+                    "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+                    "clock_drift": {"passed": True, "data": {"cv": 0.05, "samples": 64}},
+                },
+                "all_passed": True,
+            },
+        }
+        status2, body2 = self._submit(mod, payload2)
+
+        self.assertEqual(status2, 400)
+        self.assertEqual(body2["code"], "MISSING_SIGNATURE")
+
+    @unittest.skipUnless(HAVE_NACL, "pynacl not installed")
+    def test_unsigned_allowlist_overrides_pin(self):
+        """Miners in RTC_UNSIGNED_ATTEST_ALLOWLIST can submit unsigned even with a key on file."""
+        mod, _ = self._load_module("rustchain_attest_sig_allow", "sig_allow.db")
+
+        miner = "RTC_ALLOW_MINER"
+        miner_id = "allow_001"
+
+        # Pin a key first (signed attestation with a matching key)
+        nonce1 = self._get_challenge(mod)
+        sig_hex, pubkey_hex = _sign_message(miner_id, miner, nonce1, "deadbeef")
+        payload1 = {
+            "miner": miner,
+            "miner_id": miner_id,
+            "report": {"nonce": nonce1, "commitment": "deadbeef"},
+            "signature": sig_hex,
+            "public_key": pubkey_hex,
+            "device": {"family": "x86_64", "arch": "default", "model": "test-box", "cores": 4},
+            "signals": {"hostname": "test-host", "macs": []},
+            "fingerprint": {
+                "checks": {
+                    "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+                    "clock_drift": {"passed": True, "data": {"cv": 0.05, "samples": 64}},
+                },
+                "all_passed": True,
+            },
+        }
+        self._submit(mod, payload1)
+
+        # Now submit unsigned with allowlist
+        prev_allow = os.environ.get("RTC_UNSIGNED_ATTEST_ALLOWLIST")
+        os.environ["RTC_UNSIGNED_ATTEST_ALLOWLIST"] = miner.lower()
+
+        nonce2 = self._get_challenge(mod)
+        payload2 = {
+            "miner": miner,
+            "report": {"nonce": nonce2, "commitment": "deadbeef"},
+            "device": {"family": "x86_64", "arch": "default", "model": "test-box", "cores": 4},
+            "signals": {"hostname": "test-host", "macs": []},
+            "fingerprint": {
+                "checks": {
+                    "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+                    "clock_drift": {"passed": True, "data": {"cv": 0.05, "samples": 64}},
+                },
+                "all_passed": True,
+            },
+        }
+        status, body = self._submit(mod, payload2)
+
+        if prev_allow is None:
+            os.environ.pop("RTC_UNSIGNED_ATTEST_ALLOWLIST", None)
+        else:
+            os.environ["RTC_UNSIGNED_ATTEST_ALLOWLIST"] = prev_allow
+
+        self.assertEqual(status, 200)
+        self.assertTrue(body["ok"])
+
+    @unittest.skipUnless(HAVE_NACL, "pynacl not installed")
+    def test_key_rotation_blocked(self):
+        """A different public key cannot be used after one is already pinned."""
+        mod, _ = self._load_module("rustchain_attest_sig_rotate", "sig_rotate.db")
+
+        miner = "vintage-miner-01"
+        miner_id = "vm01"
+
+        # Pin a key
+        nonce1 = self._get_challenge(mod)
+        sig1, pubkey1 = _sign_message(miner_id, miner, nonce1, "deadbeef")
+        payload1 = {
+            "miner": miner, "miner_id": miner_id,
+            "report": {"nonce": nonce1, "commitment": "deadbeef"},
+            "signature": sig1, "public_key": pubkey1,
+            "device": {"family": "x86_64", "arch": "default", "model": "test-box", "cores": 4},
+            "signals": {"hostname": "test-host", "macs": []},
+            "fingerprint": {
+                "checks": {
+                    "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+                    "clock_drift": {"passed": True, "data": {"cv": 0.05, "samples": 64}},
+                },
+                "all_passed": True,
+            },
+        }
+        self._submit(mod, payload1)
+
+        # Try with a different key
+        nonce2 = self._get_challenge(mod)
+        sig2, pubkey2 = _sign_message(miner_id, miner, nonce2, "deadbeef")
+        payload2 = {
+            "miner": miner, "miner_id": miner_id,
+            "report": {"nonce": nonce2, "commitment": "deadbeef"},
+            "signature": sig2, "public_key": pubkey2,
+            "device": {"family": "x86_64", "arch": "default", "model": "test-box", "cores": 4},
+            "signals": {"hostname": "test-host", "macs": []},
+            "fingerprint": {
+                "checks": {
+                    "anti_emulation": {"passed": True, "data": {"vm_indicators": []}},
+                    "clock_drift": {"passed": True, "data": {"cv": 0.05, "samples": 64}},
+                },
+                "all_passed": True,
+            },
+        }
+        status, body = self._submit(mod, payload2)
+
+        self.assertEqual(status, 400)
+        self.assertEqual(body["code"], "SIGNING_KEY_MISMATCH")
 
     def test_non_string_signature_rejected_before_handler_crash(self):
         """Non-string signature values must be validation failures, not 500s."""
