@@ -59,7 +59,7 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         fp = _fingerprint("Am486DX4", 4)
         fp["checks"]["anti_emulation"] = _check(vm_indicators=[], paths_checked=["/proc/cpuinfo"])
         passed, reason = self.mod.validate_fingerprint_data(
-            fp, {"family": "x86", "arch": "486"}, allow_tscless_x86_reward=True,
+            fp, {"family": "x86", "arch": "486"},
         )
         self.assertTrue(passed, reason)
 
@@ -80,14 +80,30 @@ class X86VintageRewardValidationTest(unittest.TestCase):
                 passed, reason = self.mod.validate_fingerprint_data(
                     fp,
                     {"family": "x86", "arch": arch},
-                    allow_tscless_x86_reward=True,
-                )
+                                    )
                 self.assertTrue(passed, reason)
 
-    def test_tscless_relaxation_is_not_global(self):
+    def test_tscless_relaxation_is_global_rip309b(self):
+        """A 486 has no TSC for every caller, not just the reward path.
+
+        This previously asserted the opposite. Under RIP-309b the relaxation
+        is keyed on the silicon rather than on which call site set a flag:
+        `allow_tscless_x86_reward` was removed because two consumers
+        disagreeing about the same hardware is how the rotation-selector
+        divergence happened. A 486 that cannot measure clock drift is not
+        lying, and it is not a failure for one caller and a pass for another.
+        """
         fp = _fingerprint("Am486DX4", 4)
         fp["checks"]["anti_emulation"] = _check(vm_indicators=[], paths_checked=["/proc/cpuinfo"])
         passed, reason = self.mod.validate_fingerprint_data(fp, {"family": "x86", "arch": "486"})
+        self.assertTrue(passed, reason)
+
+    def test_modern_arch_still_requires_clock_drift(self):
+        """The relaxation must not leak to hardware that does have a TSC."""
+        fp = _fingerprint("Intel Core i7-9750H", 6)
+        fp["checks"].pop("clock_drift", None)
+        fp["checks"]["anti_emulation"] = _check(vm_indicators=[], paths_checked=["/proc/cpuinfo"])
+        passed, reason = self.mod.validate_fingerprint_data(fp, {"family": "x86", "arch": "modern"})
         self.assertFalse(passed)
         self.assertEqual(reason, "missing_required_check:clock_drift")
 
