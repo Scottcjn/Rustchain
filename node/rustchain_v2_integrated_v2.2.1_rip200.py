@@ -322,6 +322,11 @@ def _attest_mapping(value):
 _ATTEST_MINER_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _SOLANA_WALLET_RE = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 _ED25519_PUBKEY_HEX_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+# Canonical RTC wallet shape produced by address_from_pubkey(): "RTC" + 40 hex.
+# NOTE: several legacy miners use a *suffix* form instead (``<38hex>RTC``,
+# ``ppc_g5_130_<md5>RTC``). Those deliberately do NOT match here — they are not
+# derivable from a public key and are handled as named identities.
+_RTC_ADDRESS_RE = re.compile(r"^RTC[0-9a-fA-F]{40}$")
 
 
 def _attest_text(value):
@@ -353,6 +358,40 @@ def _valid_ed25519_pubkey_hex(value):
     if text and _ED25519_PUBKEY_HEX_RE.fullmatch(text):
         return text.lower()
     return None
+
+
+def _attest_is_rtc_address(value):
+    """Return True when ``value`` has the derivable RTC wallet shape.
+
+    ``address_from_pubkey()`` builds addresses as ``RTC`` + 40 hex chars, so an
+    identity of that shape is *self-authenticating*: exactly one Ed25519 public
+    key can produce it. Identities of any other shape (``dual-g4-125``,
+    ``power8-s824-sophia``) are not derivable from a key and must be pinned on
+    first use instead.
+    """
+    text = _attest_text(value)
+    return bool(text and _RTC_ADDRESS_RE.fullmatch(text))
+
+
+# Miner clients in this repository that structurally cannot produce an Ed25519
+# signature. They are documented here so operators can audit which identities
+# are expected to stay unsigned; the list grants NO extra privilege on its own.
+# Unsigned attestations are accepted purely by the per-miner rule in
+# _attest_authorize_signing_key(): an identity with no signing key on record.
+#
+# SECURITY NOTE: identities used by these clients are only ever as strong as
+# their first-seen binding. Anyone can attest as a never-keyed legacy identity.
+# What the surrounding fixes guarantee is that such a forgery can no longer
+# steal from or lock out its target: it cannot lower an existing epoch weight
+# (MAX(weight) upsert), cannot erase a stored signing key (COALESCE upsert),
+# and cannot rewrite a recorded device_arch (COALESCE upsert).
+UNSIGNED_ATTEST_CLIENT_ALLOWLIST = (
+    "miners/apple2/miner6502.c",       # 6502, no Ed25519 possible
+    "miners/i386/miner386.c",          # 16/32-bit DOS-era x86
+    "miners/floppy-miner/",            # boot-floppy miner, no crypto library
+    "miners/ppc/g5/g5_miner.sh",       # POSIX shell + curl only
+    "miners/rust/src/main.rs",         # legacy Rust miner, unsigned payload
+)
 
 
 def _attest_field_error(code, message, status=400):
@@ -3573,7 +3612,7 @@ def _projected_multiplier_growth(current_mult: float, device_arch: str) -> dict:
     }
 
 
-def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, source_ip: str = None, signals: dict = None, fingerprint: dict = None, signing_pubkey: str = None, entropy_score: float = 0.0):
+def record_attestation_success(miner: str, device: dict, fingerprint_passed: bool = False, source_ip: str = None, signals: dict = None, fingerprint: dict = None, signing_pubkey: str = None, entropy_score: float = 0.0, identity_proven: bool = True):
     now = int(time.time())
     # Miner-name platform hints — helps detect Apple Silicon / POWER8 when client doesn't send rich device info
     _device = dict(device or {})
@@ -3611,18 +3650,41 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
         # If the miner already has fingerprint_passed=1, a later failed attestation
         # should not downgrade it. We still update ts_ok to keep the attestation fresh.
         new_fp = 1 if fingerprint_passed else 0
+        # Issue #8016 hardening of this upsert:
+        #
+        #   signing_pubkey — COALESCE(excluded, existing). Previously this was
+        #     an unconditional `= excluded.signing_pubkey`, so ANY unsigned
+        #     submission naming a miner (no auth required at the time) wrote
+        #     NULL over that miner's stored key. That silently locked the
+        #     victim out of the hardened signed /epoch/enroll path, which
+        #     returns 412 ENROLLMENT_SIGNING_KEY_REQUIRED when no key is
+        #     stored. A key can now only ever be added or rotated, never
+        #     erased by a submission that did not carry one.
+        #
+        #   device_family / device_arch — only an identity-proven (signed and
+        #     key-authorized) attestation may change them. Rewards read
+        #     device_arch directly (rewards_implementation_rip200.py:276-280
+        #     -> get_time_aged_multiplier), so an unauthenticated overwrite
+        #     could drop a G4 from 2.5x to 1.0x. For a never-keyed legacy
+        #     identity the node genuinely cannot tell the owner from a forger,
+        #     so the first recorded value wins. That is deliberately symmetric:
+        #     it blocks a forged DOWNGRADE and a forged UPGRADE equally. A
+        #     plain MAX-by-multiplier would have blocked only the downgrade
+        #     while making arch spoofing permanent.
         conn.execute("""
             INSERT INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip, signing_pubkey, fingerprint_checks_json)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(miner) DO UPDATE SET
                 ts_ok = excluded.ts_ok,
-                device_family = excluded.device_family,
-                device_arch = excluded.device_arch,
+                device_family = CASE WHEN ? THEN excluded.device_family
+                                     ELSE COALESCE(miner_attest_recent.device_family, excluded.device_family) END,
+                device_arch = CASE WHEN ? THEN excluded.device_arch
+                                   ELSE COALESCE(miner_attest_recent.device_arch, excluded.device_arch) END,
                 source_ip = excluded.source_ip,
                 fingerprint_passed = MAX(miner_attest_recent.fingerprint_passed, excluded.fingerprint_passed),
-                signing_pubkey = excluded.signing_pubkey,
+                signing_pubkey = COALESCE(excluded.signing_pubkey, miner_attest_recent.signing_pubkey),
                 fingerprint_checks_json = excluded.fingerprint_checks_json
-        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], entropy_score, new_fp, source_ip, signing_pubkey, fingerprint_checks_json))
+        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], entropy_score, new_fp, source_ip, signing_pubkey, fingerprint_checks_json, 1 if identity_proven else 0, 1 if identity_proven else 0))
         _ = append_fingerprint_snapshot(conn, miner, fingerprint if isinstance(fingerprint, dict) else {}, now)
         # C3 fix: Record attestation history for first_attest tracking
         conn.execute("""
@@ -4892,6 +4954,119 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
             return False, f'Hardware bound to {bound_miner[:16]}...', bound_miner
 
 
+def _attest_lookup_signing_pubkey(miner):
+    """Return the Ed25519 signing key already pinned to ``miner``, or None.
+
+    A missing table/column (pre-migration node) is reported as "no key on
+    record" so a fresh database still accepts legacy unsigned miners.
+    """
+    try:
+        with closing(sqlite3.connect(DB_PATH)) as conn:
+            row = conn.execute(
+                "SELECT signing_pubkey FROM miner_attest_recent WHERE miner = ?",
+                (miner,),
+            ).fetchone()
+    except Exception as exc:
+        logging.warning("[ATTEST/KEY] signing key lookup failed for %r: %r",
+                        str(miner)[:24], exc)
+        return None
+    if row and row[0]:
+        return _valid_ed25519_pubkey_hex(row[0])
+    return None
+
+
+def _attest_rotation_message(miner, old_pubkey, new_pubkey, nonce):
+    """Canonical bytes a key rotation must be signed over by the OLD key."""
+    return "rotate|{}|{}|{}|{}".format(
+        miner, old_pubkey, new_pubkey, nonce
+    ).encode("utf-8")
+
+
+def _attest_authorize_signing_key(miner, pubkey_hex, signature_verified,
+                                  rotation_sig_hex, nonce):
+    """Decide whether this submission may attest as ``miner``, per-miner scoped.
+
+    Issue #8016 (reported by @draycolix): ``if sig_hex and pubkey_hex:`` guarded
+    every signature check with no ``else``, so omitting both fields skipped
+    verification entirely. Two blunt fixes were considered and rejected:
+
+      * Reject all unsigned attestations. This takes the honest vintage fleet
+        offline. A 6502 (``miners/apple2/miner6502.c``) cannot compute Ed25519
+        at all; the DOS-era i386 miner, the boot-floppy miner, the G5 shell
+        script and the legacy Rust miner send no signature either.
+      * A global ``ALLOW_UNSIGNED`` env flag. That is a no-op the moment an
+        operator sets it, and it restores the full bypass for every identity
+        at once. It also cannot express the thing that actually matters.
+
+    The rule enforced here is scoped to a single identity instead:
+
+      1. Unsigned is accepted ONLY while the identity has no signing key on
+         record. The 6502 keeps working; a miner that has ever signed can never
+         be impersonated by an unsigned request again.
+      2. Trust on first use. The first signed attestation pins the key.
+      3. Key binding. A canonical ``RTC<40hex>`` identity is self-authenticating,
+         so the presented key must actually derive it. Named identities
+         (``dual-g4-125``, ``power8-s824-sophia``) are not derivable from any
+         key, so they are TOFU-pinned instead. This mirrors the existing
+         ``_header_key_authorized()`` policy for block-header keys.
+      4. Rotation. Replacing a pinned key requires a signature from the CURRENT
+         pinned key over ``rotate|miner|old|new|nonce``. Without that, a forger
+         who generates a fresh keypair cannot displace the real one.
+
+    Returns ``(ok, error_tuple_or_None, pubkey_to_store_or_None)`` where
+    ``error_tuple`` is ``(code, message, http_status)``.
+    """
+    stored = _attest_lookup_signing_pubkey(miner)
+
+    if not signature_verified:
+        # Unsigned submission. Allowed only for a never-keyed identity.
+        if stored:
+            return False, (
+                "ATTESTATION_SIGNATURE_REQUIRED",
+                "This miner has a signing key on record; attestations for it "
+                "must be signed with that key.",
+                401,
+            ), None
+        # Legacy path: nothing pinned, nothing to pin.
+        return True, None, None
+
+    # Signature already verified against pubkey_hex by the caller.
+    if _attest_is_rtc_address(miner):
+        try:
+            derived = address_from_pubkey(pubkey_hex)
+        except Exception:
+            derived = None
+        if not derived or derived.lower() != miner.lower():
+            return False, (
+                "ATTESTATION_KEY_IDENTITY_MISMATCH",
+                "The supplied public key does not derive the claimed RTC "
+                "address.",
+                403,
+            ), None
+        return True, None, pubkey_hex
+
+    # Named/legacy identity: no derivation exists, so pin on first use.
+    if stored is None or stored == pubkey_hex:
+        return True, None, pubkey_hex
+
+    # Rotation attempt: must be authorized by the key currently on record.
+    rotation_sig = _attest_text(rotation_sig_hex)
+    if rotation_sig and HAVE_NACL and verify_rtc_signature(
+        stored,
+        _attest_rotation_message(miner, stored, pubkey_hex, nonce),
+        rotation_sig.strip().lower(),
+    ):
+        return True, None, pubkey_hex
+
+    return False, (
+        "ATTESTATION_KEY_ROTATION_UNAUTHORIZED",
+        "This miner is already pinned to a different signing key. A rotation "
+        "must carry 'rotation_signature' over "
+        "'rotate|miner|old_pubkey|new_pubkey|nonce' signed by the current key.",
+        403,
+    ), None
+
+
 @app.route('/attest/submit', methods=['POST'])
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
@@ -4970,6 +5145,11 @@ def _submit_attestation_impl():
     canonical_payload_verified = False
     miner_id_raw = _attest_valid_miner(data.get('miner_id')) or miner
     commitment = report.get('commitment') or ''
+    # Issue #8016: track whether a signature was actually PROVEN, so the
+    # per-miner authorization gate below can tell "unsigned" apart from
+    # "signed and verified". Reaching the end of the block with this still
+    # False means no signature was supplied at all.
+    signature_verified = False
     if sig_hex and pubkey_hex:
         if HAVE_NACL:
             # Type-guard signature_type too — reject a non-string value with 400,
@@ -5030,6 +5210,7 @@ def _submit_attestation_impl():
                     "message": "Ed25519 signature verification failed — report may have been tampered",
                     "code": "INVALID_SIGNATURE",
                 }), 400
+            signature_verified = True
         else:
             # pynacl is not available but the client provided a signature.
             # Fail-closed: reject the attestation rather than accepting an
@@ -5049,6 +5230,30 @@ def _submit_attestation_impl():
                 ),
                 "code": "ED25519_UNAVAILABLE",
             }), 503
+
+    # Issue #8016: per-miner signing-key authorization.
+    # Runs BEFORE the nonce is consumed so a rejected forgery cannot burn the
+    # challenge the rightful owner is about to use.
+    auth_ok, auth_err, pubkey_to_store = _attest_authorize_signing_key(
+        miner=miner,
+        pubkey_hex=pubkey_hex,
+        signature_verified=signature_verified,
+        rotation_sig_hex=data.get('rotation_signature'),
+        nonce=nonce,
+    )
+    if not auth_ok:
+        err_code, err_message, err_status = auth_err
+        print(f"[ATTEST/KEY] REJECTED {err_code}: miner={str(miner)[:24]}... "
+              f"pubkey={(pubkey_hex or '(none)')[:16]}...")
+        return jsonify({
+            "ok": False,
+            "error": err_code.lower(),
+            "message": err_message,
+            "code": err_code,
+        }), err_status
+    if not signature_verified:
+        logging.info("[ATTEST/KEY] unsigned attestation accepted for never-keyed "
+                     "identity %r (legacy vintage client path)", str(miner)[:24])
 
     # IP rate limiting (Security Hardening 2026-02-02)
     ip_ok, ip_reason = check_ip_rate_limit(client_ip, miner)
@@ -5314,7 +5519,12 @@ def _submit_attestation_impl():
         except Exception:
             pass
 
-    record_attestation_success(miner, device, fingerprint_passed, client_ip, signals=signals, fingerprint=fingerprint, signing_pubkey=pubkey_hex or None, entropy_score=entropy_score)
+    # Issue #8016: only persist a key the authorization gate actually approved,
+    # and mark whether this submission proved key ownership. An unsigned legacy
+    # attestation is NOT authoritative for device_arch (see
+    # record_attestation_success), because for a never-keyed identity the node
+    # cannot tell the owner from anyone else.
+    record_attestation_success(miner, device, fingerprint_passed, client_ip, signals=signals, fingerprint=fingerprint, signing_pubkey=pubkey_to_store, entropy_score=entropy_score, identity_proven=signature_verified)
 
     temporal_review = {"score": 1.0, "review_flag": False, "reason": "insufficient_history", "flags": [], "check_scores": {}}
     try:
@@ -5385,12 +5595,23 @@ def _submit_attestation_impl():
                 "INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)",
                 (miner,)
             )
-            # FIX: Use INSERT OR IGNORE for epoch_enroll to prevent a later
-            # low-weight (e.g. fingerprint-failed) attestation from overwriting
-            # a prior high-weight enrollment within the same epoch. This avoids
-            # "attestation overwrite causes prior-epoch reward loss".
+            # Issue #8016: keep the HIGHEST weight seen this epoch instead of
+            # first-write-wins.
+            #
+            # INSERT OR IGNORE blocked a later low-weight write, but it also
+            # meant whoever wrote FIRST owned the row for the whole epoch.
+            # Because FAILED_FINGERPRINT_WEIGHT_UNITS is 0, an attacker who
+            # submitted a fingerprint-failing attestation for a victim at the
+            # start of an epoch pinned that victim to weight 0, and the
+            # victim's own honest enrollment was then silently ignored. Sweeping
+            # every known wallet that way let the attacker absorb the fixed
+            # per-epoch RTC pot. MAX() keeps the anti-downgrade property that
+            # INSERT OR IGNORE was added for while removing the front-run,
+            # mirroring the MAX(fingerprint_passed) precedent above.
             enroll_conn.execute(
-                "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+                "INSERT INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?) "
+                "ON CONFLICT(epoch, miner_pk) DO UPDATE SET "
+                "weight = MAX(epoch_enroll.weight, excluded.weight)",
                 (epoch, miner, enroll_weight_units)
             )
             header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner)
@@ -5711,15 +5932,15 @@ def enroll_epoch():
         )
 
         # Enroll in epoch
-        # FIX: Use INSERT OR IGNORE to prevent external actors from downgrading
-        # a miner's epoch weight via repeated /epoch/enroll calls. The first
-        # enrollment in an epoch wins (whether from auto-enroll or explicit).
-        # This closes the "zero-weight miner reward distortion" vector where an
-        # attacker could overwrite a legitimate miner's weight (e.g. 2.5) with
-        # a near-zero value (1e-9) by calling this endpoint with failed-fingerprint
-        # or default device data.
+        # Issue #8016: MAX() upsert rather than INSERT OR IGNORE, for the same
+        # reason as the auto-enroll site in _submit_attestation_impl. Keeping
+        # the highest weight still blocks the "downgrade a legitimate 2.5 to
+        # ~0" vector that INSERT OR IGNORE was introduced to stop, but it no
+        # longer lets whoever writes first pin a victim to zero for the epoch.
         c.execute(
-            "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
+            "INSERT INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?) "
+            "ON CONFLICT(epoch, miner_pk) DO UPDATE SET "
+            "weight = MAX(epoch_enroll.weight, excluded.weight)",
             (epoch, miner_pk, weight_units)
         )
 

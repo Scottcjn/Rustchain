@@ -197,11 +197,14 @@ def inc_epoch_block(epoch):
 def enroll_epoch(epoch, miner_pk, weight):
     """Enroll miner in epoch with weight.
 
-    FIX: Use INSERT OR IGNORE to prevent external weight downgrades.
-    The first enrollment in an epoch wins; subsequent calls for the same
-    (epoch, miner_pk) are no-ops. This closes the zero-weight reward
-    distortion vector where an attacker could overwrite a legitimate
-    miner's weight via repeated enroll calls.
+    Keeps the HIGHEST weight seen for (epoch, miner_pk).
+
+    This started as INSERT OR IGNORE to stop external weight downgrades, but
+    first-write-wins let whoever enrolled first own the row for the entire
+    epoch, so a low-but-positive forged enrollment could hold a miner down
+    until settlement. MAX() keeps the anti-downgrade property without the
+    front-run. Same change as the two epoch_enroll sites in
+    rustchain_v2_integrated_v2.2.1_rip200.py (issue #8016).
     """
     weight = float(weight)
     # Backstop: never persist a non-positive / non-finite weight. A negative
@@ -211,7 +214,12 @@ def enroll_epoch(epoch, miner_pk, weight):
     if not math.isfinite(weight) or weight <= 0:
         return
     with sqlite3.connect(DB_PATH) as c:
-        c.execute("INSERT OR IGNORE INTO epoch_enroll(epoch, miner_pk, weight) VALUES (?,?,?)", (epoch, miner_pk, weight))
+        c.execute(
+            "INSERT INTO epoch_enroll(epoch, miner_pk, weight) VALUES (?,?,?) "
+            "ON CONFLICT(epoch, miner_pk) DO UPDATE SET "
+            "weight = MAX(epoch_enroll.weight, excluded.weight)",
+            (epoch, miner_pk, weight),
+        )
 
 def finalize_epoch(epoch, per_block_rtc):
     """Finalize epoch and distribute rewards"""
