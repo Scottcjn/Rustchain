@@ -897,6 +897,13 @@ class GossipLayer:
             resp = requests.post(
                 f"{peer_url}/p2p/gossip",
                 json=msg.to_dict(),
+                # Send the shared P2P secret, matching request_full_sync().
+                # /p2p/gossip does not require it yet, so this is inert today;
+                # it exists so that requiring it later is a config change
+                # rather than a fleet-wide outage. A receiver that starts
+                # enforcing while this path sends nothing 401s every gossip
+                # message, which is how the broadcast fan-out would go dark.
+                headers={"X-P2P-Key": P2P_SECRET},
                 timeout=10,
                 verify=TLS_VERIFY
             )
