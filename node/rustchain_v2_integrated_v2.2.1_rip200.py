@@ -3941,6 +3941,59 @@ def fetch_miner_fingerprint_sequence(conn, miner: str) -> list:
     return out
 
 
+# An identity with too little history to check is not trusted with the full
+# antiquity premium, and is not punished either. Zero would re-implement a
+# tenure gate at full strength and penalise honest newcomers; one would make a
+# freshly minted identity the cheapest possible way to claim the premium, which
+# is the exact behaviour the premium attracts. Half is a deliberate middle.
+# NOTE: this fraction is a tokenomics knob, not a purely technical constant.
+TEMPORAL_UNVERIFIED_BONUS_FRACTION = 0.5
+
+
+def apply_temporal_consistency_to_weight(hw_weight: float, temporal_review: dict) -> float:
+    """Gate the ANTIQUITY BONUS on the miner's consistency with its own history.
+
+    Antiquity multipliers above 1.0 are the only thing worth forging on this
+    chain, so they are the only thing this gates. Weight at or below baseline
+    is returned untouched: a modern miner at 0.8x is unaffected, and no miner
+    is ever pushed below the baseline every participant already earns. A false
+    positive therefore costs a miner its bonus, never its participation.
+
+        effective = 1.0 + (hw_weight - 1.0) * score
+
+    `score` comes from validate_temporal_consistency, which measures a miner
+    against ITS OWN past measurements rather than a population band. That is
+    the point: a global band is satisfied forever by one in-range constant,
+    while a self-history has to keep being reproduced. The two failure modes it
+    already detects are exactly the two a forger falls into — `frozen_profile`
+    (the same value replayed, rel_var < 0.01) and `noisy_profile` (an RNG with
+    no physical model behind it, rel_var > 0.8).
+
+    Not a tenure multiplier. Nothing here pays for age. History length only
+    determines whether we have enough observations to CHECK a claim; the
+    reward is for staying consistent, which a farm cannot mass-produce, because
+    each identity must be self-consistent AND independent of the others at the
+    same time. See finding-contributor-tenure-multiplier-rejected.
+    """
+    try:
+        weight = float(hw_weight)
+    except (TypeError, ValueError):
+        return hw_weight
+    if weight <= 1.0:
+        return weight
+
+    review = temporal_review if isinstance(temporal_review, dict) else {}
+    if review.get("reason") == "insufficient_history":
+        score = TEMPORAL_UNVERIFIED_BONUS_FRACTION
+    else:
+        try:
+            score = float(review.get("score", 1.0))
+        except (TypeError, ValueError):
+            score = 1.0
+    score = max(0.0, min(1.0, score))
+    return 1.0 + (weight - 1.0) * score
+
+
 def validate_temporal_consistency(sequence: list, current_profile: dict = None) -> dict:
     samples = list(sequence or [])
     if current_profile is not None:
@@ -5576,6 +5629,11 @@ def _submit_attestation_impl():
         family = reward_device["device_family"]
         arch_for_weight = reward_device["device_arch"]
         hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0))
+        # The temporal score used to be computed and then discarded into a log
+        # line, so a miner contradicting its own measurement history still
+        # collected the full antiquity premium. Gate the bonus on it.
+        hw_weight_raw = hw_weight
+        hw_weight = apply_temporal_consistency_to_weight(hw_weight, temporal_review)
         miner_id = _attest_valid_miner(data.get("miner_id")) or miner
 
         with closing(sqlite3.connect(DB_PATH)) as enroll_conn:
@@ -5618,7 +5676,10 @@ def _submit_attestation_impl():
 
         # Issue #19 temporal consistency only sets a review flag (no hard-fail).
         if temporal_review.get("review_flag"):
-            app.logger.warning(f"[TEMPORAL-REVIEW] {miner[:20]}... flags={temporal_review.get('flags', [])}")
+            app.logger.warning(
+                f"[TEMPORAL-REVIEW] {miner[:20]}... flags={temporal_review.get('flags', [])} "
+                f"score={temporal_review.get('score')} weight {hw_weight_raw:.3f} -> {hw_weight:.3f}"
+            )
 
         app.logger.info(
             f"[RIP-309] epoch={epoch} miner={miner[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
@@ -5900,6 +5961,20 @@ def enroll_epoch():
         # the fixed epoch reward pot.
         family, arch = resolve_enroll_weight_device(c, miner_pk, data)
         hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch, 1.0)
+        # Gate the antiquity bonus on consistency here too. Enrollment is the
+        # path that actually sets epoch weight, so leaving it ungated would
+        # make the attestation-side gate cosmetic: a miner could fail the
+        # temporal check on attest and still enroll at the full premium.
+        # Keyed on the same stored miner id the weight itself is derived from.
+        # miner_fingerprint_history is keyed on the same identifier
+        # resolve_enroll_weight_device reads miner_attest_recent by, so the
+        # history consulted here is the history of the hardware the weight was
+        # derived from. No rows yields "insufficient_history", which withholds
+        # part of the bonus rather than failing the enrollment.
+        _temporal_enroll = validate_temporal_consistency(
+            fetch_miner_fingerprint_sequence(c, miner_pk)
+        )
+        hw_weight = apply_temporal_consistency_to_weight(hw_weight, _temporal_enroll)
 
         _enroll_fp = resolve_enroll_fingerprint(c, miner_pk, data)
         rotation_eval = evaluate_rotating_fingerprint_checks(
