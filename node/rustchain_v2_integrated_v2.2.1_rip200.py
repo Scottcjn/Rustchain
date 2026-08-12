@@ -4510,8 +4510,14 @@ def validate_fingerprint_data(
         if not isinstance(anti_emu_data, dict):
             anti_emu_data = {}
         # Require evidence of actual checks being performed
+        # `emulator_indicators` is what the Pico console bridge emits, and its
+        # absence from this list rejected the entire console fleet with
+        # anti_emulation_no_evidence: they were supplying evidence, under a
+        # name nobody had whitelisted. Same shape as the flat micro clients
+        # dying on an empty checks map.
         has_evidence = (
             "vm_indicators" in anti_emu_data or
+            "emulator_indicators" in anti_emu_data or
             "dmesg_scanned" in anti_emu_data or
             "paths_checked" in anti_emu_data or
             "cpuinfo_flags" in anti_emu_data or
@@ -4521,9 +4527,42 @@ def validate_fingerprint_data(
             print(f"[FINGERPRINT] REJECT: anti_emulation claims pass but has no raw evidence")
             return False, "anti_emulation_no_evidence"
 
-        if anti_emu_check.get("passed") == False:
-            vm_indicators = anti_emu_data.get("vm_indicators", [])
-            return False, f"vm_detected:{vm_indicators}"
+        # Read the EVIDENCE, not the client's verdict.
+        #
+        # This branch used to fire only when the client volunteered
+        # `passed == False`, so the server held the string "qemu" in
+        # vm_indicators and never looked at it unless the VM had already
+        # confessed. Three payloads were accepted:
+        #
+        #   {"passed": true,  "data": {"vm_indicators": ["qemu"]}}   accepted
+        #   {"passed": true,  "data": {"is_likely_vm": true}}        accepted
+        #   {                 "data": {"vm_indicators": ["qemu"]}}   accepted
+        #
+        # and the only one rejected was the honest VM that reported
+        # `passed: false`. The control fired exclusively on truthful clients.
+        #
+        # Safe for real hardware: fingerprint_checks.py emits
+        # `vm_indicators: []` on a clean machine, so an empty list, a missing
+        # key and a false is_likely_vm all still pass.
+        vm_indicators = anti_emu_data.get("vm_indicators")
+        if not isinstance(vm_indicators, (list, tuple)):
+            vm_indicators = None
+        # Consoles report under their own key; read it here too, or accepting
+        # emulator_indicators as evidence above would hand the console fleet
+        # the exact free pass this block exists to close.
+        emu_indicators = anti_emu_data.get("emulator_indicators")
+        if not isinstance(emu_indicators, (list, tuple)):
+            emu_indicators = None
+        reported = list(vm_indicators or []) + list(emu_indicators or [])
+        if reported:
+            return False, f"vm_detected:{reported}"
+        if anti_emu_data.get("is_likely_vm") is True:
+            return False, "vm_detected:is_likely_vm"
+
+        # `is not True` rather than `== False`: omitting the key entirely used
+        # to skip both branches and sail through.
+        if anti_emu_check.get("passed") is not True:
+            return False, f"vm_detected:no_pass_verdict:{anti_emu_data.get('vm_indicators', [])}"
     elif isinstance(anti_emu_check, bool):
         # C miner simple bool - accept for now but flag for reduced weight
         if not anti_emu_check:
