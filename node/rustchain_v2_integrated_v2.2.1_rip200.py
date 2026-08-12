@@ -3941,6 +3941,157 @@ def fetch_miner_fingerprint_sequence(conn, miner: str) -> list:
     return out
 
 
+# === RIP-309d: operator clustering (observe only) ===
+# Every other defence on this chain is per-miner, so a farm of N identities is
+# N independent, individually cheap trust-building exercises. Clustering makes
+# the OPERATOR the unit, which is the constraint the contributor-tenure panel
+# insisted on: per-cluster, not per-account.
+#
+# Co-location is NOT evidence of fraud, and on this chain the largest cluster
+# is an honest lab: seven machines behind one WAN address, a Cobalt Qube 3, a
+# G5, a POWER8 and a Victus among them. Clustering alone would penalise the
+# most genuine vintage fleet on the network first. So clustering is only half
+# the mechanism. The half that discriminates is whether the members'
+# measurement histories are INDEPENDENT.
+#
+# Real hardware of different vintages is wildly separated. Measured on that
+# lab: Qube 0.0021, sophiacore 0.0762, Victus 0.1102, G5 0.1227 — a ~58x
+# spread. A farm running one generator across many identities lands its
+# members close together. Independence is what a forger cannot cheaply
+# manufacture, because escaping it means modelling every fake machine
+# separately while each one still has to stay self-consistent over time.
+CLUSTER_INDEPENDENCE_METRIC = "clock_drift_cv"
+CLUSTER_MIN_MEMBERS_TO_JUDGE = 3
+CLUSTER_INDEPENDENT_SPREAD = 0.35
+# Row cap per link query. Generous relative to the current fleet, and every
+# truncation is logged, because a silently partial graph would make a farm
+# look like several small unrelated operators.
+CLUSTER_LINK_ROW_CAP = 200_000
+
+
+def _union_find_groups(pairs, singletons=()):
+    """Group ids transitively linked by any observed shared signal."""
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for a, b in pairs:
+        union(a, b)
+    for s in singletons:
+        find(s)
+
+    groups = {}
+    for node in list(parent):
+        groups.setdefault(find(node), set()).add(node)
+    return [sorted(v) for v in groups.values()]
+
+
+def build_operator_clusters(conn) -> list:
+    """Cluster miners by SERVER-OBSERVED shared signals.
+
+    Deliberately excludes anything the miner asserts about itself. `client_ip`
+    is observed at request time by the node; hardware_id and mac_hash are
+    payload-derived but are already load-bearing for hardware binding, so
+    reusing them adds no new trust assumption.
+    """
+    pairs, seen = [], set()
+
+    def _link_by(sql):
+        groups = {}
+        try:
+            # Bounded read. Clustering wants the whole graph, but an
+            # unbounded fetchall in the node is the UTXO-OOM class (#6627),
+            # and these tables grow with every miner and every address they
+            # have ever attested from. Truncation is logged rather than
+            # silent: a partial graph splits one operator into several
+            # clusters, which reads as MORE independent than reality, so a
+            # caller must know the view was cut.
+            rows = conn.execute(
+                sql + " LIMIT ?", (CLUSTER_LINK_ROW_CAP + 1,)
+            ).fetchall()  # fetchall-ok: already-paginated (LIMIT CLUSTER_LINK_ROW_CAP)
+            if len(rows) > CLUSTER_LINK_ROW_CAP:
+                rows = rows[:CLUSTER_LINK_ROW_CAP]
+                app.logger.warning(
+                    "[CLUSTER] link query truncated at %d rows; clustering is "
+                    "incomplete and will understate operator size: %s",
+                    CLUSTER_LINK_ROW_CAP, sql,
+                )
+        except sqlite3.Error:
+            return
+        for key, miner in rows:
+            if key is None or miner is None:
+                continue
+            groups.setdefault(str(key), []).append(str(miner))
+            seen.add(str(miner))
+        for members in groups.values():
+            first = members[0]
+            for other in members[1:]:
+                pairs.append((first, other))
+
+    _link_by("SELECT client_ip, miner_id FROM ip_rate_limit")
+    _link_by("SELECT hardware_id, bound_miner FROM hardware_bindings")
+    _link_by("SELECT mac_hash, miner FROM miner_macs")
+    return _union_find_groups(pairs, singletons=seen)
+
+
+def cluster_independence(conn, members) -> dict:
+    """Do these miners look like different machines, or one generator?
+
+    Returns a verdict, never a penalty. `spread` is the coefficient of
+    variation of the members' median measurement, so it asks whether the
+    group's hardware differs from itself, not whether any member is genuine.
+
+    KNOWN FALSE POSITIVE, and the reason this stays observe-only: an operator
+    honestly running several IDENTICAL machines — five of the same SBC — looks
+    correlated by construction. Low independence is a reason to look, never a
+    reason to dock a reward on its own.
+    """
+    members = [m for m in (members or []) if m]
+    verdict = {"members": len(members), "spread": None, "state": "unjudged",
+               "medians": {}}
+    if len(members) < CLUSTER_MIN_MEMBERS_TO_JUDGE:
+        verdict["state"] = "too_small_to_judge"
+        return verdict
+
+    medians = {}
+    for miner in members:
+        values = []
+        for sample in fetch_miner_fingerprint_sequence(conn, miner):
+            try:
+                v = float((sample.get("profile") or {}).get(
+                    CLUSTER_INDEPENDENCE_METRIC, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if v > 0:
+                values.append(v)
+        if values:
+            medians[miner] = statistics.median(values)
+
+    verdict["medians"] = medians
+    if len(medians) < CLUSTER_MIN_MEMBERS_TO_JUDGE:
+        verdict["state"] = "insufficient_history"
+        return verdict
+
+    vals = list(medians.values())
+    mean = sum(vals) / len(vals)
+    spread = statistics.pstdev(vals) / mean if mean > 0 else 0.0
+    verdict["spread"] = round(spread, 4)
+    verdict["state"] = (
+        "independent" if spread >= CLUSTER_INDEPENDENT_SPREAD else "correlated"
+    )
+    return verdict
+
+
 # === RIP-309c: measurement freshness binding ===
 # The attestation ENVELOPE is already fresh: /attest/submit requires a live
 # server-issued challenge from /attest/challenge, single-use, 300s expiry. What
