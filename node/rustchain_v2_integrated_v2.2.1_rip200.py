@@ -3941,6 +3941,113 @@ def fetch_miner_fingerprint_sequence(conn, miner: str) -> list:
     return out
 
 
+# === RIP-309c: measurement freshness binding ===
+# The attestation ENVELOPE is already fresh: /attest/submit requires a live
+# server-issued challenge from /attest/challenge, single-use, 300s expiry. What
+# is not bound is the measurement CONTENT. Nothing stops a client wrapping
+# values measured once, long ago, in a nonce fetched a second ago — and the
+# reference client does exactly that, measuring at startup and caching for the
+# life of the process (miners/linux/rustchain_linux_miner.py: the re-measure is
+# guarded by `not self.fingerprint_data`).
+#
+# The fix is to make the measurement DEPEND on the challenge. The client
+# already holds the nonce before it would measure, so no protocol reordering is
+# needed: derive the size of the timing workload from the nonce, and report
+# what was run. A binding computed for a different nonce carries the wrong
+# iteration count and is detectable by recomputation alone.
+MEASUREMENT_WORKLOAD_MIN = 1000
+MEASUREMENT_WORKLOAD_SPAN = 1000
+
+
+def derive_measurement_workload(nonce: str) -> int:
+    """Iterations the client must run this round, derived from the challenge.
+
+    Deterministic and cheap on both sides: a 6502 or a 386 can take four hex
+    digits and loop. The server recomputes it rather than trusting the client's
+    claim, so a replayed binding built for last round's nonce does not match.
+    """
+    text = str(nonce or "")
+    if len(text) < 4:
+        return MEASUREMENT_WORKLOAD_MIN
+    try:
+        seed = int(text[:4], 16)
+    except ValueError:
+        seed = sum(ord(c) for c in text[:4])
+    return MEASUREMENT_WORKLOAD_MIN + (seed % MEASUREMENT_WORKLOAD_SPAN)
+
+
+def verify_measurement_binding(nonce: str, binding, expected_rate_ns=None,
+                               rate_tolerance: float = 4.0) -> dict:
+    """Check a measurement was produced for THIS challenge.
+
+    Two independent checks:
+
+    1. `iterations` must equal what this nonce implies. Exact, needs no
+       hardware model, and is what kills replay: a binding built for another
+       nonce carries another iteration count.
+    2. If a per-iteration cost is known for this miner from its own history,
+       the reported duration must be within `rate_tolerance` of it. This is
+       what makes fabricating a duration expensive rather than free, and it is
+       the same self-consistency argument as the temporal gate: the forger has
+       to keep reproducing its own claimed hardware's speed.
+
+    Returns a verdict dict; never raises on malformed input. `state` is
+    "absent" when the client sent nothing, which during rollout is normal and
+    must not be treated as failure.
+    """
+    if binding is None:
+        return {"state": "absent", "ok": False, "reason": "no_binding"}
+    if not isinstance(binding, dict):
+        return {"state": "malformed", "ok": False, "reason": "binding_not_dict"}
+
+    claimed_nonce = str(binding.get("nonce") or "")
+    if claimed_nonce and claimed_nonce != str(nonce or ""):
+        return {"state": "mismatch", "ok": False, "reason": "binding_nonce_mismatch"}
+
+    expected_iterations = derive_measurement_workload(nonce)
+    try:
+        iterations = int(binding.get("iterations"))
+    except (TypeError, ValueError):
+        return {"state": "malformed", "ok": False, "reason": "iterations_not_int"}
+    if iterations != expected_iterations:
+        return {
+            "state": "stale",
+            "ok": False,
+            "reason": f"workload_mismatch:expected={expected_iterations}:got={iterations}",
+        }
+
+    try:
+        duration_ns = float(binding.get("duration_ns"))
+    except (TypeError, ValueError):
+        return {"state": "malformed", "ok": False, "reason": "duration_not_numeric"}
+    if duration_ns <= 0:
+        return {"state": "malformed", "ok": False, "reason": "duration_not_positive"}
+
+    rate_ns = duration_ns / max(iterations, 1)
+    verdict = {
+        "state": "bound",
+        "ok": True,
+        "reason": "binding_ok",
+        "iterations": iterations,
+        "rate_ns": rate_ns,
+    }
+    if expected_rate_ns:
+        try:
+            expected = float(expected_rate_ns)
+        except (TypeError, ValueError):
+            expected = 0.0
+        if expected > 0:
+            ratio = rate_ns / expected
+            verdict["rate_ratio"] = ratio
+            if ratio > rate_tolerance or ratio < (1.0 / rate_tolerance):
+                verdict.update({
+                    "state": "rate_implausible",
+                    "ok": False,
+                    "reason": f"rate_deviates:ratio={ratio:.3f}",
+                })
+    return verdict
+
+
 # An identity with too little history to check is not trusted with the full
 # antiquity premium, and is not punished either. Zero would re-implement a
 # tenure gate at full strength and penalise honest newcomers; one would make a
@@ -5634,6 +5741,23 @@ def _submit_attestation_impl():
         # collected the full antiquity premium. Gate the bonus on it.
         hw_weight_raw = hw_weight
         hw_weight = apply_temporal_consistency_to_weight(hw_weight, temporal_review)
+
+        # RIP-309c phase 0: observe only. Record whether this submission bound
+        # its measurement to the challenge, so fleet adoption can be measured
+        # before anything depends on it. Deliberately NOT enforced here: a hard
+        # cutover is what made the unsigned-attestation change unmergeable, and
+        # the fleet includes vintage clients that are slow to update. When
+        # adoption is high enough, an unbound submission should lose part of
+        # the bonus through the temporal gate above, not be rejected.
+        measurement_binding_verdict = verify_measurement_binding(
+            nonce, data.get("measurement_binding")
+        )
+        if measurement_binding_verdict.get("state") not in ("absent", "bound"):
+            app.logger.warning(
+                f"[MEASUREMENT-BINDING] {miner[:20]}... "
+                f"state={measurement_binding_verdict.get('state')} "
+                f"reason={measurement_binding_verdict.get('reason')}"
+            )
         miner_id = _attest_valid_miner(data.get("miner_id")) or miner
 
         with closing(sqlite3.connect(DB_PATH)) as enroll_conn:
@@ -5725,6 +5849,11 @@ def _submit_attestation_impl():
         "device": device,
         "fingerprint_passed": fingerprint_passed,
         "temporal_review_flag": bool(temporal_review.get("review_flag")),
+        # RIP-309c: tells a client whether its measurement was bound to the
+        # challenge, and what workload the NEXT round expects. A client can
+        # adopt binding without a coordinated release by reading this.
+        "measurement_binding_state": measurement_binding_verdict.get("state"),
+        "measurement_workload_next": derive_measurement_workload(nonce),
         "macs_recorded": len(macs) if macs else 0,
         "warthog_bonus": warthog_bonus
     })
