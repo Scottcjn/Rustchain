@@ -4126,7 +4126,20 @@ def validate_temporal_consistency(sequence: list, current_profile: dict = None) 
                     values.append(v)
 
         if len(values) < 3:
-            check_scores[metric] = 1.0
+            # Not enough samples to judge this metric. Excluded from the
+            # average rather than scored 1.0.
+            #
+            # Scoring it a pass was the same mistake the rotating checks made:
+            # "could not measure" is not "passed". It matters more here because
+            # most miners populate only clock_drift, so three metrics returned
+            # a free 1.0 and diluted the one real verdict. A fully replayed
+            # constant profile scored 0.8 and a 2.5x miner kept 2.2 of it. With
+            # the absent metrics excluded the same profile scores 0.2.
+            #
+            # It is also required for the vintage fleet to be judged honestly:
+            # a 6502 genuinely cannot produce thermal_variance, and awarding it
+            # a pass for that would hand every capability-limited miner three
+            # free credits toward a premium.
             continue
 
         avg = sum(values) / len(values)
@@ -4146,7 +4159,18 @@ def validate_temporal_consistency(sequence: list, current_profile: dict = None) 
 
         check_scores[metric] = score
 
-    score = sum(check_scores.values()) / max(len(check_scores), 1)
+    if not check_scores:
+        # Nothing could be judged at all. Treat as unverified rather than
+        # perfect, matching the rotating-check denominator: proving nothing is
+        # not the same as passing everything.
+        return {
+            "score": 1.0,
+            "review_flag": False,
+            "reason": "insufficient_history",
+            "flags": flags,
+            "check_scores": {},
+        }
+    score = sum(check_scores.values()) / len(check_scores)
     review_flag = any(f.startswith("frozen_profile") or f.startswith("noisy_profile") or f.startswith("drift_out_of_band") for f in flags)
     return {
         "score": round(score, 4),

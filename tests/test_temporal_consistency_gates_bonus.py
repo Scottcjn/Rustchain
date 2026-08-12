@@ -191,5 +191,52 @@ class GateIsActuallyWiredTest(unittest.TestCase):
         )
 
 
+class UnmeasuredMetricsAreExcludedNotPassedTest(unittest.TestCase):
+    """An absent metric must leave the average, not enter it as a pass.
+
+    Measured on the live fleet: most miners populate only clock_drift_cv, and
+    the other three read 0.0. While an absent metric scored 1.0, a fully
+    replayed constant profile averaged (1.0 + 1.0 + 1.0 + 0.2) / 4 = 0.8, so a
+    2.5x miner kept 2.2 of its premium. Three free passes drowned the one real
+    detection.
+
+    Same principle as the rotating-check denominator: could-not-measure is not
+    passed. It also matters for honesty toward vintage hardware, since a 6502
+    genuinely cannot produce thermal_variance and must not be handed three free
+    credits toward a premium because of it.
+    """
+
+    def test_a_replayed_profile_is_caught_on_one_populated_metric(self):
+        seq = _sequence([_profile(0.05, 0.0, 0.0, 0.0)] * 8)
+        review = validate(seq)
+        self.assertEqual(list(review["check_scores"]), ["clock_drift_cv"],
+                         "absent metrics must not appear in check_scores")
+        self.assertAlmostEqual(review["score"], 0.2)
+        self.assertAlmostEqual(apply_gate(2.5, review), 1.3)
+
+    def test_populating_more_metrics_does_not_change_the_verdict(self):
+        """A forger must not dilute a detection by omitting other metrics."""
+        sparse = validate(_sequence([_profile(0.05, 0.0, 0.0, 0.0)] * 8))
+        full = validate(_sequence([_profile(0.05, 3.0, 0.02, 4.0)] * 8))
+        self.assertAlmostEqual(sparse["score"], full["score"])
+
+    def test_nothing_measurable_is_unverified_not_perfect(self):
+        seq = _sequence([_profile(0.0, 0.0, 0.0, 0.0)] * 8)
+        review = validate(seq)
+        self.assertEqual(review["reason"], "insufficient_history")
+        self.assertLess(apply_gate(2.5, review), 2.5)
+
+    def test_an_honest_sparse_profile_still_keeps_its_bonus(self):
+        """Only-clock-populated must not become an automatic penalty."""
+        seq = _sequence([
+            _profile(0.050, 0.0, 0.0, 0.0), _profile(0.053, 0.0, 0.0, 0.0),
+            _profile(0.048, 0.0, 0.0, 0.0), _profile(0.055, 0.0, 0.0, 0.0),
+            _profile(0.051, 0.0, 0.0, 0.0), _profile(0.049, 0.0, 0.0, 0.0),
+        ])
+        review = validate(seq)
+        self.assertFalse(review["review_flag"], review["flags"])
+        self.assertAlmostEqual(apply_gate(2.5, review), 2.5)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
