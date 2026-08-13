@@ -18,37 +18,46 @@ queries against BOTH schemas, because a fix verified against only one of them
 would have looked correct while leaving production exactly as broken.
 """
 
-import ast as _ast
+import importlib.util
 import os
 import sqlite3
 import sys
 import tempfile
+import types
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NODE = os.path.join(ROOT, "node")
 sys.path.insert(0, NODE)
 
-# Load ONLY the resolver and its constant out of the real source file.
-# Importing the whole module drags in a crypto chain that collides with
-# tests/mock_crypto, and the point here is the SQL-facing logic, which is
-# self-contained. Parsed from the actual file so the test cannot drift from it.
-def _load_resolver():
-    src = open(os.path.join(NODE, "rustchain_ergo_anchor.py")).read()
-    tree = _ast.parse(src)
-    wanted = {"_ANCHOR_COLUMN_ALIASES", "_anchor_columns"}
-    body = [
-        n for n in tree.body
-        if (isinstance(n, _ast.FunctionDef) and n.name in wanted)
-        or (isinstance(n, _ast.Assign) and getattr(n.targets[0], "id", None) in wanted)
-    ]
-    assert len(body) == 2, f"expected the alias map and the resolver, got {len(body)}"
-    ns = {"sqlite3": sqlite3}
-    exec(compile(_ast.Module(body=body, type_ignores=[]), "<resolver>", "exec"), ns)
-    return type("M", (), ns)
+# `rustchain_crypto` resolves to a shared test mock that does not define every
+# symbol this module imports. Fill in only the missing names rather than
+# editing the shared mock or shipping a second copy of it; nothing in these
+# tests exercises crypto, they are about SQL-facing behaviour.
+try:
+    import rustchain_crypto as _rc
+except Exception:
+    _rc = types.ModuleType("rustchain_crypto")
+    sys.modules["rustchain_crypto"] = _rc
 
+if not hasattr(_rc, "blake2b256_hex"):
+    _rc.blake2b256_hex = lambda *a, **k: ""
+if not hasattr(_rc, "canonical_json"):
+    _rc.canonical_json = lambda *a, **k: ""
+if not hasattr(_rc, "MerkleTree"):
+    class _MerkleTree:  # minimal stand-in; unused by these tests
+        def __init__(self, *a, **k):
+            pass
 
-MOD = _load_resolver()
+    _rc.MerkleTree = _MerkleTree
+
+_spec = importlib.util.spec_from_file_location(
+    "ergo_anchor_mod", os.path.join(NODE, "rustchain_ergo_anchor.py")
+)
+MOD = importlib.util.module_from_spec(_spec)
+sys.modules["ergo_anchor_mod"] = MOD
+_spec.loader.exec_module(MOD)
+
 
 MODULE_SCHEMA = """
 CREATE TABLE ergo_anchors (
