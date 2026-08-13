@@ -30,6 +30,14 @@ DIM    = "\033[2m"
 
 # ── Thresholds ────────────────────────────────────────────────────────────────
 SLOW_THRESHOLD_MS = 1000   # response times above this are "yellow"
+
+# The node exposes /health and /epoch. It has never exposed /status, which is
+# what this monitor asked for, so every probe of a real node returned 404 and
+# was filed as "slow" with no epoch: the monitor had never once read state from
+# node 1 or node 2. Combined with a dead node reporting online, the result was
+# exactly inverted. /epoch is tried first because it carries both the epoch and
+# the enrolled miner count; /status is kept for any deployment that has it.
+STATUS_ENDPOINTS = ("/epoch", "/status", "/health")
 REQUEST_TIMEOUT   = 5      # seconds per HTTP request
 
 # ── Known attestation nodes ───────────────────────────────────────────────────
@@ -86,8 +94,9 @@ class NodeHealthMonitor:
         """
         start = time.monotonic()
         try:
+            path = getattr(self, "_status_path", None) or STATUS_ENDPOINTS[0]
             req = urllib.request.Request(
-                f"{url}/status",
+                f"{url}{path}",
                 headers={"Accept": "application/json", "User-Agent": "RustChain-HealthMonitor/1.0"},
             )
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
@@ -123,7 +132,8 @@ class NodeHealthMonitor:
                     )
 
                 epoch  = data.get("epoch") or data.get("current_epoch")
-                miners = data.get("miners") or data.get("active_miners") or data.get("miner_count")
+                miners = (data.get("miners") or data.get("active_miners")
+                          or data.get("miner_count") or data.get("enrolled_miners"))
 
                 # Coerce to int if present, tolerating a malformed value rather
                 # than raising inside the probe.
@@ -160,6 +170,21 @@ class NodeHealthMonitor:
 
         except urllib.error.HTTPError as exc:
             elapsed_ms = (time.monotonic() - start) * 1000
+            # A 404 means this deployment does not expose the path we asked
+            # for, not that the node is unwell. Try the next known endpoint
+            # before concluding anything: asking /status of a node that only
+            # serves /epoch is how every real node came back "slow" forever.
+            if exc.code == 404:
+                tried = getattr(self, "_status_path", None) or STATUS_ENDPOINTS[0]
+                remaining = [p for p in STATUS_ENDPOINTS if p != tried]
+                for nxt in remaining:
+                    self._status_path = nxt
+                    try:
+                        result = self.check_node(url)
+                    finally:
+                        self._status_path = None
+                    if result.status != "offline" or "404" not in (result.error or ""):
+                        return result
             # Node replied but with an error code — treat as degraded
             return NodeStatus(
                 url=url,

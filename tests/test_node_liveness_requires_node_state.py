@@ -127,5 +127,61 @@ class ToleranceTest(unittest.TestCase):
         self.assertIsNotNone(st.response_time_ms)
 
 
+class EndpointDiscoveryTest(unittest.TestCase):
+    """The monitor asked for a path the node has never served.
+
+    `/status` 404s on both live nodes; they serve `/health` and `/epoch`. Every
+    probe of a real node therefore came back 404 and was filed as "slow" with
+    no epoch, so the monitor had never once read state from node 1 or node 2.
+    Together with a dead node reporting "online", the picture was exactly
+    inverted: the two working nodes looked degraded and the departed one looked
+    healthy.
+    """
+
+    def test_epoch_is_tried_before_status(self):
+        """/epoch carries both the epoch and the miner count."""
+        self.assertEqual(MOD.STATUS_ENDPOINTS[0], "/epoch")
+        self.assertIn("/status", MOD.STATUS_ENDPOINTS)
+
+    def test_enrolled_miners_is_recognised(self):
+        """/epoch names the field `enrolled_miners`, which was not read."""
+        st = _probe(b'{"epoch": 254, "enrolled_miners": 16}')
+        self.assertEqual(st.status, "online")
+        self.assertEqual(st.miners, 16)
+
+    def test_a_404_falls_through_to_the_next_endpoint(self):
+        """A missing path is a deployment difference, not ill health."""
+        mon = MOD.NodeHealthMonitor(nodes=["http://example.invalid"])
+        calls = []
+
+        def fake_urlopen(req, timeout=None):
+            calls.append(req.full_url)
+            if req.full_url.endswith("/epoch"):
+                raise MOD.urllib.error.HTTPError(
+                    req.full_url, 404, "NOT FOUND", {}, None)
+            return _Resp(b'{"epoch": 99, "miners": 2}')
+
+        with mock.patch.object(MOD.urllib.request, "urlopen", fake_urlopen):
+            st = mon.check_node("http://example.invalid")
+
+        self.assertEqual(st.status, "online", st.error)
+        self.assertEqual(st.epoch, 99)
+        self.assertTrue(any(u.endswith("/epoch") for u in calls))
+        self.assertGreater(len(calls), 1, "it should have tried another path")
+
+    def test_a_real_error_code_is_still_degraded(self):
+        """Only 404 falls through; a 500 still means something is wrong."""
+        mon = MOD.NodeHealthMonitor(nodes=["http://example.invalid"])
+
+        def fake_urlopen(req, timeout=None):
+            raise MOD.urllib.error.HTTPError(
+                req.full_url, 500, "SERVER ERROR", {}, None)
+
+        with mock.patch.object(MOD.urllib.request, "urlopen", fake_urlopen):
+            st = mon.check_node("http://example.invalid")
+        self.assertEqual(st.status, "slow")
+        self.assertIn("500", st.error)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
