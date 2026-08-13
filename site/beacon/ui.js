@@ -13,6 +13,7 @@ import { buildCityTeleportGroups, resolveTeleportCity } from './city-teleport.mj
 import { highlightAgentConnections, addContractLine } from './connections.js';
 import { initChat, setCurrentAgent, getChatHTML, bindChatEvents } from './chat.js';
 import { buildContractHistory, formatContractTimestamp } from './contract-history.mjs';
+import { playClickTone, playHoverTone } from './sound.js';
 
 const BEACON_API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   ? 'http://localhost:8071'
@@ -35,6 +36,7 @@ function escapeHtml(value) {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 }
+let hoveredObjectKey = null;
 
 function safeNumber(value, fallback = 0, min = 0, max = Number.MAX_SAFE_INTEGER) {
   const number = Number(value);
@@ -113,7 +115,10 @@ export function initUI() {
   tooltip = document.querySelector('.tooltip');
 
   // Close button
-  document.querySelector('.panel-dot').addEventListener('click', closePanel);
+  document.querySelector('.panel-dot').addEventListener('click', () => {
+    playClickTone('close');
+    closePanel();
+  });
 
   // HUD stats
   updateHUD();
@@ -341,6 +346,8 @@ function setPanelPath(path) {
 function onObjectClick(mesh) {
   const data = mesh.userData;
 
+  if (data.type === 'agent' || data.type === 'city') playClickTone(data.type);
+
   if (data.type === 'agent') {
     selectAgent(data.agentId);
   } else if (data.type === 'city') {
@@ -354,6 +361,7 @@ function onObjectHover(hit, event) {
       highlightAgent(hoveredId, false);
       hoveredId = null;
     }
+    hoveredObjectKey = null;
     tooltip.classList.remove('visible');
     document.body.style.cursor = 'default';
     return;
@@ -361,6 +369,14 @@ function onObjectHover(hit, event) {
 
   const data = hit.object.userData;
   document.body.style.cursor = 'pointer';
+
+  const hoverKey = data.type === 'agent'
+    ? `agent:${data.agentId}`
+    : data.type === 'city' ? `city:${data.cityId}` : null;
+  if (hoverKey && hoverKey !== hoveredObjectKey) {
+    hoveredObjectKey = hoverKey;
+    playHoverTone();
+  }
 
   if (data.type === 'agent' && data.agentId !== hoveredId) {
     if (hoveredId) highlightAgent(hoveredId, false);

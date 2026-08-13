@@ -531,6 +531,120 @@ class TestBeaconAtlasIntegration(unittest.TestCase):
             self.assertLess(prob, 1.0)
 
 
+class TestBeaconAtlasSoundDesign(unittest.TestCase):
+    """Test the user-gesture-safe Beacon Atlas sound layer."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.beacon_dir = pathlib.Path(__file__).resolve().parents[1] / "site" / "beacon"
+        cls.sound_source = (cls.beacon_dir / "sound.js").read_text(encoding="utf-8")
+
+    def test_sound_controls_are_wired_into_the_live_atlas(self):
+        index_source = (self.beacon_dir / "index.html").read_text(encoding="utf-8")
+        ui_source = (self.beacon_dir / "ui.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="hud-sound"', index_source)
+        self.assertIn('aria-pressed="false"', index_source)
+        self.assertIn("initSoundControls(document.getElementById('hud-sound'))", index_source)
+        self.assertIn("playHoverTone()", ui_source)
+        self.assertIn("playClickTone(data.type)", ui_source)
+        self.assertIn("MAX_TRANSIENTS", self.sound_source)
+        self.assertIn("pagehide", self.sound_source)
+
+    def test_audio_context_is_deferred_until_activation_and_cleaned_up(self):
+        executable_source = re.sub(r"^export\s+", "", self.sound_source, flags=re.MULTILINE)
+        probe = textwrap.dedent(r"""
+            let contextsCreated = 0;
+            let contextsClosed = 0;
+            const listeners = {};
+            const pendingEnded = [];
+
+            function audioParam() {
+              return {
+                value: 0,
+                setValueAtTime(value) { this.value = value; },
+                linearRampToValueAtTime(value) { this.value = value; },
+                exponentialRampToValueAtTime(value) { this.value = value; },
+                cancelScheduledValues() {},
+              };
+            }
+
+            class MockNode {
+              constructor() {
+                this.frequency = audioParam();
+                this.Q = audioParam();
+                this.gain = audioParam();
+                this.ended = null;
+              }
+              connect() { return this; }
+              disconnect() {}
+              start() {}
+              stop() { if (this.ended) pendingEnded.push(this.ended); }
+              addEventListener(name, handler) {
+                if (name === 'ended') this.ended = handler;
+              }
+            }
+
+            class MockAudioContext {
+              constructor() {
+                contextsCreated += 1;
+                this.currentTime = 0;
+                this.destination = new MockNode();
+                this.state = 'suspended';
+              }
+              createGain() { return new MockNode(); }
+              createBiquadFilter() { return new MockNode(); }
+              createOscillator() { return new MockNode(); }
+              async resume() { this.state = 'running'; }
+              async suspend() { this.state = 'suspended'; }
+              async close() { this.state = 'closed'; contextsClosed += 1; }
+            }
+
+            globalThis.AudioContext = MockAudioContext;
+            globalThis.window = { addEventListener() {} };
+            globalThis.document = { addEventListener() {} };
+            const control = {
+              textContent: '',
+              disabled: false,
+              attributes: {},
+              classList: { toggle() {} },
+              setAttribute(name, value) { this.attributes[name] = value; },
+              addEventListener(name, handler) { listeners[name] = handler; },
+            };
+
+            if (contextsCreated !== 0) throw new Error('AudioContext was created before a user gesture');
+            initSoundControls(control);
+            if (contextsCreated !== 0) throw new Error('initialization created an AudioContext');
+            if (control.attributes['aria-pressed'] !== 'false') throw new Error('control did not start muted');
+
+            await listeners.click();
+            if (contextsCreated !== 1) throw new Error('activation did not create exactly one AudioContext');
+            if (control.attributes['aria-pressed'] !== 'true') throw new Error('control did not report enabled state');
+            pendingEnded.splice(0).forEach(handler => handler());
+
+            const toneResults = Array.from({ length: 7 }, () => playClickTone('agent'));
+            if (toneResults.filter(Boolean).length !== 6 || toneResults[6] !== false) {
+              throw new Error('transient sound concurrency was not bounded');
+            }
+
+            await listeners.click();
+            if (contextsCreated !== 1) throw new Error('mute created a second AudioContext');
+            if (control.attributes['aria-pressed'] !== 'false') throw new Error('control did not report muted state');
+            disposeSound();
+            await Promise.resolve();
+            if (contextsClosed !== 1) throw new Error('AudioContext was not closed during cleanup');
+        """)
+
+        result = subprocess.run(
+            ["node", "--input-type=module", "-"],
+            input=f"{executable_source}\n{probe}",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 def run_tests():
     """Run all test suites."""
     loader = unittest.TestLoader()
@@ -542,6 +656,7 @@ def run_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasAgentSearch))
     suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasDataIntegrity))
     suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasIntegration))
+    suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasSoundDesign))
     
     # Run tests
     runner = unittest.TextTestRunner(verbosity=2)
