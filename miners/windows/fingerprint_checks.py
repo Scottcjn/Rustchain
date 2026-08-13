@@ -38,6 +38,19 @@ except ImportError:
 
 IS_WINDOWS = platform.system() == "Windows"
 
+# platform.machine() on Mac OS X PowerPC returns "Power Macintosh", which
+# contains neither "ppc" nor "powerpc". Checking those substrings alone means a
+# real Power Mac G4/G5 is not recognised as PowerPC by its own arch string, so
+# it reports no AltiVec and skips the PowerPC ROM path entirely.
+_PPC_ARCH_TOKENS = ("ppc", "powerpc", "power macintosh", "power mac")
+
+
+def _is_powerpc_arch(arch: str) -> bool:
+    """True when platform.machine() names PowerPC silicon."""
+    text = (arch or "").strip().lower()
+    return any(tok in text for tok in _PPC_ARCH_TOKENS)
+
+
 def check_clock_drift(samples: int = 200) -> Tuple[bool, Dict]:
     """Check 1: Clock-Skew & Oscillator Drift"""
     intervals = []
@@ -106,6 +119,14 @@ def check_cache_timing(iterations: int = 100) -> Tuple[bool, Dict]:
     l3_l2_ratio = l3_avg / l2_avg if l2_avg > 0 else 0
 
     data = {
+        # Report the architecture alongside the timings. The buffer sizes below
+        # are x86-shaped (8K/128K/4M) and do not map onto every cache
+        # hierarchy: on a PowerPC 970 (32K L1, 512K L2, no L3) run through a
+        # Python bytearray walk the measurement is interpreter-bound, and a
+        # real Power Mac G5 reports l2_l1 = 0.801, i.e. L2 apparently faster
+        # than L1. The server can cross-validate an arch label; it cannot make
+        # sense of a ratio the hardware could never produce.
+        "arch": platform.machine().lower(),
         "l1_ns": round(l1_avg, 2),
         "l2_ns": round(l2_avg, 2),
         "l3_ns": round(l3_avg, 2),
@@ -115,8 +136,14 @@ def check_cache_timing(iterations: int = 100) -> Tuple[bool, Dict]:
 
     valid = True
     if l2_l1_ratio < 1.01 and l3_l2_ratio < 1.01:
-        valid = False
-        data["fail_reason"] = "no_cache_hierarchy"
+        if _is_powerpc_arch(data["arch"]):
+            # Not a failure, an unmeasurable one. Saying "no_cache_hierarchy"
+            # about a machine that has one, but cannot show it through this
+            # measurement, is a false accusation the server then acts on.
+            data["measurement"] = "inconclusive_on_this_arch"
+        else:
+            valid = False
+            data["fail_reason"] = "no_cache_hierarchy"
     elif l1_avg == 0 or l2_avg == 0 or l3_avg == 0:
         valid = False
         data["fail_reason"] = "zero_latency"
@@ -190,7 +217,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
 
     has_sse = any("sse" in f.lower() for f in flags)
     has_avx = any("avx" in f.lower() for f in flags)
-    has_altivec = any("altivec" in f.lower() for f in flags) or "ppc" in arch
+    has_altivec = any("altivec" in f.lower() for f in flags) or _is_powerpc_arch(arch)
     has_neon = any("neon" in f.lower() for f in flags) or "arm" in arch
 
     data = {
@@ -509,7 +536,7 @@ def check_rom_fingerprint() -> Tuple[bool, Dict]:
     detection_details = []
 
     # Check for PowerPC (Mac emulation target)
-    if "ppc" in arch or "powerpc" in arch:
+    if _is_powerpc_arch(arch):
         # Try to get real hardware ROM signature
         real_rom = get_real_hardware_rom_signature()
         if real_rom:
