@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import {
   AGENTS, GRADE_COLORS, agentCity, cityPosition, seededRandom,
-  getProviderColor,
+  getProviderColor, avatarTextureUrl,
 } from './data.js';
 import {
   getScene, registerClickable, registerHoverable, onAnimate,
@@ -13,6 +13,8 @@ import {
 
 const agentMeshes = new Map(); // agentId -> { core, glow, group }
 const agentPositions = new Map(); // agentId -> Vector3
+const avatarTextureLoader = new THREE.TextureLoader();
+avatarTextureLoader.setCrossOrigin('anonymous');
 
 export function getAgentPosition(agentId) {
   return agentPositions.get(agentId);
@@ -75,6 +77,15 @@ export function buildAgents() {
     registerClickable(core);
     registerHoverable(core);
 
+    // Public profile images are optional. The core remains the visual and
+    // interaction fallback until a validated HTTPS texture loads successfully.
+    const avatar = makeAgentAvatar(agent);
+    if (avatar) {
+      group.add(avatar);
+      registerClickable(avatar);
+      registerHoverable(avatar);
+    }
+
     // Outer glow — slightly larger for relay to emphasize presence
     const glowGeo = isRelay
       ? new THREE.OctahedronGeometry(3.0, 1)
@@ -102,7 +113,7 @@ export function buildAgents() {
     group.add(label);
 
     scene.add(group);
-    agentMeshes.set(agent.id, { core, glow, group, light, relay: isRelay });
+    agentMeshes.set(agent.id, { core, glow, group, light, avatar, relay: isRelay });
   }
 
   // Bob + spin animation
@@ -132,6 +143,7 @@ export function highlightAgent(agentId, on) {
   mesh.glow.material.opacity = on ? 0.35 : (mesh.relay ? 0.08 : 0.12);
   mesh.core.material.opacity = on ? 1.0 : 0.9;
   mesh.light.intensity = on ? 0.8 : (mesh.relay ? 0.4 : 0.3);
+  if (mesh.avatar?.visible) mesh.avatar.material.opacity = on ? 1.0 : 0.94;
 }
 
 function countAgentsInCity(cityId) {
@@ -144,6 +156,44 @@ function hashCode(str) {
     h = ((h << 5) - h + str.charCodeAt(i)) | 0;
   }
   return Math.abs(h);
+}
+
+function makeAgentAvatar(agent) {
+  const avatarUrl = avatarTextureUrl(agent.avatar);
+  if (!avatarUrl) return null;
+
+  const material = new THREE.SpriteMaterial({
+    transparent: true,
+    opacity: 0.94,
+    depthTest: false,
+    depthWrite: false,
+    alphaTest: 0.08,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.position.set(0, 0, 0);
+  sprite.scale.set(3.2, 3.2, 1);
+  sprite.renderOrder = 3;
+  sprite.visible = false;
+  sprite.userData = { type: 'agent', agentId: agent.id, avatar: true };
+
+  avatarTextureLoader.load(
+    avatarUrl,
+    (texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.minFilter = THREE.LinearFilter;
+      material.map = texture;
+      material.needsUpdate = true;
+      sprite.visible = true;
+    },
+    undefined,
+    () => {
+      material.map = null;
+      material.needsUpdate = true;
+      sprite.visible = false;
+    },
+  );
+
+  return sprite;
 }
 
 function makeAgentLabel(text, color, isRelay = false) {
