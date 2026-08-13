@@ -67,13 +67,14 @@ function escapeHtml(value) {
     <div class="hud-actions">
       <div class="hud-action" id="hud-new-contract">[NEW CONTRACT]</div>
       <div class="hud-action" id="hud-bounties" style="color:#ffd700">[BOUNTIES]</div>
+      <button class="hud-action hud-sound" id="hud-sound" type="button" aria-label="Enable Beacon Atlas sound" aria-pressed="false">[SOUND OFF]</button>
     </div>
   </div>
 
   <!-- Controls hint (bottom-left) -->
   <div class="controls-hint">
     DRAG rotate | SCROLL zoom | RIGHT-DRAG pan<br>
-    CLICK agent/city for details | ESC close
+    CLICK agent/city for details | SOUND toggle | ESC close
   </div>
 
   <!-- Info Panel (right side) -->
@@ -112,6 +113,7 @@ function escapeHtml(value) {
     import { buildVehicles } from './vehicles.js';
     import { buildBounties } from './bounties.js';
     import { initUI, openContractForm, openBountiesPanel } from './ui.js';
+    import { initSoundControls } from './sound.js';
     import { fetchAllAgents, replaceContracts, AGENTS, CITIES, CONTRACTS } from './data.js';
 
     const fill = document.getElementById('loading-fill');
@@ -207,6 +209,7 @@ function escapeHtml(value) {
       await tick();
       setupInteraction(canvas);
       initUI();
+      initSoundControls(document.getElementById('hud-sound'));
 
       // Force HUD update with current counts
       const hudEl = document.querySelector('.hud-stats');
