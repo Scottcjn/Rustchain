@@ -269,19 +269,74 @@ html, body {
   text-align: right;
 }
 
-/* Contract rows */
-.contract-row {
-  display: flex;
-  align-items: center;
-  margin: 4px 0;
-  padding: 4px 6px;
-  border-left: 2px solid var(--green-dim);
+/* Contract history timeline */
+.contract-timeline {
+  margin: 4px 0 8px 6px;
+}
+
+.contract-timeline-item {
+  position: relative;
+  margin-left: 5px;
+  padding: 2px 0 12px 18px;
+  border-left: 1px solid var(--green-dim);
   font-size: 12px;
 }
 
-.contract-row.rent { border-color: var(--green); }
-.contract-row.buy { border-color: var(--gold); }
-.contract-row.lease_to_own { border-color: var(--amber); }
+.contract-timeline-item:last-child {
+  border-left-color: transparent;
+  padding-bottom: 2px;
+}
+
+.contract-timeline-marker {
+  position: absolute;
+  top: 8px;
+  left: -5px;
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--green);
+  border-radius: 50%;
+  background: var(--bg-terminal);
+  box-shadow: 0 0 7px var(--green-glow);
+}
+
+.contract-timeline-time {
+  display: block;
+  color: var(--text-dim);
+  font-size: 10px;
+  letter-spacing: 0.3px;
+  margin-bottom: 2px;
+}
+
+.contract-timeline-main {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.contract-direction {
+  color: var(--text-body);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.direction-outgoing { color: var(--cyan); }
+.direction-incoming { color: var(--green); }
+
+.contract-timeline-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  color: var(--text-dim);
+  font-size: 10px;
+  margin-top: 3px;
+}
+
+.contract-history-empty {
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 3px 0 7px;
+}
 
 .contract-type {
   text-transform: uppercase;
@@ -307,6 +362,9 @@ html, body {
 .state-listed { color: var(--text-dim); background: rgba(100, 100, 100, 0.1); }
 .state-expired { color: #888; background: rgba(80, 80, 80, 0.1); }
 .state-breached { color: var(--red); background: rgba(255, 68, 68, 0.15); }
+.state-completed { color: var(--gold); background: rgba(255, 215, 0, 0.1); }
+.state-rejected { color: var(--red); background: rgba(255, 68, 68, 0.1); }
+.state-unknown { color: var(--text-dim); background: rgba(100, 100, 100, 0.1); }
 
 /* Calibration rows */
 .cal-row {
