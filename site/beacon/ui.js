@@ -14,6 +14,7 @@ import { highlightAgentConnections, addContractLine } from './connections.js';
 import { initChat, setCurrentAgent, getChatHTML, bindChatEvents } from './chat.js';
 import { buildContractHistory, formatContractTimestamp } from './contract-history.mjs';
 import { playClickTone, playHoverTone } from './sound.js';
+import { buildAgentLeaderboard } from './leaderboard.mjs';
 
 const BEACON_API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   ? 'http://localhost:8071'
@@ -37,6 +38,8 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 let hoveredObjectKey = null;
+let leaderboardRoot = null;
+let leaderboardMode = 'beats';
 
 function safeNumber(value, fallback = 0, min = 0, max = Number.MAX_SAFE_INTEGER) {
   const number = Number(value);
@@ -97,6 +100,7 @@ async function loadReputation() {
         });
       }
       reputationTs = Date.now();
+      renderAgentLeaderboard();
     }
   } catch (e) {
     console.warn('[rep] Failed to load reputation:', e.message);
@@ -124,6 +128,7 @@ export function initUI() {
   updateHUD();
   initAgentSearch();
   initCityTeleport();
+  initAgentLeaderboard();
 
   // Click handlers
   setClickHandler(onObjectClick);
@@ -333,6 +338,94 @@ function updateHUD() {
     if (parts.length) agentStr += ` (${parts.join('+')})`;
     el.innerHTML = `AGENTS: <span>${escapeHtml(agentStr)}</span> | CITIES: <span>${escapeHtml(CITIES.length)}</span> | CONTRACTS: <span>${escapeHtml(CONTRACTS.length)}</span>`;
   }
+}
+
+function initAgentLeaderboard() {
+  leaderboardRoot = document.querySelector('.agent-leaderboard');
+  renderAgentLeaderboard();
+}
+
+function renderAgentLeaderboard() {
+  if (!leaderboardRoot) return;
+
+  const header = document.createElement('div');
+  header.className = 'leaderboard-header';
+
+  const title = document.createElement('h2');
+  title.className = 'leaderboard-title';
+  title.textContent = '[TOP AGENTS]';
+  header.appendChild(title);
+
+  const controls = document.createElement('div');
+  controls.className = 'leaderboard-controls';
+  for (const mode of ['beats', 'contracts']) {
+    const modeButton = document.createElement('button');
+    modeButton.type = 'button';
+    modeButton.className = 'leaderboard-mode';
+    modeButton.textContent = mode === 'beats' ? 'BEATS' : 'CONTRACTS';
+    modeButton.setAttribute('aria-pressed', String(leaderboardMode === mode));
+    modeButton.addEventListener('click', () => {
+      leaderboardMode = mode;
+      renderAgentLeaderboard();
+    });
+    controls.appendChild(modeButton);
+  }
+  header.appendChild(controls);
+
+  const entries = buildAgentLeaderboard(
+    AGENTS,
+    CONTRACTS,
+    reputationCache,
+    leaderboardMode,
+    10,
+  );
+  const list = document.createElement('ol');
+  list.className = 'leaderboard-list';
+
+  if (entries.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'leaderboard-empty';
+    empty.textContent = 'No heartbeat or contract activity yet.';
+    list.appendChild(empty);
+  }
+
+  entries.forEach((entry, index) => {
+    const item = document.createElement('li');
+    item.className = 'leaderboard-item';
+
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'leaderboard-row';
+    row.setAttribute(
+      'aria-label',
+      `${index + 1}. ${entry.name}; ${entry.beats} heartbeats; ${entry.contracts} contracts`,
+    );
+    row.addEventListener('click', () => selectAgent(entry.id));
+
+    const rank = document.createElement('span');
+    rank.className = 'leaderboard-rank';
+    rank.textContent = String(index + 1).padStart(2, '0');
+
+    const rowName = document.createElement('span');
+    rowName.className = 'leaderboard-name';
+    rowName.textContent = entry.name;
+
+    const beats = document.createElement('span');
+    beats.className = 'leaderboard-metric';
+    beats.title = 'Heartbeats';
+    beats.textContent = `${entry.beats} B`;
+
+    const contracts = document.createElement('span');
+    contracts.className = 'leaderboard-metric';
+    contracts.title = 'Contracts';
+    contracts.textContent = `${entry.contracts} C`;
+
+    row.append(rank, rowName, beats, contracts);
+    item.appendChild(row);
+    list.appendChild(item);
+  });
+
+  leaderboardRoot.replaceChildren(header, list);
 }
 
 function setPanelPath(path) {
@@ -850,6 +943,7 @@ async function submitContract() {
     // Success - add to data, create 3D line, update HUD
     const normalized = addContract(data);
     addContractLine(normalized);
+    renderAgentLeaderboard();
     updateHUD();
 
     successEl.textContent = `CONTRACT ${data.id} TRANSMITTED. State: ${data.state}`;

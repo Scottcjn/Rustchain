@@ -233,6 +233,123 @@ html, body {
 .city-teleport-select option {
   background: var(--bg-terminal);
   color: var(--green);
+/* --- Agent Leaderboard (left sidebar) --- */
+.agent-leaderboard {
+  position: fixed;
+  top: 150px;
+  left: 16px;
+  z-index: 50;
+  width: min(340px, calc(100vw - 32px));
+  max-height: calc(100vh - 220px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 0 20px rgba(0, 255, 0, 0.05);
+  color: var(--text-body);
+  font-family: var(--font-mono);
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+.leaderboard-header {
+  padding: 8px 10px;
+  background: rgba(0, 20, 0, 0.65);
+  border-bottom: 1px solid var(--border);
+}
+
+.leaderboard-title {
+  color: var(--amber);
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 400;
+  letter-spacing: 1px;
+}
+
+.leaderboard-controls {
+  display: flex;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.leaderboard-mode {
+  padding: 2px 7px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.leaderboard-mode[aria-pressed="true"] {
+  border-color: var(--amber-dim);
+  color: var(--amber);
+  background: rgba(255, 176, 0, 0.08);
+}
+
+.leaderboard-list {
+  min-height: 34px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--green-dim) transparent;
+}
+
+.leaderboard-item {
+  margin: 0;
+  padding: 0;
+}
+
+.leaderboard-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 54px 54px;
+  gap: 5px;
+  align-items: center;
+  padding: 6px 9px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(26, 51, 26, 0.65);
+  color: var(--text-body);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.leaderboard-row:hover,
+.leaderboard-row:focus-visible {
+  background: rgba(51, 255, 51, 0.08);
+  color: var(--green);
+  outline: 1px solid var(--green-dim);
+  outline-offset: -1px;
+}
+
+.leaderboard-rank {
+  color: var(--amber);
+}
+
+.leaderboard-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.leaderboard-metric {
+  color: var(--text-dim);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-empty {
+  padding: 10px;
+  color: var(--text-dim);
+  font-size: 11px;
 }
 
 /* --- Controls hint (bottom-left) --- */
@@ -984,6 +1101,17 @@ button.hud-action {
 
   .agent-search {
     width: min(300px, calc(100vw - 16px));
+  }
+
+  .agent-leaderboard {
+    top: 132px;
+    left: 8px;
+    width: min(330px, calc(100vw - 16px));
+    max-height: 36vh;
+  }
+
+  .leaderboard-row {
+    padding: 5px 7px;
   }
 
   .controls-hint { display: none; }
