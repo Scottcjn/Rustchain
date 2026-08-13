@@ -273,8 +273,30 @@ class TestEnrollWeightDeviceSpoof(unittest.TestCase):
         })
 
         self.assertEqual(status, 200, body)
-        self.assertEqual(body["hw_weight"], body_w,
-                         "legacy row with no verified device should use body device")
+        # The documented promise is that legacy miners are "not regressed to
+        # weight 1.0", and that still holds. The exact-equality assertion was
+        # stricter than that promise, and it no longer holds because the
+        # antiquity bonus is now gated on temporal consistency: this row has no
+        # fingerprint history to check, so it receives the unverified fraction
+        # of the bonus rather than all of it.
+        #
+        # Worth being explicit about which path this is. The device here comes
+        # from the UNSIGNED request body, on a row with no stored verified
+        # device, claiming ARM arm2 at 4.0x. It is the least-evidenced weight
+        # on the chain, and it was collecting the largest multiplier. Paying it
+        # a reduced premium is the intended behaviour, not a regression.
+        expected = mod.apply_temporal_consistency_to_weight(
+            body_w, {"reason": "insufficient_history", "score": 1.0}
+        )
+        self.assertAlmostEqual(
+            body["hw_weight"], expected,
+            msg="legacy row with no verified device should use the body device, "
+                "gated by the unverified-history bonus fraction",
+        )
+        self.assertGreater(body["hw_weight"], 1.0,
+                           "legacy miners must not be regressed to baseline")
+        self.assertLess(body["hw_weight"], body_w,
+                        "an unverified body claim must not earn the full premium")
 
 
 if __name__ == "__main__":

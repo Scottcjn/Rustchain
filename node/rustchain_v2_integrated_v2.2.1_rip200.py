@@ -2194,6 +2194,17 @@ HARDWARE_WEIGHTS = {
     "console": {"nes_6502": 2.8, "snes_65c816": 2.7, "n64_mips": 2.5,
                 "genesis_68000": 2.5, "gameboy_z80": 2.6, "ps1_mips": 2.8,
                 "saturn_sh2": 2.6, "gba_arm7": 2.3, "default": 2.5},
+    # Standalone vintage micros (Apple II, C64, MSX, Spectrum). Deliberately
+    # BELOW the equivalent console tier, which is not a judgement on the
+    # hardware: a Pico-bridged console presents at least one measured check
+    # (bridge anti_emulation timing), while a standalone micro presents a
+    # small HTTP payload that cannot be distinguished from a forgery. Paying
+    # both the same rate would make the cheapest-to-forge class the best-paid
+    # on the chain. 6502 lands at 2.5, level with 386 and G4, so the bonus is
+    # real without topping a table it cannot prove its place in. Defaults sit
+    # under the named arches so an invented chip name cannot auto-max.
+    "MOS": {"6502": 2.5, "65c816": 2.4, "default": 2.2},
+    "Zilog": {"z80": 2.3, "default": 2.1},
 }
 
 # === WELCOME BONUS & STREAK REWARDS ===
@@ -2299,6 +2310,142 @@ def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_coun
     return tuple(ranked[:active_count])
 
 
+# === RIP-309b: capability-limited hardware classes ===
+# Some hardware structurally cannot run a rotating check. An Apple II has no
+# TSC and no SIMD unit; a 386 predates RDTSC. Scoring "cannot measure" as
+# "failed" zeroes the honest vintage fleet, which is the hardware this chain
+# exists to reward. These classes get a third verdict, `unmeasured`, which is
+# excluded from the scoring DENOMINATOR rather than counted either way.
+MICRO_LIMITED_ARCHES = {
+    "6502", "65c816", "z80", "sh2",
+    "i386", "386", "80386",
+    "i486", "486", "80486",
+    "8086", "8088", "286", "80286", "i286",
+}
+
+CONSOLE_BRIDGE_ARCHES = {
+    "nes_6502", "snes_65c816", "n64_mips", "gba_arm7",
+    "genesis_68000", "sms_z80", "saturn_sh2",
+    "gameboy_z80", "gameboy_color_z80", "ps1_mips",
+}
+
+# Canonical (family, arch) for a standalone micro claim, so a bare "6502"
+# lands on the MOS family rather than being swept into x86 defaults and then
+# caught by the reverse-x86 ARM heuristic.
+MICRO_ARCH_CANONICAL = {
+    "6502": ("MOS", "6502"),
+    "65c816": ("MOS", "65c816"),
+    "z80": ("Zilog", "z80"),
+    "i386": ("x86", "386"), "386": ("x86", "386"), "80386": ("x86", "386"),
+    "i486": ("x86", "486"), "486": ("x86", "486"), "80486": ("x86", "486"),
+    "8086": ("x86", "retro"), "8088": ("x86", "retro"),
+    "286": ("x86", "retro"), "80286": ("x86", "retro"), "i286": ("x86", "retro"),
+}
+
+# Device-native measurements the flat vintage C miners send at top level
+# (miners/apple2, miners/i386). These are not rotating checks.
+FLAT_MICRO_EVIDENCE_FIELDS = (
+    "cycle_count", "clock_ticks", "ram_kb", "aux_ram",
+    "cpu_flags", "has_cpuid", "cpuid_max_leaf", "hw_fingerprint",
+)
+
+MODERN_MACHINE_TOKENS = {
+    "x86_64", "amd64", "i686", "i586",
+    "aarch64", "arm64", "arm64e", "armv7l", "armv8l",
+    "ppc64le", "ppc64", "riscv64", "mips64", "s390x",
+}
+MODERN_CPU_BRAND_TOKENS = (
+    "ryzen", "epyc", "threadripper", "xeon", "core(tm)",
+    "core i3", "core i5", "core i7", "core i9",
+    "apple m1", "apple m2", "apple m3", "apple m4",
+    "snapdragon", "graviton", "neoverse",
+)
+
+
+def _micro_accepted_for_rotation(device_arch, fingerprint, claimed_device=None) -> bool:
+    """True when a capability-limited class earned its neutral scoring.
+
+    This is the ONLY gate that lets an all-unmeasured payload score above
+    zero, so it is deliberately narrow: the class must come from the
+    SERVER-derived arch, nothing in the payload may contradict the claim, and
+    the device must supply at least two native measurements. A payload that
+    proves nothing scores nothing.
+    """
+    arch = str(device_arch or "").lower()
+    if arch not in MICRO_LIMITED_ARCHES and arch not in CONSOLE_BRIDGE_ARCHES:
+        bt = fingerprint.get("bridge_type") if isinstance(fingerprint, dict) else None
+        if bt != "pico_serial":
+            return False
+    if _capability_contradiction(claimed_device, fingerprint):
+        return False
+    return _micro_native_evidence_count(fingerprint) >= 2
+
+
+def _capability_contradiction(claimed_device, fingerprint):
+    """Return a reason string if a capability-limited claim is contradicted.
+
+    A device claiming to be a 6502/386/486/console bridge while presenting
+    evidence of a modern platform must not receive the neutral `unmeasured`
+    treatment. Deliberately conservative: 'GenuineIntel' on a claimed 486 is
+    NOT a contradiction (late 486s have CPUID), but SSE/AVX evidence is.
+    """
+    device = claimed_device if isinstance(claimed_device, dict) else {}
+    fp = fingerprint if isinstance(fingerprint, dict) else {}
+
+    machine = str(device.get("machine") or "").lower()
+    if machine in MODERN_MACHINE_TOKENS:
+        return f"modern_machine_field:{machine}"
+
+    platform_system = str(device.get("platform_system") or "").lower()
+    if platform_system in ("windows", "darwin"):
+        return f"modern_platform:{platform_system}"
+
+    cpu_brand = _cpu_brand_string(device)
+    for token in MODERN_CPU_BRAND_TOKENS:
+        if token in cpu_brand:
+            return f"modern_cpu_brand:{token}"
+
+    simd_data = _fingerprint_check_data(fp, "simd_identity")
+    x86_features = simd_data.get("x86_features")
+    if (isinstance(x86_features, list) and x86_features) or \
+            simd_data.get("has_sse") or simd_data.get("has_avx"):
+        return "x86_simd_evidence"
+    if simd_data.get("altivec") or simd_data.get("vsx") or simd_data.get("has_altivec"):
+        return "powerpc_simd_evidence"
+
+    return None
+
+
+def _structurally_unmeasurable_checks(device_arch, fingerprint=None) -> frozenset:
+    """Rotating checks a device class structurally cannot perform.
+
+    Keyed by the SERVER-derived arch, never a raw client claim. A micro
+    attested through a Pico bridge gets the console profile, because the
+    bridge does measure anti_emulation. A standalone micro gets all six, and
+    its attestation rests on device-native evidence instead.
+    """
+    arch = str(device_arch or "").lower()
+    bridge_type = ""
+    if isinstance(fingerprint, dict):
+        bt = fingerprint.get("bridge_type")
+        bridge_type = bt if isinstance(bt, str) else ""
+    if arch in CONSOLE_BRIDGE_ARCHES or bridge_type == "pico_serial":
+        return frozenset(RIP309_ROTATING_FINGERPRINT_CHECKS) - {"anti_emulation"}
+    if arch in MICRO_LIMITED_ARCHES:
+        return frozenset(RIP309_ROTATING_FINGERPRINT_CHECKS)
+    return frozenset()
+
+
+def _micro_native_evidence_count(fingerprint) -> int:
+    """Count device-native measurement fields on a flat micro payload."""
+    if not isinstance(fingerprint, dict):
+        return 0
+    return sum(
+        1 for f in FLAT_MICRO_EVIDENCE_FIELDS
+        if fingerprint.get(f) not in (None, "", [], {})
+    )
+
+
 def _fingerprint_check_passed(check_entry) -> bool:
     if isinstance(check_entry, bool):
         return check_entry
@@ -2373,24 +2520,64 @@ def get_epoch_fingerprint_rotation(conn, epoch: int) -> dict:
     }
 
 
-def evaluate_rotating_fingerprint_checks(conn, epoch: int, fingerprint: dict) -> dict:
+def evaluate_rotating_fingerprint_checks(
+    conn,
+    epoch: int,
+    fingerprint: dict,
+    device_arch: str = None,
+    micro_accepted: bool = False,
+) -> dict:
+    """Score the epoch's rotating checks, with a third `unmeasured` verdict.
+
+    RIP-309b. A check a device class structurally cannot perform is neither a
+    pass nor a failure: it is dropped from the DENOMINATOR. Without this, an
+    honest 486 reporting a truthful `clock_drift: false` (no TSC on that
+    silicon) scores zero, while a client that hardcodes `"passed": true`
+    scores 1.0 — the control fires only on honest miners.
+
+    `device_arch` must be the SERVER-derived arch. Passing a raw client claim
+    would let a miner self-select which checks it is excused from.
+
+    Empty denominator FAILS CLOSED. If nothing was measured, the score is 0.0
+    unless this is an unvetoed capability-limited class whose attestation was
+    already accepted on device-native evidence (`micro_accepted`). "Proved
+    nothing" is not "passed everything"; the earlier form of this code
+    returned 1.0 and handed a perfect score to a payload with no evidence.
+    """
     rotation = get_epoch_fingerprint_rotation(conn, epoch)
     checks = _fingerprint_checks_map(fingerprint)
-    active_results = {
-        name: _fingerprint_check_passed(checks.get(name))
-        for name in rotation["active_checks"]
-    }
-    passed_active = [name for name, passed in active_results.items() if passed]
-    failed_active = [name for name, passed in active_results.items() if not passed]
-    total_active = len(rotation["active_checks"])
-    active_ratio = (len(passed_active) / total_active) if total_active else 1.0
+    unmeasurable = _structurally_unmeasurable_checks(device_arch, fingerprint)
+
+    active_results = {}
+    for name in rotation["active_checks"]:
+        entry = checks.get(name)
+        if entry is None and name in unmeasurable:
+            active_results[name] = None          # structurally unmeasured
+        else:
+            active_results[name] = _fingerprint_check_passed(entry)
+
+    passed_active = [n for n, v in active_results.items() if v is True]
+    failed_active = [n for n, v in active_results.items() if v is False]
+    unmeasured_active = [n for n, v in active_results.items() if v is None]
+    measured_total = len(passed_active) + len(failed_active)
+
+    if measured_total:
+        active_ratio = len(passed_active) / measured_total
+    elif micro_accepted and unmeasured_active:
+        # Capability-limited class, validated on device-native evidence.
+        active_ratio = 1.0
+    else:
+        active_ratio = 0.0
+
     return {
         **rotation,
         "active_results": active_results,
         "passed_active_checks": passed_active,
         "failed_active_checks": failed_active,
+        "unmeasured_active_checks": unmeasured_active,
         "active_pass_count": len(passed_active),
-        "active_total": total_active,
+        "active_total": measured_total,
+        "measured_total": measured_total,
         "active_ratio": active_ratio,
     }
 
@@ -3842,6 +4029,317 @@ def fetch_miner_fingerprint_sequence(conn, miner: str) -> list:
     return out
 
 
+# === RIP-309d: operator clustering (observe only) ===
+# Every other defence on this chain is per-miner, so a farm of N identities is
+# N independent, individually cheap trust-building exercises. Clustering makes
+# the OPERATOR the unit, which is the constraint the contributor-tenure panel
+# insisted on: per-cluster, not per-account.
+#
+# Co-location is NOT evidence of fraud, and on this chain the largest cluster
+# is an honest lab: seven machines behind one WAN address, a Cobalt Qube 3, a
+# G5, a POWER8 and a Victus among them. Clustering alone would penalise the
+# most genuine vintage fleet on the network first. So clustering is only half
+# the mechanism. The half that discriminates is whether the members'
+# measurement histories are INDEPENDENT.
+#
+# Real hardware of different vintages is wildly separated. Measured on that
+# lab: Qube 0.0021, sophiacore 0.0762, Victus 0.1102, G5 0.1227 — a ~58x
+# spread. A farm running one generator across many identities lands its
+# members close together. Independence is what a forger cannot cheaply
+# manufacture, because escaping it means modelling every fake machine
+# separately while each one still has to stay self-consistent over time.
+CLUSTER_INDEPENDENCE_METRIC = "clock_drift_cv"
+CLUSTER_MIN_MEMBERS_TO_JUDGE = 3
+CLUSTER_INDEPENDENT_SPREAD = 0.35
+# Row cap per link query. Generous relative to the current fleet, and every
+# truncation is logged, because a silently partial graph would make a farm
+# look like several small unrelated operators.
+CLUSTER_LINK_ROW_CAP = 200_000
+
+
+def _union_find_groups(pairs, singletons=()):
+    """Group ids transitively linked by any observed shared signal."""
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for a, b in pairs:
+        union(a, b)
+    for s in singletons:
+        find(s)
+
+    groups = {}
+    for node in list(parent):
+        groups.setdefault(find(node), set()).add(node)
+    return [sorted(v) for v in groups.values()]
+
+
+def build_operator_clusters(conn) -> list:
+    """Cluster miners by SERVER-OBSERVED shared signals.
+
+    Deliberately excludes anything the miner asserts about itself. `client_ip`
+    is observed at request time by the node; hardware_id and mac_hash are
+    payload-derived but are already load-bearing for hardware binding, so
+    reusing them adds no new trust assumption.
+    """
+    pairs, seen = [], set()
+
+    def _link_by(sql):
+        groups = {}
+        try:
+            # Bounded read. Clustering wants the whole graph, but an
+            # unbounded fetchall in the node is the UTXO-OOM class (#6627),
+            # and these tables grow with every miner and every address they
+            # have ever attested from. Truncation is logged rather than
+            # silent: a partial graph splits one operator into several
+            # clusters, which reads as MORE independent than reality, so a
+            # caller must know the view was cut.
+            rows = conn.execute(
+                sql + " LIMIT ?", (CLUSTER_LINK_ROW_CAP + 1,)
+            ).fetchall()  # fetchall-ok: already-paginated (LIMIT CLUSTER_LINK_ROW_CAP)
+            if len(rows) > CLUSTER_LINK_ROW_CAP:
+                rows = rows[:CLUSTER_LINK_ROW_CAP]
+                app.logger.warning(
+                    "[CLUSTER] link query truncated at %d rows; clustering is "
+                    "incomplete and will understate operator size: %s",
+                    CLUSTER_LINK_ROW_CAP, sql,
+                )
+        except sqlite3.Error:
+            return
+        for key, miner in rows:
+            if key is None or miner is None:
+                continue
+            groups.setdefault(str(key), []).append(str(miner))
+            seen.add(str(miner))
+        for members in groups.values():
+            first = members[0]
+            for other in members[1:]:
+                pairs.append((first, other))
+
+    _link_by("SELECT client_ip, miner_id FROM ip_rate_limit")
+    _link_by("SELECT hardware_id, bound_miner FROM hardware_bindings")
+    _link_by("SELECT mac_hash, miner FROM miner_macs")
+    return _union_find_groups(pairs, singletons=seen)
+
+
+def cluster_independence(conn, members) -> dict:
+    """Do these miners look like different machines, or one generator?
+
+    Returns a verdict, never a penalty. `spread` is the coefficient of
+    variation of the members' median measurement, so it asks whether the
+    group's hardware differs from itself, not whether any member is genuine.
+
+    KNOWN FALSE POSITIVE, and the reason this stays observe-only: an operator
+    honestly running several IDENTICAL machines — five of the same SBC — looks
+    correlated by construction. Low independence is a reason to look, never a
+    reason to dock a reward on its own.
+    """
+    members = [m for m in (members or []) if m]
+    verdict = {"members": len(members), "spread": None, "state": "unjudged",
+               "medians": {}}
+    if len(members) < CLUSTER_MIN_MEMBERS_TO_JUDGE:
+        verdict["state"] = "too_small_to_judge"
+        return verdict
+
+    medians = {}
+    for miner in members:
+        values = []
+        for sample in fetch_miner_fingerprint_sequence(conn, miner):
+            try:
+                v = float((sample.get("profile") or {}).get(
+                    CLUSTER_INDEPENDENCE_METRIC, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if v > 0:
+                values.append(v)
+        if values:
+            medians[miner] = statistics.median(values)
+
+    verdict["medians"] = medians
+    if len(medians) < CLUSTER_MIN_MEMBERS_TO_JUDGE:
+        verdict["state"] = "insufficient_history"
+        return verdict
+
+    vals = list(medians.values())
+    mean = sum(vals) / len(vals)
+    spread = statistics.pstdev(vals) / mean if mean > 0 else 0.0
+    verdict["spread"] = round(spread, 4)
+    verdict["state"] = (
+        "independent" if spread >= CLUSTER_INDEPENDENT_SPREAD else "correlated"
+    )
+    return verdict
+
+
+# === RIP-309c: measurement freshness binding ===
+# The attestation ENVELOPE is already fresh: /attest/submit requires a live
+# server-issued challenge from /attest/challenge, single-use, 300s expiry. What
+# is not bound is the measurement CONTENT. Nothing stops a client wrapping
+# values measured once, long ago, in a nonce fetched a second ago — and the
+# reference client does exactly that, measuring at startup and caching for the
+# life of the process (miners/linux/rustchain_linux_miner.py: the re-measure is
+# guarded by `not self.fingerprint_data`).
+#
+# The fix is to make the measurement DEPEND on the challenge. The client
+# already holds the nonce before it would measure, so no protocol reordering is
+# needed: derive the size of the timing workload from the nonce, and report
+# what was run. A binding computed for a different nonce carries the wrong
+# iteration count and is detectable by recomputation alone.
+MEASUREMENT_WORKLOAD_MIN = 1000
+MEASUREMENT_WORKLOAD_SPAN = 1000
+
+
+def derive_measurement_workload(nonce: str) -> int:
+    """Iterations the client must run this round, derived from the challenge.
+
+    Deterministic and cheap on both sides: a 6502 or a 386 can take four hex
+    digits and loop. The server recomputes it rather than trusting the client's
+    claim, so a replayed binding built for last round's nonce does not match.
+    """
+    text = str(nonce or "")
+    if len(text) < 4:
+        return MEASUREMENT_WORKLOAD_MIN
+    try:
+        seed = int(text[:4], 16)
+    except ValueError:
+        seed = sum(ord(c) for c in text[:4])
+    return MEASUREMENT_WORKLOAD_MIN + (seed % MEASUREMENT_WORKLOAD_SPAN)
+
+
+def verify_measurement_binding(nonce: str, binding, expected_rate_ns=None,
+                               rate_tolerance: float = 4.0) -> dict:
+    """Check a measurement was produced for THIS challenge.
+
+    Two independent checks:
+
+    1. `iterations` must equal what this nonce implies. Exact, needs no
+       hardware model, and is what kills replay: a binding built for another
+       nonce carries another iteration count.
+    2. If a per-iteration cost is known for this miner from its own history,
+       the reported duration must be within `rate_tolerance` of it. This is
+       what makes fabricating a duration expensive rather than free, and it is
+       the same self-consistency argument as the temporal gate: the forger has
+       to keep reproducing its own claimed hardware's speed.
+
+    Returns a verdict dict; never raises on malformed input. `state` is
+    "absent" when the client sent nothing, which during rollout is normal and
+    must not be treated as failure.
+    """
+    if binding is None:
+        return {"state": "absent", "ok": False, "reason": "no_binding"}
+    if not isinstance(binding, dict):
+        return {"state": "malformed", "ok": False, "reason": "binding_not_dict"}
+
+    claimed_nonce = str(binding.get("nonce") or "")
+    if claimed_nonce and claimed_nonce != str(nonce or ""):
+        return {"state": "mismatch", "ok": False, "reason": "binding_nonce_mismatch"}
+
+    expected_iterations = derive_measurement_workload(nonce)
+    try:
+        iterations = int(binding.get("iterations"))
+    except (TypeError, ValueError):
+        return {"state": "malformed", "ok": False, "reason": "iterations_not_int"}
+    if iterations != expected_iterations:
+        return {
+            "state": "stale",
+            "ok": False,
+            "reason": f"workload_mismatch:expected={expected_iterations}:got={iterations}",
+        }
+
+    try:
+        duration_ns = float(binding.get("duration_ns"))
+    except (TypeError, ValueError):
+        return {"state": "malformed", "ok": False, "reason": "duration_not_numeric"}
+    if duration_ns <= 0:
+        return {"state": "malformed", "ok": False, "reason": "duration_not_positive"}
+
+    rate_ns = duration_ns / max(iterations, 1)
+    verdict = {
+        "state": "bound",
+        "ok": True,
+        "reason": "binding_ok",
+        "iterations": iterations,
+        "rate_ns": rate_ns,
+    }
+    if expected_rate_ns:
+        try:
+            expected = float(expected_rate_ns)
+        except (TypeError, ValueError):
+            expected = 0.0
+        if expected > 0:
+            ratio = rate_ns / expected
+            verdict["rate_ratio"] = ratio
+            if ratio > rate_tolerance or ratio < (1.0 / rate_tolerance):
+                verdict.update({
+                    "state": "rate_implausible",
+                    "ok": False,
+                    "reason": f"rate_deviates:ratio={ratio:.3f}",
+                })
+    return verdict
+
+
+# An identity with too little history to check is not trusted with the full
+# antiquity premium, and is not punished either. Zero would re-implement a
+# tenure gate at full strength and penalise honest newcomers; one would make a
+# freshly minted identity the cheapest possible way to claim the premium, which
+# is the exact behaviour the premium attracts. Half is a deliberate middle.
+# NOTE: this fraction is a tokenomics knob, not a purely technical constant.
+TEMPORAL_UNVERIFIED_BONUS_FRACTION = 0.5
+
+
+def apply_temporal_consistency_to_weight(hw_weight: float, temporal_review: dict) -> float:
+    """Gate the ANTIQUITY BONUS on the miner's consistency with its own history.
+
+    Antiquity multipliers above 1.0 are the only thing worth forging on this
+    chain, so they are the only thing this gates. Weight at or below baseline
+    is returned untouched: a modern miner at 0.8x is unaffected, and no miner
+    is ever pushed below the baseline every participant already earns. A false
+    positive therefore costs a miner its bonus, never its participation.
+
+        effective = 1.0 + (hw_weight - 1.0) * score
+
+    `score` comes from validate_temporal_consistency, which measures a miner
+    against ITS OWN past measurements rather than a population band. That is
+    the point: a global band is satisfied forever by one in-range constant,
+    while a self-history has to keep being reproduced. The two failure modes it
+    already detects are exactly the two a forger falls into — `frozen_profile`
+    (the same value replayed, rel_var < 0.01) and `noisy_profile` (an RNG with
+    no physical model behind it, rel_var > 0.8).
+
+    Not a tenure multiplier. Nothing here pays for age. History length only
+    determines whether we have enough observations to CHECK a claim; the
+    reward is for staying consistent, which a farm cannot mass-produce, because
+    each identity must be self-consistent AND independent of the others at the
+    same time. See finding-contributor-tenure-multiplier-rejected.
+    """
+    try:
+        weight = float(hw_weight)
+    except (TypeError, ValueError):
+        return hw_weight
+    if weight <= 1.0:
+        return weight
+
+    review = temporal_review if isinstance(temporal_review, dict) else {}
+    if review.get("reason") == "insufficient_history":
+        score = TEMPORAL_UNVERIFIED_BONUS_FRACTION
+    else:
+        try:
+            score = float(review.get("score", 1.0))
+        except (TypeError, ValueError):
+            score = 1.0
+    score = max(0.0, min(1.0, score))
+    return 1.0 + (weight - 1.0) * score
+
+
 def validate_temporal_consistency(sequence: list, current_profile: dict = None) -> dict:
     samples = list(sequence or [])
     if current_profile is not None:
@@ -3867,7 +4365,20 @@ def validate_temporal_consistency(sequence: list, current_profile: dict = None) 
                     values.append(v)
 
         if len(values) < 3:
-            check_scores[metric] = 1.0
+            # Not enough samples to judge this metric. Excluded from the
+            # average rather than scored 1.0.
+            #
+            # Scoring it a pass was the same mistake the rotating checks made:
+            # "could not measure" is not "passed". It matters more here because
+            # most miners populate only clock_drift, so three metrics returned
+            # a free 1.0 and diluted the one real verdict. A fully replayed
+            # constant profile scored 0.8 and a 2.5x miner kept 2.2 of it. With
+            # the absent metrics excluded the same profile scores 0.2.
+            #
+            # It is also required for the vintage fleet to be judged honestly:
+            # a 6502 genuinely cannot produce thermal_variance, and awarding it
+            # a pass for that would hand every capability-limited miner three
+            # free credits toward a premium.
             continue
 
         avg = sum(values) / len(values)
@@ -3887,7 +4398,18 @@ def validate_temporal_consistency(sequence: list, current_profile: dict = None) 
 
         check_scores[metric] = score
 
-    score = sum(check_scores.values()) / max(len(check_scores), 1)
+    if not check_scores:
+        # Nothing could be judged at all. Treat as unverified rather than
+        # perfect, matching the rotating-check denominator: proving nothing is
+        # not the same as passing everything.
+        return {
+            "score": 1.0,
+            "review_flag": False,
+            "reason": "insufficient_history",
+            "flags": flags,
+            "check_scores": {},
+        }
+    score = sum(check_scores.values()) / len(check_scores)
     review_flag = any(f.startswith("frozen_profile") or f.startswith("noisy_profile") or f.startswith("drift_out_of_band") for f in flags)
     return {
         "score": round(score, 4),
@@ -3933,7 +4455,6 @@ KNOWN_VM_SIGNATURES = {
 
 def validate_fingerprint_data(
     fingerprint: dict, claimed_device: dict = None,
-    allow_tscless_x86_reward: bool = False,
 ) -> tuple:
     """
     Server-side validation of miner fingerprint check results.
@@ -3958,8 +4479,34 @@ def validate_fingerprint_data(
     checks = _fingerprint_checks_map(fingerprint)
     claimed_device = claimed_device if isinstance(claimed_device, dict) else {}
 
+    # RIP-309b: classify the device BEFORE bailing on an empty checks map.
+    # The flat vintage C miners (miners/apple2, miners/i386) send device-native
+    # measurements at top level and no `checks` map at all, so an early return
+    # here scored the honest Apple II and 386 fleet at zero. A limited claim is
+    # only honoured when nothing in the payload contradicts it.
+    _claimed_arch_early = (claimed_device.get("device_arch")
+                           or claimed_device.get("arch", "")) if claimed_device else ""
+    _claimed_arch_early = str(_claimed_arch_early).lower()
+    _is_limited_claim = (
+        _claimed_arch_early in MICRO_LIMITED_ARCHES
+        or _claimed_arch_early in CONSOLE_BRIDGE_ARCHES
+        or (isinstance(fingerprint, dict)
+            and fingerprint.get("bridge_type") == "pico_serial")
+    )
+    if _is_limited_claim:
+        _veto = _capability_contradiction(claimed_device, fingerprint)
+        if _veto:
+            return False, f"capability_claim_contradicted:{_veto}"
+
     # FIX #305: Reject empty fingerprint payloads (e.g. fingerprint={} or checks={})
     if not checks:
+        # A standalone micro with no checks map may still attest on at least
+        # two device-native measurements. Fewer than two is not evidence.
+        if _is_limited_claim:
+            _native = _micro_native_evidence_count(fingerprint)
+            if _native >= 2:
+                return True, f"micro_native_evidence:{_native}"
+            return False, "micro_insufficient_native_evidence"
         return False, "empty_fingerprint_checks"
 
     # FIX #305: Require at least anti_emulation and clock_drift evidence
@@ -3980,10 +4527,15 @@ def validate_fingerprint_data(
                      "genesis_68000", "sms_z80", "saturn_sh2",
                      "gameboy_z80", "gameboy_color_z80", "ps1_mips",
                      "6502", "65c816", "z80", "sh2"}
-    # 386/486 predate RDTSC. Relax their clock requirement only for the
-    # attestation reward path; other validator consumers keep the strict rule.
+    # 386/486 predate RDTSC, so they cannot measure clock drift at all. That
+    # is a structural property of the silicon, not a per-call-site policy, so
+    # it is handled here for every consumer rather than behind a flag one
+    # caller happened to set. RIP-309b replaced the old
+    # allow_tscless_x86_reward parameter, which relaxed the same rule for the
+    # reward path only and left the other validator consumers disagreeing
+    # about the same hardware.
     is_vintage = claimed_arch_lower in vintage_relaxed_archs or (
-        allow_tscless_x86_reward and claimed_arch_lower in {"386", "486"}
+        claimed_arch_lower in {"386", "486"}
     )
     is_console = claimed_arch_lower in console_archs
 
@@ -4046,8 +4598,14 @@ def validate_fingerprint_data(
         if not isinstance(anti_emu_data, dict):
             anti_emu_data = {}
         # Require evidence of actual checks being performed
+        # `emulator_indicators` is what the Pico console bridge emits, and its
+        # absence from this list rejected the entire console fleet with
+        # anti_emulation_no_evidence: they were supplying evidence, under a
+        # name nobody had whitelisted. Same shape as the flat micro clients
+        # dying on an empty checks map.
         has_evidence = (
             "vm_indicators" in anti_emu_data or
+            "emulator_indicators" in anti_emu_data or
             "dmesg_scanned" in anti_emu_data or
             "paths_checked" in anti_emu_data or
             "cpuinfo_flags" in anti_emu_data or
@@ -4057,9 +4615,42 @@ def validate_fingerprint_data(
             print(f"[FINGERPRINT] REJECT: anti_emulation claims pass but has no raw evidence")
             return False, "anti_emulation_no_evidence"
 
-        if anti_emu_check.get("passed") == False:
-            vm_indicators = anti_emu_data.get("vm_indicators", [])
-            return False, f"vm_detected:{vm_indicators}"
+        # Read the EVIDENCE, not the client's verdict.
+        #
+        # This branch used to fire only when the client volunteered
+        # `passed == False`, so the server held the string "qemu" in
+        # vm_indicators and never looked at it unless the VM had already
+        # confessed. Three payloads were accepted:
+        #
+        #   {"passed": true,  "data": {"vm_indicators": ["qemu"]}}   accepted
+        #   {"passed": true,  "data": {"is_likely_vm": true}}        accepted
+        #   {                 "data": {"vm_indicators": ["qemu"]}}   accepted
+        #
+        # and the only one rejected was the honest VM that reported
+        # `passed: false`. The control fired exclusively on truthful clients.
+        #
+        # Safe for real hardware: fingerprint_checks.py emits
+        # `vm_indicators: []` on a clean machine, so an empty list, a missing
+        # key and a false is_likely_vm all still pass.
+        vm_indicators = anti_emu_data.get("vm_indicators")
+        if not isinstance(vm_indicators, (list, tuple)):
+            vm_indicators = None
+        # Consoles report under their own key; read it here too, or accepting
+        # emulator_indicators as evidence above would hand the console fleet
+        # the exact free pass this block exists to close.
+        emu_indicators = anti_emu_data.get("emulator_indicators")
+        if not isinstance(emu_indicators, (list, tuple)):
+            emu_indicators = None
+        reported = list(vm_indicators or []) + list(emu_indicators or [])
+        if reported:
+            return False, f"vm_detected:{reported}"
+        if anti_emu_data.get("is_likely_vm") is True:
+            return False, "vm_detected:is_likely_vm"
+
+        # `is not True` rather than `== False`: omitting the key entirely used
+        # to skip both branches and sail through.
+        if anti_emu_check.get("passed") is not True:
+            return False, f"vm_detected:no_pass_verdict:{anti_emu_data.get('vm_indicators', [])}"
     elif isinstance(anti_emu_check, bool):
         # C miner simple bool - accept for now but flag for reduced weight
         if not anti_emu_check:
@@ -4087,10 +4678,7 @@ def validate_fingerprint_data(
 
         if (
             clock_check.get("passed") == False
-            and not (
-                allow_tscless_x86_reward
-                and claimed_arch_lower in {"386", "486"}
-            )
+            and claimed_arch_lower not in {"386", "486"}
         ):
             return False, f"clock_drift_failed:{clock_data.get('fail_reason', 'unknown')}"
 
@@ -4102,13 +4690,7 @@ def validate_fingerprint_data(
             print(f"[FINGERPRINT] SUSPICIOUS: claims {claimed_arch} but cv={cv:.6f} is too stable for vintage")
             return False, f"vintage_timing_too_stable:cv={cv}"
     elif isinstance(clock_check, bool):
-        if (
-            not clock_check
-            and not (
-                allow_tscless_x86_reward
-                and claimed_arch_lower in {"386", "486"}
-            )
-        ):
+        if not clock_check and claimed_arch_lower not in {"386", "486"}:
             return False, "clock_drift_failed_bool"
 
     # ── PHASE 2: Cross-validate device claims against fingerprint ──
@@ -5497,7 +6079,7 @@ def _submit_attestation_impl():
     # FIX #305: Always validate - pass None/empty to validator which rejects them
     if fingerprint is not None:
         fingerprint_passed, fingerprint_reason = validate_fingerprint_data(
-            fingerprint, claimed_device=device, allow_tscless_x86_reward=True,
+            fingerprint, claimed_device=device,
         )
     else:
         fingerprint_reason = "no_fingerprint_submitted"
@@ -5607,13 +6189,40 @@ def _submit_attestation_impl():
         family = reward_device["device_family"]
         arch_for_weight = reward_device["device_arch"]
         hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0))
+        # The temporal score used to be computed and then discarded into a log
+        # line, so a miner contradicting its own measurement history still
+        # collected the full antiquity premium. Gate the bonus on it.
+        hw_weight_raw = hw_weight
+        hw_weight = apply_temporal_consistency_to_weight(hw_weight, temporal_review)
+
+        # RIP-309c phase 0: observe only. Record whether this submission bound
+        # its measurement to the challenge, so fleet adoption can be measured
+        # before anything depends on it. Deliberately NOT enforced here: a hard
+        # cutover is what made the unsigned-attestation change unmergeable, and
+        # the fleet includes vintage clients that are slow to update. When
+        # adoption is high enough, an unbound submission should lose part of
+        # the bonus through the temporal gate above, not be rejected.
+        measurement_binding_verdict = verify_measurement_binding(
+            nonce, data.get("measurement_binding")
+        )
+        if measurement_binding_verdict.get("state") not in ("absent", "bound"):
+            app.logger.warning(
+                f"[MEASUREMENT-BINDING] {miner[:20]}... "
+                f"state={measurement_binding_verdict.get('state')} "
+                f"reason={measurement_binding_verdict.get('reason')}"
+            )
         miner_id = _attest_valid_miner(data.get("miner_id")) or miner
 
         with closing(sqlite3.connect(DB_PATH)) as enroll_conn:
+            _fp_for_rotation = fingerprint if isinstance(fingerprint, dict) else {}
             rotation_eval = evaluate_rotating_fingerprint_checks(
                 enroll_conn,
                 epoch,
-                fingerprint if isinstance(fingerprint, dict) else {},
+                _fp_for_rotation,
+                device_arch=arch_for_weight,
+                micro_accepted=_micro_accepted_for_rotation(
+                    arch_for_weight, _fp_for_rotation, device
+                ),
             )
             if not fingerprint_passed:
                 enroll_weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
@@ -5644,7 +6253,10 @@ def _submit_attestation_impl():
 
         # Issue #19 temporal consistency only sets a review flag (no hard-fail).
         if temporal_review.get("review_flag"):
-            app.logger.warning(f"[TEMPORAL-REVIEW] {miner[:20]}... flags={temporal_review.get('flags', [])}")
+            app.logger.warning(
+                f"[TEMPORAL-REVIEW] {miner[:20]}... flags={temporal_review.get('flags', [])} "
+                f"score={temporal_review.get('score')} weight {hw_weight_raw:.3f} -> {hw_weight:.3f}"
+            )
 
         app.logger.info(
             f"[RIP-309] epoch={epoch} miner={miner[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
@@ -5690,6 +6302,11 @@ def _submit_attestation_impl():
         "device": device,
         "fingerprint_passed": fingerprint_passed,
         "temporal_review_flag": bool(temporal_review.get("review_flag")),
+        # RIP-309c: tells a client whether its measurement was bound to the
+        # challenge, and what workload the NEXT round expects. A client can
+        # adopt binding without a coordinated release by reading this.
+        "measurement_binding_state": measurement_binding_verdict.get("state"),
+        "measurement_workload_next": derive_measurement_workload(nonce),
         "macs_recorded": len(macs) if macs else 0,
         "warthog_bonus": warthog_bonus
     })
@@ -5926,14 +6543,36 @@ def enroll_epoch():
         # the fixed epoch reward pot.
         family, arch = resolve_enroll_weight_device(c, miner_pk, data)
         hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch, 1.0)
+        # Gate the antiquity bonus on consistency here too. Enrollment is the
+        # path that actually sets epoch weight, so leaving it ungated would
+        # make the attestation-side gate cosmetic: a miner could fail the
+        # temporal check on attest and still enroll at the full premium.
+        # Keyed on the same stored miner id the weight itself is derived from.
+        # miner_fingerprint_history is keyed on the same identifier
+        # resolve_enroll_weight_device reads miner_attest_recent by, so the
+        # history consulted here is the history of the hardware the weight was
+        # derived from. No rows yields "insufficient_history", which withholds
+        # part of the bonus rather than failing the enrollment.
+        _temporal_enroll = validate_temporal_consistency(
+            fetch_miner_fingerprint_sequence(c, miner_pk)
+        )
+        hw_weight = apply_temporal_consistency_to_weight(hw_weight, _temporal_enroll)
 
+        _enroll_fp = resolve_enroll_fingerprint(c, miner_pk, data)
         rotation_eval = evaluate_rotating_fingerprint_checks(
             c,
             epoch,
             # Fall back to the stored attestation fingerprint when the enroll
             # body omits one, so a signed-but-fingerprint-less enrollment does
             # not collapse to zero weight under the rotating check.
-            resolve_enroll_fingerprint(c, miner_pk, data),
+            _enroll_fp,
+            # Server-derived arch from resolve_enroll_weight_device, never the
+            # request body: otherwise a miner could self-select which checks
+            # it is excused from.
+            device_arch=arch,
+            micro_accepted=_micro_accepted_for_rotation(
+                arch, _enroll_fp, data.get("device") if isinstance(data, dict) else None
+            ),
         )
         if fingerprint_failed:
             weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS

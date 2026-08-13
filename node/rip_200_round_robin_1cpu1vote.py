@@ -206,11 +206,18 @@ ANTIQUITY_MULTIPLIERS = {
     # Sony
     "ps1_mips": 2.8,          # PlayStation 1 - MIPS R3000A (1994)
 
-    # Generic CPU families used across consoles and computers
-    "6502": 2.8,              # MOS 6502 (Apple II, Commodore 64, NES, Atari)
-    "65c02": 2.7,             # WDC 65C02 (Apple IIe enhanced, BBC Master)
-    "65c816": 2.7,            # WDC 65C816 (SNES, Apple IIGS)
-    "z80": 2.6,               # Zilog Z80 (Game Boy, SMS, MSX, Spectrum)
+    # Generic CPU families — these bare keys mean a STANDALONE micro (Apple II,
+    # C64, MSX, Spectrum), not a console. Console silicon has its own prefixed
+    # keys above (nes_6502 2.8, snes_65c816 2.7, gameboy_z80 2.6) and keeps the
+    # higher rate, because a Pico-bridged console presents a measured
+    # anti_emulation check while a standalone micro presents an HTTP payload
+    # that cannot be told apart from a forgery. Kept in step with
+    # HARDWARE_WEIGHTS["MOS"] / ["Zilog"] in the node — two tables disagreeing
+    # about the same silicon is how the rotation-selector bug happened.
+    "6502": 2.5,              # MOS 6502 standalone (Apple II, C64, Atari)
+    "65c02": 2.4,             # WDC 65C02 (Apple IIe enhanced, BBC Master)
+    "65c816": 2.4,            # WDC 65C816 standalone (Apple IIGS)
+    "z80": 2.3,               # Zilog Z80 standalone (MSX, Spectrum, CP/M)
     "sh1": 2.7,               # Hitachi SH-1 (1992) - early embedded
     "sh2": 2.6,               # Hitachi SH-2 (Sega Saturn, 32X)
     "sh4": 2.3,               # Hitachi SH-4 (Dreamcast, 1998) - 200MHz superscalar
