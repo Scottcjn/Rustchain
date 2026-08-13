@@ -133,23 +133,43 @@ class TestCheckNode(unittest.TestCase):
         self.assertEqual(result.miners,  3)
 
     @patch("urllib.request.urlopen")
-    def test_missing_fields_are_none(self, mock_open):
-        """A node returning empty JSON → epoch/miners are None."""
+    def test_json_without_node_state_is_not_online(self, mock_open):
+        """Empty JSON is a reply, not a node.
+
+        This previously asserted "online". The reasoning was that a reply
+        proves reachability, which is true and is still reported: the response
+        time is kept and `error` says exactly what came back. What changed is
+        that it no longer counts toward nodes_online.
+
+        The cost of the old behaviour was concrete. Node 4 stopped being a node
+        and the host was reused for a single-page app, which answers 200 on
+        every path. It was reported online for months and the fleet was
+        believed to be four nodes when it was two.
+        """
         mock_open.return_value = _make_response({})
         result = self.monitor.check_node(self.url)
         self.assertIsNone(result.epoch)
         self.assertIsNone(result.miners)
-        self.assertEqual(result.status, "online")
+        self.assertEqual(result.status, "offline")
+        self.assertIsNotNone(result.error)
+        self.assertIsNotNone(result.response_time_ms,
+                             "reachability information must not be lost")
 
     @patch("urllib.request.urlopen")
-    def test_non_object_json_is_reachable_with_missing_fields(self, mock_open):
-        """A node returning JSON with the wrong shape is reachable, not offline."""
+    def test_non_object_json_is_reachable_but_not_online(self, mock_open):
+        """Wrong-shaped JSON still reports reachability, but is not a node.
+
+        Also previously "online". A JSON array is something else answering on
+        this address; the probe should say so rather than count it as a healthy
+        node.
+        """
         mock_open.return_value = _make_raw_response("[]")
         result = self.monitor.check_node(self.url)
-        self.assertEqual(result.status, "online")
+        self.assertEqual(result.status, "offline")
         self.assertIsNone(result.epoch)
         self.assertIsNone(result.miners)
-        self.assertIsNone(result.error)
+        self.assertIsNotNone(result.error, "the operator needs to know WHY")
+        self.assertIsNotNone(result.response_time_ms)
 
 
 class TestCheckAll(unittest.TestCase):

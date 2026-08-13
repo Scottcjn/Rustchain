@@ -96,18 +96,57 @@ class NodeHealthMonitor:
                 try:
                     data = json.loads(raw)
                 except json.JSONDecodeError:
-                    data = {}
+                    data = None
                 if not isinstance(data, dict):
-                    data = {}
+                    data = None
+
+                # A 200 is not evidence of a node.
+                #
+                # RustChain node 4 stopped being a node and the host was reused
+                # for a single-page app. An SPA answers 200 on EVERY unknown
+                # path, so /status returned 200 with HTML, json.loads failed,
+                # the body was quietly replaced with {}, and the node was
+                # reported "online" indefinitely because status was decided
+                # purely on response time. The loss went unnoticed for months.
+                #
+                # A node is online only if it answered with JSON that actually
+                # carries node state. Anything else is impersonating one.
+                if data is None:
+                    return NodeStatus(
+                        url=url,
+                        status="offline",
+                        response_time_ms=round(elapsed_ms, 1),
+                        epoch=None,
+                        miners=None,
+                        error=(f"/status returned {len(raw)} bytes of non-JSON "
+                               f"(is this still a node?): {raw[:60]!r}"),
+                    )
 
                 epoch  = data.get("epoch") or data.get("current_epoch")
                 miners = data.get("miners") or data.get("active_miners") or data.get("miner_count")
 
-                # Coerce to int if present
-                if epoch is not None:
-                    epoch = int(epoch)
-                if miners is not None:
-                    miners = int(miners)
+                # Coerce to int if present, tolerating a malformed value rather
+                # than raising inside the probe.
+                try:
+                    epoch = int(epoch) if epoch is not None else None
+                except (TypeError, ValueError):
+                    epoch = None
+                try:
+                    miners = int(miners) if miners is not None else None
+                except (TypeError, ValueError):
+                    miners = None
+
+                # JSON with no epoch is not node state either — it is some
+                # other service that happens to speak JSON on this address.
+                if epoch is None:
+                    return NodeStatus(
+                        url=url,
+                        status="offline",
+                        response_time_ms=round(elapsed_ms, 1),
+                        epoch=None,
+                        miners=miners,
+                        error="/status carried no epoch (not a RustChain node?)",
+                    )
 
                 status = "slow" if elapsed_ms > SLOW_THRESHOLD_MS else "online"
                 return NodeStatus(
