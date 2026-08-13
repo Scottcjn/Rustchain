@@ -46,6 +46,49 @@ ANCHOR_CONFIRMATION_DEPTH = 6  # Wait for 6 Ergo confirmations
 ANCHOR_WALLET_ADDRESS = os.environ.get("ANCHOR_WALLET", "")
 
 
+# Two different components have created `ergo_anchors` with incompatible
+# shapes. This module writes rustchain_height / commitment_hash / ergo_tx_id;
+# the deployed anchor writer (ergo-anchor/ergo_miner_anchor.py) created
+# rc_slot / commitment / tx_id, and that is the schema holding the 629 rows on
+# production today. `CREATE TABLE IF NOT EXISTS` silently does nothing when the
+# table already exists, so every read in this module raised
+# `no such column: rustchain_height` and /anchor/list returned 500.
+#
+# Rather than pick a winner and migrate live anchor data, the reads resolve
+# whichever column is actually present. Names come from PRAGMA table_info on
+# our own table and are matched against this fixed candidate list before being
+# interpolated, so no caller-controlled value ever reaches the SQL.
+_ANCHOR_COLUMN_ALIASES = {
+    "height": ("rustchain_height", "rc_slot"),
+    "tx_id": ("ergo_tx_id", "tx_id"),
+    "commitment": ("commitment_hash", "commitment"),
+}
+
+
+def _anchor_columns(cursor) -> dict:
+    """Map logical anchor fields to the column names this DB actually has."""
+    try:
+        present = {row[1] for row in cursor.execute("PRAGMA table_info(ergo_anchors)")}
+    except sqlite3.Error:
+        present = set()
+
+    resolved = {}
+    for logical, candidates in _ANCHOR_COLUMN_ALIASES.items():
+        for candidate in candidates:
+            if candidate in present:
+                resolved[logical] = candidate
+                break
+
+    # Ordering must degrade to something that always exists, or a schema we
+    # have not seen before turns a listing into another 500.
+    if "height" not in resolved:
+        for fallback in ("created_at", "id", "rowid"):
+            if fallback in present or fallback == "rowid":
+                resolved["height"] = fallback
+                break
+    return resolved
+
+
 def _ensure_anchor_table(cursor) -> None:
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS ergo_anchors (
@@ -310,11 +353,10 @@ class AnchorService:
             # Ensure table exists
             _ensure_anchor_table(cursor)
 
-            cursor.execute("""
-                SELECT * FROM ergo_anchors
-                ORDER BY rustchain_height DESC
-                LIMIT 1
-            """)
+            _cols = _anchor_columns(cursor)
+            cursor.execute(
+                f"SELECT * FROM ergo_anchors ORDER BY {_cols['height']} DESC LIMIT 1"
+            )
 
             row = cursor.fetchone()
             return dict(row) if row else None
@@ -412,12 +454,12 @@ class AnchorService:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
 
-            cursor.execute("""
-                SELECT * FROM ergo_anchors
-                WHERE rustchain_height <= ?
-                ORDER BY rustchain_height DESC
-                LIMIT 1
-            """, (rustchain_height,))
+            _cols = _anchor_columns(cursor)
+            cursor.execute(
+                f"SELECT * FROM ergo_anchors WHERE {_cols['height']} <= ? "
+                f"ORDER BY {_cols['height']} DESC LIMIT 1",
+                (rustchain_height,),
+            )
 
             row = cursor.fetchone()
             if not row:
@@ -464,10 +506,12 @@ class AnchorService:
                     cursor = conn.cursor()
 
                     # Get pending anchors
-                    cursor.execute("""
-                        SELECT ergo_tx_id FROM ergo_anchors
-                        WHERE status IN ('pending', 'confirming')
-                    """)
+                    _cols = _anchor_columns(cursor)
+                    _txcol = _cols.get("tx_id", "ergo_tx_id")
+                    cursor.execute(
+                        f"SELECT {_txcol} AS ergo_tx_id FROM ergo_anchors "
+                        f"WHERE status IN ('pending', 'confirming')"
+                    )
 
                     for row in cursor.fetchall():
                         tx_id = row["ergo_tx_id"]
@@ -552,11 +596,12 @@ def create_anchor_api_routes(app, anchor_service: AnchorService):
             cursor = conn.cursor()
             _ensure_anchor_table(cursor)
 
-            cursor.execute("""
-                SELECT * FROM ergo_anchors
-                ORDER BY rustchain_height DESC
-                LIMIT ? OFFSET ?
-            """, (limit, offset))
+            _cols = _anchor_columns(cursor)
+            cursor.execute(
+                f"SELECT * FROM ergo_anchors ORDER BY {_cols['height']} DESC "
+                f"LIMIT ? OFFSET ?",
+                (limit, offset),
+            )
 
             anchors = [dict(row) for row in cursor.fetchall()]
         finally:
