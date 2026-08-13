@@ -4748,7 +4748,15 @@ def validate_fingerprint_data(
             return False, f"missing_powerpc_simd:{claimed_arch}"
 
         if not _has_powerpc_cache_profile(fingerprint):
-            print(f"[FINGERPRINT] REJECT: claims {claimed_arch} but lacks PowerPC cache profile")
+            # Log what was actually seen. "lacks PowerPC cache profile" alone
+            # gives an operator nothing to act on, and this check has already
+            # rejected a genuine Power Mac G5 once for a cache level the 970FX
+            # was never built with.
+            _cd = _fingerprint_check_data(fingerprint, "cache_timing")
+            print(f"[FINGERPRINT] REJECT: claims {claimed_arch} but lacks PowerPC cache profile "
+                  f"(l2_l1={_cd.get('l2_l1_ratio')!r} l3_l2={_cd.get('l3_l2_ratio')!r} "
+                  f"hierarchy={_cd.get('hierarchy_ratio')!r} arch={_cd.get('arch')!r} "
+                  f"keys={sorted(_cd)[:8]})")
             return False, f"missing_powerpc_cache_profile:{claimed_arch}"
 
     # ── PHASE 3: ROM fingerprint (retro platforms) ──
