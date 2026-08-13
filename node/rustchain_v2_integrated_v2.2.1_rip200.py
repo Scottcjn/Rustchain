@@ -2215,6 +2215,24 @@ STREAK_MAX_DAYS = 30             # Max streak bonus cap
 STREAK_GRACE_HOURS = 26          # Hours before streak resets (gives timezone flexibility)
 
 POWERPC_ARCHES = {"g3", "g4", "g5", "power8", "power9", "powerpc", "power macintosh"}
+
+
+def _is_powerpc_arch_label(label) -> bool:
+    """True when an arch string names PowerPC silicon.
+
+    A bare `"powerpc" in label or "ppc" in label` misses the label real Power
+    Macs actually report: `platform.machine()` on Mac OS X PowerPC returns
+    **"Power Macintosh"**, which contains neither substring. POWERPC_ARCHES has
+    always listed it, and so do the vintage-relaxation sets, but the cache
+    profile check used the substrings and therefore refused to recognise a
+    genuine Power Mac G5 by its own arch tag.
+    """
+    text = str(label or "").strip().lower()
+    if not text:
+        return False
+    if "powerpc" in text or "ppc" in text:
+        return True
+    return any(tok in text for tok in POWERPC_ARCHES)
 X86_CPU_BRANDS = {"intel", "xeon", "core", "celeron", "pentium", "amd", "ryzen", "epyc", "athlon", "threadripper"}
 ARM_CPU_BRANDS = {
     # Modern ARM (NAS/SBC/cloud — 0.0005x)
@@ -2764,14 +2782,14 @@ def _has_powerpc_cache_profile(fingerprint: dict) -> bool:
     """
     cache_data = _fingerprint_check_data(fingerprint, "cache_timing")
     arch_hint = str(cache_data.get("arch") or cache_data.get("architecture") or "").lower()
-    if "powerpc" in arch_hint or "ppc" in arch_hint:
+    if _is_powerpc_arch_label(arch_hint):
         return True
 
     # v3 fingerprint_checks.py places the arch label in simd_identity, not
     # cache_timing. Accept either source.
     simd_data = _fingerprint_check_data(fingerprint, "simd_identity")
     simd_arch = str(simd_data.get("arch") or simd_data.get("architecture") or "").lower()
-    if "powerpc" in simd_arch or "ppc" in simd_arch:
+    if _is_powerpc_arch_label(simd_arch):
         return True
 
     l2_l1_ratio = float(cache_data.get("l2_l1_ratio", 0.0) or 0.0)
