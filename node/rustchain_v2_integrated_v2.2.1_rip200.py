@@ -2321,6 +2321,14 @@ MICRO_LIMITED_ARCHES = {
     "i386", "386", "80386",
     "i486", "486", "80486",
     "8086", "8088", "286", "80286", "i286",
+    # "retro" is the server-derived class for pre-Pentium-II x86 that is not
+    # resolved to a specific tier — a Cobalt Qube 3 (K6-2) lands here. Those
+    # machines run cut-down clients that emit only the checks their silicon and
+    # OS can actually perform: the live Qube sends clock_drift and
+    # anti_emulation and nothing else. Scored strictly that was 2 of 6, so the
+    # ratio was 0.333 and a 1.4x machine earned 0.467 — below a modern miner,
+    # for the crime of being unable to run four checks it has no hardware for.
+    "retro",
 }
 
 CONSOLE_BRIDGE_ARCHES = {
@@ -2748,7 +2756,24 @@ def _has_powerpc_cache_profile(fingerprint: dict) -> bool:
     l2_l1_ratio = float(cache_data.get("l2_l1_ratio", 0.0) or 0.0)
     l3_l2_ratio = float(cache_data.get("l3_l2_ratio", 0.0) or 0.0)
     hierarchy_ratio = float(cache_data.get("hierarchy_ratio", 0.0) or 0.0)
-    return (l2_l1_ratio >= 1.05 and l3_l2_ratio >= 1.05) or hierarchy_ratio >= 1.2
+    if hierarchy_ratio >= 1.2:
+        return True
+    if l2_l1_ratio >= 1.05:
+        # A PowerPC 970/970FX (Power Mac G5) has L1 and L2 and NO L3 AT ALL, so
+        # l3_l2_ratio is absent or zero on genuine silicon. Requiring it
+        # rejected every real G5 with "lacks PowerPC cache profile" — the
+        # machine was failing for not having a cache level it was never built
+        # with. An absent L3 is a fact about the hardware, not a missing
+        # measurement, so it is not treated as a failure.
+        #
+        # Safe because this function only ever runs AFTER
+        # _has_powerpc_simd_evidence has already passed: AltiVec/VSX is the
+        # strong proof of PowerPC and the cache profile is corroboration. A
+        # forger must already have produced convincing PowerPC SIMD evidence
+        # to reach here, and a two-level hierarchy alone was never the barrier.
+        if l3_l2_ratio >= 1.05 or l3_l2_ratio <= 0.0:
+            return True
+    return False
 
 
 def _detect_arm_evidence(device: dict, fingerprint: dict) -> bool:
