@@ -146,7 +146,81 @@ class TestBeaconAtlasAPI(unittest.TestCase):
 
 class TestBeaconAtlasVisualization(unittest.TestCase):
     """Test 3D visualization logic and data structures."""
-    
+
+    def test_avatar_url_normalization(self):
+        """Avatar textures accept bounded HTTPS URLs and reject unsafe schemes."""
+        data_module = (
+            pathlib.Path(__file__).resolve().parents[1] / "site" / "beacon" / "data.js"
+        ).as_uri()
+        script = f"""
+          import {{
+            avatarTextureUrl, normalizeAvatarUrl, normalizeBottubeAgents,
+          }} from {json.dumps(data_module)};
+          const longUrl = `https://cdn.example/${{'x'.repeat(2050)}}`;
+          console.log(JSON.stringify({{
+            absolute: normalizeAvatarUrl(' https://cdn.example/avatar.png '),
+            relative: normalizeAvatarUrl('/avatars/agent.png'),
+            http: normalizeAvatarUrl('http://cdn.example/avatar.png'),
+            data: normalizeAvatarUrl('data:image/png;base64,AAAA'),
+            javascript: normalizeAvatarUrl('javascript:alert(1)'),
+            credentials: normalizeAvatarUrl('https://user:pass@cdn.example/avatar.png'),
+            blank: normalizeAvatarUrl('   '),
+            oversized: normalizeAvatarUrl(longUrl),
+            proxy: avatarTextureUrl('https://bottube.ai/avatar/sophia-elya.svg'),
+            proxyQuery: avatarTextureUrl('https://bottube.ai/avatar/sophia.svg?v=1'),
+            external: avatarTextureUrl('https://cdn.example/avatar.png'),
+            arrayEnvelope: normalizeBottubeAgents({{ agents: [{{ agent_name: 'a' }}] }}),
+            legacyArray: normalizeBottubeAgents([{{ agent_name: 'b' }}]),
+            malformedEnvelope: normalizeBottubeAgents({{ agents: {{}} }}),
+          }}));
+        """
+        result = subprocess.run(
+            ["node", "--input-type=module", "--eval", script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        normalized = json.loads(result.stdout)
+
+        self.assertEqual(normalized["absolute"], "https://cdn.example/avatar.png")
+        self.assertEqual(
+            normalized["relative"], "https://rustchain.org/avatars/agent.png"
+        )
+        for rejected in (
+            "http", "data", "javascript", "credentials", "blank", "oversized"
+        ):
+            self.assertEqual(normalized[rejected], "", rejected)
+        self.assertEqual(
+            normalized["proxy"], "/beacon/api/avatar/sophia-elya.svg"
+        )
+        self.assertEqual(normalized["proxyQuery"], "")
+        self.assertEqual(normalized["external"], "https://cdn.example/avatar.png")
+        self.assertEqual(normalized["arrayEnvelope"], [{"agent_name": "a"}])
+        self.assertEqual(normalized["legacyArray"], [{"agent_name": "b"}])
+        self.assertEqual(normalized["malformedEnvelope"], [])
+
+    def test_avatar_sprite_renderer_contract(self):
+        """Avatar sprites stay interactive and preserve a geometry fallback."""
+        source = (
+            pathlib.Path(__file__).resolve().parents[1]
+            / "site"
+            / "beacon"
+            / "agents.js"
+        ).read_text(encoding="utf-8")
+
+        required_fragments = (
+            "avatarTextureUrl(agent.avatar)",
+            "new THREE.TextureLoader()",
+            "avatarTextureLoader.setCrossOrigin('anonymous')",
+            "new THREE.SpriteMaterial({",
+            "sprite.visible = false",
+            "registerClickable(avatar)",
+            "registerHoverable(avatar)",
+            "material.map = null",
+        )
+        for fragment in required_fragments:
+            self.assertIn(fragment, source)
+
     def test_bounty_position_calculation(self):
         """Test 3D positioning of bounty beacons."""
         import math

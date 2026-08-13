@@ -8,11 +8,15 @@ import html
 import hmac
 import math
 import os
+import re
 import time
 import hashlib
 import sqlite3
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime
-from flask import Blueprint, jsonify, request, g
+from flask import Blueprint, Response, jsonify, request, g
 
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -23,6 +27,22 @@ beacon_api = Blueprint('beacon_api', __name__)
 
 DB_PATH = 'rustchain_v2.db'
 BEACON_AUTH_WINDOW_SECONDS = 300
+BOTTUBE_AVATAR_BASE_URL = 'https://bottube.ai/avatar/'
+BOTTUBE_AVATAR_MAX_BYTES = 1024 * 1024
+BOTTUBE_AVATAR_FILENAME = re.compile(
+    r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,126}\.(?:svg|png|jpe?g|webp)$',
+    re.IGNORECASE,
+)
+BOTTUBE_AVATAR_CONTENT_TYPES = frozenset({
+    'image/svg+xml', 'image/png', 'image/jpeg', 'image/webp',
+})
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keep the avatar proxy pinned to its configured upstream origin."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 # Statuses an administrator uses to bar an agent. A rejoin via /beacon/join
 # must never silently lift one of these — otherwise any holder of the
@@ -1413,6 +1433,57 @@ def relay_discover():
     # In production, query the relay registry
     # For demo, return empty array
     return jsonify([])
+
+
+# ============================================================
+# AGENT AVATAR TEXTURE PROXY
+# ============================================================
+
+def _fetch_bottube_avatar(filename):
+    """Fetch one bounded image from BoTTube's fixed public avatar origin."""
+    upstream_url = BOTTUBE_AVATAR_BASE_URL + urllib.parse.quote(filename, safe='')
+    upstream_request = urllib.request.Request(
+        upstream_url,
+        headers={
+            'Accept': 'image/svg+xml,image/png,image/jpeg,image/webp',
+            'User-Agent': 'RustChain-Beacon-Atlas/1.0',
+        },
+    )
+    opener = urllib.request.build_opener(_NoRedirectHandler)
+    with opener.open(upstream_request, timeout=5) as upstream:
+        content_type = upstream.headers.get_content_type().lower()
+        if content_type not in BOTTUBE_AVATAR_CONTENT_TYPES:
+            raise ValueError('unsupported avatar content type')
+
+        payload = upstream.read(BOTTUBE_AVATAR_MAX_BYTES + 1)
+        if not payload or len(payload) > BOTTUBE_AVATAR_MAX_BYTES:
+            raise ValueError('invalid avatar size')
+        return payload, content_type
+
+
+@beacon_api.route('/api/avatar/<filename>', methods=['GET'])
+def get_bottube_avatar(filename):
+    """Return a WebGL-safe, same-origin copy of a public BoTTube avatar."""
+    if not BOTTUBE_AVATAR_FILENAME.fullmatch(filename):
+        return jsonify({'error': 'invalid avatar filename'}), 400
+
+    try:
+        payload, content_type = _fetch_bottube_avatar(filename)
+    except urllib.error.HTTPError as exc:
+        status = 404 if exc.code == 404 else 502
+        return jsonify({'error': 'avatar unavailable'}), status
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return jsonify({'error': 'avatar unavailable'}), 502
+
+    response = Response(payload, content_type=content_type)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Cache-Control'] = 'public, max-age=86400'
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'none'; script-src 'none'; object-src 'none'; "
+        "base-uri 'none'; frame-ancestors 'none'; sandbox"
+    )
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
 
 
 # ============================================================
