@@ -333,6 +333,94 @@ def _attest_text(value):
     return None
 
 
+# phased rollout, a strict self-certifying identity gate, and a freeze/generation
+# ledger for the admin unpin/rotate path. DB_PATH is resolved at CALL time (these
+# run per request), so their placement ahead of the DB_PATH module constant is safe.
+_RTC_HEX_ADDRESS_RE = re.compile(r"^RTC[0-9a-f]{40}$")  # lowercase only: node-derived addrs
+
+def _is_rtc_hex_address(miner):
+    """True only for canonical, self-certifying RTC addresses (``RTC`` + 40 lowercase hex).
+
+    Such an address is ``RTC`` + SHA256(pubkey)[:40] (see ``address_from_pubkey``),
+    so a signature whose public key derives to the address is cryptographic proof
+    of ownership — the ONLY case where trust-on-first-use pinning is safe. Symbolic
+    / legacy names (dual-g4-125, power8-s824-sophia, …) are NOT self-certifying and
+    are never public-TOFU-pinned.
+    """
+    return bool(isinstance(miner, str) and _RTC_HEX_ADDRESS_RE.fullmatch(miner))
+
+_ATTEST_ENFORCE_MODES = ("log_only", "enforce_new", "enforce_all")
+
+def _attest_enforce_mode():
+    """Rollout phase for attestation signature enforcement (env RTC_ATTEST_ENFORCE_MODE).
+
+    log_only     (Phase 0, DEFAULT) — verify signatures if present; log, enforce nothing.
+    enforce_new  (Phase 1)          — new identities must sign; grandfathered stay unsigned.
+    enforce_all  (Phase 2)          — every miner must present a valid signature.
+    """
+    mode = (os.environ.get("RTC_ATTEST_ENFORCE_MODE", "log_only") or "").strip().lower()
+    return mode if mode in _ATTEST_ENFORCE_MODES else "log_only"
+
+def _attest_unsigned_allowlist():
+    """Case-SENSITIVE set of miner IDs permitted to attest unsigned in enforcing phases.
+
+    Miner IDs are case-sensitive on the node; folding case here would conflate
+    distinct identities, so the split values are compared verbatim.
+    """
+    raw = os.environ.get("RTC_UNSIGNED_ATTEST_ALLOWLIST", "") or ""
+    return {a.strip() for a in raw.split(",") if a.strip()}
+
+def _ensure_attest_grandfather_table(conn):
+    """Snapshot of identities established before the signature cutover.
+
+    Populated once by the migration script (see MIGRATION_PLAN.md). Membership is
+    FROZEN at cutover so a post-cutover attacker cannot mint an identity, attest
+    once, and thereby become 'grandfathered'.
+    """
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS attest_grandfathered ("
+        "miner TEXT PRIMARY KEY, added_at INTEGER NOT NULL DEFAULT 0, reason TEXT DEFAULT '')"
+    )
+
+def _ensure_attest_key_admin_table(conn):
+    """Freeze/generation ledger backing the admin unpin/rotate path.
+
+    ``pin_frozen=1`` disables public TOFU re-pinning after an admin unpin so a
+    stranger cannot immediately re-capture an unpinned identity; ``generation``
+    is a monotonically increasing audit counter bumped on every admin action.
+    """
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS attest_key_admin ("
+        "miner TEXT PRIMARY KEY, pin_frozen INTEGER NOT NULL DEFAULT 0, "
+        "generation INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0, "
+        "note TEXT DEFAULT '')"
+    )
+
+def _attest_identity_state(miner):
+    """Read pinned key, grandfather status, and pin-freeze in a single connection.
+
+    Returns ``(stored_pubkey_or_None, is_grandfathered, is_pin_frozen)``. Raises on
+    DB error so callers can FAIL CLOSED in enforcing phases rather than silently
+    treating a broken DB as 'no key on file' (which would be fail-open).
+    """
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        _ensure_attest_grandfather_table(conn)
+        _ensure_attest_key_admin_table(conn)
+        stored = None
+        row = conn.execute(
+            "SELECT signing_pubkey FROM miner_attest_recent WHERE miner = ?", (miner,)
+        ).fetchone()
+        if row and row[0]:
+            stored = row[0].strip().lower()
+        gf = conn.execute(
+            "SELECT 1 FROM attest_grandfathered WHERE miner = ?", (miner,)
+        ).fetchone()
+        frozen_row = conn.execute(
+            "SELECT pin_frozen FROM attest_key_admin WHERE miner = ?", (miner,)
+        ).fetchone()
+        is_frozen = bool(frozen_row and frozen_row[0])
+        return stored, bool(gf), is_frozen
+
 def _attest_valid_miner(value):
     """Accept only bounded miner identifiers with a conservative character set."""
     text = _attest_text(value)
@@ -4970,6 +5058,83 @@ def _submit_attestation_impl():
     canonical_payload_verified = False
     miner_id_raw = _attest_valid_miner(data.get('miner_id')) or miner
     commitment = report.get('commitment') or ''
+    # ── Ed25519 identity binding & phased enforcement (#8016 hardened) ──────────
+    # signing_pubkey is the authority /epoch/enroll verifies against, so this gate
+    # decides (a) whether an UNSIGNED submission is allowed this phase and (b) later
+    # which verified keys are safe to pin. See _is_rtc_hex_address / _attest_*.
+    enforce_mode = _attest_enforce_mode()
+    _enforcing = (enforce_mode != "log_only")
+    has_signature = bool(sig_hex and pubkey_hex)
+
+    # Reject partial pairs — a lone signature or lone public_key is malformed and
+    # must never fall through to the "unsigned" path (would strip auth silently).
+    # ALWAYS-ON (input validation, not phase enforcement): identical in log_only.
+    if bool(sig_hex) != bool(pubkey_hex):
+        return jsonify({
+            "ok": False,
+            "error": "incomplete_signature",
+            "message": "Both signature and public_key are required together",
+            "code": "INCOMPLETE_SIGNATURE",
+        }), 400
+
+    # FAIL CLOSED on identity-state read errors while enforcing; a broken DB must
+    # not be treated as 'no key on file' (which would be fail-open).
+    try:
+        stored_signing_pubkey, is_grandfathered, is_pin_frozen = _attest_identity_state(miner)
+    except Exception as _id_err:
+        if _enforcing:
+            print(f"[ATTEST/ENFORCE:{enforce_mode}] IDENTITY STATE READ FAILED "
+                  f"(fail-closed): miner={str(miner)[:32]} err={_id_err}")
+            return jsonify({
+                "ok": False,
+                "error": "identity_state_unavailable",
+                "message": "Unable to verify miner identity state; try again shortly",
+                "code": "IDENTITY_STATE_UNAVAILABLE",
+            }), 503
+        stored_signing_pubkey, is_grandfathered, is_pin_frozen = None, False, False
+        print(f"[ATTEST/ENFORCE:log_only] identity state read failed "
+              f"(fail-open in log_only): miner={str(miner)[:32]} err={_id_err}")
+
+    allowlisted = miner in _attest_unsigned_allowlist()  # case-SENSITIVE
+    is_rtc_hex = _is_rtc_hex_address(miner)
+
+    if not has_signature:
+        if allowlisted:
+            pass  # operator-permitted structural-no-signature hardware
+        elif enforce_mode == "log_only":
+            if stored_signing_pubkey:
+                print(f"[ATTEST/ENFORCE:log_only] UNSIGNED but key on file — would "
+                      f"reject in enforce_new+: miner={str(miner)[:32]}")
+            elif not is_grandfathered:
+                print(f"[ATTEST/ENFORCE:log_only] UNSIGNED new identity — would "
+                      f"reject in enforce_new+: miner={str(miner)[:32]}")
+        else:
+            # enforce_new / enforce_all
+            must_sign = (
+                bool(stored_signing_pubkey)        # key on file → must use it
+                or enforce_mode == "enforce_all"   # Phase 2 → everyone signs
+                or not is_grandfathered             # Phase 1 → new identities sign
+            )
+            if must_sign:
+                if stored_signing_pubkey:
+                    _why = "a signing key is already on file for this miner"
+                elif enforce_mode == "enforce_all":
+                    _why = "all miners must sign in the enforce_all phase"
+                else:
+                    _why = "new miners must sign from their first attestation"
+                print(f"[ATTEST/ENFORCE:{enforce_mode}] REJECT unsigned: "
+                      f"miner={str(miner)[:32]} ({_why})")
+                return jsonify({
+                    "ok": False,
+                    "error": "missing_signature",
+                    "message": f"Ed25519 signature required — {_why}",
+                    "code": "MISSING_SIGNATURE",
+                }), 400
+            else:
+                print(f"[ATTEST/ENFORCE:{enforce_mode}] grandfathered unsigned "
+                      f"attestation allowed (add a signing key before Phase 2): "
+                      f"miner={str(miner)[:32]}")
+
     if sig_hex and pubkey_hex:
         if HAVE_NACL:
             # Type-guard signature_type too — reject a non-string value with 400,
@@ -5049,6 +5214,80 @@ def _submit_attestation_impl():
                 ),
                 "code": "ED25519_UNAVAILABLE",
             }), 503
+
+    # ── Post-verification identity binding & pin decision (#8016 hardened) ──────
+    # If has_signature, the signature is now cryptographically verified (else we
+    # already returned 400/503). Decide which — if any — key is safe to PIN.
+    # pin_pubkey is what we persist into miner_attest_recent.signing_pubkey; None
+    # means 'do not add a key' (COALESCE keeps any existing pin).
+    pin_pubkey = None
+    if has_signature:
+        derives_to_addr = False
+        if is_rtc_hex:
+            try:
+                derives_to_addr = (address_from_pubkey(pubkey_hex) == miner)
+            except Exception:
+                derives_to_addr = False
+
+        # RTC-hex identities MUST prove ownership by key derivation. A regex match
+        # alone is insufficient — the key must hash to the claimed address.
+        if is_rtc_hex and not derives_to_addr:
+            if _enforcing:
+                print(f"[ATTEST/SIG] PUBKEY-ADDRESS MISMATCH (reject): "
+                      f"miner={miner[:24]}...")
+                return jsonify({
+                    "ok": False,
+                    "error": "pubkey_address_mismatch",
+                    "message": "The public key does not derive to this RTC address",
+                    "code": "PUBKEY_ADDRESS_MISMATCH",
+                }), 400
+            print(f"[ATTEST/ENFORCE:log_only] PUBKEY-ADDRESS MISMATCH — would "
+                  f"reject in enforcing phase: miner={miner[:24]}...")
+
+        # Rotation block: a pinned key cannot be swapped by re-signing with a new
+        # key. Legitimate rotation goes through the admin path (freeze + set).
+        if stored_signing_pubkey and pubkey_hex != stored_signing_pubkey:
+            if _enforcing:
+                print(f"[ATTEST/SIG] KEY ROTATION BLOCKED (reject): miner={miner[:24]}... "
+                      f"provided={pubkey_hex[:12]}... pinned={stored_signing_pubkey[:12]}...")
+                return jsonify({
+                    "ok": False,
+                    "error": "signing_key_mismatch",
+                    "message": "The provided signing key does not match the pinned key; "
+                               "use the admin rotate path to change keys",
+                    "code": "SIGNING_KEY_MISMATCH",
+                }), 400
+            print(f"[ATTEST/ENFORCE:log_only] KEY ROTATION — would reject in "
+                  f"enforcing phase: miner={miner[:24]}...")
+
+        # Pin eligibility (first-signer-hijack protection). Persist a key ONLY when
+        # trust-on-first-use cannot be used to capture someone else's identity:
+        #   • already pinned         → keep existing (COALESCE); pin_pubkey None.
+        #   • pin_frozen             → admin unpinned it; only admin 'set' may re-pin.
+        #   • self-certifying RTC-hex→ pin iff the key derives to the address
+        #                              (cryptographic proof of ownership).
+        #   • brand-NEW identity     → TOFU-safe: no existing owner to hijack, and
+        #                              Phase 1 forces new miners to sign, so the id
+        #                              is key-bound from birth (kills cheap minting).
+        #   • grandfathered + not derivable (existing symbolic/legacy name such as
+        #     dual-g4-125) → HELD: never public-TOFU-pinned; key must be admin-
+        #     enrolled via /admin/attest/key. This is the anti-hijack core.
+        if stored_signing_pubkey:
+            pin_pubkey = None
+        elif is_pin_frozen:
+            pin_pubkey = None
+            print(f"[ATTEST/PIN] HELD (pin frozen — admin 'set' required): miner={miner[:32]}")
+        elif is_rtc_hex:
+            pin_pubkey = pubkey_hex if derives_to_addr else None
+            if not derives_to_addr:
+                print(f"[ATTEST/PIN] HELD (RTC-hex key does not derive): miner={miner[:32]}")
+        elif not is_grandfathered:
+            pin_pubkey = pubkey_hex
+        else:
+            pin_pubkey = None
+            print(f"[ATTEST/PIN] HELD (grandfathered identity — admin enrollment "
+                  f"required to pin a key): miner={miner[:32]}")
+
 
     # IP rate limiting (Security Hardening 2026-02-02)
     ip_ok, ip_reason = check_ip_rate_limit(client_ip, miner)
@@ -5314,7 +5553,7 @@ def _submit_attestation_impl():
         except Exception:
             pass
 
-    record_attestation_success(miner, device, fingerprint_passed, client_ip, signals=signals, fingerprint=fingerprint, signing_pubkey=pubkey_hex or None, entropy_score=entropy_score)
+    record_attestation_success(miner, device, fingerprint_passed, client_ip, signals=signals, fingerprint=fingerprint, signing_pubkey=pin_pubkey, entropy_score=entropy_score)
 
     temporal_review = {"score": 1.0, "review_flag": False, "reason": "insufficient_history", "flags": [], "check_scores": {}}
     try:
@@ -6032,6 +6271,112 @@ def miner_set_header_key():
         _prune_header_keys(db, miner_id)
         db.commit()
     return jsonify({"ok":True,"miner_id":miner_id,"pubkey_hex":pubkey_hex})
+
+@app.route('/admin/attest/key', methods=['POST'])
+def admin_attest_key():
+    """Admin management of a miner's ATTESTATION signing key (#8016 hardened).
+
+    This is the authenticated unpin/rotate path that closes the lockout attack:
+    a real owner who lost a key, or an entry pinned by the wrong party, is fixed
+    here. It manages miner_attest_recent.signing_pubkey (the key /epoch/enroll
+    verifies against) plus the freeze/generation ledger (attest_key_admin).
+
+    Body: {"miner":"<id>", "action":"status|unpin|set|unfreeze",
+           "public_key":"<64 hex>"   # required for action=set
+           "note":"<audit note>"}     # optional
+
+      status   — report pinned key, pin_frozen, generation.
+      unpin    — clear the pinned key AND set pin_frozen=1 (bump generation). The
+                 freeze stops a stranger from immediately public-TOFU re-capturing
+                 the identity; re-pin then requires an admin 'set' (or, for a
+                 self-certifying RTC-hex address, an admin 'unfreeze' so only the
+                 key that derives to the address can re-pin).
+      set      — pin an operator-supplied key directly (authoritative rotate/
+                 enroll). Clears the freeze. This is the ONLY way a symbolic/legacy
+                 name (dual-g4-125, power8-s824-sophia, …) ever gets a pinned key.
+      unfreeze — clear pin_frozen without setting a key (allows RTC-hex self-
+                 certifying public re-pin to resume).
+    """
+    gate = _require_admin_request(request)
+    if gate is not None:
+        return gate
+
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"ok": False, "error": "invalid_json_body", "code": "INVALID_JSON_BODY"}), 400
+    miner = _attest_valid_miner(body.get("miner"))
+    if not miner:
+        return jsonify({"ok": False, "error": "invalid_miner", "code": "INVALID_MINER"}), 400
+    action = body.get("action")
+    action = action.strip().lower() if isinstance(action, str) else ""
+    if action not in ("status", "unpin", "set", "unfreeze"):
+        return jsonify({"ok": False, "error": "invalid_action",
+                        "message": "action must be one of status|unpin|set|unfreeze",
+                        "code": "INVALID_ACTION"}), 400
+
+    new_key = None
+    if action == "set":
+        new_key = _valid_ed25519_pubkey_hex(body.get("public_key"))
+        if not new_key:
+            return jsonify({"ok": False, "error": "invalid_public_key",
+                            "message": "action=set requires a 64-hex-char Ed25519 public_key",
+                            "code": "INVALID_PUBLIC_KEY"}), 400
+
+    note = body.get("note")
+    note = note.strip()[:256] if isinstance(note, str) else ""
+    now = int(time.time())
+
+    with closing(sqlite3.connect(DB_PATH)) as db:
+        _ensure_attest_key_admin_table(db)
+        # Ensure the target row / column exist so status is meaningful even for a
+        # miner that has not attested yet.
+        try:
+            db.execute("ALTER TABLE miner_attest_recent ADD COLUMN signing_pubkey TEXT")
+        except Exception:
+            pass
+        cur = db.execute(
+            "SELECT signing_pubkey FROM miner_attest_recent WHERE miner = ?", (miner,)
+        ).fetchone()
+        current_key = (cur[0].strip().lower() if cur and cur[0] else None)
+        adm = db.execute(
+            "SELECT pin_frozen, generation FROM attest_key_admin WHERE miner = ?", (miner,)
+        ).fetchone()
+        pin_frozen = bool(adm[0]) if adm else False
+        generation = int(adm[1]) if adm else 0
+
+        if action == "status":
+            return jsonify({"ok": True, "miner": miner, "pinned_pubkey": current_key,
+                            "pin_frozen": pin_frozen, "generation": generation})
+
+        if action == "unpin":
+            db.execute("UPDATE miner_attest_recent SET signing_pubkey = NULL WHERE miner = ?", (miner,))
+            new_frozen, new_key_val = 1, None
+        elif action == "set":
+            # Direct authoritative write bypasses the COALESCE pin-once guard.
+            db.execute(
+                "INSERT INTO miner_attest_recent (miner, ts_ok, signing_pubkey) VALUES (?, ?, ?) "
+                "ON CONFLICT(miner) DO UPDATE SET signing_pubkey = excluded.signing_pubkey",
+                (miner, now, new_key),
+            )
+            new_frozen, new_key_val = 0, new_key
+        else:  # unfreeze
+            new_frozen, new_key_val = 0, current_key
+
+        db.execute(
+            "INSERT INTO attest_key_admin (miner, pin_frozen, generation, updated_at, note) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(miner) DO UPDATE SET pin_frozen = excluded.pin_frozen, "
+            "generation = attest_key_admin.generation + 1, updated_at = excluded.updated_at, "
+            "note = excluded.note",
+            (miner, new_frozen, generation + 1, now, note),
+        )
+        db.commit()
+
+    print(f"[ADMIN/ATTEST-KEY] action={action} miner={miner[:32]} "
+          f"frozen={bool(new_frozen)} gen={generation + 1} note={note!r}")
+    return jsonify({"ok": True, "miner": miner, "action": action,
+                    "pinned_pubkey": new_key_val, "pin_frozen": bool(new_frozen),
+                    "generation": generation + 1})
 
 @app.route('/headers/ingest_signed', methods=['POST'])
 def ingest_signed_header():
