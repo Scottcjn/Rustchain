@@ -2726,6 +2726,27 @@ def _has_powerpc_simd_evidence(fingerprint: dict) -> bool:
     return has_ppc and not has_x86
 
 
+def _cache_measurement_is_degenerate(cache_data: dict) -> bool:
+    """True when the cache timings are physically impossible, i.e. noise.
+
+    L2 cannot be faster than L1 on real silicon. When the reported ratio says
+    it is, the client did not measure a cache hierarchy, it measured its own
+    interpreter. The deployed Mac client walks a Python bytearray at fixed
+    x86-shaped sizes (8K/128K/4M); on a 2005 PowerPC 970 those accesses are
+    interpreter-bound, and the live Power Mac G5 reports l2_l1=0.801.
+
+    Distinct from "no cache evidence at all", which stays a failure. Here the
+    client tried and the result is uninformative.
+    """
+    if not isinstance(cache_data, dict):
+        return False
+    try:
+        l2_l1 = float(cache_data.get("l2_l1_ratio", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return False
+    return 0.0 < l2_l1 < 1.0
+
+
 def _has_powerpc_cache_profile(fingerprint: dict) -> bool:
     """Verify cache fingerprint is consistent with a PowerPC machine.
 
@@ -4748,16 +4769,25 @@ def validate_fingerprint_data(
             return False, f"missing_powerpc_simd:{claimed_arch}"
 
         if not _has_powerpc_cache_profile(fingerprint):
-            # Log what was actually seen. "lacks PowerPC cache profile" alone
-            # gives an operator nothing to act on, and this check has already
-            # rejected a genuine Power Mac G5 once for a cache level the 970FX
-            # was never built with.
             _cd = _fingerprint_check_data(fingerprint, "cache_timing")
-            print(f"[FINGERPRINT] REJECT: claims {claimed_arch} but lacks PowerPC cache profile "
-                  f"(l2_l1={_cd.get('l2_l1_ratio')!r} l3_l2={_cd.get('l3_l2_ratio')!r} "
-                  f"hierarchy={_cd.get('hierarchy_ratio')!r} arch={_cd.get('arch')!r} "
-                  f"keys={sorted(_cd)[:8]})")
-            return False, f"missing_powerpc_cache_profile:{claimed_arch}"
+
+            # An uninformative measurement is not evidence of a lie. Reaching
+            # this line means _has_powerpc_simd_evidence already passed, so
+            # AltiVec/VSX has proven the architecture and the cache profile is
+            # corroboration. When the reported hierarchy is physically
+            # impossible (L2 faster than L1) the client measured interpreter
+            # overhead rather than cache. The live Power Mac G5 reports
+            # l2_l1=0.801 and was rejected on EVERY attestation for it.
+            if _cache_measurement_is_degenerate(_cd):
+                print(f"[FINGERPRINT] {claimed_arch}: cache hierarchy unmeasurable "
+                      f"(l2_l1={_cd.get('l2_l1_ratio')!r}, L2 cannot outrun L1) - "
+                      f"treating as unmeasured, PowerPC SIMD already verified")
+            else:
+                print(f"[FINGERPRINT] REJECT: claims {claimed_arch} but lacks PowerPC cache profile "
+                      f"(l2_l1={_cd.get('l2_l1_ratio')!r} l3_l2={_cd.get('l3_l2_ratio')!r} "
+                      f"hierarchy={_cd.get('hierarchy_ratio')!r} arch={_cd.get('arch')!r} "
+                      f"keys={sorted(_cd)[:8]})")
+                return False, f"missing_powerpc_cache_profile:{claimed_arch}"
 
     # ── PHASE 3: ROM fingerprint (retro platforms) ──
     rom_passed, rom_data = get_check_status(checks.get("rom_fingerprint"))
