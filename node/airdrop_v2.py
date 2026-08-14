@@ -661,16 +661,20 @@ class AirdropV2:
             if user_resp.status_code != 200:
                 return None
 
-            # Get contributions (PRs merged)
-            # Use GitHub search API for contributions
+            # Get merged PRs authored by this user, scoped to the
+            # RustChain org only.  The old code hit /search/commits with
+            # a bare "author:X merged:true" query, which counts commits
+            # anywhere on GitHub — so any established account cleared the
+            # CORE (5+) tier without ever contributing here.
+            #
+            # /search/issues with is:pr is:merged is the correct endpoint
+            # for counting merged pull requests, and org:Scottcjn keeps the
+            # result bounded to this project's repos.
             contrib_resp = requests.get(
-                f"https://api.github.com/search/commits",
-                headers={
-                    **headers,
-                    "Accept": "application/vnd.github.cloak-preview",
-                },
+                "https://api.github.com/search/issues",
+                headers=headers,
                 params={
-                    "q": f"author:{github_username} merged:true",
+                    "q": f"author:{github_username} org:Scottcjn is:pr is:merged",
                     "per_page": 1,
                 },
                 timeout=10,
