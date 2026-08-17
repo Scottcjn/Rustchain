@@ -670,9 +670,9 @@ class AirdropV2:
                     "Accept": "application/vnd.github.cloak-preview",
                 },
                 params={
-                    "q": f"author:{github_username} merged:true",
-                    "per_page": 1,
-                },
+                        "q": f"author:{github_username} repo:Scottcjn/Rustchain merged:true",
+                        "per_page": 1,
+                    },
                 timeout=10,
             )
 
