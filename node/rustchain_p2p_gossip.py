@@ -1830,6 +1830,10 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
         if not _gossip_rate_check(remote_ip):
             return jsonify({"error": "rate_limited", "limit": f"{GOSSIP_RATE_LIMIT}/{GOSSIP_RATE_WINDOW_S}s"}), 429
 
+        auth_error = _require_p2p_read_auth()
+        if auth_error:
+            return auth_error
+
         if (
             request.content_length is not None
             and request.content_length > MAX_GOSSIP_REQUEST_BYTES
