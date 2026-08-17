@@ -11,8 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check local links in README and docs
+      - name: Check links in README and docs
         run: |
           sudo apt-get update
           sudo apt-get install -y lychee
-          lychee --verbose --no-progress --include-robots-txt README.md docs/ || true
+          lychee --verbose --no-progress --include-robots-txt README.md docs/
