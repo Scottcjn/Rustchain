@@ -62,3 +62,5 @@ tests/.hypothesis/
 specs/
 **/specs/
 **/.specify/
+
+**/target/
