@@ -54,6 +54,16 @@ class TransactionFailedError(SettlementError):
     pass
 
 
+class SettlementConfigurationError(SettlementError):
+    """Settlement is not configured to reach the chain.
+
+    Settlement moves real RTC.  A missing treasury key or node URL means no
+    transaction can ever be broadcast, so it is a hard configuration error
+    rather than a condition to silently degrade around at runtime.
+    """
+    pass
+
+
 def _normalize_claim_limit(max_claims: int, default: int = 100) -> int:
     """Return a non-negative SQLite LIMIT value for claim batch queries."""
     try:
@@ -308,89 +318,175 @@ def calculate_settlement_fee(num_outputs: int) -> int:
     return base_fee + (per_output_fee * num_outputs)
 
 
+def compute_local_batch_digest(tx_data: Dict[str, Any]) -> str:
+    """Deterministic *local* identifier for a settlement batch.
+
+    This is a correlation id for logs and retries.  It is **not** a
+    transaction hash and must never be written into a field an auditor reads
+    as an on-chain reference.  It is deliberately returned without a ``0x``
+    prefix so it cannot be mistaken for a chain hash at a glance.
+    """
+    import hashlib
+
+    return hashlib.sha256(
+        f"{tx_data.get('batch_id', '')}"
+        f"-{tx_data.get('total_amount_urtc', 0)}"
+        f"-{tx_data.get('created_at', 0)}".encode()
+    ).hexdigest()
+
+
+def validate_settlement_config() -> None:
+    """Fail fast when settlement cannot reach the chain.
+
+    Call at node startup to surface misconfiguration before any claim is
+    reserved.  ``sign_and_broadcast_transaction`` also calls it, so a
+    misconfigured process can never silently "settle" a batch that was never
+    broadcast.
+
+    Environment variables:
+      TREASURY_KEY_PATH  — path to Ed25519 PEM private key
+      NODE_API_URL       — node broadcast endpoint base URL
+
+    Raises:
+        SettlementConfigurationError: if either variable is unset or blank.
+    """
+    import os
+
+    missing = [
+        name
+        for name in ("TREASURY_KEY_PATH", "NODE_API_URL")
+        if not os.environ.get(name, "").strip()
+    ]
+    if missing:
+        raise SettlementConfigurationError(
+            f"settlement not configured to broadcast: {', '.join(missing)} "
+            f"unset. Claims cannot be marked settled without a confirmed "
+            f"on-chain transaction."
+        )
+
+
 def sign_and_broadcast_transaction(
     tx_data: Dict[str, Any],
     db_path: str
 ) -> Tuple[bool, Optional[str], Optional[str]]:
     """
-    Sign transaction with treasury key and broadcast to network.
+    Sign a settlement batch with the treasury key and broadcast it to the node.
 
-    Uses Ed25519 signing via settlement_signer when a treasury key is
-    available.  Falls back to a deterministic SHA-256 hash of the batch
-    data when no key is configured (test/development mode).
+    Success means exactly one thing: the node answered 2xx and returned a
+    transaction hash.  Every other outcome — unreachable node, rejected
+    broadcast, unreadable response, signing failure — returns
+    ``success=False`` with ``transaction_hash=None`` so the caller leaves the
+    claims unsettled and releases the rewards-pool reservation.
+
+    A locally computed signature or batch digest is NEVER returned in the
+    transaction hash slot; see :func:`compute_local_batch_digest`.  A local
+    Ed25519 signature proves only that *this process* authorized the batch, not
+    that any transaction exists on chain.
 
     Environment variables:
       TREASURY_KEY_PATH  — path to Ed25519 PEM private key
       NODE_API_URL       — node broadcast endpoint base URL
+
+    Raises:
+        SettlementConfigurationError: if broadcast is not configured.
 
     Returns:
         (success: bool, transaction_hash: str or None, error: str or None)
     """
     import os
 
-    key_path = os.environ.get("TREASURY_KEY_PATH", "")
-    node_url = os.environ.get("NODE_API_URL", "").rstrip("/")
+    validate_settlement_config()
 
-    if key_path:
-        # ── Real Ed25519 signing path ──────────────────────────────
-        try:
-            from settlement_signer import sign_settlement_batch
+    key_path = os.environ["TREASURY_KEY_PATH"].strip()
+    node_url = os.environ["NODE_API_URL"].strip().rstrip("/")
+    batch_id = tx_data.get("batch_id", "?")
+    digest = compute_local_batch_digest(tx_data)
 
-            success, tx_hash, error = sign_settlement_batch(tx_data, key_path)
-            if not success:
-                return False, None, error
-
-            print(f"[SETTLEMENT] Signed batch {tx_data.get('batch_id', '?')}: "
-                  f"{len(tx_data.get('outputs', []))} outputs, "
-                  f"{tx_data.get('total_amount_urtc', 0)} uRTC")
-
-            if node_url and tx_hash:
-                # Broadcast to node
-                import requests
-                try:
-                    resp = requests.post(
-                        f"{node_url}/api/tx/submit",
-                        json={
-                            "batch_id": tx_data.get("batch_id"),
-                            "claim_ids": [c for c in tx_data.get("claim_ids", [])],
-                            "outputs": tx_data.get("outputs", []),
-                            "fee_urtc": tx_data.get("fee_urtc", 0),
-                            "signature": tx_hash,
-                        },
-                        timeout=30,
-                    )
-                    if resp.status_code in (200, 201):
-                        result = resp.json()
-                        on_chain_hash = result.get("tx_hash", tx_hash)
-                        print(f"[SETTLEMENT] Broadcast confirmed: {on_chain_hash}")
-                        return True, on_chain_hash, None
-                    else:
-                        print(f"[SETTLEMENT] Broadcast returned {resp.status_code}, "
-                              f"using signature as tx_hash")
-                except Exception as e:
-                    print(f"[SETTLEMENT] Broadcast failed ({e}), "
-                          f"using signature as tx_hash")
-
-            return True, tx_hash, None
-
-        except Exception as e:
-            print(f"[SETTLEMENT] Signing module error ({e}), "
-                  f"falling back to hash")
-
-    # ── Fallback: SHA-256 hash of batch data ──────────────────────
-    # Used when no treasury key is configured (test/dev).
-    import hashlib
     print(f"[SETTLEMENT] Constructing transaction with "
           f"{len(tx_data.get('outputs', []))} outputs")
     print(f"[SETTLEMENT] Total amount: {tx_data.get('total_amount_urtc', 0)} uRTC")
     print(f"[SETTLEMENT] Fee: {tx_data.get('fee_urtc', 0)} uRTC")
 
-    tx_hash = hashlib.sha256(
-        f"{tx_data.get('batch_id', '')}"
-        f"-{tx_data.get('total_amount_urtc', 0)}"
-        f"-{tx_data.get('created_at', 0)}".encode()
-    ).hexdigest()
-    return True, "0x" + tx_hash, None
+    # ── Sign ───────────────────────────────────────────────────────────
+    try:
+        from settlement_signer import sign_settlement_batch
+
+        signed, signature, sign_error = sign_settlement_batch(tx_data, key_path)
+    except Exception as e:
+        return False, None, (
+            f"settlement signer unavailable ({e!r}); batch {batch_id} was not "
+            f"signed and not broadcast (local_batch_digest={digest})"
+        )
+
+    if not signed or not signature:
+        return False, None, (
+            sign_error
+            or f"signing failed for batch {batch_id} (local_batch_digest={digest})"
+        )
+
+    print(f"[SETTLEMENT] Signed batch {batch_id}: "
+          f"{len(tx_data.get('outputs', []))} outputs, "
+          f"{tx_data.get('total_amount_urtc', 0)} uRTC")
+
+    # ── Broadcast ──────────────────────────────────────────────────────
+    try:
+        import requests
+
+        resp = requests.post(
+            f"{node_url}/api/tx/submit",
+            json={
+                "batch_id": tx_data.get("batch_id"),
+                "claim_ids": [c for c in tx_data.get("claim_ids", [])],
+                "outputs": tx_data.get("outputs", []),
+                "fee_urtc": tx_data.get("fee_urtc", 0),
+                "signature": signature,
+            },
+            timeout=30,
+        )
+    except Exception as e:
+        # The request may or may not have reached the node.  Report failure so
+        # the claims stay unsettled; an operator must confirm on-chain state
+        # before this batch is retried.
+        return False, None, (
+            f"broadcast to {node_url} failed ({e!r}); batch {batch_id} is NOT "
+            f"confirmed on chain (local_batch_digest={digest})"
+        )
+
+    if resp.status_code not in (200, 201):
+        return False, None, (
+            f"broadcast rejected with HTTP {resp.status_code}; batch "
+            f"{batch_id} is NOT on chain (local_batch_digest={digest})"
+        )
+
+    try:
+        body = resp.json()
+    except Exception as e:
+        return False, None, (
+            f"broadcast returned HTTP {resp.status_code} with an unreadable "
+            f"body ({e!r}); on-chain state of batch {batch_id} is UNKNOWN "
+            f"(local_batch_digest={digest})"
+        )
+
+    # A 2xx carrying an application-level failure is still a failure — the
+    # same shape as the #16390 bounty-payout fix.
+    if not isinstance(body, dict) or not body.get("ok", True):
+        reported = body.get("error") if isinstance(body, dict) else body
+        return False, None, (
+            f"node returned HTTP {resp.status_code} but reported failure "
+            f"({reported!r}); batch {batch_id} is NOT on chain "
+            f"(local_batch_digest={digest})"
+        )
+
+    on_chain_hash = body.get("tx_hash")
+    if not on_chain_hash:
+        return False, None, (
+            f"node returned HTTP {resp.status_code} without a tx_hash; batch "
+            f"{batch_id} cannot be recorded as settled "
+            f"(local_batch_digest={digest})"
+        )
+
+    print(f"[SETTLEMENT] Broadcast confirmed: {on_chain_hash}")
+    return True, on_chain_hash, None
 
 
 def reserve_claims_for_settlement(
@@ -670,7 +766,8 @@ def process_claims_batch(
             "claims_count": int,
             "total_amount_urtc": int,
             "total_amount_rtc": float,
-            "transaction_hash": str or None,
+            "transaction_hash": str or None,   # confirmed on-chain hash ONLY
+            "local_batch_digest": str or None,  # local correlation id, NOT a tx hash
             "success_count": int,
             "failed_count": int,
             "error": str or None
@@ -682,7 +779,10 @@ def process_claims_batch(
         "claims_count": 0,
         "total_amount_urtc": 0,
         "total_amount_rtc": 0.0,
+        # Set only from a node-confirmed broadcast.  Never a local signature
+        # or digest — an auditor reads this field as an on-chain reference.
         "transaction_hash": None,
+        "local_batch_digest": None,
         "success_count": 0,
         "failed_count": 0,
         "error": None
@@ -805,6 +905,20 @@ def process_claims_batch(
         # wallet/client/network failures; reserved rows must not remain stuck
         # in 'settling' if that happens before a success response is returned.
         success, tx_hash, error = sign_and_broadcast_transaction(tx_data, db_path)
+    except SettlementConfigurationError as exc:
+        # Nothing was signed and nothing left this process, so these claims are
+        # untouched and provably safe to retry.  Return them to 'approved'
+        # rather than burning good claims as 'failed' over a missing env var.
+        release_rewards_pool_funds(db_path, required_amount)
+        error = str(exc)
+        result["released_count"] = release_reserved_claims_for_settlement(
+            db_path,
+            [c["claim_id"] for c in claims_to_process],
+            batch_id,
+            error,
+        )
+        result["error"] = error
+        return result
     except Exception as exc:
         release_rewards_pool_funds(db_path, required_amount)
         error = str(exc) or exc.__class__.__name__
@@ -819,6 +933,11 @@ def process_claims_batch(
     
     if not success:
         release_rewards_pool_funds(db_path, required_amount)
+        # No confirmed transaction exists, so transaction_hash stays None.
+        # Record the local digest in a field of its own so this batch can be
+        # correlated across logs and retries without ever being mistaken for
+        # an on-chain reference.
+        result["local_batch_digest"] = compute_local_batch_digest(tx_data)
         # Mark claims as failed
         failed_count = update_claims_failed(
             db_path,
