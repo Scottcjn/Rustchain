@@ -315,9 +315,9 @@ def sign_and_broadcast_transaction(
     """
     Sign transaction with treasury key and broadcast to network.
 
-    Uses Ed25519 signing via settlement_signer when a treasury key is
-    available.  Falls back to a deterministic SHA-256 hash of the batch
-    data when no key is configured (test/development mode).
+    Requires both TREASURY_KEY_PATH (Ed25519 PEM private key) and
+    NODE_API_URL to be configured, and a successful 2xx response from
+    the node endpoint to confirm on-chain broadcast.
 
     Environment variables:
       TREASURY_KEY_PATH  — path to Ed25519 PEM private key
@@ -331,66 +331,59 @@ def sign_and_broadcast_transaction(
     key_path = os.environ.get("TREASURY_KEY_PATH", "")
     node_url = os.environ.get("NODE_API_URL", "").rstrip("/")
 
-    if key_path:
-        # ── Real Ed25519 signing path ──────────────────────────────
+    if not key_path:
+        error_msg = "TREASURY_KEY_PATH not configured"
+        print(f"[SETTLEMENT] Error: {error_msg}")
+        return False, None, error_msg
+
+    if not node_url:
+        error_msg = "NODE_API_URL not configured"
+        print(f"[SETTLEMENT] Error: {error_msg}")
+        return False, None, error_msg
+
+    try:
+        from settlement_signer import sign_settlement_batch
+
+        success, tx_hash, error = sign_settlement_batch(tx_data, key_path)
+        if not success or not tx_hash:
+            return False, None, error or "Signing failed"
+
+        print(f"[SETTLEMENT] Signed batch {tx_data.get('batch_id', '?')}: "
+              f"{len(tx_data.get('outputs', []))} outputs, "
+              f"{tx_data.get('total_amount_urtc', 0)} uRTC")
+
+        # Broadcast to node
+        import requests
         try:
-            from settlement_signer import sign_settlement_batch
-
-            success, tx_hash, error = sign_settlement_batch(tx_data, key_path)
-            if not success:
-                return False, None, error
-
-            print(f"[SETTLEMENT] Signed batch {tx_data.get('batch_id', '?')}: "
-                  f"{len(tx_data.get('outputs', []))} outputs, "
-                  f"{tx_data.get('total_amount_urtc', 0)} uRTC")
-
-            if node_url and tx_hash:
-                # Broadcast to node
-                import requests
-                try:
-                    resp = requests.post(
-                        f"{node_url}/api/tx/submit",
-                        json={
-                            "batch_id": tx_data.get("batch_id"),
-                            "claim_ids": [c for c in tx_data.get("claim_ids", [])],
-                            "outputs": tx_data.get("outputs", []),
-                            "fee_urtc": tx_data.get("fee_urtc", 0),
-                            "signature": tx_hash,
-                        },
-                        timeout=30,
-                    )
-                    if resp.status_code in (200, 201):
-                        result = resp.json()
-                        on_chain_hash = result.get("tx_hash", tx_hash)
-                        print(f"[SETTLEMENT] Broadcast confirmed: {on_chain_hash}")
-                        return True, on_chain_hash, None
-                    else:
-                        print(f"[SETTLEMENT] Broadcast returned {resp.status_code}, "
-                              f"using signature as tx_hash")
-                except Exception as e:
-                    print(f"[SETTLEMENT] Broadcast failed ({e}), "
-                          f"using signature as tx_hash")
-
-            return True, tx_hash, None
-
+            resp = requests.post(
+                f"{node_url}/api/tx/submit",
+                json={
+                    "batch_id": tx_data.get("batch_id"),
+                    "claim_ids": [c for c in tx_data.get("claim_ids", [])],
+                    "outputs": tx_data.get("outputs", []),
+                    "fee_urtc": tx_data.get("fee_urtc", 0),
+                    "signature": tx_hash,
+                },
+                timeout=30,
+            )
+            if resp.status_code in (200, 201):
+                result = resp.json()
+                on_chain_hash = result.get("tx_hash", tx_hash)
+                print(f"[SETTLEMENT] Broadcast confirmed: {on_chain_hash}")
+                return True, on_chain_hash, None
+            else:
+                err = f"Broadcast returned {resp.status_code}: {resp.text}"
+                print(f"[SETTLEMENT] {err}")
+                return False, None, err
         except Exception as e:
-            print(f"[SETTLEMENT] Signing module error ({e}), "
-                  f"falling back to hash")
+            err = f"Broadcast failed: {e}"
+            print(f"[SETTLEMENT] {err}")
+            return False, None, err
 
-    # ── Fallback: SHA-256 hash of batch data ──────────────────────
-    # Used when no treasury key is configured (test/dev).
-    import hashlib
-    print(f"[SETTLEMENT] Constructing transaction with "
-          f"{len(tx_data.get('outputs', []))} outputs")
-    print(f"[SETTLEMENT] Total amount: {tx_data.get('total_amount_urtc', 0)} uRTC")
-    print(f"[SETTLEMENT] Fee: {tx_data.get('fee_urtc', 0)} uRTC")
-
-    tx_hash = hashlib.sha256(
-        f"{tx_data.get('batch_id', '')}"
-        f"-{tx_data.get('total_amount_urtc', 0)}"
-        f"-{tx_data.get('created_at', 0)}".encode()
-    ).hexdigest()
-    return True, "0x" + tx_hash, None
+    except Exception as e:
+        err = f"Signing error: {e}"
+        print(f"[SETTLEMENT] {err}")
+        return False, None, err
 
 
 def reserve_claims_for_settlement(

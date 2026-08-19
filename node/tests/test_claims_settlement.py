@@ -496,7 +496,9 @@ class TestCalculateSettlementFee:
 # ═══════════════════════════════════════════════════════════════════════
 
 class TestSignAndBroadcastTransaction:
-    def test_returns_success_with_deterministic_hash(self):
+    def test_fails_when_treasury_key_missing(self, monkeypatch):
+        monkeypatch.delenv("TREASURY_KEY_PATH", raising=False)
+        monkeypatch.delenv("NODE_API_URL", raising=False)
         tx = {
             "batch_id": "batch_2025_01_01_001",
             "total_amount_urtc": 5000,
@@ -506,58 +508,85 @@ class TestSignAndBroadcastTransaction:
             "created_at": 1700000000,
         }
         success, tx_hash, error = sign_and_broadcast_transaction(tx, ":memory:")
+        assert success is False
+        assert tx_hash is None
+        assert "TREASURY_KEY_PATH" in error
+
+    def test_fails_when_node_url_missing(self, monkeypatch, tmp_path):
+        key_file = tmp_path / "treasury.pem"
+        key_file.write_text("fake-key")
+        monkeypatch.setenv("TREASURY_KEY_PATH", str(key_file))
+        monkeypatch.delenv("NODE_API_URL", raising=False)
+        tx = {
+            "batch_id": "batch_2025_01_01_001",
+            "total_amount_urtc": 5000,
+            "outputs": [],
+            "fee_urtc": 1000,
+            "claim_ids": ["c-1"],
+            "created_at": 1700000000,
+        }
+        success, tx_hash, error = sign_and_broadcast_transaction(tx, ":memory:")
+        assert success is False
+        assert tx_hash is None
+        assert "NODE_API_URL" in error
+
+    def test_fails_on_node_broadcast_non_2xx(self, monkeypatch, tmp_path):
+        import sys
+        key_file = tmp_path / "treasury.pem"
+        key_file.write_text("fake-key")
+        monkeypatch.setenv("TREASURY_KEY_PATH", str(key_file))
+        monkeypatch.setenv("NODE_API_URL", "http://fake-node:8000")
+
+        class MockSigner:
+            @staticmethod
+            def sign_settlement_batch(tx_data, key_path):
+                return True, "0xsig123", None
+
+        monkeypatch.setitem(sys.modules, "settlement_signer", MockSigner)
+
+        class MockResponse:
+            status_code = 500
+            text = "Internal Server Error"
+
+        import requests
+        monkeypatch.setattr(requests, "post", lambda *args, **kwargs: MockResponse())
+
+        tx = {"batch_id": "b1", "outputs": [], "fee_urtc": 100, "claim_ids": ["c1"]}
+        success, tx_hash, error = sign_and_broadcast_transaction(tx, ":memory:")
+        assert success is False
+        assert tx_hash is None
+        assert "500" in error
+
+    def test_succeeds_on_confirmed_broadcast(self, monkeypatch, tmp_path):
+        import sys
+        key_file = tmp_path / "treasury.pem"
+        key_file.write_text("fake-key")
+        monkeypatch.setenv("TREASURY_KEY_PATH", str(key_file))
+        monkeypatch.setenv("NODE_API_URL", "http://fake-node:8000")
+
+        class MockSigner:
+            @staticmethod
+            def sign_settlement_batch(tx_data, key_path):
+                return True, "0xsig123", None
+
+        monkeypatch.setitem(sys.modules, "settlement_signer", MockSigner)
+
+        class MockResponse:
+            status_code = 200
+            @staticmethod
+            def json():
+                return {"tx_hash": "0xrealonchainhash789"}
+
+        import requests
+        monkeypatch.setattr(requests, "post", lambda *args, **kwargs: MockResponse())
+
+        tx = {"batch_id": "b1", "outputs": [], "fee_urtc": 100, "claim_ids": ["c1"]}
+        success, tx_hash, error = sign_and_broadcast_transaction(tx, ":memory:")
         assert success is True
-        assert tx_hash.startswith("0x")
-        assert len(tx_hash) == 66  # 0x + 64 hex chars
+        assert tx_hash == "0xrealonchainhash789"
         assert error is None
 
-    def test_deterministic_hash_same_input(self):
-        tx = {
-            "batch_id": "batch_2025_01_01_001",
-            "total_amount_urtc": 5000,
-            "outputs": [],
-            "fee_urtc": 1000,
-            "claim_ids": ["c-1"],
-            "created_at": 1700000000,
-        }
-        _, h1, _ = sign_and_broadcast_transaction(tx, ":memory:")
-        _, h2, _ = sign_and_broadcast_transaction(tx, ":memory:")
-        assert h1 == h2  # deterministic
 
-    def test_different_input_different_hash(self):
-        tx1 = {
-            "batch_id": "batch_a",
-            "total_amount_urtc": 1000,
-            "outputs": [],
-            "fee_urtc": 1000,
-            "claim_ids": ["c-1"],
-            "created_at": 1,
-        }
-        tx2 = {
-            "batch_id": "batch_b",
-            "total_amount_urtc": 1000,
-            "outputs": [],
-            "fee_urtc": 1000,
-            "claim_ids": ["c-1"],
-            "created_at": 1,
-        }
-        _, h1, _ = sign_and_broadcast_transaction(tx1, ":memory:")
-        _, h2, _ = sign_and_broadcast_transaction(tx2, ":memory:")
-        assert h1 != h2
-
-    def test_outputs_printed_but_not_critical(self, capsys):
-        tx = {
-            "batch_id": "batch_2025_01_01_001",
-            "total_amount_urtc": 5000,
-            "outputs": [{"address": "RTCaaa", "amount_urtc": 5000}],
-            "fee_urtc": 1100,
-            "claim_ids": ["c-1"],
-            "created_at": 1700000000,
-        }
-        sign_and_broadcast_transaction(tx, ":memory:")
-        captured = capsys.readouterr()
-        assert "Constructing transaction with 1 outputs" in captured.out
-        assert "Total amount: 5000" in captured.out
 
 
 # ═══════════════════════════════════════════════════════════════════════
