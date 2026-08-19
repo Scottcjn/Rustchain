@@ -436,6 +436,21 @@ def live_api_checks(verbose: bool = False) -> Tuple[int, int, List[str], List[st
     # an invariant we could not MEASURE — it is not a violation, and it is not a
     # pass either.
     miners = get("/api/miners")
+    if isinstance(miners, dict):
+        # The live node wraps the rows in an envelope. Iterating the dict
+        # directly yielded its KEYS — plain strings — which is what produced
+        # `'str' object has no attribute 'get'`. Unwrap using the same key
+        # order tools/rustchain-health.py already uses, so both readers agree
+        # on the schema.
+        for _key in ("miners", "data", "items"):
+            if isinstance(miners.get(_key), list):
+                miners = miners[_key]
+                break
+        else:
+            unreachable.append(
+                f"UNMEASURED /api/miners: object with no miners/data/items list "
+                f"(keys: {sorted(miners)[:8]})")
+            miners = None
     if miners is not None and not isinstance(miners, list):
         unreachable.append(
             f"UNMEASURED /api/miners: expected a JSON list, got "
