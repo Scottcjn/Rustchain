@@ -21,6 +21,15 @@ Usage:
   python ledger_invariants.py --live        # Also validate against live node
   python ledger_invariants.py --scenarios N # Override scenario count (default 10000)
   python ledger_invariants.py --verbose     # Show counterexamples on failure
+  python ledger_invariants.py --report-file P  # Write pure JSON report to P
+
+Exit codes (--ci):
+  0  every invariant that COULD be evaluated holds, and everything was evaluated
+  1  an invariant was VIOLATED — never tolerate this, on any host
+  2  the live node could not be reached / could not be parsed, so some live
+     invariants COULD NOT BE MEASURED. No violation was observed, but no
+     violation was ruled out either. Distinct from 0 on purpose: "could not
+     measure" must never be reported as "passed".
 """
 
 import sys
@@ -297,27 +306,67 @@ class SimulatedLedger:
 
 # ─── Live API validation ──────────────────────────────────────────────────────
 
-def fetch_api(path: str, timeout: int = 10) -> Optional[Any]:
+class NodeUnreachable(Exception):
+    """The live node could not be reached, or did not answer with JSON.
+
+    This is deliberately a DIFFERENT condition from an invariant violation.
+    An unreachable node means an invariant could not be measured; it does not
+    mean the invariant holds, and it does not mean the invariant is broken.
+    Callers must keep the two apart — collapsing them is what let a real
+    conservation-of-supply break pass as a tolerated network blip.
+    """
+
+
+def fetch_api(path: str, timeout: int = 10) -> Any:
+    """Fetch and parse JSON from the live node.
+
+    Raises NodeUnreachable on any transport error, HTTP error, or non-JSON
+    body. A 200 response carrying HTML (an SPA answering 200 on every path)
+    is NOT a healthy node — it is an unparseable one, and is reported as such.
+    """
+    url = f"{NODE_URL}{path}"
     try:
-        url = f"{NODE_URL}{path}"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         ctx = __import__("ssl").create_default_context()
         ctx.check_hostname = False
         ctx.verify_mode = __import__("ssl").CERT_NONE
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-            return json.loads(resp.read())
+            body = resp.read()
     except Exception as e:
-        return None
+        raise NodeUnreachable(
+            f"{path}: transport error: {e.__class__.__name__}: {e}") from e
+    try:
+        return json.loads(body)
+    except Exception as e:
+        preview = body[:120].decode("utf-8", "replace") if body else "<empty>"
+        raise NodeUnreachable(
+            f"{path}: 200 response was not JSON ({e.__class__.__name__}); "
+            f"body starts: {preview!r}") from e
 
 
-def live_api_checks(verbose: bool = False) -> Tuple[int, int, List[str]]:
+def live_api_checks(verbose: bool = False) -> Tuple[int, int, List[str], List[str]]:
     """
     Validate invariants against the live RustChain node.
-    Returns (passed, failed, violation_messages).
+    Returns (passed, failed, violation_messages, unreachable_messages).
+
+    `violations` means an invariant was evaluated and BROKEN.
+    `unreachable` means an invariant could not be evaluated at all.
     """
     passed = 0
     failed = 0
-    violations = []
+    violations: List[str] = []
+    unreachable: List[str] = []
+
+    def get(path: str) -> Optional[Any]:
+        """Fetch, recording unreachability separately from violations."""
+        try:
+            return fetch_api(path)
+        except NodeUnreachable as e:
+            msg = f"UNREACHABLE {e}"
+            unreachable.append(msg)
+            if verbose:
+                print(f"  ⚠️  {msg}")
+            return None
 
     def ok(name: str):
         nonlocal passed
@@ -333,15 +382,19 @@ def live_api_checks(verbose: bool = False) -> Tuple[int, int, List[str]]:
         failed += 1
 
     # 1. Node health
-    health = fetch_api("/health")
-    if health and health.get("ok"):
+    health = get("/health")
+    if health is None:
+        pass  # already recorded as unreachable — not a violation
+    elif isinstance(health, dict) and health.get("ok"):
         ok("node_health")
     else:
-        fail("node_health", f"node not healthy: {health}")
+        # Reachable, parsed as JSON, and it says it is NOT ok. That is a real
+        # finding about a node we successfully talked to.
+        fail("node_health", f"node reachable but not healthy: {health}")
 
     # 2. Epoch data consistency
-    epoch_data = fetch_api("/epoch")
-    stats = fetch_api("/api/stats")
+    epoch_data = get("/epoch")
+    stats = get("/api/stats")
     if epoch_data and stats:
         live_epoch = epoch_data.get("epoch")
         stats_epoch = stats.get("epoch")
@@ -358,11 +411,10 @@ def live_api_checks(verbose: bool = False) -> Tuple[int, int, List[str]]:
                 ok(f"epoch_pot=1.5 RTC")
             else:
                 fail("epoch_pot", f"epoch_pot={pot} != 1.5")
-    else:
-        fail("api_availability", "could not fetch /epoch or /api/stats")
+    # else: /epoch or /api/stats was unreachable; already recorded above.
 
     # 3. Miners — check all have non-negative antiquity multipliers
-    miners = fetch_api("/api/miners")
+    miners = get("/api/miners")
     if miners is not None:
         neg_mult = [m["miner"] for m in miners
                     if m.get("antiquity_multiplier", 1.0) < 0]
@@ -397,8 +449,7 @@ def live_api_checks(verbose: bool = False) -> Tuple[int, int, List[str]]:
                             break
                 if ordering_ok:
                     ok("antiquity_ordering")
-    else:
-        fail("miners_api", "could not fetch /api/miners")
+    # else: /api/miners was unreachable; already recorded above.
 
     # 4. Total balance must be non-negative
     if stats:
@@ -408,7 +459,7 @@ def live_api_checks(verbose: bool = False) -> Tuple[int, int, List[str]]:
         else:
             fail("total_balance", f"total_balance={total_bal} < 0")
 
-    return passed, failed, violations
+    return passed, failed, violations, unreachable
 
 
 # ─── Property-based tests (Hypothesis) ───────────────────────────────────────
@@ -660,7 +711,12 @@ def main():
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="Verbose output with per-test results")
     parser.add_argument("--report", action="store_true",
-                        help="Print full JSON report at the end")
+                        help="Print full JSON report at the end (mixed with "
+                             "human output on stdout — use --report-file for "
+                             "a machine-readable artifact)")
+    parser.add_argument("--report-file", metavar="PATH", default=None,
+                        help="Write the JSON report to PATH. The file contains "
+                             "ONLY JSON — no banner text, no tracebacks.")
     args = parser.parse_args()
 
     print("=" * 70)
@@ -673,12 +729,14 @@ def main():
         "scenarios_requested": args.scenarios,
         "invariants": {},
         "violations": [],
+        "unreachable": [],
         "summary": {}
     }
 
     total_passed = 0
     total_failed = 0
     all_violations = []
+    all_unreachable: List[str] = []
 
     # ── 1. Property-based tests (Hypothesis) ──────────────────────────────────
     print("\n[1/3] Property-based invariant tests (Hypothesis)...")
@@ -705,11 +763,13 @@ def main():
     # ── 3. Live API checks ────────────────────────────────────────────────────
     if args.live:
         print("\n[3/3] Live node API invariant checks...")
-        p, f, viols = live_api_checks(args.verbose)
+        p, f, viols, unreach = live_api_checks(args.verbose)
         total_passed += p
         total_failed += f
         all_violations.extend(viols)
-        results["invariants"]["live_api"] = {"passed": p, "failed": f}
+        all_unreachable.extend(unreach)
+        results["invariants"]["live_api"] = {
+            "passed": p, "failed": f, "unmeasured": len(unreach)}
     else:
         print("\n[3/3] Live API checks skipped (pass --live to enable)")
 
@@ -723,6 +783,15 @@ def main():
             print(f"  • {v}")
         if len(all_violations) > 10:
             print(f"  ... and {len(all_violations) - 10} more")
+    elif all_unreachable:
+        print(f"\n⚠️  NO VIOLATION OBSERVED, but {len(all_unreachable)} live "
+              f"check(s) COULD NOT BE MEASURED:")
+        for u in all_unreachable[:10]:
+            print(f"  • {u}")
+        if len(all_unreachable) > 10:
+            print(f"  ... and {len(all_unreachable) - 10} more")
+        print("  This is NOT the same as passing. The offline invariants hold; "
+              "the live ones were not evaluated.")
     else:
         print("\n✅ ALL INVARIANTS HOLD — RustChain ledger math is correct")
 
@@ -740,21 +809,42 @@ def main():
         print(f"  {status} {inv}")
 
     results["violations"] = all_violations
+    results["unreachable"] = all_unreachable
     results["summary"] = {
         "total_passed": total_passed,
         "total_failed": total_failed,
-        "all_invariants_hold": len(all_violations) == 0
+        "violation_count": len(all_violations),
+        "unmeasured_count": len(all_unreachable),
+        # Only true when nothing was violated AND nothing went unmeasured.
+        # An unreachable node makes this None, never True.
+        "all_invariants_hold": (
+            None if all_unreachable and not all_violations
+            else len(all_violations) == 0
+        ),
     }
 
     if args.report:
         print("\n--- JSON Report ---")
         print(json.dumps(results, indent=2))
 
+    if args.report_file:
+        # Written separately from stdout on purpose: stdout carries banner text
+        # and, if anything crashes, a traceback. A report artifact must be JSON
+        # or it must not exist.
+        with open(args.report_file, "w", encoding="utf-8") as fh:
+            json.dump(results, fh, indent=2)
+        print(f"\n[report] wrote JSON report to {args.report_file}")
+
     print("=" * 70)
 
     if args.ci and (total_failed > 0 or all_violations):
-        print("\n[CI] Exiting with code 1 — invariant violations detected")
+        print("\n[CI] Exiting with code 1 — invariant VIOLATIONS detected")
         sys.exit(1)
+
+    if args.ci and all_unreachable:
+        print("\n[CI] Exiting with code 2 — live node could not be measured. "
+              "No violation was observed, and none was ruled out.")
+        sys.exit(2)
 
     print()
 
