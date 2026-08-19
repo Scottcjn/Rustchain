@@ -26,10 +26,13 @@ Usage:
 Exit codes (--ci):
   0  every invariant that COULD be evaluated holds, and everything was evaluated
   1  an invariant was VIOLATED — never tolerate this, on any host
-  2  the live node could not be reached / could not be parsed, so some live
-     invariants COULD NOT BE MEASURED. No violation was observed, but no
-     violation was ruled out either. Distinct from 0 on purpose: "could not
-     measure" must never be reported as "passed".
+  2  the live node could not be reached / could not be parsed / answered in an
+     unreadable shape, so some live invariants COULD NOT BE MEASURED. No
+     violation was observed, but no violation was ruled out either. Distinct
+     from 0 on purpose: "could not measure" must never be reported as "passed".
+  3  the CHECKER itself crashed. A bug in this suite, not a verdict about the
+     chain. Still a failure — a guard that cannot run is a broken guard — but
+     it must not be reported as "the chain violated an invariant".
 """
 
 import sys
@@ -37,6 +40,7 @@ import time
 import json
 import random
 import argparse
+import traceback
 import urllib.request
 import urllib.error
 from dataclasses import dataclass, field
@@ -395,6 +399,15 @@ def live_api_checks(verbose: bool = False) -> Tuple[int, int, List[str], List[st
     # 2. Epoch data consistency
     epoch_data = get("/epoch")
     stats = get("/api/stats")
+    for _name, _val in (("/epoch", epoch_data), ("/api/stats", stats)):
+        if _val is not None and not isinstance(_val, dict):
+            unreachable.append(
+                f"UNMEASURED {_name}: expected a JSON object, got "
+                f"{type(_val).__name__}")
+    if not isinstance(epoch_data, dict):
+        epoch_data = None
+    if not isinstance(stats, dict):
+        stats = None
     if epoch_data and stats:
         live_epoch = epoch_data.get("epoch")
         stats_epoch = stats.get("epoch")
@@ -414,7 +427,31 @@ def live_api_checks(verbose: bool = False) -> Tuple[int, int, List[str], List[st
     # else: /epoch or /api/stats was unreachable; already recorded above.
 
     # 3. Miners — check all have non-negative antiquity multipliers
+    #
+    # The payload shape is validated before anything indexes into it. The live
+    # node currently answers /api/miners with a JSON list of miner-id STRINGS,
+    # not objects, and the unguarded `m.get(...)` below used to raise
+    # AttributeError mid-check. `continue-on-error: true` swallowed that crash
+    # for as long as it was there, so nobody saw it. A payload we cannot read is
+    # an invariant we could not MEASURE — it is not a violation, and it is not a
+    # pass either.
     miners = get("/api/miners")
+    if miners is not None and not isinstance(miners, list):
+        unreachable.append(
+            f"UNMEASURED /api/miners: expected a JSON list, got "
+            f"{type(miners).__name__}")
+        miners = None
+    elif miners:
+        non_dict = [m for m in miners if not isinstance(m, dict)]
+        if non_dict:
+            unreachable.append(
+                f"UNMEASURED /api/miners: {len(non_dict)}/{len(miners)} entries "
+                f"are not objects (first is {type(non_dict[0]).__name__}: "
+                f"{str(non_dict[0])[:60]!r}); antiquity multipliers cannot be "
+                f"read from this shape")
+            if verbose:
+                print(f"  ⚠️  {unreachable[-1]}")
+            miners = None
     if miners is not None:
         neg_mult = [m["miner"] for m in miners
                     if m.get("antiquity_multiplier", 1.0) < 0]
@@ -454,7 +491,11 @@ def live_api_checks(verbose: bool = False) -> Tuple[int, int, List[str], List[st
     # 4. Total balance must be non-negative
     if stats:
         total_bal = stats.get("total_balance", 0)
-        if total_bal >= 0:
+        if not isinstance(total_bal, (int, float)) or isinstance(total_bal, bool):
+            unreachable.append(
+                f"UNMEASURED /api/stats: total_balance is "
+                f"{type(total_bal).__name__} ({str(total_bal)[:40]!r}), not a number")
+        elif total_bal >= 0:
             ok(f"total_balance >= 0 ({total_bal:.4f} RTC)")
         else:
             fail("total_balance", f"total_balance={total_bal} < 0")
@@ -761,15 +802,29 @@ def main():
     results["invariants"]["simulation"] = {"passed": p, "failed": f}
 
     # ── 3. Live API checks ────────────────────────────────────────────────────
+    checker_error = None
     if args.live:
         print("\n[3/3] Live node API invariant checks...")
-        p, f, viols, unreach = live_api_checks(args.verbose)
+        try:
+            p, f, viols, unreach = live_api_checks(args.verbose)
+        except Exception as e:
+            # A crash in the CHECKER is not a verdict about the chain. Reporting
+            # it as "the live chain violated an invariant" would be a lie in the
+            # opposite direction from the one this suite is meant to prevent.
+            # It still fails the run — a guard that cannot run is a broken guard
+            # — but under its own name and exit code.
+            checker_error = f"{type(e).__name__}: {e}"
+            p = f = 0
+            viols, unreach = [], []
+            print(f"\n💥 live_api_checks CRASHED: {checker_error}")
+            traceback.print_exc(file=sys.stderr)
         total_passed += p
         total_failed += f
         all_violations.extend(viols)
         all_unreachable.extend(unreach)
         results["invariants"]["live_api"] = {
-            "passed": p, "failed": f, "unmeasured": len(unreach)}
+            "passed": p, "failed": f, "unmeasured": len(unreach),
+            "checker_error": checker_error}
     else:
         print("\n[3/3] Live API checks skipped (pass --live to enable)")
 
@@ -810,15 +865,18 @@ def main():
 
     results["violations"] = all_violations
     results["unreachable"] = all_unreachable
+    results["checker_error"] = checker_error
     results["summary"] = {
         "total_passed": total_passed,
         "total_failed": total_failed,
         "violation_count": len(all_violations),
         "unmeasured_count": len(all_unreachable),
-        # Only true when nothing was violated AND nothing went unmeasured.
-        # An unreachable node makes this None, never True.
+        "checker_error": checker_error,
+        # Only true when nothing was violated AND nothing went unmeasured AND
+        # the checker itself ran to completion. Anything else is None, never
+        # True.
         "all_invariants_hold": (
-            None if all_unreachable and not all_violations
+            None if (all_unreachable or checker_error) and not all_violations
             else len(all_violations) == 0
         ),
     }
@@ -840,6 +898,12 @@ def main():
     if args.ci and (total_failed > 0 or all_violations):
         print("\n[CI] Exiting with code 1 — invariant VIOLATIONS detected")
         sys.exit(1)
+
+    if args.ci and checker_error:
+        print(f"\n[CI] Exiting with code 3 — the CHECKER crashed "
+              f"({checker_error}). This is a bug in this suite, not a verdict "
+              f"about the chain.")
+        sys.exit(3)
 
     if args.ci and all_unreachable:
         print("\n[CI] Exiting with code 2 — live node could not be measured. "

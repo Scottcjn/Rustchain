@@ -91,6 +91,8 @@ jobs:
       #   0 = measured, holds        -> pass
       #   1 = measured, VIOLATED     -> FAIL, always, no exceptions
       #   2 = could not be measured  -> warn, do not fail
+      #   3 = the CHECKER crashed    -> FAIL, under its own name (a broken
+      #                                 guard is not a verdict about the chain)
       - name: Run ledger invariant tests (with live node check)
         if: success()
         run: |
@@ -108,10 +110,18 @@ jobs:
               echo "Live ledger invariants measured and hold."
               ;;
             2)
-              echo "::warning title=Live node unreachable::Live ledger invariants could NOT be measured. No violation was observed, and none was ruled out."
+              echo "::warning title=Live node unmeasurable::Live ledger invariants could NOT be measured (node unreachable, non-JSON body, or an unreadable payload shape). No violation was observed, and none was ruled out."
+              ;;
+            3)
+              echo "::error title=Ledger invariant checker crashed::live_api_checks raised. This is a bug in testing/ledger_invariants.py, NOT a verdict about the chain — but a guard that cannot run is a broken guard."
+              exit 3
+              ;;
+            1)
+              echo "::error title=Ledger invariant violated::The live chain violated a ledger invariant. This is never tolerated."
+              exit 1
               ;;
             *)
-              echo "::error title=Ledger invariant violated::The live chain violated a ledger invariant (exit $rc). This is never tolerated."
+              echo "::error title=Ledger invariant suite failed::Unexpected exit $rc."
               exit "$rc"
               ;;
           esac
