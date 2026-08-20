@@ -1,0 +1,38 @@
+name: falsegreen (new false-green only)
+
+# Gates only what a PR ADDS, never the legacy baseline — see tools/falsegreen/README.md.
+# A repo with pre-existing findings adopts this without first clearing them; only a
+# newly-introduced "reports success while doing nothing" shape fails the check.
+
+on:
+  pull_request:
+    paths:
+      - "**/*.py"
+      - "**/*.yml"
+      - "**/*.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  falsegreen:
+    name: no new false-green
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need the base ref for the diff
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Self-test the linter
+        run: python3 -m pytest tools/falsegreen/test_falsegreen.py -q
+
+      - name: Lint the PR delta
+        run: |
+          BASE="origin/${{ github.base_ref }}"
+          git fetch --no-tags --depth=200 origin "${{ github.base_ref }}"
+          echo "Checking lines added since $BASE for new false-green shapes…"
+          python3 tools/falsegreen/falsegreen.py . --diff "$BASE" --min-sev HIGH
