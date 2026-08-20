@@ -15,6 +15,9 @@ let autoRotate = true;
 let autoRotateSpeed = 0.001; // radians per frame (~0.06°)
 let lerpTarget = null;
 let lerpAlpha = 0;
+let rendererPixelRatioCap = 2;
+
+const PERFORMANCE_PIXEL_RATIO_CAP = 1.25;
 
 // Day/Night Cycle - Lighting references
 let ambientLight, dirLight;
@@ -27,6 +30,11 @@ export function getClock() { return clock; }
 export function registerClickable(mesh) { clickables.push(mesh); }
 export function registerHoverable(mesh) { hoverables.push(mesh); }
 export function onAnimate(fn) { animationCallbacks.push(fn); }
+
+export function setAgentPerformanceMode(enabled) {
+  rendererPixelRatioCap = enabled ? PERFORMANCE_PIXEL_RATIO_CAP : 2;
+  updateRendererPixelRatio();
+}
 
 export function initScene(canvas) {
   clock = new THREE.Clock();
@@ -44,7 +52,7 @@ export function initScene(canvas) {
   // Renderer
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  updateRendererPixelRatio();
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.8;
 
@@ -99,6 +107,12 @@ function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  updateRendererPixelRatio();
+}
+
+function updateRendererPixelRatio() {
+  if (!renderer) return;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, rendererPixelRatioCap));
 }
 
 // --- Click detection ---
