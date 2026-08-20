@@ -285,7 +285,11 @@ def cmd_import(args):
 
 
 def cmd_export(args):
-    ks = _load_keystore(args.wallet)
+    try:
+        ks = _load_keystore(args.wallet)
+    except FileNotFoundError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return EXIT_WALLET_NOT_FOUND
     print(json.dumps(ks, indent=2))
     return EXIT_SUCCESS
 
@@ -502,7 +506,7 @@ def main():
     try:
         return args.func(args)
     except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+        print(f"ERROR: {e}", file=sys.stderr)
         return EXIT_UNKNOWN_ERROR
 
 
