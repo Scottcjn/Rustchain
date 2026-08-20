@@ -126,6 +126,11 @@ def _json_max_depth(text: str) -> int:
     return max_depth
 
 
+def _reject_nonstandard_json_constant(value: str):
+    """Reject Python's non-standard NaN/Infinity JSON extensions."""
+    raise ValueError(f"non-standard JSON constant: {value}")
+
+
 # ---------------------------------------------------------------------------
 # Box / Transaction helpers (dict-based, not dataclass — keeps it simple)
 # ---------------------------------------------------------------------------
@@ -635,9 +640,13 @@ class UtxoDB:
             if _json_max_depth(registers_json) > MAX_UTXO_JSON_DEPTH:
                 return None
             try:
-                tokens = json.loads(tokens_json)
-                registers = json.loads(registers_json)
-            except (TypeError, json.JSONDecodeError):
+                tokens = json.loads(
+                    tokens_json, parse_constant=_reject_nonstandard_json_constant
+                )
+                registers = json.loads(
+                    registers_json, parse_constant=_reject_nonstandard_json_constant
+                )
+            except (TypeError, ValueError):
                 return None
             if not isinstance(tokens, list):
                 return None
