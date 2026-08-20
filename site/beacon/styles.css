@@ -90,6 +90,44 @@ html, body {
   color: var(--green);
 }
 
+.city-teleport {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 7px;
+  pointer-events: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.city-teleport-select {
+  width: 220px;
+  max-width: calc(100vw - 70px);
+  padding: 5px 24px 5px 8px;
+  border: 1px solid var(--green-dim);
+  border-radius: 2px;
+  background: rgba(0, 8, 0, 0.9);
+  color: var(--green);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  outline: none;
+}
+
+.city-teleport-select:hover,
+.city-teleport-select:focus-visible {
+  border-color: var(--green);
+  box-shadow: 0 0 10px var(--green-glow);
+}
+
+.city-teleport-select optgroup,
+.city-teleport-select option {
+  background: var(--bg-terminal);
+  color: var(--green);
+}
+
 /* --- Controls hint (bottom-left) --- */
 .controls-hint {
   position: fixed;
@@ -752,6 +790,7 @@ html, body {
 
   .hud-title { font-size: 22px; }
   .hud-stats { font-size: 14px; }
+  .city-teleport-select { width: min(220px, calc(100vw - 64px)); }
 
   .controls-hint { display: none; }
 }
