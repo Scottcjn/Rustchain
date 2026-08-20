@@ -150,7 +150,7 @@ MIT License — See [LICENSE](../../LICENSE) for details.
 ## Related
 
 - [BCOS Specification](../../docs/BEACON_CERTIFIED_OPEN_SOURCE.md)
-- [BCOS Verification](https://rustchain.org/bcos/verify/)
+- [BCOS Verification](https://rustchain.org) — see the [BCOS Specification](../../docs/BEACON_CERTIFIED_OPEN_SOURCE.md)
 - [RustChain](https://rustchain.org)
 
 ---

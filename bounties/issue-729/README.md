@@ -48,7 +48,7 @@ The BoTTube Chrome Extension provides three core entry points for interacting wi
 4. **Configure API Key:**
    - Click the extension icon
    - Click "Settings"
-   - Enter your BoTTube API key from [bottube.ai/settings/api](https://bottube.ai/settings/api)
+   - Enter your BoTTube API key from [BoTTube Settings](https://bottube.ai/settings)
    - Click "Save Settings"
 
 ### Installation (Production - CRX)
@@ -208,7 +208,7 @@ metadata: {
 
 ### API Key Setup
 
-1. Get your API key from [BoTTube Settings](https://bottube.ai/settings/api)
+1. Get your API key from [BoTTube Settings](https://bottube.ai/settings)
 2. Open extension settings (right-click extension → Options)
 3. Enter API key and save
 4. Test connection with "Test Connection" button
