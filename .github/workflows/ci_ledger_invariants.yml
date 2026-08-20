@@ -1,14 +1,54 @@
 name: Ledger Invariant Tests
 
+# Triggers deliberately cover the code the invariants are ABOUT, not just the
+# invariant file itself.
+#
+# Before: this workflow fired only on changes to testing/ledger_invariants.py
+# and to this file. That is a guard wired to fire only when you edit the guard —
+# a PR that changed settlement, reward, or balance code never ran the ledger
+# invariants at all. The paths below are the ledger/settlement surface those
+# invariants actually constrain.
+#
+# NOTE: the two path lists below are duplicated verbatim. GitHub Actions does
+# not support YAML anchors/aliases in workflow files, so they cannot be shared.
+# Keep them in sync by hand.
 on:
   push:
     paths:
       - 'testing/ledger_invariants.py'
+      - 'testing/test_ledger_invariants.py'
+      - 'testing/test_inv5_antiquity_ordering_asymmetry.py'
       - '.github/workflows/ci_ledger_invariants.yml'
+      # Ledger / settlement / reward surface
+      - 'node/rustchain_v2_integrated_v2.2.1_rip200.py'
+      - 'node/rewards_implementation_rip200.py'
+      - 'node/settle_epoch.py'
+      - 'node/settlement_signer.py'
+      - 'node/auto_epoch_settler.py'
+      - 'node/claims_settlement.py'
+      - 'node/available_balance.py'
+      - 'node/lock_ledger.py'
+      - 'node/db_helpers.py'
+      - 'payout_ledger.py'
+      - 'payout_preflight.py'
   pull_request:
     paths:
       - 'testing/ledger_invariants.py'
+      - 'testing/test_ledger_invariants.py'
+      - 'testing/test_inv5_antiquity_ordering_asymmetry.py'
       - '.github/workflows/ci_ledger_invariants.yml'
+      # Ledger / settlement / reward surface
+      - 'node/rustchain_v2_integrated_v2.2.1_rip200.py'
+      - 'node/rewards_implementation_rip200.py'
+      - 'node/settle_epoch.py'
+      - 'node/settlement_signer.py'
+      - 'node/auto_epoch_settler.py'
+      - 'node/claims_settlement.py'
+      - 'node/available_balance.py'
+      - 'node/lock_ledger.py'
+      - 'node/db_helpers.py'
+      - 'payout_ledger.py'
+      - 'payout_preflight.py'
   workflow_dispatch:
     inputs:
       scenarios:
@@ -20,20 +60,20 @@ jobs:
   ledger-invariants:
     runs-on: ubuntu-latest
     name: Ledger Invariant Test Suite
-    
+
     steps:
       - uses: actions/checkout@v7
-      
+
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-      
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install hypothesis
-      
+
       - name: Run ledger invariant tests (property-based)
         run: |
           python testing/ledger_invariants.py \
@@ -41,25 +81,70 @@ jobs:
             --verbose \
             --scenarios ${{ github.event.inputs.scenarios || '10000' }}
         timeout-minutes: 10
-      
+
+      # An unreachable node and a VIOLATED invariant are different events and
+      # must not share an outcome. `continue-on-error: true` used to cover both,
+      # so a genuine conservation-of-supply break on the production chain went
+      # green as "live node may be temporarily unreachable".
+      #
+      # ledger_invariants.py --ci now exits:
+      #   0 = measured, holds        -> pass
+      #   1 = measured, VIOLATED     -> FAIL, always, no exceptions
+      #   2 = could not be measured  -> warn, do not fail
+      #   3 = the CHECKER crashed    -> FAIL, under its own name (a broken
+      #                                 guard is not a verdict about the chain)
       - name: Run ledger invariant tests (with live node check)
         if: success()
         run: |
+          set -uo pipefail
+          set +e
           python testing/ledger_invariants.py \
             --ci \
             --live \
             --verbose \
             --scenarios 1000
-        continue-on-error: true  # Live node may be temporarily unreachable
+          rc=$?
+          set -e
+          case "$rc" in
+            0)
+              echo "Live ledger invariants measured and hold."
+              ;;
+            2)
+              echo "::warning title=Live node unmeasurable::Live ledger invariants could NOT be measured (node unreachable, non-JSON body, or an unreadable payload shape). No violation was observed, and none was ruled out."
+              ;;
+            3)
+              echo "::error title=Ledger invariant checker crashed::live_api_checks raised. This is a bug in testing/ledger_invariants.py, NOT a verdict about the chain — but a guard that cannot run is a broken guard."
+              exit 3
+              ;;
+            1)
+              echo "::error title=Ledger invariant violated::The live chain violated a ledger invariant. This is never tolerated."
+              exit 1
+              ;;
+            *)
+              echo "::error title=Ledger invariant suite failed::Unexpected exit $rc."
+              exit "$rc"
+              ;;
+          esac
         timeout-minutes: 5
 
-      - name: Upload test report
+      # The report is written by the script straight to a file. It used to be
+      # `--report > report.json 2>&1 || true`, which piped stderr INTO the JSON
+      # and swallowed the exit code — so a crash uploaded an artifact named
+      # "report" that actually contained a Python traceback, and the run was
+      # green. Now: stderr stays on stderr, and a crash fails the step.
+      - name: Generate JSON report
         if: always()
         run: |
           python testing/ledger_invariants.py \
             --scenarios 100 \
-            --report > ledger_invariants_report.json 2>&1 || true
-      
+            --report-file ledger_invariants_report.json
+
+      - name: Verify report is valid JSON
+        if: always()
+        run: |
+          test -s ledger_invariants_report.json
+          python -c "import json,sys; json.load(open('ledger_invariants_report.json'))"
+
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@v7

@@ -16,6 +16,14 @@ Usage:
     python rustchain-health.py -u http://localhost:5000  # custom node
     python rustchain-health.py --watch 10                # refresh every 10s
     python rustchain-health.py --json                    # machine-readable output
+
+Exit codes:
+    0  every check returned a JSON answer saying it is fine
+    1  at least one check failed, or could not be evaluated
+
+A node is judged on its response BODY, never on its status code. A host that
+answers 200 on every path (for example a single-page app parked on a
+decommissioned node's address) is reported as unhealthy, because it is.
 """
 
 from __future__ import annotations
@@ -71,8 +79,23 @@ def _ssl_ctx() -> ssl.SSLContext:
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
 
-def fetch(url: str, timeout: int = 8) -> Tuple[bool, Any, float]:
-    """GET *url*, return (ok, parsed_json_or_None, latency_ms)."""
+def fetch(url: str, timeout: int = 8) -> Tuple[bool, bool, Any, float]:
+    """GET *url*, return (reachable, parsed, payload, latency_ms).
+
+    reachable — the transport succeeded and the server answered at all.
+    parsed    — the body was valid JSON.
+    payload   — the decoded JSON on success, otherwise an error string.
+
+    The two flags are kept apart on purpose. A 200 response carrying HTML is
+    reachable but NOT parsed, and a node that is merely reachable has told us
+    nothing about its health. This is the CognetCloud / Node-4 failure: after
+    that operator took the node down, the host began serving an unrelated
+    single-page app which answers 200 on *every* unknown path — so /health and
+    /epoch both returned 200 with HTML, and a checker that trusted the status
+    code reported the dead node healthy indefinitely.
+
+    Check the body. Never the status code alone.
+    """
     t0 = time.time()
     try:
         req = Request(url, headers={
@@ -83,82 +106,135 @@ def fetch(url: str, timeout: int = 8) -> Tuple[bool, Any, float]:
             body = resp.read(2 * 1024 * 1024).decode("utf-8", errors="replace")
             latency = (time.time() - t0) * 1000
             try:
-                return True, json.loads(body), latency
-            except json.JSONDecodeError:
-                return True, body.strip(), latency
+                return True, True, json.loads(body), latency
+            except json.JSONDecodeError as exc:
+                preview = body.strip()[:120]
+                return True, False, (
+                    f"200 response was not JSON ({exc.msg}); "
+                    f"body starts: {preview!r}"
+                ), latency
     except (HTTPError, URLError, OSError) as exc:
         latency = (time.time() - t0) * 1000
-        return False, str(exc), latency
+        return False, False, str(exc), latency
 
 # ── individual checks ──────────────────────────────────────────────────────
 
+# Every check below reports three separate facts:
+#   reachable — the server answered
+#   parsed    — the answer was JSON
+#   ok        — the answer said the thing we are checking is actually fine
+# `ok` is the ONLY one used for the status dot, the aggregate, and the exit
+# code. Reachability alone never means healthy.
+
 def check_health(base: str, timeout: int) -> Dict[str, Any]:
-    ok, data, ms = fetch(f"{base}/health", timeout)
-    result: Dict[str, Any] = {"reachable": ok, "latency_ms": round(ms, 1)}
-    if ok and isinstance(data, dict):
-        result["ok"] = data.get("ok", False)
+    reachable, parsed, data, ms = fetch(f"{base}/health", timeout)
+    result: Dict[str, Any] = {
+        "reachable": reachable, "parsed": parsed, "latency_ms": round(ms, 1)}
+    if parsed and isinstance(data, dict):
+        # The node's own verdict, defaulting to NOT ok when the field is absent.
+        result["ok"] = bool(data.get("ok", False))
         result["version"] = data.get("version")
         result["uptime_s"] = data.get("uptime_s")
         result["db_rw"] = data.get("db_rw")
         result["tip_age_slots"] = data.get("tip_age_slots")
-    elif ok:
-        result["ok"] = True
-        result["raw"] = str(data)[:200]
+        if not result["ok"]:
+            result["error"] = "node answered /health but did not report ok=true"
+    elif parsed:
+        # Valid JSON but not an object — not a /health response.
+        result["ok"] = False
+        result["error"] = f"/health returned JSON that is not an object: {str(data)[:120]}"
     else:
         result["ok"] = False
         result["error"] = str(data)
     return result
 
 def check_epoch(base: str, timeout: int) -> Dict[str, Any]:
-    ok, data, ms = fetch(f"{base}/epoch", timeout)
-    result: Dict[str, Any] = {"reachable": ok, "latency_ms": round(ms, 1)}
-    if ok and isinstance(data, dict):
+    reachable, parsed, data, ms = fetch(f"{base}/epoch", timeout)
+    result: Dict[str, Any] = {
+        "reachable": reachable, "parsed": parsed, "latency_ms": round(ms, 1)}
+    if parsed and isinstance(data, dict):
         result["epoch"] = data.get("epoch")
         result["slot"] = data.get("slot")
         result["epoch_pot"] = data.get("epoch_pot")
         result["enrolled_miners"] = data.get("enrolled_miners")
         result["blocks_per_epoch"] = data.get("blocks_per_epoch")
         result["total_supply_rtc"] = data.get("total_supply_rtc")
-    elif ok:
-        result["raw"] = str(data)[:200]
+        result["ok"] = result["epoch"] is not None
+        if not result["ok"]:
+            result["error"] = "/epoch response carried no 'epoch' field"
+    elif parsed:
+        result["ok"] = False
+        result["error"] = f"/epoch returned JSON that is not an object: {str(data)[:120]}"
     else:
+        result["ok"] = False
         result["error"] = str(data)
     return result
 
 def check_miners(base: str, timeout: int) -> Dict[str, Any]:
-    ok, data, ms = fetch(f"{base}/api/miners", timeout)
-    result: Dict[str, Any] = {"reachable": ok, "latency_ms": round(ms, 1)}
-    if ok and isinstance(data, list):
+    reachable, parsed, data, ms = fetch(f"{base}/api/miners", timeout)
+    result: Dict[str, Any] = {
+        "reachable": reachable, "parsed": parsed, "latency_ms": round(ms, 1)}
+    if parsed and isinstance(data, list):
         result["miner_count"] = len(data)
         result["miners"] = data[:10]  # first 10 for display
-    elif ok and isinstance(data, dict):
+        result["ok"] = True
+    elif parsed and isinstance(data, dict):
         miners = data.get("miners", data.get("data", data.get("items", [])))
-        result["miner_count"] = len(miners) if isinstance(miners, list) else data.get("count", "?")
         if isinstance(miners, list):
+            result["miner_count"] = len(miners)
             result["miners"] = miners[:10]
+            result["ok"] = True
+        else:
+            count = data.get("count")
+            result["miner_count"] = count if isinstance(count, int) else 0
+            result["ok"] = isinstance(count, int)
+            if not result["ok"]:
+                result["error"] = "/api/miners response contained no miner list or count"
     else:
         result["miner_count"] = 0
-        result["error"] = str(data) if not ok else None
+        result["ok"] = False
+        result["error"] = str(data)
     return result
 
 def check_tip(base: str, timeout: int) -> Dict[str, Any]:
-    ok, data, ms = fetch(f"{base}/headers/tip", timeout)
-    result: Dict[str, Any] = {"reachable": ok, "latency_ms": round(ms, 1)}
-    if ok and isinstance(data, dict):
+    reachable, parsed, data, ms = fetch(f"{base}/headers/tip", timeout)
+    result: Dict[str, Any] = {
+        "reachable": reachable, "parsed": parsed, "latency_ms": round(ms, 1)}
+    if parsed and isinstance(data, dict):
         result["height"] = data.get("height", data.get("block_height"))
         result["hash"] = data.get("hash", data.get("block_hash"))
         result["timestamp"] = data.get("timestamp")
-    elif ok:
-        result["raw"] = str(data)[:200]
+        result["ok"] = result["height"] is not None
+        if not result["ok"]:
+            result["error"] = "/headers/tip response carried no height"
+    elif parsed:
+        result["ok"] = False
+        result["error"] = f"/headers/tip returned JSON that is not an object: {str(data)[:120]}"
     else:
+        result["ok"] = False
         result["error"] = str(data)
     return result
 
 # ── aggregator ──────────────────────────────────────────────────────────────
 
+CHECKS = ("health", "epoch", "miners", "tip")
+
+
+def overall_ok(snapshot: Dict[str, Any]) -> bool:
+    """True only when every check produced a JSON answer that says it is fine.
+
+    Single source of truth for the rendered banner, the JSON `overall_ok`, and
+    the process exit code. These three used to disagree: the banner and the
+    exit code both keyed off `reachable`, so a host answering 200-with-HTML on
+    every path scored four green dots, printed ALL SYSTEMS OPERATIONAL, and
+    exited 0 forever.
+    """
+    return all(snapshot[name].get("ok", False) for name in CHECKS)
+
+
 def collect(base_url: str, timeout: int = 8) -> Dict[str, Any]:
     base = base_url.rstrip("/")
-    return {
+    snapshot: Dict[str, Any] = {
         "node": base,
         "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "health": check_health(base, timeout),
@@ -166,6 +242,8 @@ def collect(base_url: str, timeout: int = 8) -> Dict[str, Any]:
         "miners": check_miners(base, timeout),
         "tip": check_tip(base, timeout),
     }
+    snapshot["overall_ok"] = overall_ok(snapshot)
+    return snapshot
 
 # ── pretty printer ──────────────────────────────────────────────────────────
 
@@ -201,7 +279,7 @@ def render(snapshot: Dict[str, Any]) -> str:
 
     # ── Health ───
     h = snapshot["health"]
-    h_ok = h.get("ok", False) and h["reachable"]
+    h_ok = h.get("ok", False)
     lines.append(f"  {status_dot(h_ok)}  {bold('Health')}          "
                  f"{green('healthy') if h_ok else red('UNHEALTHY')}  "
                  f"{dim(str(round(h['latency_ms'])) + ' ms')}")
@@ -218,7 +296,7 @@ def render(snapshot: Dict[str, Any]) -> str:
 
     # ── Epoch ───
     e = snapshot["epoch"]
-    e_ok = e["reachable"] and e.get("epoch") is not None
+    e_ok = e.get("ok", False)
     lines.append(f"  {status_dot(e_ok)}  {bold('Epoch')}           "
                  f"{green(str(e.get('epoch', '?'))) if e_ok else red('unavailable')}  "
                  f"{dim(str(round(e['latency_ms'])) + ' ms')}")
@@ -237,7 +315,7 @@ def render(snapshot: Dict[str, Any]) -> str:
 
     # ── Chain Tip ───
     t = snapshot["tip"]
-    t_ok = t["reachable"] and t.get("height") is not None
+    t_ok = t.get("ok", False)
     lines.append(f"  {status_dot(t_ok)}  {bold('Chain Tip')}       "
                  f"{'#' + str(t.get('height', '?')) if t_ok else yellow('unknown')}  "
                  f"{dim(str(round(t['latency_ms'])) + ' ms')}")
@@ -251,7 +329,7 @@ def render(snapshot: Dict[str, Any]) -> str:
 
     # ── Miners ───
     m = snapshot["miners"]
-    m_ok = m["reachable"]
+    m_ok = m.get("ok", False)
     count = m.get("miner_count", 0)
     count_str = str(count) if isinstance(count, int) else str(count)
     color_count = green(count_str) if (isinstance(count, int) and count > 0) else yellow(count_str)
@@ -273,15 +351,21 @@ def render(snapshot: Dict[str, Any]) -> str:
     lines.append("")
 
     # ── Overall ───
-    all_ok = (h.get("ok", False) and h["reachable"]
-              and e["reachable"]
-              and m["reachable"]
-              and t["reachable"])
+    all_ok = overall_ok(snapshot)
     lines.append(dim("  " + "─" * w))
     if all_ok:
         lines.append(f"  {green(bold('STATUS: ALL SYSTEMS OPERATIONAL'))}")
     else:
         lines.append(f"  {red(bold('STATUS: ISSUES DETECTED'))}")
+        # Name what could not be measured, so "issues detected" is actionable
+        # rather than a bare red line.
+        unparsed = [k for k in ("health", "epoch", "miners", "tip")
+                    if snapshot[k].get("reachable") and not snapshot[k].get("parsed")]
+        if unparsed:
+            lines.append(f"  {yellow('Answered 200 but not with JSON')}: "
+                         f"{', '.join(unparsed)}")
+            lines.append(dim("  A host that answers every path with HTML is not "
+                             "a running node."))
     lines.append("")
 
     return "\n".join(lines)
@@ -355,13 +439,8 @@ def main() -> int:
             print(json.dumps(snapshot, indent=2))
         else:
             print(render(snapshot))
-        # exit 0 if healthy, 1 otherwise
-        all_ok = (snapshot["health"].get("ok", False)
-                  and snapshot["health"]["reachable"]
-                  and snapshot["epoch"]["reachable"]
-                  and snapshot["miners"]["reachable"]
-                  and snapshot["tip"]["reachable"])
-        return 0 if all_ok else 1
+        # exit 0 only if every check returned a JSON answer that says it is fine
+        return 0 if overall_ok(snapshot) else 1
 
     if args.watch > 0:
         try:

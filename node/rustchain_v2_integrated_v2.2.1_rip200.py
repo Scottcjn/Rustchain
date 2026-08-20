@@ -11564,7 +11564,18 @@ def _pending_confirm_limit(raw_limit=None):
 
 def _pending_overdue_stats(c, now):
     """Read-only: how many pending transfers are past their confirm window, and
-    the oldest one's overdue seconds. Pure observability — never mutates."""
+    the oldest one's overdue seconds. Pure observability — never mutates.
+
+    On a DB error the counts come back as None, NOT 0, alongside
+    `overdue_stats_measured: False` and an explicit `overdue_stats_error`.
+
+    This used to return zeros. A locked pending_ledger therefore reported a
+    healthy "0 overdue" — which is precisely the hourly confirmer's stop
+    condition (confirm-pending.yml reads stale_pending_count, sees 0, logs
+    "queue drained", breaks, and the run goes green). RTC delivery would halt
+    while the job that exists to deliver it reported success. "Could not
+    measure" is not "nothing to do"; callers must fail closed on None.
+    """
     try:
         row = c.execute(
             """
@@ -11575,15 +11586,21 @@ def _pending_overdue_stats(c, now):
             (now, now),
         ).fetchone()
     except sqlite3.Error as e:
-        # Degrade gracefully so observability never 500s the endpoint, but LOG it:
-        # a locked DB or schema drift on pending_ledger must not masquerade as a
-        # healthy "0 overdue" — monitors that trust these fields would miss a real
-        # backlog. Narrowed from bare Exception so genuine bugs still surface.
-        print(f"[WARN] _pending_overdue_stats DB error (reporting 0 overdue): {e!r}", flush=True)
-        return {"stale_pending_count": 0, "max_confirm_overdue_seconds": 0}
+        # Degrade without 500ing the endpoint, but say plainly that the number
+        # is unknown. Narrowed from bare Exception so genuine bugs still surface.
+        print(f"[WARN] _pending_overdue_stats DB error (counts UNKNOWN, not 0): {e!r}",
+              flush=True)
+        return {
+            "stale_pending_count": None,
+            "max_confirm_overdue_seconds": None,
+            "overdue_stats_measured": False,
+            "overdue_stats_error": f"{type(e).__name__}: {e}",
+        }
     return {
         "stale_pending_count": int(row[0] or 0),
         "max_confirm_overdue_seconds": max(0, int(row[1] or 0)),
+        "overdue_stats_measured": True,
+        "overdue_stats_error": None,
     }
 
 
@@ -12061,6 +12078,11 @@ def confirm_pending():
             "errors": errors if errors else None,
             "stale_pending_count_before": before_stats["stale_pending_count"],
             "max_confirm_overdue_seconds_before": before_stats["max_confirm_overdue_seconds"],
+            "overdue_stats_measured_before": before_stats["overdue_stats_measured"],
+            # after_stats supplies stale_pending_count, max_confirm_overdue_seconds,
+            # overdue_stats_measured and overdue_stats_error. When
+            # overdue_stats_measured is False, stale_pending_count is null —
+            # callers must NOT read that as a drained queue.
             **after_stats,
         })
 
