@@ -145,7 +145,7 @@ video_url = f"https://bottube.ai/video/{video_id}"
         {"name": "🖥️ Device", "value": "..."},
         {"name": "💰 RTC Earned", "value": "..."},
         {"name": "📜 Eulogy", "value": "..."},
-        {"name": "🎬 Memorial Video", "value": "[Watch](url)"}
+        {"name": "🎬 Memorial Video", "value": "`Watch (url)`"}
     ],
     "footer": {"text": "Miner ID: 0x..."},
     "timestamp": "ISO8601"

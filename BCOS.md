@@ -6,7 +6,7 @@ This repository is certified under the **Beacon Certified Open Source (BCOS)** p
 
 ## Verification
 
-Verify this repository's certification at: **[rustchain.org/bcos/](https://rustchain.org/bcos/)**
+Verify this repository's certification at: **[rustchain.org/bcos/](BCOS.md)**
 
 ```bash
 python3 -m pip install clawrtc
