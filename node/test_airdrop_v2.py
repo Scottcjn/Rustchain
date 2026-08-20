@@ -141,7 +141,7 @@ class TestEligibilityChecks(unittest.TestCase):
                 return mock_user
             elif "starred" in url:
                 return mock_stars
-            elif "search/commits" in url:
+            elif "search/issues" in url:
                 return mock_contrib
             return Mock(status_code=404)
 
@@ -159,6 +159,71 @@ class TestEligibilityChecks(unittest.TestCase):
         self.assertTrue(result.eligible)
         self.assertEqual(result.tier, "builder")  # 3 PRs = Builder tier
         self.assertEqual(result.reward_uwrtc, 100 * 1_000_000)
+
+    @patch("requests.get")
+    def test_determine_tier_scoped_to_org(self, mock_get):
+        """Regression: tier must count merged PRs to THIS org, not GitHub-wide.
+
+        Guards against the #8184 defect where _determine_tier queried
+        /search/commits with `author:<user> merged:true` (GitHub-wide), so any
+        established account reached CORE without contributing to RustChain.
+        The query must now hit /search/issues scoped with
+        `org:Scottcjn is:pr is:merged`.
+        """
+        captured = {}
+
+        mock_user = Mock()
+        mock_user.status_code = 200
+        mock_user.json.return_value = {
+            "login": "testuser",
+            "created_at": "2020-01-01T00:00:00Z",
+            "starred_url": "https://api.github.com/users/testuser/starred{/owner}{/repo}",
+        }
+        mock_user.headers = {}
+
+        mock_stars = Mock()
+        mock_stars.status_code = 200
+        mock_stars.headers = {
+            "Link": '<https://api.github.com/user/starred?page=5>; rel="last"'
+        }
+        mock_stars.json.return_value = []
+
+        mock_contrib = Mock()
+        mock_contrib.status_code = 200
+        mock_contrib.json.return_value = {"total_count": 5}  # 5 merged PRs -> CORE
+
+        def side_effect(url, *args, **kwargs):
+            if "users/testuser" in url and "starred" not in url:
+                return mock_user
+            elif "starred" in url:
+                return mock_stars
+            elif "search/issues" in url:
+                captured["url"] = url
+                captured["params"] = kwargs.get("params", {})
+                return mock_contrib
+            return Mock(status_code=404)
+
+        mock_get.side_effect = side_effect
+
+        result = self.airdrop.check_eligibility(
+            github_username="testuser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
+            chain="base",
+            skip_antisybil=True,
+        )
+
+        # The contribution query must be scoped to the org and to merged PRs.
+        self.assertIn("search/issues", captured["url"])
+        q = captured["params"].get("q", "")
+        self.assertIn("org:Scottcjn", q)
+        self.assertIn("is:pr", q)
+        self.assertIn("is:merged", q)
+        self.assertNotIn("merged:true", q)  # the old, unscoped qualifier
+
+        # 5 merged PRs to the org => CORE tier.
+        self.assertTrue(result.eligible)
+        self.assertEqual(result.tier, "core")
+        self.assertEqual(result.reward_uwrtc, 200 * 1_000_000)
 
     def test_invalid_chain(self):
         """Test eligibility check with invalid chain."""
