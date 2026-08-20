@@ -429,6 +429,11 @@ function cityFromCategories(cats) {
 // ============================================================
 // Convert a BoTTube API agent into an Atlas agent
 // ============================================================
+export function normalizeBottubeAgents(payload) {
+  if (Array.isArray(payload)) return payload;
+  return Array.isArray(payload?.agents) ? payload.agents : [];
+}
+
 function bottubeToAtlas(bt) {
   const legacy = LEGACY_AGENT_OVERRIDES[bt.agent_name];
   const id = legacy ? legacy.id : makeGeneratedId('bcn_bt', bt.agent_name);
@@ -566,20 +571,33 @@ export async function fetchAllAgents(apiBase) {
   }
 
   // --- 1. BoTTube agents ---
-  try {
-    const resp = await fetch(`${bottubeBase}/api/atlas/agents`);
-    if (resp.ok) {
-      const btAgents = await resp.json();
-      for (const bt of btAgents) {
-        if (shouldSkip(bt.agent_name)) { results.skipped++; continue; }
-        // Skip 0-video bots (keep 0-video humans)
-        if (bt.video_count === 0 && !bt.is_human) { results.skipped++; continue; }
-        upsertAgent(bottubeToAtlas(bt));
-        results.bottube++;
-      }
+  // Prefer the Atlas-specific legacy response, then fall back to the current
+  // public agents envelope. The bounded popular page avoids spawning an
+  // unmanageable number of texture-bearing meshes at boot.
+  let btAgents = [];
+  let bottubeError = null;
+  for (const endpoint of [
+    `${bottubeBase}/api/atlas/agents`,
+    `${bottubeBase}/api/agents?limit=100&sort=popular`,
+  ]) {
+    try {
+      const resp = await fetch(endpoint);
+      if (!resp.ok) continue;
+      btAgents = normalizeBottubeAgents(await resp.json());
+      if (btAgents.length > 0) break;
+    } catch (e) {
+      bottubeError = e;
     }
-  } catch (e) {
-    console.warn('[data] BoTTube API unavailable:', e.message);
+  }
+  if (btAgents.length === 0 && bottubeError) {
+    console.warn('[data] BoTTube API unavailable:', bottubeError.message);
+  }
+  for (const bt of btAgents) {
+    if (shouldSkip(bt.agent_name)) { results.skipped++; continue; }
+    // Skip 0-video bots (keep 0-video humans)
+    if (bt.video_count === 0 && !bt.is_human) { results.skipped++; continue; }
+    upsertAgent(bottubeToAtlas(bt));
+    results.bottube++;
   }
 
   // --- 2. Beacon relay agents ---
@@ -828,6 +846,41 @@ export function buildingHeight(pop) {
 
 export function buildingCount(pop) {
   return Math.min(Math.floor(pop / 3) + 1, 15);
+}
+
+export function normalizeAvatarUrl(value, baseUrl = 'https://rustchain.org/beacon/') {
+  if (typeof value !== 'string') return '';
+
+  const candidate = value.trim();
+  if (!candidate || candidate.length > 2048) return '';
+
+  try {
+    const url = new URL(candidate, baseUrl);
+    if (url.protocol !== 'https:' || url.username || url.password) return '';
+    return url.href;
+  } catch {
+    return '';
+  }
+}
+
+export function avatarTextureUrl(value, proxyBase = '/beacon/api/avatar/') {
+  const normalized = normalizeAvatarUrl(value);
+  if (!normalized) return '';
+
+  const url = new URL(normalized);
+  if (url.origin !== 'https://bottube.ai') return normalized;
+
+  let filename;
+  try {
+    filename = decodeURIComponent(url.pathname.replace(/^\/avatar\//, ''));
+  } catch {
+    return '';
+  }
+  const validFilename = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,126}\.(?:svg|png|jpe?g|webp)$/i;
+  if (!url.pathname.startsWith('/avatar/') || url.search || url.hash || !validFilename.test(filename)) {
+    return '';
+  }
+  return `${proxyBase}${encodeURIComponent(filename)}`;
 }
 
 export function seededRandom(seed) {
