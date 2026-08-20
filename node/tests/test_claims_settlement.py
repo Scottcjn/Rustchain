@@ -31,6 +31,9 @@ from claims_settlement import (
     SettlementError,
     InsufficientFundsError,
     TransactionFailedError,
+    SettlementConfigurationError,
+    compute_local_batch_digest,
+    validate_settlement_config,
     _normalize_claim_limit,
     get_pending_claims,
     get_verifying_claims,
@@ -495,69 +498,219 @@ class TestCalculateSettlementFee:
 # 10. sign_and_broadcast_transaction
 # ═══════════════════════════════════════════════════════════════════════
 
+def _tx(batch_id="batch_2025_01_01_001", **over):
+    tx = {
+        "batch_id": batch_id,
+        "total_amount_urtc": 5000,
+        "outputs": [{"address": "RTCaaa", "amount_urtc": 5000}],
+        "fee_urtc": 1100,
+        "claim_ids": ["c-1"],
+        "created_at": 1700000000,
+    }
+    tx.update(over)
+    return tx
+
+
+def _configure_settlement(monkeypatch, tmp_path):
+    """Point settlement at a treasury key path and a node URL."""
+    key = tmp_path / "treasury.pem"
+    key.write_text("not-a-real-key")
+    monkeypatch.setenv("TREASURY_KEY_PATH", str(key))
+    monkeypatch.setenv("NODE_API_URL", "http://node.invalid:8099")
+
+
+def _stub_signer(monkeypatch, signature="0x" + "ab" * 64):
+    """Make signing succeed so broadcast behaviour is what is under test."""
+    import settlement_signer
+
+    monkeypatch.setattr(
+        settlement_signer,
+        "sign_settlement_batch",
+        lambda tx_data, key_path=None: (True, signature, None),
+    )
+
+
+class _Resp:
+    def __init__(self, status_code, payload):
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self):  # noqa: F811 - mimics requests.Response.json
+        if isinstance(self._payload, Exception):
+            raise self._payload
+        return self._payload
+
+
+def _stub_post(monkeypatch, resp):
+    """Stub requests.post with a canned response, or an exception to raise."""
+    import requests
+
+    def fake_post(*args, **kwargs):
+        if isinstance(resp, Exception):
+            raise resp
+        return resp
+
+    monkeypatch.setattr(requests, "post", fake_post)
+
+
+class TestComputeLocalBatchDigest:
+    """The digest is a local correlation id — never an on-chain reference."""
+
+    def test_is_not_0x_prefixed(self):
+        digest = compute_local_batch_digest(_tx())
+        assert not digest.startswith("0x")
+        assert len(digest) == 64
+
+    def test_deterministic_same_input(self):
+        assert compute_local_batch_digest(_tx()) == compute_local_batch_digest(_tx())
+
+    def test_different_input_different_digest(self):
+        assert compute_local_batch_digest(_tx("batch_a")) != compute_local_batch_digest(
+            _tx("batch_b")
+        )
+
+
+class TestValidateSettlementConfig:
+    def test_raises_when_both_unset(self, monkeypatch):
+        monkeypatch.delenv("TREASURY_KEY_PATH", raising=False)
+        monkeypatch.delenv("NODE_API_URL", raising=False)
+        with pytest.raises(SettlementConfigurationError) as exc:
+            validate_settlement_config()
+        assert "TREASURY_KEY_PATH" in str(exc.value)
+        assert "NODE_API_URL" in str(exc.value)
+
+    def test_raises_when_node_url_unset(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("TREASURY_KEY_PATH", str(tmp_path / "k.pem"))
+        monkeypatch.delenv("NODE_API_URL", raising=False)
+        with pytest.raises(SettlementConfigurationError):
+            validate_settlement_config()
+
+    def test_blank_is_treated_as_unset(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("TREASURY_KEY_PATH", str(tmp_path / "k.pem"))
+        monkeypatch.setenv("NODE_API_URL", "   ")
+        with pytest.raises(SettlementConfigurationError):
+            validate_settlement_config()
+
+    def test_passes_when_configured(self, monkeypatch, tmp_path):
+        _configure_settlement(monkeypatch, tmp_path)
+        validate_settlement_config()  # must not raise
+
+
 class TestSignAndBroadcastTransaction:
-    def test_returns_success_with_deterministic_hash(self):
-        tx = {
-            "batch_id": "batch_2025_01_01_001",
-            "total_amount_urtc": 5000,
-            "outputs": [{"address": "A", "amount_urtc": 5000}],
-            "fee_urtc": 1100,
-            "claim_ids": ["c-1"],
-            "created_at": 1700000000,
-        }
-        success, tx_hash, error = sign_and_broadcast_transaction(tx, ":memory:")
+    """Regression cover for #8230.
+
+    Every one of these cases previously returned ``success=True`` with a
+    fabricated ``0x…`` hash while nothing reached the chain.
+    """
+
+    def test_missing_config_is_a_hard_error(self, monkeypatch):
+        monkeypatch.delenv("TREASURY_KEY_PATH", raising=False)
+        monkeypatch.delenv("NODE_API_URL", raising=False)
+        with pytest.raises(SettlementConfigurationError):
+            sign_and_broadcast_transaction(_tx(), ":memory:")
+
+    def test_signer_unavailable_returns_failure(self, monkeypatch, tmp_path):
+        _configure_settlement(monkeypatch, tmp_path)
+        import builtins
+
+        real_import = builtins.__import__
+
+        def no_signer(name, *args, **kwargs):
+            if name == "settlement_signer":
+                raise ImportError("no module named settlement_signer")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", no_signer)
+        success, tx_hash, error = sign_and_broadcast_transaction(_tx(), ":memory:")
+        assert success is False
+        assert tx_hash is None
+        assert "not signed" in error
+
+    def test_signing_failure_returns_failure(self, monkeypatch, tmp_path):
+        _configure_settlement(monkeypatch, tmp_path)
+        import settlement_signer
+
+        monkeypatch.setattr(
+            settlement_signer,
+            "sign_settlement_batch",
+            lambda tx_data, key_path=None: (False, None, "bad treasury key"),
+        )
+        success, tx_hash, error = sign_and_broadcast_transaction(_tx(), ":memory:")
+        assert success is False
+        assert tx_hash is None
+        assert "bad treasury key" in error
+
+    def test_unreachable_node_returns_failure(self, monkeypatch, tmp_path):
+        _configure_settlement(monkeypatch, tmp_path)
+        _stub_signer(monkeypatch)
+        _stub_post(monkeypatch, ConnectionError("connection refused"))
+        success, tx_hash, error = sign_and_broadcast_transaction(_tx(), ":memory:")
+        assert success is False
+        assert tx_hash is None
+        assert "NOT confirmed on chain" in error
+
+    def test_non_2xx_returns_failure(self, monkeypatch, tmp_path):
+        _configure_settlement(monkeypatch, tmp_path)
+        _stub_signer(monkeypatch)
+        _stub_post(monkeypatch, _Resp(503, {}))
+        success, tx_hash, error = sign_and_broadcast_transaction(_tx(), ":memory:")
+        assert success is False
+        assert tx_hash is None
+        assert "503" in error
+
+    def test_2xx_with_unreadable_body_returns_failure(self, monkeypatch, tmp_path):
+        _configure_settlement(monkeypatch, tmp_path)
+        _stub_signer(monkeypatch)
+        _stub_post(monkeypatch, _Resp(200, ValueError("not json")))
+        success, tx_hash, error = sign_and_broadcast_transaction(_tx(), ":memory:")
+        assert success is False
+        assert tx_hash is None
+        assert "UNKNOWN" in error
+
+    def test_2xx_with_ok_false_returns_failure(self, monkeypatch, tmp_path):
+        """HTTP 200 carrying an application-level failure is still a failure."""
+        _configure_settlement(monkeypatch, tmp_path)
+        _stub_signer(monkeypatch)
+        _stub_post(monkeypatch, _Resp(200, {"ok": False, "error": "bad signature"}))
+        success, tx_hash, error = sign_and_broadcast_transaction(_tx(), ":memory:")
+        assert success is False
+        assert tx_hash is None
+        assert "bad signature" in error
+
+    def test_2xx_without_tx_hash_returns_failure(self, monkeypatch, tmp_path):
+        """A 2xx with no hash must not fall back to the local signature."""
+        _configure_settlement(monkeypatch, tmp_path)
+        signature = "0x" + "ab" * 64
+        _stub_signer(monkeypatch, signature=signature)
+        _stub_post(monkeypatch, _Resp(200, {"ok": True}))
+        success, tx_hash, error = sign_and_broadcast_transaction(_tx(), ":memory:")
+        assert success is False
+        assert tx_hash is None
+        assert signature not in (error or "")
+
+    def test_never_returns_the_local_signature_as_tx_hash(self, monkeypatch, tmp_path):
+        signature = "0x" + "cd" * 64
+        for resp in (
+            ConnectionError("down"),
+            _Resp(500, {}),
+            _Resp(200, {"ok": True}),
+            _Resp(200, ValueError("not json")),
+        ):
+            _configure_settlement(monkeypatch, tmp_path)
+            _stub_signer(monkeypatch, signature=signature)
+            _stub_post(monkeypatch, resp)
+            success, tx_hash, _ = sign_and_broadcast_transaction(_tx(), ":memory:")
+            assert success is False
+            assert tx_hash is None
+
+    def test_confirmed_broadcast_returns_node_hash(self, monkeypatch, tmp_path):
+        _configure_settlement(monkeypatch, tmp_path)
+        _stub_signer(monkeypatch)
+        _stub_post(monkeypatch, _Resp(200, {"ok": True, "tx_hash": "0xrealchainhash"}))
+        success, tx_hash, error = sign_and_broadcast_transaction(_tx(), ":memory:")
         assert success is True
-        assert tx_hash.startswith("0x")
-        assert len(tx_hash) == 66  # 0x + 64 hex chars
+        assert tx_hash == "0xrealchainhash"
         assert error is None
-
-    def test_deterministic_hash_same_input(self):
-        tx = {
-            "batch_id": "batch_2025_01_01_001",
-            "total_amount_urtc": 5000,
-            "outputs": [],
-            "fee_urtc": 1000,
-            "claim_ids": ["c-1"],
-            "created_at": 1700000000,
-        }
-        _, h1, _ = sign_and_broadcast_transaction(tx, ":memory:")
-        _, h2, _ = sign_and_broadcast_transaction(tx, ":memory:")
-        assert h1 == h2  # deterministic
-
-    def test_different_input_different_hash(self):
-        tx1 = {
-            "batch_id": "batch_a",
-            "total_amount_urtc": 1000,
-            "outputs": [],
-            "fee_urtc": 1000,
-            "claim_ids": ["c-1"],
-            "created_at": 1,
-        }
-        tx2 = {
-            "batch_id": "batch_b",
-            "total_amount_urtc": 1000,
-            "outputs": [],
-            "fee_urtc": 1000,
-            "claim_ids": ["c-1"],
-            "created_at": 1,
-        }
-        _, h1, _ = sign_and_broadcast_transaction(tx1, ":memory:")
-        _, h2, _ = sign_and_broadcast_transaction(tx2, ":memory:")
-        assert h1 != h2
-
-    def test_outputs_printed_but_not_critical(self, capsys):
-        tx = {
-            "batch_id": "batch_2025_01_01_001",
-            "total_amount_urtc": 5000,
-            "outputs": [{"address": "RTCaaa", "amount_urtc": 5000}],
-            "fee_urtc": 1100,
-            "claim_ids": ["c-1"],
-            "created_at": 1700000000,
-        }
-        sign_and_broadcast_transaction(tx, ":memory:")
-        captured = capsys.readouterr()
-        assert "Constructing transaction with 1 outputs" in captured.out
-        assert "Total amount: 5000" in captured.out
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -904,6 +1057,78 @@ class TestProcessClaimsBatch:
                 "SELECT status FROM claims WHERE claim_id = 'c-1'"
             ).fetchone()
         assert row[0] == "failed"
+
+    # ── #8230 regression: no fabricated settlement ────────────────────
+    # These exercise the REAL sign_and_broadcast_transaction. Before the fix
+    # both marked the claim 'settled' against a hash that never existed.
+
+    def test_unconfigured_settlement_does_not_settle_claims(self, tmp_path, monkeypatch):
+        """Missing config must not settle anything; claims stay retryable."""
+        monkeypatch.delenv("TREASURY_KEY_PATH", raising=False)
+        monkeypatch.delenv("NODE_API_URL", raising=False)
+
+        db = str(tmp_path / "test.db")
+        _init_db(db, FULL_SCHEMA)
+        now = int(time.time())
+        _insert_claim(db, "c-1", reward_urtc=1000, submitted_at=now - 10)
+        _seed_rewards_pool(db, 100000)
+
+        result = process_claims_batch(
+            db, max_claims=10, min_batch_size=1, max_wait_seconds=30
+        )
+
+        assert result["processed"] is False
+        assert result["transaction_hash"] is None
+        assert "TREASURY_KEY_PATH" in result["error"]
+
+        with sqlite3.connect(db) as conn:
+            status = conn.execute(
+                "SELECT status FROM claims WHERE claim_id = 'c-1'"
+            ).fetchone()[0]
+            pool = conn.execute(
+                "SELECT balance_urtc FROM rewards_pool WHERE pool_name = 'epoch_rewards'"
+            ).fetchone()[0]
+
+        # Nothing was signed or sent, so the claim is returned for a retry.
+        assert status == "approved"
+        assert pool == 100000  # reservation released, not consumed
+
+    def test_unreachable_node_does_not_settle_claims(self, tmp_path, monkeypatch):
+        """A node that never answers must not produce a settled claim."""
+        _configure_settlement(monkeypatch, tmp_path)
+        _stub_signer(monkeypatch)
+        _stub_post(monkeypatch, ConnectionError("connection refused"))
+
+        db = str(tmp_path / "test.db")
+        _init_db(db, FULL_SCHEMA)
+        now = int(time.time())
+        _insert_claim(db, "c-1", reward_urtc=1000, submitted_at=now - 10)
+        _seed_rewards_pool(db, 100000)
+
+        result = process_claims_batch(
+            db, max_claims=10, min_batch_size=1, max_wait_seconds=30
+        )
+
+        assert result["processed"] is False
+        assert result["transaction_hash"] is None
+        assert result["failed_count"] == 1
+        assert "NOT confirmed on chain" in result["error"]
+
+        # The batch digest is retained, but in its own field and never
+        # 0x-prefixed, so it cannot be read as an on-chain reference.
+        assert result["local_batch_digest"] is not None
+        assert not result["local_batch_digest"].startswith("0x")
+
+        with sqlite3.connect(db) as conn:
+            status = conn.execute(
+                "SELECT status FROM claims WHERE claim_id = 'c-1'"
+            ).fetchone()[0]
+            pool = conn.execute(
+                "SELECT balance_urtc FROM rewards_pool WHERE pool_name = 'epoch_rewards'"
+            ).fetchone()[0]
+
+        assert status != "settled"
+        assert pool == 100000  # reservation released, not consumed
 
     def test_successful_batch_updates_result(self, tmp_path, monkeypatch):
         db = str(tmp_path / "test.db")
