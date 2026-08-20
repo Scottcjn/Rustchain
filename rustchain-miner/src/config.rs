@@ -45,6 +45,14 @@ pub struct Config {
     /// Enable verbose logging
     #[serde(default)]
     pub verbose: bool,
+
+    /// Maximum heartbeat retry attempts (default: 3)
+    #[serde(default = "default_max_heartbeat_retries")]
+    pub max_heartbeat_retries: u32,
+
+    /// Base delay between heartbeat retries (default: 2s)
+    #[serde(default = "default_heartbeat_base_delay")]
+    pub heartbeat_base_delay: Duration,
 }
 
 fn default_node_url() -> String {
@@ -67,6 +75,14 @@ fn default_timeout() -> u64 {
     15
 }
 
+fn default_max_heartbeat_retries() -> u32 {
+    3
+}
+
+fn default_heartbeat_base_delay() -> Duration {
+    Duration::from_secs(2)
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -80,6 +96,8 @@ impl Default for Config {
             timeout_secs: default_timeout(),
             dry_run: false,
             verbose: false,
+            max_heartbeat_retries: default_max_heartbeat_retries(),
+            heartbeat_base_delay: default_heartbeat_base_delay(),
         }
     }
 }
