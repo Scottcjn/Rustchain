@@ -2,6 +2,12 @@
 
 Complete OpenAPI 3.0 specification and Swagger UI for the RustChain REST API.
 
+> **Compatibility contract:** The normative, implementation-derived contract for
+> `GET /health`, `GET /epoch`, `GET /api/miners`, and `GET /wallet/balance` is the
+> [RustChain Read-Only API Contract](../READ_ONLY_API_CONTRACT.md). Its generated
+> reference, offline fixtures, and GET-only probe are checked together in CI. The
+> broader OpenAPI file in this directory remains a general API catalog.
+
 ## Quick Start
 
 ### View Documentation
