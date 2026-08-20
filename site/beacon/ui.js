@@ -11,6 +11,7 @@ import { getAgentPosition, highlightAgent } from './agents.js';
 import { getCityCenter } from './cities.js';
 import { highlightAgentConnections, addContractLine } from './connections.js';
 import { initChat, setCurrentAgent, getChatHTML, bindChatEvents } from './chat.js';
+import { buildContractHistory, formatContractTimestamp } from './contract-history.mjs';
 
 const BEACON_API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   ? 'http://localhost:8071'
@@ -322,21 +323,37 @@ function selectAgent(agentId) {
     }
   }
 
-  // Contracts
-  const agentContracts = CONTRACTS.filter(c => c.from === agentId || c.to === agentId);
+  // Contract history
+  const agentContracts = buildContractHistory(CONTRACTS, agentId);
+  html += `<div class="t-section">-- CONTRACT HISTORY (${agentContracts.length}) --</div>`;
   if (agentContracts.length > 0) {
-    html += `<div class="t-section">-- CONTRACTS --</div>`;
+    html += `<div class="contract-timeline" role="list">`;
     for (const c of agentContracts) {
       const other = c.from === agentId
         ? AGENTS.find(a => a.id === c.to)
         : AGENTS.find(a => a.id === c.from);
-      const dir = c.from === agentId ? '->' : '<-';
-      html += `<div class="contract-row ${escapeHtml(c.type)}">`;
-      html += `<span class="contract-type" style="background:${CONTRACT_STYLES_CSS[c.type]}">[${escapeHtml(c.type.toUpperCase().replace('_', ' '))}]</span>`;
-      html += `<span>${dir} ${escapeHtml(other ? other.name : '?')}  ${escapeHtml(c.amount)} ${escapeHtml(c.currency)}</span>`;
+      const direction = c.direction === 'outgoing' ? '->' : '<-';
+      const directionLabel = c.direction === 'outgoing' ? 'OUTGOING' : 'INCOMING';
+      const typeBackground = CONTRACT_STYLES_CSS[c.type] || 'rgba(100,136,100,0.15)';
+      html += `<div class="contract-timeline-item" role="listitem">`;
+      html += `<span class="contract-timeline-marker" aria-hidden="true"></span>`;
+      html += `<time class="contract-timeline-time"${c.createdAtIso ? ` datetime="${escapeHtml(c.createdAtIso)}"` : ''}>${escapeHtml(formatContractTimestamp(c.created_at))}</time>`;
+      html += `<div class="contract-timeline-main">`;
+      html += `<span class="contract-type" style="background:${typeBackground}">[${escapeHtml(c.type.toUpperCase().replaceAll('_', ' '))}]</span>`;
+      html += `<span class="contract-direction direction-${escapeHtml(c.direction)}">${direction} ${escapeHtml(other ? other.name : '?')}</span>`;
       html += `<span class="contract-state state-${escapeHtml(c.state)}">${escapeHtml(c.state)}</span>`;
       html += `</div>`;
+      html += `<div class="contract-timeline-details">`;
+      html += `<span>${escapeHtml(directionLabel)}</span>`;
+      html += `<span>${escapeHtml(c.amount)} ${escapeHtml(c.currency)}</span>`;
+      html += `<span>TERM ${escapeHtml(c.term || '?')}</span>`;
+      html += `<span>ID ${escapeHtml(c.id)}</span>`;
+      html += `</div>`;
+      html += `</div>`;
     }
+    html += `</div>`;
+  } else {
+    html += `<div class="contract-history-empty">No contracts recorded for this agent.</div>`;
   }
 
   // Source badges
