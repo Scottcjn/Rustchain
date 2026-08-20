@@ -224,13 +224,20 @@ def coinbase_create(args):
 
 
 def coinbase_show(args):
-    """Show Coinbase Base wallet info."""
+    """Show Coinbase Base wallet info.
+
+    Exit codes:
+    - 0: Success (balance fetched)
+    - 1: Usage error (no wallet found)
+    - 2: Network error (cannot reach node)
+    - 3: Invalid response (malformed balance data)
+    """
     wallet = _load_coinbase_wallet()
     if not wallet:
         print(f"\n  {YELLOW}No Coinbase wallet found.{NC}")
         print(f"  Create one: clawrtc wallet coinbase create")
-        print(f"  Or link:    clawrtc wallet coinbase link 0xYourAddress\n")
-        return
+        print(f"  Or link:    clawrtc wallet coinbase link 0xYourAddress\n", file=sys.stderr)
+        sys.exit(1)
 
     print(f"\n  {GREEN}{BOLD}Coinbase Base Wallet{NC}")
     print(f"  {GREEN}Address:{NC}    {BOLD}{wallet['address']}{NC}")
@@ -241,13 +248,20 @@ def coinbase_show(args):
 
     balance, error = _get_wallet_balance_from_node(wallet["address"])
     if error:
-        print(f"  {YELLOW}Unable to fetch balance:{NC} {error}")
+        print(f"  {RED}Error: Unable to fetch balance{NC}", file=sys.stderr)
+        print(f"    {error}", file=sys.stderr)
         print(f"  {DIM}Troubleshooting:{NC}")
         print(f"    - Verify internet access and DNS resolution")
-        print(f"    - Check RustChain node availability at {NODE_URL}")
+        print(f"    - Check RustChain node availability at {NODE_URL}", file=sys.stderr)
+        # Distinguish error types by message
+        if "Network unreachable" in error or "Request failed" in error:
+            sys.exit(2)  # Network error
+        else:
+            sys.exit(3)  # Invalid response/balance format
     else:
         print(f"  {DIM}Balance:{NC}    {GREEN}{balance:.8f} RTC{NC}")
     print()
+    sys.exit(0)  # Success
 
 
 def coinbase_link(args):
