@@ -9,6 +9,8 @@
 **The blockchain where old hardware outearns new hardware.**
 **And all hardware becomes old. It's just a matter of time.**
 
+*For AI teams: this is **Sybil-resistant agent authentication** — **hardware-attested agent identity** where a machine's compute provenance is verified by physics (oscillator drift, cache timing, thermal entropy), not by self-report. VM farms and bot swarms fingerprint as what they are.*
+
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
