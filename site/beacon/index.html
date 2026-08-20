@@ -68,12 +68,28 @@ function escapeHtml(value) {
       <div class="hud-action" id="hud-new-contract">[NEW CONTRACT]</div>
       <div class="hud-action" id="hud-bounties" style="color:#ffd700">[BOUNTIES]</div>
     </div>
+    <div class="agent-search" role="search">
+      <label class="sr-only" for="agent-search-input">Search Beacon Atlas agents</label>
+      <input
+        id="agent-search-input"
+        class="agent-search-input"
+        type="search"
+        placeholder="SEARCH AGENTS..."
+        autocomplete="off"
+        spellcheck="false"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-controls="agent-search-results"
+        aria-expanded="false"
+      >
+      <div id="agent-search-results" class="agent-search-results" hidden></div>
+    </div>
   </div>
 
   <!-- Controls hint (bottom-left) -->
   <div class="controls-hint">
     DRAG rotate | SCROLL zoom | RIGHT-DRAG pan<br>
-    CLICK agent/city for details | ESC close
+    CLICK agent/city for details | / search | ESC close
   </div>
 
   <!-- Info Panel (right side) -->
