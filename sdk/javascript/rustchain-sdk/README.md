@@ -23,6 +23,7 @@ const client = new RustChainClient({
 const health = await client.health();
 const epoch = await client.epoch();
 const miners = await client.miners({ limit: 10 });
+const openJobs = await client.listJobs({ category: "code", limit: 10 });
 
 console.log({ health, epoch, miners });
 ```
@@ -47,6 +48,18 @@ Options:
 - `attestChallenge(payload)` -> `POST /attest/challenge`
 - `submitAttestation(payload)` -> `POST /attest/submit`
 - `transferHistory(wallet, { limit })` -> `GET /wallet/history?miner_id=...`
+- `listJobs({ category, status, limit, offset, minReward })` -> `GET /agent/jobs`
+- `getJob(jobId)` -> `GET /agent/jobs/:jobId`
+- `postJob({ posterWallet, title, description, category, rewardRtc, ttlSeconds, tags })` -> `POST /agent/jobs`
+- `claimJob(jobId, workerWallet)` -> `POST /agent/jobs/:jobId/claim`
+- `deliverJob(jobId, { workerWallet, deliverableUrl, deliverableHash, resultSummary })` -> `POST /agent/jobs/:jobId/deliver`
+- `acceptJob(jobId, { posterWallet, rating })` -> `POST /agent/jobs/:jobId/accept`
+- `disputeJob(jobId, posterWallet, reason)` -> `POST /agent/jobs/:jobId/dispute`
+- `cancelJob(jobId, posterWallet)` -> `POST /agent/jobs/:jobId/cancel`
+- `reputation(walletId)` -> `GET /agent/reputation/:walletId`
+- `agentStats()` -> `GET /agent/stats`
+
+Agent-economy methods mirror the RIP-302 marketplace API and return the parsed JSON envelope, including pagination and payment metadata where the server provides it. They do not create production jobs or send funds unless the caller explicitly invokes those methods with real wallet data.
 
 ## Example
 
