@@ -1,0 +1,301 @@
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RTC Wallet Generator | RustChain</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a; color: #33ff33; font-family: 'IBM Plex Mono', monospace;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    padding: 40px 20px;
+  }
+  .container { max-width: 700px; width: 100%; }
+  h1 { font-size: 24px; color: #ffd700; margin-bottom: 8px; letter-spacing: 2px; }
+  .subtitle { color: #88ff88; font-size: 13px; margin-bottom: 30px; }
+  .warn {
+    background: #1a0a00; border: 1px solid #ff8844; border-radius: 4px;
+    padding: 12px 16px; margin-bottom: 24px; color: #ffaa66; font-size: 12px; line-height: 1.6;
+  }
+  .warn b { color: #ff8844; }
+  .section {
+    background: #0d1a0d; border: 1px solid #33ff3333; border-radius: 4px;
+    padding: 20px; margin-bottom: 20px;
+  }
+  .section-title { color: #ffd700; font-size: 14px; font-weight: 600; margin-bottom: 12px; letter-spacing: 1px; }
+  button {
+    background: #33ff3318; border: 1px solid #33ff33; color: #33ff33;
+    font-family: inherit; font-size: 16px; font-weight: 600; padding: 14px 32px;
+    cursor: pointer; border-radius: 4px; letter-spacing: 2px; width: 100%;
+    transition: all 0.2s;
+  }
+  button:hover { background: #33ff3333; box-shadow: 0 0 20px #33ff3322; }
+  button:active { transform: scale(0.98); }
+  button.gold { border-color: #ffd700; color: #ffd700; background: #ffd70018; }
+  button.gold:hover { background: #ffd70033; box-shadow: 0 0 20px #ffd70022; }
+  .field { margin-bottom: 14px; }
+  .field-label { color: #88ff88; font-size: 11px; margin-bottom: 4px; letter-spacing: 1px; }
+  .field-value {
+    background: #000; border: 1px solid #33ff3344; border-radius: 3px;
+    padding: 10px 14px; font-size: 13px; color: #33ff33; word-break: break-all;
+    cursor: pointer; position: relative; min-height: 38px; line-height: 1.4;
+  }
+  .field-value:hover { border-color: #33ff33; }
+  .field-value .copy-hint {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    color: #33ff3366; font-size: 10px;
+  }
+  .field-value.copied { border-color: #ffd700; }
+  .field-value.copied .copy-hint { color: #ffd700; }
+  .hidden { display: none; }
+  .steps { counter-reset: step; }
+  .step {
+    counter-increment: step; padding: 8px 0 8px 36px; position: relative;
+    color: #aaffaa; font-size: 12px; line-height: 1.5;
+  }
+  .step::before {
+    content: counter(step); position: absolute; left: 0; top: 8px;
+    width: 24px; height: 24px; border: 1px solid #33ff3366; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: #33ff33; font-size: 11px; font-weight: 600;
+  }
+  code {
+    background: #1a2a1a; padding: 2px 6px; border-radius: 2px;
+    color: #ffd700; font-size: 12px;
+  }
+  a { color: #33ff33; }
+  .divider { height: 1px; background: #33ff3322; margin: 16px 0; }
+  .faq { color: #88ff88; font-size: 12px; line-height: 1.6; }
+  .faq dt { color: #ffd700; font-weight: 600; margin-top: 12px; }
+  .faq dd { margin-left: 0; margin-bottom: 4px; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 2px;
+    font-size: 10px; font-weight: 600; letter-spacing: 1px;
+  }
+  .badge-green { background: #33ff3322; color: #33ff33; border: 1px solid #33ff3344; }
+  .badge-gold { background: #ffd70022; color: #ffd700; border: 1px solid #ffd70044; }
+</style>
+<style>.selya-btn{position:fixed;right:20px;bottom:20px;z-index:2147483000;width:60px;height:60px;border-radius:50%;background:#33ff33;color:#0a0a0a;border:none;cursor:pointer;font-size:26px;font-weight:800;box-shadow:0 4px 18px rgba(0,0,0,.45);line-height:60px;text-align:center;}.selya-btn:hover{filter:brightness(1.1);}.selya-panel{position:fixed;right:20px;bottom:90px;z-index:2147483000;width:340px;max-width:calc(100vw - 32px);height:460px;max-height:calc(100vh - 130px);display:none;flex-direction:column;background:#0d1117;border:1px solid #33ff33;border-radius:14px;overflow:hidden;font-family:-apple-system,Segoe UI,Roboto,sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.55);}.selya-panel.open{display:flex;}.selya-head{background:#33ff33;color:#0a0a0a;font-weight:700;padding:11px 14px;display:flex;justify-content:space-between;align-items:center;font-size:15px;}.selya-head button{background:none;border:none;color:#0a0a0a;font-size:20px;cursor:pointer;line-height:1;}.selya-msgs{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px;background:#0d1117;}.selya-m{max-width:85%;padding:8px 11px;border-radius:12px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-wrap:break-word;}.selya-m.user{align-self:flex-end;background:#33ff33;color:#0a0a0a;}.selya-m.bot{align-self:flex-start;background:#1c2230;color:#e6edf3;}.selya-m.sys{align-self:center;color:#8a94a6;font-size:12px;background:none;}.selya-foot{display:flex;border-top:1px solid #222b3a;background:#0d1117;}.selya-foot input{flex:1;background:#0d1117;border:none;color:#e6edf3;padding:12px;font-size:14px;outline:none;}.selya-foot button{background:#33ff33;color:#0a0a0a;border:none;padding:0 16px;font-weight:700;cursor:pointer;}.selya-foot button:disabled{opacity:.5;cursor:default;}</style></head>
+<body>
+
+<div class="container">
+  <h1>RTC WALLET GENERATOR</h1>
+  <div class="subtitle">Create an RTC address to receive RustChain bounty payouts. Takes 2 seconds.</div>
+
+  <div class="warn">
+    <b>NOT a Solana/ETH/BTC address.</b> RTC is the native token of RustChain.
+    If you have a Solana address, you need wRTC (the wrapped version) — see FAQ below.
+    <br>For bounty payouts, you need an <b>RTC address</b> starting with <code>RTC</code>.
+  </div>
+
+  <!-- Step 1: Generate -->
+  <div class="section">
+    <div class="section-title">GENERATE YOUR WALLET</div>
+    <p style="color:#aaffaa;font-size:12px;margin-bottom:16px;">
+      Everything happens in your browser. No data is sent to any server. Your private key never leaves this page.
+    </p>
+    <button id="btn-generate" onclick="generateWallet()" data-manus_clickable="true" data-manus_click_id="1">GENERATE RTC WALLET</button>
+  </div>
+
+  <!-- Wallet output (hidden until generated) -->
+  <div id="wallet-output" class="hidden">
+
+    <div class="section" style="border-color:#ffd70044;">
+      <div class="section-title" style="display:flex;align-items:center;gap:8px;">
+        YOUR RTC ADDRESS <span class="badge badge-green">PUBLIC — SAFE TO SHARE</span>
+      </div>
+      <div class="field">
+        <div class="field-label">RTC ADDRESS (paste this in bounty claims)</div>
+        <div class="field-value" id="addr" onclick="copyField(this)">
+          <span class="copy-hint">click to copy</span>
+        </div>
+      </div>
+      <div class="field">
+        <div class="field-label">PUBLIC KEY (hex)</div>
+        <div class="field-value" id="pubkey" onclick="copyField(this)" style="font-size:11px;">
+          <span class="copy-hint">click to copy</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section" style="border-color:#ff444444;">
+      <div class="section-title" style="color:#ff6666;display:flex;align-items:center;gap:8px;">
+        PRIVATE KEY <span class="badge" style="background:#ff000022;color:#ff4444;border:1px solid #ff444444;">SECRET — NEVER SHARE</span>
+      </div>
+      <div class="warn" style="margin-bottom:12px;">
+        <b>Save this private key NOW.</b> It cannot be recovered. Anyone with this key can spend your RTC.
+        Store it offline — write it down or save to an encrypted file.
+      </div>
+      <div class="field">
+        <div class="field-label">PRIVATE KEY (hex) — KEEP SECRET</div>
+        <div class="field-value" id="privkey" onclick="copyField(this)" style="font-size:11px;color:#ff8888;">
+          <span class="copy-hint">click to copy</span>
+        </div>
+      </div>
+      <button class="gold" onclick="downloadKey()" style="margin-top:8px;font-size:12px;padding:10px;">
+        DOWNLOAD KEY FILE (.json)
+      </button>
+    </div>
+
+    <div class="section">
+      <div class="section-title">WHAT TO DO NEXT</div>
+      <div class="steps">
+        <div class="step">Copy your <code>RTC...</code> address above</div>
+        <div class="step">Paste it in your bounty claim on GitHub when asked for your wallet</div>
+        <div class="step">Save your private key somewhere safe (you'll need it to send RTC later)</div>
+        <div class="step">Once paid, check your balance at:<br>
+          <code>curl https://50.28.86.131/api/balance?wallet=YOUR_ADDRESS -k</code>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FAQ -->
+  <div class="section">
+    <div class="section-title">FAQ</div>
+    <dl class="faq">
+      <dt>What is RTC?</dt>
+      <dd>RustChain Token — the native currency of the RustChain Proof-of-Antiquity network. Fixed supply of 8,388,608 RTC (2^23). Reference value: $0.10/RTC.</dd>
+
+      <dt>I already have a Solana wallet. Can I use that?</dt>
+      <dd>No. RTC and SOL are different chains. For Solana, you want <b>wRTC</b> (wrapped RTC) — you can bridge between RTC and wRTC at <a href="https://bottube.ai/bridge" target="_blank" data-manus_clickable="true" data-manus_click_id="2">bottube.ai/bridge</a>. For bounties, we pay in native RTC to an <code>RTC...</code> address.</dd>
+
+      <dt>Is this address also a miner wallet?</dt>
+      <dd>Yes! The same RTC address works for receiving bounties, mining rewards, and transfers. If you also want to mine, install <code>pip install clawrtc</code> and use this address as your wallet.</dd>
+
+      <dt>Can I convert RTC to SOL/USDC?</dt>
+      <dd>Yes — bridge RTC → wRTC at <a href="https://bottube.ai/bridge" target="_blank" data-manus_clickable="true" data-manus_click_id="3">bottube.ai/bridge</a>, then swap wRTC for SOL on Raydium (pool: <code>8CF2Q8...</code>).</dd>
+
+      <dt>How do I check my balance?</dt>
+      <dd>Visit the <a href="https://50.28.86.131/explorer" target="_blank" data-manus_clickable="true" data-manus_click_id="4">Block Explorer</a> or run: <code>curl -sk https://50.28.86.131/api/balance?wallet=YOUR_ADDRESS</code></dd>
+
+      <dt>How do I send RTC to someone else?</dt>
+      <dd>Use the <a href="https://github.com/Scottcjn/Rustchain/releases" target="_blank" data-manus_clickable="true" data-manus_click_id="5">RustChain Wallet GUI</a> (Linux .deb) or the signed transfer API endpoint with your private key.</dd>
+
+      <dt>Is my private key stored anywhere?</dt>
+      <dd>No. This page generates keys entirely in your browser using the Web Crypto API. Nothing is sent to any server. If you lose your private key, your RTC is gone forever.</dd>
+    </dl>
+  </div>
+
+  <div style="text-align:center;color:#33ff3344;font-size:11px;margin-top:20px;">
+    RustChain • Proof of Antiquity • <a href="/" style="color:#33ff3366;" data-manus_clickable="true" data-manus_click_id="6">rustchain.org</a>
+    • <a href="/beacon/" style="color:#33ff3366;" data-manus_clickable="true" data-manus_click_id="7">Beacon Atlas</a>
+  </div>
+</div>
+
+<script>
+// Native Ed25519 wallet generation using the Web Crypto API.
+// RustChain addresses are derived from the raw Ed25519 public key, and the
+// private key is exported as the 32-byte Ed25519 seed used by native wallets.
+// Do not substitute another curve: a different key type cannot sign native RTC transfers.
+
+let walletData = null;
+
+async function generateWallet() {
+  const btn = document.getElementById('btn-generate');
+  btn.textContent = 'GENERATING...';
+  btn.disabled = true;
+
+  try {
+    // Generate the key type used by native RustChain wallets.
+    // Chromium exposes Ed25519 through the Web Crypto API in current browsers.
+    const keyPair = await crypto.subtle.generateKey(
+      { name: 'Ed25519' },
+      true,
+      ['sign', 'verify']
+    );
+
+    // Export the standard Ed25519 JWK fields. RFC 8032 defines `d` as the
+    // 32-byte private seed and `x` as the 32-byte raw public key, matching the
+    // values consumed by RustChain's native Ed25519 wallet implementation.
+    const privateJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
+    const publicJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+    const pubKeyHex = base64UrlToHex(publicJwk.x);
+    const privKeyHex = base64UrlToHex(privateJwk.d);
+    if (pubKeyHex.length !== 64 || privKeyHex.length !== 64) {
+      throw new Error('Unexpected Ed25519 JWK key encoding');
+    }
+
+    // Derive RTC address: RTC + SHA256(pubkey)[:40]
+    const addressKeyBytes = hexToBytes(pubKeyHex);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', addressKeyBytes);
+    const hashHex = bytesToHex(new Uint8Array(hashBuffer));
+    const rtcAddress = 'RTC' + hashHex.substring(0, 40);
+
+    // Store wallet data
+    walletData = {
+      address: rtcAddress,
+      publicKey: pubKeyHex,
+      privateKey: privKeyHex,
+      created: new Date().toISOString(),
+      curve: 'Ed25519',
+      network: 'rustchain-mainnet',
+    };
+
+    // Display
+    document.getElementById('addr').childNodes[0].textContent = rtcAddress;
+    document.getElementById('pubkey').childNodes[0].textContent = pubKeyHex;
+    document.getElementById('privkey').childNodes[0].textContent = privKeyHex;
+    document.getElementById('wallet-output').classList.remove('hidden');
+
+    btn.textContent = 'GENERATE ANOTHER WALLET';
+    btn.disabled = false;
+
+  } catch (err) {
+    btn.textContent = 'ERROR — TRY AGAIN';
+    btn.disabled = false;
+    console.error('Wallet generation failed:', err);
+    alert('Wallet generation failed. This browser must support native Ed25519 keys: ' + err.message);
+  }
+}
+
+function copyField(el) {
+  const text = el.childNodes[0].textContent.trim();
+  navigator.clipboard.writeText(text).then(() => {
+    el.classList.add('copied');
+    const hint = el.querySelector('.copy-hint');
+    if (hint) hint.textContent = 'copied!';
+    setTimeout(() => {
+      el.classList.remove('copied');
+      if (hint) hint.textContent = 'click to copy';
+    }, 2000);
+  });
+}
+
+function downloadKey() {
+  if (!walletData) return;
+  const blob = new Blob([JSON.stringify(walletData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `rtc-wallet-${walletData.address}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Utility functions
+function base64UrlToHex(b64url) {
+  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+  const binary = atob(b64 + pad);
+  return Array.from(binary, c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+}
+
+function hexToBytes(hex) {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+  }
+  return bytes;
+}
+
+function bytesToHex(bytes) {
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+</script>
+
+<!-- Sophia Elya chat widget -->
+<script src="/sophia_widget.js" data-endpoint="https://bottube.ai/api/sophia" data-accent="#33ff33" data-title="Ask Elya" data-greeting="Hey, I am Sophia Elya. Ask me about RustChain, Proof-of-Antiquity, mining, or the agent economy." defer=""></script>
+
+
+<button class="selya-btn" aria-label="Ask Elya" data-manus_clickable="true" data-manus_click_id="8">🔥</button><div class="selya-panel"><div class="selya-head"><span>Ask Elya</span><button aria-label="Close">×</button></div><div class="selya-msgs"></div><div class="selya-foot"><input type="text" placeholder="Type a message…" aria-label="Message"><button>Send</button></div></div></body></html>
