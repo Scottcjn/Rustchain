@@ -158,6 +158,29 @@ def _next_available(conn: sqlite3.Connection, github_username: str | None, ip: s
 
 
 def _transfer(wallet: str, amount: float, cfg: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+    """Ask the node to move `amount` to `wallet`. Returns (accepted, meta).
+
+    `accepted` means the node ACCEPTED the transfer into the pending ledger.
+    It does not mean the balance has moved — RustChain transfers are
+    two-phase and settle only when the confirmer runs (~24h void window).
+
+    Three ways this used to report success while nothing was sent:
+
+      1. The node answers **HTTP 200 with `{"ok": false, "error": ...}`** for
+         a declined transfer (insufficient faucet-pool balance being the
+         routine case). Only `status_code >= 300` was checked, so a decline
+         was recorded as a drip. `scripts/auto-pay.py` checks
+         `result.get("ok", False)` for exactly this reason; the faucet never
+         looked at the field.
+      2. A non-JSON 200 — e.g. an nginx error page served while the node is
+         down — returned `True, {"raw": ...}`, i.e. an HTML error page
+         "dripped successfully".
+      3. A connection error/timeout raised out of the request and surfaced
+         as an opaque 500.
+
+    All three now fail, which also stops the caller from writing the claim
+    row that burns the user's 24h quota for a drip they never received.
+    """
     if cfg.get("DRY_RUN", True):
         return True, {"ok": True, "txid": "dry-run", "amount": amount, "wallet": wallet}
 
@@ -170,13 +193,33 @@ def _transfer(wallet: str, amount: float, cfg: dict[str, Any]) -> tuple[bool, di
     if cfg.get("ADMIN_API_TOKEN"):
         headers["Authorization"] = f"Bearer {cfg['ADMIN_API_TOKEN']}"
 
-    resp = requests.post(cfg["ADMIN_TRANSFER_URL"], json=payload, headers=headers, timeout=15)
+    try:
+        resp = requests.post(cfg["ADMIN_TRANSFER_URL"], json=payload, headers=headers, timeout=15)
+    except Exception as exc:
+        # Never leak the URL/token that may appear in the exception text.
+        return False, {"error": f"transfer_unreachable_{type(exc).__name__}"}
+
     if resp.status_code >= 300:
         return False, {"error": f"transfer_failed_{resp.status_code}"}
+
     try:
-        return True, resp.json()
+        body = resp.json()
     except Exception:
-        return True, {"raw": resp.text}
+        return False, {"error": "transfer_response_not_json"}
+
+    if not isinstance(body, dict):
+        return False, {"error": "transfer_response_not_object"}
+
+    # The node's own verdict. Absent `ok` is treated as a decline: a
+    # response that does not say it succeeded has not said it succeeded.
+    if body.get("ok") is not True:
+        node_error = body.get("error")
+        meta: dict[str, Any] = {"error": "transfer_declined"}
+        if isinstance(node_error, str):
+            meta["node_error"] = node_error
+        return False, meta
+
+    return True, body
 
 
 def create_app(config: dict[str, Any] | None = None) -> Flask:
@@ -239,6 +282,9 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
                     }
                 ), 429
 
+            # Quota is consumed ONLY by an accepted transfer. The claim row
+            # below is what burns the caller's 24h allowance, so it must not
+            # be written for a drip the node declined.
             sent_ok, transfer_meta = _transfer(wallet, drip_amount, cfg)
             if not sent_ok:
                 return jsonify({"ok": False, "error": "transfer_failed", "details": transfer_meta}), 502
@@ -250,11 +296,28 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
             )
             conn.commit()
 
+            # `claim_id` is this faucet's local SQLite rowid and nothing more.
+            # It used to be returned as `pending_id`, which reads as a chain
+            # reference — callers could look it up expecting a transfer and
+            # find an unrelated row. The node's own pending id, when it gives
+            # one, is reported separately as `chain_pending_id`.
+            chain_pending_id = None
+            if isinstance(transfer_meta, dict):
+                raw = transfer_meta.get("pending_id", transfer_meta.get("tx_id"))
+                if isinstance(raw, (str, int)) and not isinstance(raw, bool):
+                    chain_pending_id = raw
+
             return jsonify(
                 {
                     "ok": True,
                     "amount": drip_amount,
-                    "pending_id": int(cur.lastrowid),
+                    "claim_id": int(cur.lastrowid),
+                    "chain_pending_id": chain_pending_id,
+                    "status": "dry_run" if cfg.get("DRY_RUN", True) else "pending_confirmation",
+                    "note": (
+                        "Accepted into the pending ledger. RustChain transfers are two-phase — "
+                        "the balance moves only once the confirmer settles it (~24h void window)."
+                    ),
                     "next_available": (_utcnow() + timedelta(hours=24)).isoformat(),
                     "transfer": transfer_meta,
                 }
