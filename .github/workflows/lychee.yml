@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check relative repository links
+        run: python tools/check_relative_links.py README.md docs
       - name: Check relative links
         uses: lycheeverse/lychee-action@v2
         with:
