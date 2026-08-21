@@ -790,6 +790,44 @@ class AirdropV2:
     # Claim Processing
     # ========================================================================
 
+    def _verify_github_ownership(
+        self, github_username: str, token: str
+    ) -> Tuple[bool, str]:
+        """Verify the caller controls `github_username` via a GitHub token.
+
+        Closes #8175 (cross-user airdrop claim theft): the claim endpoint
+        previously accepted any `github_username` and only checked that the
+        account EXISTS (via the GitHub API), never that the caller controls it.
+        An attacker could claim on behalf of any qualifying GitHub user and
+        redirect the airdrop to their own wallet.
+
+        We require a GitHub token whose authenticated `login` matches the
+        claimed username. Returns (True, "") on success, else (False, reason).
+        """
+        try:
+            import requests
+
+            resp = requests.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"token {token}",
+                    "Accept": "application/vnd.github.v3+json",
+                },
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                return False, f"GitHub token invalid (status {resp.status_code})"
+            login = (resp.json().get("login") or "").lower()
+            if login != github_username.lower():
+                return (
+                    False,
+                    f"GitHub token owner '{login}' does not match claimed "
+                    f"username '{github_username}'",
+                )
+            return True, ""
+        except requests.RequestException as e:
+            return False, f"GitHub ownership check failed: {e}"
+
     def claim_airdrop(
         self,
         github_username: str,
@@ -818,6 +856,21 @@ class AirdropV2:
             return False, "Invalid GitHub username", None
         chain_lower = chain.lower()
         wallet_address = self._normalize_wallet_address(wallet_address, chain_lower)
+
+        # GitHub account ownership verification (closes #8175: cross-user
+        # airdrop claim theft). Without this, anyone could claim on behalf of
+        # any qualifying GitHub username and redirect tokens to their wallet.
+        # Testing mode (skip_antisybil) bypasses this, as do the unit tests.
+        if not skip_antisybil:
+            if not github_token:
+                return (
+                    False,
+                    "GitHub ownership verification required: provide a GitHub token",
+                    None,
+                )
+            owned, owner_msg = self._verify_github_ownership(github_username, github_token)
+            if not owned:
+                return False, owner_msg, None
 
         if self._has_claimed(github_username, wallet_address, chain_lower):
             return False, "Claim already exists for this GitHub account or wallet", None
