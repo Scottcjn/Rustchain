@@ -5134,6 +5134,35 @@ def current_slot():
     """Get current slot number"""
     return (int(time.time()) - GENESIS_TIMESTAMP) // BLOCK_TIME
 
+def _record_unsettled_epoch(cursor, conn, epoch, reason):
+    """Leave a trace when an epoch is processed but pays nobody.
+
+    Both no-payout paths below used to `return` silently, writing nothing.
+    That is how epochs 91-174 came to have no `epoch_state` row *at all* -
+    not `settled = 0`, absent - and why an 84-day settlement outage
+    (2026-03-03 to 2026-05-27) was invisible to every dashboard while 183
+    miners kept enrolling for nothing.  An epoch that pays nobody is a fact
+    worth recording, not a no-op.
+
+    Writing `settled = 0` is safe: the authoritative replay guard inserts the
+    same row and then atomically claims `0 -> 1`, so a pre-existing unsettled
+    row does not block a later real settlement, and nothing was credited here
+    to be credited twice.
+    """
+    try:
+        cursor.execute(
+            "INSERT INTO epoch_state (epoch, settled) VALUES (?, 0) "
+            "ON CONFLICT(epoch) DO NOTHING",
+            (epoch,)
+        )
+        conn.commit()
+    except Exception as exc:
+        # Never let bookkeeping abort settlement, but do not swallow it either.
+        print(f"[SETTLE] epoch {epoch}: could not record unsettled state: {exc}")
+    print(f"[SETTLE] Epoch {epoch} paid nobody (reason={reason}). "
+          f"Recorded as unsettled; settlement_lag_epochs will report this.")
+
+
 def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
     """Finalize epoch and distribute rewards with security hardening"""
     from contextlib import closing
@@ -5159,6 +5188,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         miners = [(pk, normalize_epoch_weight_units(weight)) for pk, weight in raw_miners]
 
         if not miners:
+            _record_unsettled_epoch(c, conn, epoch, "no_enrolled_miners")
             return
 
         # Calculate total weight
@@ -5167,6 +5197,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         # DIVISION BY ZERO PROTECTION
         if total_weight == 0:
             print(f"[SECURITY] Total weight is 0 for epoch {epoch}, skipping reward distribution")
+            _record_unsettled_epoch(c, conn, epoch, "total_weight_zero")
             return
 
         # PRECISION: Use Decimal for exact financial calculations
@@ -6406,6 +6437,12 @@ def get_epoch():
             "SELECT COUNT(*) FROM epoch_enroll WHERE epoch = ?",
             (epoch,)
         ).fetchone()[0]
+        # Reuse this connection - `enrolled_miners` alone cannot distinguish a
+        # healthy chain from one that has been enrolling miners and paying
+        # none of them for 84 days, which is what happened in 2026.
+        settlement_lag, last_settled = _settlement_lag_epochs(
+            conn=c, now_epoch=epoch
+        )
 
     return jsonify({
         "epoch": epoch,
@@ -6413,7 +6450,9 @@ def get_epoch():
         "epoch_pot": PER_EPOCH_RTC,
         "enrolled_miners": enrolled,
         "blocks_per_epoch": EPOCH_SLOTS,
-        "total_supply_rtc": TOTAL_SUPPLY_RTC
+        "total_supply_rtc": TOTAL_SUPPLY_RTC,
+        "settlement_lag_epochs": settlement_lag,
+        "last_settled_epoch": last_settled
     })
 
 @app.route('/epoch/proposer-duty-calendar', methods=['GET'])
@@ -10610,6 +10649,47 @@ def _tip_age_slots():
     except Exception:
         return None
 
+def _settlement_lag_epochs(conn=None, now_epoch=None):
+    """Epochs elapsed since the newest *settled* epoch.
+
+    `conn` / `now_epoch` let a caller that already has a connection and the
+    current epoch reuse them (`/epoch` is a hot path), without duplicating the
+    bounding rule below - which is the part that is easy to get wrong.
+
+    Block production and epoch settlement are independent subsystems, and
+    nothing was watching the second one.  Epochs 91-174 (2026-03-03 to
+    2026-05-27) were never settled: `settle_epoch` returned early on an empty
+    miner set without writing an `epoch_state` row or logging, so 84
+    consecutive epochs left no trace at all.  Blocks kept being produced
+    throughout, so `tip_age_slots` stayed at 0 and `/health` reported
+    `ok: true` for the entire 84 days.  183 miners enrolled and were paid
+    nothing.  This is the signal that would have caught it on day one.
+
+    Returns `(lag_epochs, last_settled_epoch)`; either may be None when the
+    state is genuinely unknown (nothing settled on record, or the query
+    failed).  Never raises - health reporting must not take the node down.
+    """
+    # Bound by the current epoch on purpose.  `epoch_state` still carries rows
+    # from the pre-2025-12 numbering scheme (values in the 20000s, plus a stray
+    # 424 settled in Dec 2025).  An unbounded MAX() picks one of those, yields
+    # a *negative* lag, and reports perfect health during exactly the stall
+    # this exists to detect.
+    _SQL = "SELECT MAX(epoch) FROM epoch_state WHERE settled = 1 AND epoch <= ?"
+    try:
+        if now_epoch is None:
+            now_epoch = slot_to_epoch(current_slot())
+        if conn is not None:
+            row = conn.execute(_SQL, (now_epoch,)).fetchone()
+        else:
+            with sqlite3.connect(DB_PATH, timeout=3) as db:
+                row = db.execute(_SQL, (now_epoch,)).fetchone()
+        last_settled = row[0] if row else None
+        if last_settled is None:
+            return None, None
+        return max(0, now_epoch - int(last_settled)), int(last_settled)
+    except Exception:
+        return None, None
+
 # ============= READINESS AGGREGATOR (RIP-0143) =============
 
 # Global metrics snapshot for lightweight readiness checks
@@ -10684,6 +10764,12 @@ def api_health():
     ok_db = _db_rw_ok()
     age_h = _backup_age_hours()
     tip_age = _tip_age_slots()
+    settlement_lag, last_settled = _settlement_lag_epochs()
+    # Settlement lag is reported but deliberately does NOT flip `ok`.  A 503
+    # pulls the node out of load-balancer rotation, which would stop miners
+    # enrolling - the opposite of what a settlement stall needs.  Enrollment
+    # data is what makes a stalled epoch recoverable later.  Expose the number
+    # and let alerting act on it.
     ok = ok_db and (age_h is None or age_h < 36)
     return jsonify({
         "ok": bool(ok),
@@ -10691,7 +10777,9 @@ def api_health():
         "uptime_s": int(time.time() - APP_START_TS),
         "db_rw": bool(ok_db),
         "backup_age_hours": age_h,
-        "tip_age_slots": tip_age
+        "tip_age_slots": tip_age,
+        "settlement_lag_epochs": settlement_lag,
+        "last_settled_epoch": last_settled
     }), (200 if ok else 503)
 
 @app.route('/ready', methods=['GET'])
