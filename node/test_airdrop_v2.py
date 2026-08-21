@@ -195,6 +195,62 @@ class TestEligibilityChecks(unittest.TestCase):
         self.assertFalse(result.eligible)
         self.assertIn("Already claimed", result.reason)
 
+    @patch("requests.get")
+    def test_verify_github_ownership_matches(self, mock_get):
+        """A token whose login matches the claimed user verifies ownership."""
+        mock_user = Mock()
+        mock_user.status_code = 200
+        mock_user.json.return_value = {"login": "testuser"}
+        mock_get.return_value = mock_user
+
+        ok, msg = self.airdrop._verify_github_ownership("testuser", "tok")
+        self.assertTrue(ok)
+        self.assertEqual(msg, "")
+
+    @patch("requests.get")
+    def test_verify_github_ownership_mismatch(self, mock_get):
+        """A token owned by a different account must be rejected (#8175)."""
+        mock_user = Mock()
+        mock_user.status_code = 200
+        mock_user.json.return_value = {"login": "attacker"}
+        mock_get.return_value = mock_user
+
+        ok, msg = self.airdrop._verify_github_ownership("testuser", "tok")
+        self.assertFalse(ok)
+        self.assertIn("does not match", msg)
+
+    @patch("requests.get")
+    def test_verify_github_ownership_invalid_token(self, mock_get):
+        """An invalid/expired token must be rejected."""
+        mock_user = Mock()
+        mock_user.status_code = 401
+        mock_user.json.return_value = {}
+        mock_get.return_value = mock_user
+
+        ok, msg = self.airdrop._verify_github_ownership("testuser", "tok")
+        self.assertFalse(ok)
+        self.assertIn("invalid", msg)
+
+    def test_claim_requires_github_ownership_token(self):
+        """Regression for #8175: a claim without a GitHub token is rejected.
+
+        Anyone could previously claim on behalf of any qualifying GitHub user
+        and redirect the airdrop to their own wallet. Production claims
+        (skip_antisybil=False) must now supply a token whose login matches the
+        claimed username.
+        """
+        success, message, claim = self.airdrop.claim_airdrop(
+            github_username="testuser",
+            wallet_address="RTC1234567890123456789012345678901234567890",
+            chain="base",
+            tier="contributor",
+            github_token=None,
+            skip_antisybil=False,
+        )
+        self.assertFalse(success)
+        self.assertIn("ownership verification required", message)
+        self.assertIsNone(claim)
+
     def test_duplicate_github_with_different_wallet_rejected(self):
         """A GitHub account cannot claim again with a different wallet."""
         success, _, _ = self.airdrop.claim_airdrop(
