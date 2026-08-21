@@ -706,6 +706,17 @@ Supported console types:
     config = load_config(args.config)
 
     # Override with CLI args
+    # --simulate fabricates hardware readings. Posting those to a node that
+    # pays real RTC is a fake-hardware faucet, so it is refused unless the
+    # operator has explicitly pointed the bridge at a local test node.
+    SIMULATE_LOCAL_ONLY = True
+    if args.simulate and SIMULATE_LOCAL_ONLY:
+        _n = config.get('node_url', '')
+        if not any(h in _n for h in ('localhost', '127.0.0.1', '0.0.0.0', '::1')):
+            print('refusing --simulate against a non-local node: ' + _n)
+            print('point RUSTCHAIN_NODE at a local test node to simulate')
+            return 2
+
     if args.simulate:
         config['simulation_mode'] = True
     if args.wallet:
