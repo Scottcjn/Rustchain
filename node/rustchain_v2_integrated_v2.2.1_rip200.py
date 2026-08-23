@@ -11401,15 +11401,42 @@ def wallet_transfer_v2():
     to_miner = pre.details["to_miner"]
     amount_rtc = pre.details["amount_rtc"]
     amount_i64 = int(pre.details["amount_i64"])
-    reason = str((data or {}).get('reason', 'admin_transfer'))
-    idempotency_key = ""
+    # AUDIT HARDENING (2026-08-20, live on both prod nodes): `reason` is
+    # REQUIRED (`memo` accepted as fallback attribution). 86% of historical
+    # payouts carried no attribution because the silent default
+    # "admin_transfer" was accepted.
+    raw_reason = (data or {}).get("reason") or (data or {}).get("memo")
+    if not isinstance(raw_reason, str) or not raw_reason.strip():
+        return jsonify({
+            "error": "reason_required",
+            "hint": "Pass a non-empty `reason` (or `memo`), e.g. bounty:12444:poa-vs-storage:2026-08-22"
+        }), 400
+    reason = raw_reason.strip()
+    if len(reason) > 500:
+        # Explicit rejection instead of silent truncation - a truncated
+        # reason is a corrupted audit record.
+        return jsonify({"error": "reason_too_long", "max_chars": 500}), 400
+
+    # PHASE-2 HARDENING (2026-08-22, live on both prod nodes):
+    # `idempotency_key` is REQUIRED. A keyless admin transfer is a caller that
+    # double-pays on retry, so it is rejected rather than silently accepted.
+    # Every first-party payer sends a stable key (bounty_payout, auto-pay,
+    # award_rtc, rtc-reward, rtc-pay, node_rewards, github_tip_bot, ut99,
+    # otc bridge, minecraft bridge, faucet). Error split: missing/empty ->
+    # idempotency_key_required; present-but-malformed -> invalid_idempotency_key.
     raw_idempotency_key = (data or {}).get("idempotency_key")
-    if raw_idempotency_key not in (None, ""):
-        if not isinstance(raw_idempotency_key, str):
-            return jsonify({"error": "invalid_idempotency_key"}), 400
-        idempotency_key = raw_idempotency_key.strip()
-        if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", idempotency_key):
-            return jsonify({"error": "invalid_idempotency_key"}), 400
+    if raw_idempotency_key is None or raw_idempotency_key == "":
+        return jsonify({
+            "error": "idempotency_key_required",
+            "hint": "Pass a stable `idempotency_key` ([A-Za-z0-9._:-]{1,128}) unique to this "
+                    "payment, e.g. bounty:12444:poa-vs-storage:2026-08-22. A retry with the "
+                    "same key returns the existing pending row instead of paying twice."
+        }), 400
+    if not isinstance(raw_idempotency_key, str):
+        return jsonify({"error": "invalid_idempotency_key"}), 400
+    idempotency_key = raw_idempotency_key.strip()
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", idempotency_key):
+        return jsonify({"error": "invalid_idempotency_key"}), 400
     
     now = int(time.time())
     confirms_at = now + CONFIRMATION_DELAY_SECONDS
@@ -11441,13 +11468,30 @@ def wallet_transfer_v2():
                 if (
                     existing_from != from_miner or
                     existing_to != to_miner or
-                    int(existing_amount) != amount_i64 or
-                    str(existing_reason or "") != reason
+                    int(existing_amount) != amount_i64
                 ):
+                    # reason deliberately NOT compared: from/to/amount is the
+                    # money-relevant triple, and legacy rows stored the old
+                    # default reason "admin_transfer" - comparing it would
+                    # 409 legitimate replays of pre-hardening payments and
+                    # invite a manual re-pay under a fresh key (double-pay).
                     conn.rollback()
                     return jsonify({
                         "error": "idempotency_key_conflict",
                         "tx_hash": tx_hash,
+                    }), 409
+
+                if str(status or "") == "voided":
+                    # A voided transfer must not replay as success. Callers
+                    # that check only `ok` would read the void as "paid".
+                    # Re-issuing after a void is a deliberate act: new key.
+                    conn.rollback()
+                    return jsonify({
+                        "ok": False,
+                        "error": "idempotency_key_voided",
+                        "phase": "voided",
+                        "tx_hash": tx_hash,
+                        "hint": "This key's transfer was voided. Use a new idempotency_key to intentionally re-issue."
                     }), 409
 
                 conn.rollback()
