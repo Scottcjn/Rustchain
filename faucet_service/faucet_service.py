@@ -823,12 +823,26 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
                     logger.error("RC_ADMIN_KEY not set, cannot perform real drip")
                     return jsonify({'ok': False, 'error': 'Faucet configuration error'}), 500
 
+                # Phase-2 hardening (2026-08-22): the node requires `reason`
+                # (audit attribution) and an `idempotency_key`. The key is
+                # stable per (ip, wallet, rate-limit window) so a retried or
+                # duplicated request inside one window replays to the SAME
+                # pending row instead of dripping twice.
+                window_seconds = int(config.get('rate_limit', {}).get('window_seconds', 86400)) or 86400
+                window_bucket = int(time.time()) // window_seconds
+                drip_key = (
+                    "faucet:drip:"
+                    + hashlib.sha256(f"{ip}:{wallet}".encode()).hexdigest()[:16]
+                    + f":{window_bucket}"
+                )
                 response = requests.post(
                     f"{node_url}/wallet/transfer",
                     json={
                         "from_miner": faucet_wallet,
                         "to_miner": wallet,
                         "amount_rtc": amount,
+                        "reason": f"faucet:drip:{wallet}:{datetime.utcnow().strftime('%Y-%m-%d')}",
+                        "idempotency_key": drip_key,
                     },
                     headers={"X-Admin-Key": admin_key},
                     timeout=10
@@ -1290,15 +1304,25 @@ def _perform_faucet_transfer(
     if not admin_key:
         raise RuntimeError('RC_ADMIN_KEY not set, cannot perform real drip')
 
+    # Phase-2 hardening (2026-08-22): the node requires both fields. Callers
+    # that supplied none get deterministic defaults scoped to the rate-limit
+    # window, so a duplicated claim inside one window cannot pay twice.
+    if not idempotency_key:
+        window_seconds = int(dist.get('window_seconds') or config.get('rate_limit', {}).get('window_seconds', 86400)) or 86400
+        idempotency_key = (
+            "faucet:event:"
+            + hashlib.sha256(f"{faucet_wallet}:{wallet}:{amount}".encode()).hexdigest()[:16]
+            + f":{int(time.time()) // window_seconds}"
+        )
+    if not reason:
+        reason = f"faucet:event:{wallet}:{datetime.utcnow().strftime('%Y-%m-%d')}"
     payload = {
         "from_miner": faucet_wallet,
         "to_miner": wallet,
         "amount_rtc": amount,
+        "idempotency_key": idempotency_key,
+        "reason": reason,
     }
-    if idempotency_key:
-        payload["idempotency_key"] = idempotency_key
-    if reason:
-        payload["reason"] = reason
 
     response = requests.post(
         f"{node_url}/wallet/transfer",
