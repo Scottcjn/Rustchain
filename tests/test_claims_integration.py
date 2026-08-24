@@ -32,6 +32,7 @@ from claims_submission import (
     update_claim_status
 )
 
+import claims_settlement
 from claims_settlement import (
     get_pending_claims,
     process_claims_batch,
@@ -175,8 +176,17 @@ def setup_test_miner(db, miner_id, device_arch, wallet_address, current_ts, epoc
 class TestEndToEndClaimFlow:
     """Test complete claim flow from eligibility to settlement"""
     
-    def test_full_claim_lifecycle(self, integration_db, current_ts, current_slot):
+    def test_full_claim_lifecycle(self, integration_db, current_ts, current_slot, monkeypatch):
         """Test: Setup → Eligibility → Submit → Approve → Settle"""
+
+        # claims_settlement no longer fabricates a tx hash when no node is
+        # configured (#8231): success now requires a real 2xx broadcast.
+        # Stand in for the node at the module seam instead.
+        monkeypatch.setattr(
+            claims_settlement,
+            "sign_and_broadcast_transaction",
+            lambda tx_data, db_path: (True, "0x" + "ab" * 32, None),
+        )
         
         # Use an old epoch that should be settled
         test_epoch = max(0, current_slot // 144 - 3)
@@ -344,8 +354,17 @@ class TestEndToEndClaimFlow:
         # Should still show pending claim exists (rejected claims don't block)
         # This depends on business logic - adjust as needed
     
-    def test_multiple_miners_batch_settlement(self, integration_db, current_ts, current_slot):
+    def test_multiple_miners_batch_settlement(self, integration_db, current_ts, current_slot, monkeypatch):
         """Test batch settlement with multiple miners"""
+
+        # claims_settlement no longer fabricates a tx hash when no node is
+        # configured (#8231): success now requires a real 2xx broadcast.
+        # Stand in for the node at the module seam instead.
+        monkeypatch.setattr(
+            claims_settlement,
+            "sign_and_broadcast_transaction",
+            lambda tx_data, db_path: (True, "0x" + "ab" * 32, None),
+        )
         
         test_epoch = max(0, current_slot // 144 - 3)
         
@@ -516,8 +535,17 @@ class TestClaimHistoryAndStats:
         assert len(epochs_result["epochs"]) > 0
         assert epochs_result["total_unclaimed_urtc"] >= 0
     
-    def test_settlement_statistics(self, integration_db, current_ts, current_slot):
+    def test_settlement_statistics(self, integration_db, current_ts, current_slot, monkeypatch):
         """Test settlement statistics calculation"""
+
+        # claims_settlement no longer fabricates a tx hash when no node is
+        # configured (#8231): success now requires a real 2xx broadcast.
+        # Stand in for the node at the module seam instead.
+        monkeypatch.setattr(
+            claims_settlement,
+            "sign_and_broadcast_transaction",
+            lambda tx_data, db_path: (True, "0x" + "ab" * 32, None),
+        )
         
         test_epoch = max(0, current_slot // 144 - 3)
         

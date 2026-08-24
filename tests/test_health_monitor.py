@@ -241,7 +241,10 @@ class TestGetNetworkHealth(unittest.TestCase):
         ]
         health = self.monitor.get_network_health(statuses)
         self.assertEqual(health.nodes_online, 3)
-        self.assertEqual(health.total_miners, 13)
+        # Nodes are replicas of one shared ledger (#8008): total_miners is the
+        # agreed network-wide count (max, robust to a mid-sync node reporting
+        # fewer), not the sum of per-replica reports.
+        self.assertEqual(health.total_miners, 6)
         self.assertTrue(health.consensus_ok)
         self.assertFalse(health.split_brain)
         self.assertEqual(health.alerts, [])
