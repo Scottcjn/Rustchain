@@ -38,8 +38,7 @@ APP_START_TS = time.time()
 # Rewards system
 try:
     from rewards_implementation_rip200 import (
-        settle_epoch_rip200 as settle_epoch, total_balances, UNIT, PER_EPOCH_URTC,
-        _epoch_eligible_miners
+        settle_epoch_rip200 as settle_epoch, total_balances, UNIT, PER_EPOCH_URTC
     )
     HAVE_REWARDS = True
 except Exception as e:
@@ -1522,6 +1521,12 @@ except Exception as e:
 # Register rewards routes
 if HAVE_REWARDS:
     try:
+        # NOTE: the module exports register_rewards_rip200, not register_rewards,
+        # so this import raises and is caught below. Do NOT 'fix' it by aliasing:
+        # 4 of the 5 routes it registers already exist in this file (6774, 10718,
+        # 10804, 12310) under different function names, so Flask raises no
+        # assertion and the older module versions would silently shadow the live
+        # balance/settle/eligibility handlers. Reconcile the duplicates first.
         from rewards_implementation_rip200 import register_rewards
         register_rewards(app, DB_PATH)
         print("[REWARDS] Endpoints registered successfully")
@@ -1529,13 +1534,13 @@ if HAVE_REWARDS:
         print(f"[REWARDS] Failed to register: {e}")
 
 
-    # RIP-201: Fleet immune system endpoints
-    if HAVE_FLEET_IMMUNE:
-        try:
-            register_fleet_endpoints(app, DB_PATH)
-            print("[RIP-201] Fleet immune endpoints registered")
-        except Exception as e:
-            print(f"[RIP-201] Failed to register fleet endpoints: {e}")
+# RIP-201: Fleet immune system endpoints
+if HAVE_FLEET_IMMUNE:
+    try:
+        register_fleet_endpoints(app, DB_PATH)
+        print("[RIP-201] Fleet immune endpoints registered")
+    except Exception as e:
+        print(f"[RIP-201] Failed to register fleet endpoints: {e}")
 
 # RIP-305: Airdrop V2 endpoints
 if HAVE_AIRDROP:
