@@ -13421,8 +13421,35 @@ def _limit_governance_vote_requests():
     return response
 
 
+# --- must run under the WSGI server too ------------------------------------
+# Everything below `if __name__ == "__main__":` runs ONLY under the Flask dev
+# server. Production is served by gunicorn (gunicorn -w 4 wsgi:app), which
+# IMPORTS this module, so __name__ is never "__main__" and that block never
+# executes. Two things were stranded there: the fail-closed mock-signature
+# runtime check (inert in the only mode production runs in), and the UTXO
+# blueprint registration (why every /utxo/* route 404s in production).
+# Both belong at module scope so they take effect however the app is served.
+enforce_mock_signature_runtime_guard()
+
+if HAVE_UTXO:
+    try:
+        from utxo_endpoints import register_utxo_blueprint
+        _utxo_instance = UtxoDB(DB_PATH)
+        register_utxo_blueprint(
+            app, _utxo_instance, DB_PATH,
+            verify_sig_fn=verify_rtc_signature,
+            addr_from_pk_fn=address_from_pubkey,
+            current_slot_fn=current_slot,
+            dual_write=UTXO_DUAL_WRITE,
+            review_gate_fn=wallet_review_gate_response,
+        )
+    except ImportError as e:
+        print(f"[UTXO] Endpoints not available: {e}")
+    except Exception as e:
+        print(f"[UTXO] Endpoint registration failed: {e}")
+
+
 if __name__ == "__main__":
-    enforce_mock_signature_runtime_guard()
 
     # CRITICAL: SR25519 library is REQUIRED for production
     if not SR25519_AVAILABLE:
@@ -13441,23 +13468,6 @@ if __name__ == "__main__":
     init_db()
 
     # UTXO Transaction Engine (Phase 3)
-    if HAVE_UTXO:
-        try:
-            from utxo_endpoints import register_utxo_blueprint
-            _utxo_instance = UtxoDB(DB_PATH)
-            register_utxo_blueprint(
-                app, _utxo_instance, DB_PATH,
-                verify_sig_fn=verify_rtc_signature,
-                addr_from_pk_fn=address_from_pubkey,
-                current_slot_fn=current_slot,
-                dual_write=UTXO_DUAL_WRITE,
-                review_gate_fn=wallet_review_gate_response,
-            )
-        except ImportError as e:
-            print(f"[UTXO] Endpoints not available: {e}")
-        except Exception as e:
-            print(f"[UTXO] Endpoint registration failed: {e}")
-
     # BCOS v2: Register Blockchain Certified Open Source endpoints
     try:
         from bcos_routes import register_bcos_routes
