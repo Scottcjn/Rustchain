@@ -90,6 +90,30 @@ UNEXPECTED_DATABASE_ERROR_MESSAGE = "An unexpected database error occurred"
 # Constants
 UNIT = 1_000_000  # uRTC per 1 RTC
 DB_PATH = "/root/rustchain/rustchain_v2.db"
+def _db_path_from(db_path):
+    """Filesystem path of the database the caller is ACTUALLY using.
+
+    settle_epoch_rip200() accepts either a path string or a live sqlite3
+    Connection. When handed a Connection, substituting the module-level
+    DB_PATH constant points the reward calculation at a DIFFERENT database
+    than the one the caller holds open. That is only harmless when the
+    process happens to run with cwd=/root/rustchain, which is true on the
+    production unit and false for tests, staging, and any relocated deploy —
+    rewards would then be computed from one database and written to another.
+
+    Ask the connection where it lives instead. Falls back to DB_PATH only if
+    the connection cannot answer, preserving the previous behaviour rather
+    than raising.
+    """
+    if isinstance(db_path, str):
+        return db_path
+    try:
+        for _seq, name, filename in db_path.execute("PRAGMA database_list"):
+            if name == "main" and filename:
+                return filename
+    except Exception:
+        pass
+    return DB_PATH
 PER_EPOCH_URTC = int(1.5 * UNIT)  # 1,500,000 uRTC
 BLOCK_TIME = 600
 GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
@@ -194,7 +218,7 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
                 # the race window where a concurrent caller could open a separate
                 # connection and also pass the already_settled check.
                 result = settle_epoch_with_anti_double_mining(
-                    db_path if isinstance(db_path, str) else DB_PATH,
+                    _db_path_from(db_path),
                     epoch,
                     PER_EPOCH_URTC,
                     current,
@@ -234,7 +258,7 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
 
         # Standard RIP-200 rewards (no anti-double-mining)
         rewards = calculate_epoch_rewards_time_aged(
-            db_path if isinstance(db_path, str) else DB_PATH,
+            _db_path_from(db_path),
             epoch,
             PER_EPOCH_URTC,
             current,
