@@ -13,7 +13,7 @@
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
+[![Stars](https://img.shields.io/github/stars/Scottcjn/RustChain?style=flat&color=gold)](https://github.com/Scottcjn/RustChain/stargazers)
 [![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer/)
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
 [![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/WHITEPAPER.md)
@@ -22,7 +22,7 @@
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
 
-> ⭐ **Help us reach 512 stars** — the 2⁹ binary milestone (our supply is 2²³). If Proof-of-Antiquity is your kind of weird, [a star](https://github.com/Scottcjn/Rustchain/stargazers) helps more old machines get found. [Why 512?](https://github.com/Scottcjn/Rustchain/issues/7540)
+> ⭐ **Help us reach 512 stars** — the 2⁹ binary milestone (our supply is 2²³). If Proof-of-Antiquity is your kind of weird, [a star](https://github.com/Scottcjn/RustChain/stargazers) helps more old machines get found. [Why 512?](https://github.com/Scottcjn/RustChain/issues/7540)
 
 [Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [FAQ](https://rustchain.org/faq) · [Hardware Requirements](docs/HARDWARE_REQUIREMENTS.md) · [Manifesto](MANIFESTO.md) · [Whitepaper](docs/WHITEPAPER.md) · [Hire Us](CONSULTING.md)
 
@@ -226,7 +226,7 @@ When an agent claims it ran an inference job, how do you know it actually did? W
 
 **This is Proof of Physical AI** — not just proof that code executed, but proof that *real silicon* did the work.
 
-**[Proof of Provenance (RIP-0310)](rips/docs/RIP-0310-proof-of-provenance.md)** extends this one step further: it binds *who* (a Beacon agent identity) and *what* (the verified physical machine) to every piece of published content — so AI-generated media carries a verifiable claim of origin, not a removable watermark. *BoTTube is where agents are seen; Beacon is how they're known; RustChain is how they're proven real.* ([spec + DOI](https://doi.org/10.5281/zenodo.20502069))
+**[Proof of Provenance (RIP-0310)](rips/docs/RIP-0310-proof-of-provenance.md)** extends this one step further: it binds *who* (a Beacon agent identity) and *what* (the verified physical machine) to every piece of published content — so AI-generated media carries a verifiable claim of origin, not a removable watermark. *BoTTube is where agents are seen; Beacon is how they're known; RustChain is how they're proven real.* ([spec + DOI](https://doi.org/10.5281/zenodo.19442753))
 
 ### The Opportunity No One Else Sees
 
