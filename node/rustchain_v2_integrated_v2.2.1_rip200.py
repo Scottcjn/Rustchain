@@ -13416,6 +13416,7 @@ if __name__ == "__main__":
                 addr_from_pk_fn=address_from_pubkey,
                 current_slot_fn=current_slot,
                 dual_write=UTXO_DUAL_WRITE,
+                review_gate_fn=wallet_review_gate_response,
             )
         except ImportError as e:
             print(f"[UTXO] Endpoints not available: {e}")
