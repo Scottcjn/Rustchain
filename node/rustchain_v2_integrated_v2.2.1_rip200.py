@@ -1519,20 +1519,21 @@ except Exception as e:
     print(f"[INIT] Hall tables init: {e}")
 
 # Register rewards routes
-if HAVE_REWARDS:
-    try:
-        # NOTE: the module exports register_rewards_rip200, not register_rewards,
-        # so this import raises and is caught below. Do NOT 'fix' it by aliasing:
-        # 4 of the 5 routes it registers already exist in this file (6774, 10718,
-        # 10804, 12310) under different function names, so Flask raises no
-        # assertion and the older module versions would silently shadow the live
-        # balance/settle/eligibility handlers. Reconcile the duplicates first.
-        from rewards_implementation_rip200 import register_rewards
-        register_rewards(app, DB_PATH)
-        print("[REWARDS] Endpoints registered successfully")
-    except Exception as e:
-        print(f"[REWARDS] Failed to register: {e}")
-
+# RIP-200 rewards routes are defined natively in this file, NOT registered from
+# rewards_implementation_rip200. The module's register_rewards_rip200() defines
+# /rewards/settle, /wallet/balance, /wallet/balances/all and /lottery/eligibility,
+# all four of which already exist here (see 6774, 10718, 10804, 12310) — and the
+# module's versions REQUIRE an admin key on /wallet/balance, /wallet/balances/all
+# and /lottery/eligibility, while the live handlers here are public.
+#
+# Registering the module would have shadowed the public handlers with admin-gated
+# ones (Flask raises no assertion because the function names differ, so the first
+# rule registered simply wins), silently 401-ing every balance lookup made by the
+# block explorer, wallet clients and miner dashboards.
+#
+# Its one route with no counterpart here, /consensus/round_robin_status, is
+# reproduced natively below with its admin gate intact. Do not re-add the
+# module registration.
 
 # RIP-201: Fleet immune system endpoints
 if HAVE_FLEET_IMMUNE:
@@ -10719,6 +10720,40 @@ def metrics():
     payload += _attestation_pool_prometheus_text().encode("utf-8")
     return Response(payload, content_type=CONTENT_TYPE_LATEST)
 
+
+@app.route('/consensus/round_robin_status', methods=['GET'])
+def consensus_round_robin_status():
+    """Current round-robin rotation status.
+
+    Ported from rewards_implementation_rip200.register_rewards_rip200() — the only
+    route there without a native counterpart. Admin-gated, as it was: it exposes
+    every attested miner and the consensus rotation.
+    """
+    admin_key = request.headers.get("X-Admin-Key", "")
+    expected_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not expected_key:
+        return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+    if not hmac.compare_digest(admin_key, expected_key):
+        return jsonify({"error": "Unauthorized — admin key required"}), 401
+
+    from rip_200_round_robin_1cpu1vote import (
+        get_attested_miners, get_round_robin_producer,
+        get_chain_age_years, get_time_aged_multiplier,
+    )
+    current = current_slot()
+    attested_miners = get_attested_miners(DB_PATH, int(time.time()))
+    chain_age = get_chain_age_years(current)
+    return jsonify({
+        "current_slot": current,
+        "current_producer": get_round_robin_producer(current, attested_miners),
+        "rotation_size": len(attested_miners),
+        "attested_miners": [
+            {"miner_id": m, "device_arch": a,
+             "multiplier": round(get_time_aged_multiplier(a, chain_age), 3)}
+            for m, a in attested_miners
+        ],
+        "chain_age_years": round(chain_age, 2),
+    })
 
 @app.route('/rewards/settle', methods=['POST'])
 def api_rewards_settle():
