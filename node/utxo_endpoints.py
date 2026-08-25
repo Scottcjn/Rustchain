@@ -184,6 +184,7 @@ _verify_sig_fn = None      # verify_rtc_signature(pubkey_hex, message, sig_hex) 
 _addr_from_pk_fn = None    # address_from_pubkey(pubkey_hex) -> str
 _current_slot_fn = None    # current_slot() -> int
 _dual_write: bool = False
+_review_gate_fn = None     # wallet_review_gate_response(wallet) -> Response|None
 
 
 def _selected_account_mirror_boxes(conn: sqlite3.Connection, selected: list) -> list:
@@ -299,13 +300,14 @@ def _transfer_string_field(data: dict, field: str):
 
 def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
                             verify_sig_fn, addr_from_pk_fn,
-                            current_slot_fn, dual_write: bool = False):
+                            current_slot_fn, dual_write: bool = False,
+                            review_gate_fn=None):
     """
     Wire up the UTXO blueprint with dependencies from the main server.
     Call this after init_db().
     """
     global _utxo_db, _db_path, _verify_sig_fn, _addr_from_pk_fn
-    global _current_slot_fn, _dual_write
+    global _current_slot_fn, _dual_write, _review_gate_fn
 
     _utxo_db = utxo_db
     _db_path = db_path
@@ -313,6 +315,7 @@ def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
     _addr_from_pk_fn = addr_from_pk_fn
     _current_slot_fn = current_slot_fn
     _dual_write = dual_write
+    _review_gate_fn = review_gate_fn
 
     conn = sqlite3.connect(db_path)
     try:
@@ -620,6 +623,16 @@ def utxo_transfer():
             'expected': expected_addr,
             'got': from_address,
         }), 400
+
+    # SECURITY: fund-exit paths are a SET, not a route. /wallet/transfer/signed
+    # and /withdraw/request both gate on a pending maintainer review; this one
+    # did not, so a wallet under review could sweep its balance out through the
+    # UTXO path. Checked on the sender before any state mutation, mirroring the
+    # account-model handler.
+    if _review_gate_fn is not None:
+        review_gate = _review_gate_fn(from_address)
+        if review_gate is not None:
+            return review_gate
 
     try:
         nonce, nonce_int = _parse_transfer_nonce(nonce)
