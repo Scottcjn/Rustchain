@@ -333,6 +333,94 @@ def _attest_text(value):
     return None
 
 
+# phased rollout, a strict self-certifying identity gate, and a freeze/generation
+# ledger for the admin unpin/rotate path. DB_PATH is resolved at CALL time (these
+# run per request), so their placement ahead of the DB_PATH module constant is safe.
+_RTC_HEX_ADDRESS_RE = re.compile(r"^RTC[0-9a-f]{40}$")  # lowercase only: node-derived addrs
+
+def _is_rtc_hex_address(miner):
+    """True only for canonical, self-certifying RTC addresses (``RTC`` + 40 lowercase hex).
+
+    Such an address is ``RTC`` + SHA256(pubkey)[:40] (see ``address_from_pubkey``),
+    so a signature whose public key derives to the address is cryptographic proof
+    of ownership — the ONLY case where trust-on-first-use pinning is safe. Symbolic
+    / legacy names (dual-g4-125, power8-s824-sophia, …) are NOT self-certifying and
+    are never public-TOFU-pinned.
+    """
+    return bool(isinstance(miner, str) and _RTC_HEX_ADDRESS_RE.fullmatch(miner))
+
+_ATTEST_ENFORCE_MODES = ("log_only", "enforce_new", "enforce_all")
+
+def _attest_enforce_mode():
+    """Rollout phase for attestation signature enforcement (env RTC_ATTEST_ENFORCE_MODE).
+
+    log_only     (Phase 0, DEFAULT) — verify signatures if present; log, enforce nothing.
+    enforce_new  (Phase 1)          — new identities must sign; grandfathered stay unsigned.
+    enforce_all  (Phase 2)          — every miner must present a valid signature.
+    """
+    mode = (os.environ.get("RTC_ATTEST_ENFORCE_MODE", "log_only") or "").strip().lower()
+    return mode if mode in _ATTEST_ENFORCE_MODES else "log_only"
+
+def _attest_unsigned_allowlist():
+    """Case-SENSITIVE set of miner IDs permitted to attest unsigned in enforcing phases.
+
+    Miner IDs are case-sensitive on the node; folding case here would conflate
+    distinct identities, so the split values are compared verbatim.
+    """
+    raw = os.environ.get("RTC_UNSIGNED_ATTEST_ALLOWLIST", "") or ""
+    return {a.strip() for a in raw.split(",") if a.strip()}
+
+def _ensure_attest_grandfather_table(conn):
+    """Snapshot of identities established before the signature cutover.
+
+    Populated once by the migration script (see MIGRATION_PLAN.md). Membership is
+    FROZEN at cutover so a post-cutover attacker cannot mint an identity, attest
+    once, and thereby become 'grandfathered'.
+    """
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS attest_grandfathered ("
+        "miner TEXT PRIMARY KEY, added_at INTEGER NOT NULL DEFAULT 0, reason TEXT DEFAULT '')"
+    )
+
+def _ensure_attest_key_admin_table(conn):
+    """Freeze/generation ledger backing the admin unpin/rotate path.
+
+    ``pin_frozen=1`` disables public TOFU re-pinning after an admin unpin so a
+    stranger cannot immediately re-capture an unpinned identity; ``generation``
+    is a monotonically increasing audit counter bumped on every admin action.
+    """
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS attest_key_admin ("
+        "miner TEXT PRIMARY KEY, pin_frozen INTEGER NOT NULL DEFAULT 0, "
+        "generation INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0, "
+        "note TEXT DEFAULT '')"
+    )
+
+def _attest_identity_state(miner):
+    """Read pinned key, grandfather status, and pin-freeze in a single connection.
+
+    Returns ``(stored_pubkey_or_None, is_grandfathered, is_pin_frozen)``. Raises on
+    DB error so callers can FAIL CLOSED in enforcing phases rather than silently
+    treating a broken DB as 'no key on file' (which would be fail-open).
+    """
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        _ensure_attest_grandfather_table(conn)
+        _ensure_attest_key_admin_table(conn)
+        stored = None
+        row = conn.execute(
+            "SELECT signing_pubkey FROM miner_attest_recent WHERE miner = ?", (miner,)
+        ).fetchone()
+        if row and row[0]:
+            stored = row[0].strip().lower()
+        gf = conn.execute(
+            "SELECT 1 FROM attest_grandfathered WHERE miner = ?", (miner,)
+        ).fetchone()
+        frozen_row = conn.execute(
+            "SELECT pin_frozen FROM attest_key_admin WHERE miner = ?", (miner,)
+        ).fetchone()
+        is_frozen = bool(frozen_row and frozen_row[0])
+        return stored, bool(gf), is_frozen
+
 def _attest_valid_miner(value):
     """Accept only bounded miner identifiers with a conservative character set."""
     text = _attest_text(value)
@@ -1606,6 +1694,40 @@ def _ensure_transfer_ledger_table(db):
     )
 
 
+def _migrate_headers_columns(c):
+    """Idempotently add the signed-header columns (``miner_id``, ``message_hex``,
+    ``signature_hex``, ``pubkey_hex``, ``ts``) to ``headers`` if a prior run of
+    ``CREATE TABLE IF NOT EXISTS headers(slot, header_json)`` left the table in
+    its original two-column shape.
+
+    Every real consumer of this table — ``/headers/ingest_signed`` (INSERT),
+    ``/headers/tip`` (SELECT), the ``api_v1`` blueprint's ``/blocks*`` routes and
+    ``rustchain_p2p_sync_secure.get_blocks_for_sync`` — reads or writes these five
+    columns and none of them ever wrote/read ``header_json``. Without this
+    migration a brand-new node crashes on the very first signed header it
+    receives with ``sqlite3.OperationalError: table headers has no column named
+    miner_id``.
+
+    Idempotent + safe on an existing/populated table: ``ALTER TABLE ... ADD
+    COLUMN`` only needs a nullable column (or a constant default) to work on a
+    non-empty SQLite table, and no code path here requires these NOT NULL at the
+    schema level — the row is fully populated in the same INSERT that creates it.
+    """
+    _hdr_cols = {row[1] for row in c.execute("PRAGMA table_info(headers)").fetchall()}  # fetchall-ok: pragma-result
+    if not _hdr_cols:
+        return  # table not created yet (fresh DB path creates it with all columns implicitly on next run)
+    for _col, _ctype in (
+        ("miner_id", "TEXT"),
+        ("message_hex", "TEXT"),
+        ("signature_hex", "TEXT"),
+        ("pubkey_hex", "TEXT"),
+        ("ts", "INTEGER"),
+    ):
+        if _col not in _hdr_cols:
+            c.execute("ALTER TABLE headers ADD COLUMN %s %s" % (_col, _ctype))
+            logging.info(f"[migrate] headers: added missing column {_col}")
+
+
 def _migrate_miner_header_keys_composite(c):
     """Idempotently upgrade a legacy single-column-PK ``miner_header_keys`` to the
     composite ``(miner_id, pubkey_hex)`` PK so one wallet identity can hold a header
@@ -1957,6 +2079,17 @@ def init_db():
                 header_json TEXT NOT NULL
             )
         """)
+        # Every consumer of this table (/headers/ingest_signed, /headers/tip,
+        # api_v1 blueprint's /blocks* routes, rustchain_p2p_sync_secure's
+        # get_blocks_for_sync) reads/writes miner_id, message_hex, signature_hex,
+        # pubkey_hex and ts — none of which the CREATE TABLE above ever defined.
+        # On a fresh DB every POST to /headers/ingest_signed raised
+        # "sqlite3.OperationalError: table headers has no column named miner_id"
+        # (see _migrate_headers_columns docstring / regression test for repro).
+        # ADD COLUMN is idempotent-safe here: SQLite allows a nullable column to
+        # be added to a non-empty table, and no code path relies on these being
+        # NOT NULL at the schema level.
+        _migrate_headers_columns(c)
         c.execute("""
             CREATE TABLE IF NOT EXISTS miner_header_keys(
                 miner_id TEXT NOT NULL,
@@ -2106,6 +2239,17 @@ HARDWARE_WEIGHTS = {
     "console": {"nes_6502": 2.8, "snes_65c816": 2.7, "n64_mips": 2.5,
                 "genesis_68000": 2.5, "gameboy_z80": 2.6, "ps1_mips": 2.8,
                 "saturn_sh2": 2.6, "gba_arm7": 2.3, "default": 2.5},
+    # Standalone vintage micros (Apple II, C64, MSX, Spectrum). Deliberately
+    # BELOW the equivalent console tier, which is not a judgement on the
+    # hardware: a Pico-bridged console presents at least one measured check
+    # (bridge anti_emulation timing), while a standalone micro presents a
+    # small HTTP payload that cannot be distinguished from a forgery. Paying
+    # both the same rate would make the cheapest-to-forge class the best-paid
+    # on the chain. 6502 lands at 2.5, level with 386 and G4, so the bonus is
+    # real without topping a table it cannot prove its place in. Defaults sit
+    # under the named arches so an invented chip name cannot auto-max.
+    "MOS": {"6502": 2.5, "65c816": 2.4, "default": 2.2},
+    "Zilog": {"z80": 2.3, "default": 2.1},
 }
 
 # === WELCOME BONUS & STREAK REWARDS ===
@@ -2116,6 +2260,24 @@ STREAK_MAX_DAYS = 30             # Max streak bonus cap
 STREAK_GRACE_HOURS = 26          # Hours before streak resets (gives timezone flexibility)
 
 POWERPC_ARCHES = {"g3", "g4", "g5", "power8", "power9", "powerpc", "power macintosh"}
+
+
+def _is_powerpc_arch_label(label) -> bool:
+    """True when an arch string names PowerPC silicon.
+
+    A bare `"powerpc" in label or "ppc" in label` misses the label real Power
+    Macs actually report: `platform.machine()` on Mac OS X PowerPC returns
+    **"Power Macintosh"**, which contains neither substring. POWERPC_ARCHES has
+    always listed it, and so do the vintage-relaxation sets, but the cache
+    profile check used the substrings and therefore refused to recognise a
+    genuine Power Mac G5 by its own arch tag.
+    """
+    text = str(label or "").strip().lower()
+    if not text:
+        return False
+    if "powerpc" in text or "ppc" in text:
+        return True
+    return any(tok in text for tok in POWERPC_ARCHES)
 X86_CPU_BRANDS = {"intel", "xeon", "core", "celeron", "pentium", "amd", "ryzen", "epyc", "athlon", "threadripper"}
 ARM_CPU_BRANDS = {
     # Modern ARM (NAS/SBC/cloud — 0.0005x)
@@ -2211,6 +2373,150 @@ def select_active_fingerprint_checks(previous_epoch_block_hash: str, active_coun
     return tuple(ranked[:active_count])
 
 
+# === RIP-309b: capability-limited hardware classes ===
+# Some hardware structurally cannot run a rotating check. An Apple II has no
+# TSC and no SIMD unit; a 386 predates RDTSC. Scoring "cannot measure" as
+# "failed" zeroes the honest vintage fleet, which is the hardware this chain
+# exists to reward. These classes get a third verdict, `unmeasured`, which is
+# excluded from the scoring DENOMINATOR rather than counted either way.
+MICRO_LIMITED_ARCHES = {
+    "6502", "65c816", "z80", "sh2",
+    "i386", "386", "80386",
+    "i486", "486", "80486",
+    "8086", "8088", "286", "80286", "i286",
+    # "retro" is the server-derived class for pre-Pentium-II x86 that is not
+    # resolved to a specific tier — a Cobalt Qube 3 (K6-2) lands here. Those
+    # machines run cut-down clients that emit only the checks their silicon and
+    # OS can actually perform: the live Qube sends clock_drift and
+    # anti_emulation and nothing else. Scored strictly that was 2 of 6, so the
+    # ratio was 0.333 and a 1.4x machine earned 0.467 — below a modern miner,
+    # for the crime of being unable to run four checks it has no hardware for.
+    "retro",
+}
+
+CONSOLE_BRIDGE_ARCHES = {
+    "nes_6502", "snes_65c816", "n64_mips", "gba_arm7",
+    "genesis_68000", "sms_z80", "saturn_sh2",
+    "gameboy_z80", "gameboy_color_z80", "ps1_mips",
+}
+
+# Canonical (family, arch) for a standalone micro claim, so a bare "6502"
+# lands on the MOS family rather than being swept into x86 defaults and then
+# caught by the reverse-x86 ARM heuristic.
+MICRO_ARCH_CANONICAL = {
+    "6502": ("MOS", "6502"),
+    "65c816": ("MOS", "65c816"),
+    "z80": ("Zilog", "z80"),
+    "i386": ("x86", "386"), "386": ("x86", "386"), "80386": ("x86", "386"),
+    "i486": ("x86", "486"), "486": ("x86", "486"), "80486": ("x86", "486"),
+    "8086": ("x86", "retro"), "8088": ("x86", "retro"),
+    "286": ("x86", "retro"), "80286": ("x86", "retro"), "i286": ("x86", "retro"),
+}
+
+# Device-native measurements the flat vintage C miners send at top level
+# (miners/apple2, miners/i386). These are not rotating checks.
+FLAT_MICRO_EVIDENCE_FIELDS = (
+    "cycle_count", "clock_ticks", "ram_kb", "aux_ram",
+    "cpu_flags", "has_cpuid", "cpuid_max_leaf", "hw_fingerprint",
+)
+
+MODERN_MACHINE_TOKENS = {
+    "x86_64", "amd64", "i686", "i586",
+    "aarch64", "arm64", "arm64e", "armv7l", "armv8l",
+    "ppc64le", "ppc64", "riscv64", "mips64", "s390x",
+}
+MODERN_CPU_BRAND_TOKENS = (
+    "ryzen", "epyc", "threadripper", "xeon", "core(tm)",
+    "core i3", "core i5", "core i7", "core i9",
+    "apple m1", "apple m2", "apple m3", "apple m4",
+    "snapdragon", "graviton", "neoverse",
+)
+
+
+def _micro_accepted_for_rotation(device_arch, fingerprint, claimed_device=None) -> bool:
+    """True when a capability-limited class earned its neutral scoring.
+
+    This is the ONLY gate that lets an all-unmeasured payload score above
+    zero, so it is deliberately narrow: the class must come from the
+    SERVER-derived arch, nothing in the payload may contradict the claim, and
+    the device must supply at least two native measurements. A payload that
+    proves nothing scores nothing.
+    """
+    arch = str(device_arch or "").lower()
+    if arch not in MICRO_LIMITED_ARCHES and arch not in CONSOLE_BRIDGE_ARCHES:
+        bt = fingerprint.get("bridge_type") if isinstance(fingerprint, dict) else None
+        if bt != "pico_serial":
+            return False
+    if _capability_contradiction(claimed_device, fingerprint):
+        return False
+    return _micro_native_evidence_count(fingerprint) >= 2
+
+
+def _capability_contradiction(claimed_device, fingerprint):
+    """Return a reason string if a capability-limited claim is contradicted.
+
+    A device claiming to be a 6502/386/486/console bridge while presenting
+    evidence of a modern platform must not receive the neutral `unmeasured`
+    treatment. Deliberately conservative: 'GenuineIntel' on a claimed 486 is
+    NOT a contradiction (late 486s have CPUID), but SSE/AVX evidence is.
+    """
+    device = claimed_device if isinstance(claimed_device, dict) else {}
+    fp = fingerprint if isinstance(fingerprint, dict) else {}
+
+    machine = str(device.get("machine") or "").lower()
+    if machine in MODERN_MACHINE_TOKENS:
+        return f"modern_machine_field:{machine}"
+
+    platform_system = str(device.get("platform_system") or "").lower()
+    if platform_system in ("windows", "darwin"):
+        return f"modern_platform:{platform_system}"
+
+    cpu_brand = _cpu_brand_string(device)
+    for token in MODERN_CPU_BRAND_TOKENS:
+        if token in cpu_brand:
+            return f"modern_cpu_brand:{token}"
+
+    simd_data = _fingerprint_check_data(fp, "simd_identity")
+    x86_features = simd_data.get("x86_features")
+    if (isinstance(x86_features, list) and x86_features) or \
+            simd_data.get("has_sse") or simd_data.get("has_avx"):
+        return "x86_simd_evidence"
+    if simd_data.get("altivec") or simd_data.get("vsx") or simd_data.get("has_altivec"):
+        return "powerpc_simd_evidence"
+
+    return None
+
+
+def _structurally_unmeasurable_checks(device_arch, fingerprint=None) -> frozenset:
+    """Rotating checks a device class structurally cannot perform.
+
+    Keyed by the SERVER-derived arch, never a raw client claim. A micro
+    attested through a Pico bridge gets the console profile, because the
+    bridge does measure anti_emulation. A standalone micro gets all six, and
+    its attestation rests on device-native evidence instead.
+    """
+    arch = str(device_arch or "").lower()
+    bridge_type = ""
+    if isinstance(fingerprint, dict):
+        bt = fingerprint.get("bridge_type")
+        bridge_type = bt if isinstance(bt, str) else ""
+    if arch in CONSOLE_BRIDGE_ARCHES or bridge_type == "pico_serial":
+        return frozenset(RIP309_ROTATING_FINGERPRINT_CHECKS) - {"anti_emulation"}
+    if arch in MICRO_LIMITED_ARCHES:
+        return frozenset(RIP309_ROTATING_FINGERPRINT_CHECKS)
+    return frozenset()
+
+
+def _micro_native_evidence_count(fingerprint) -> int:
+    """Count device-native measurement fields on a flat micro payload."""
+    if not isinstance(fingerprint, dict):
+        return 0
+    return sum(
+        1 for f in FLAT_MICRO_EVIDENCE_FIELDS
+        if fingerprint.get(f) not in (None, "", [], {})
+    )
+
+
 def _fingerprint_check_passed(check_entry) -> bool:
     if isinstance(check_entry, bool):
         return check_entry
@@ -2285,24 +2591,64 @@ def get_epoch_fingerprint_rotation(conn, epoch: int) -> dict:
     }
 
 
-def evaluate_rotating_fingerprint_checks(conn, epoch: int, fingerprint: dict) -> dict:
+def evaluate_rotating_fingerprint_checks(
+    conn,
+    epoch: int,
+    fingerprint: dict,
+    device_arch: str = None,
+    micro_accepted: bool = False,
+) -> dict:
+    """Score the epoch's rotating checks, with a third `unmeasured` verdict.
+
+    RIP-309b. A check a device class structurally cannot perform is neither a
+    pass nor a failure: it is dropped from the DENOMINATOR. Without this, an
+    honest 486 reporting a truthful `clock_drift: false` (no TSC on that
+    silicon) scores zero, while a client that hardcodes `"passed": true`
+    scores 1.0 — the control fires only on honest miners.
+
+    `device_arch` must be the SERVER-derived arch. Passing a raw client claim
+    would let a miner self-select which checks it is excused from.
+
+    Empty denominator FAILS CLOSED. If nothing was measured, the score is 0.0
+    unless this is an unvetoed capability-limited class whose attestation was
+    already accepted on device-native evidence (`micro_accepted`). "Proved
+    nothing" is not "passed everything"; the earlier form of this code
+    returned 1.0 and handed a perfect score to a payload with no evidence.
+    """
     rotation = get_epoch_fingerprint_rotation(conn, epoch)
     checks = _fingerprint_checks_map(fingerprint)
-    active_results = {
-        name: _fingerprint_check_passed(checks.get(name))
-        for name in rotation["active_checks"]
-    }
-    passed_active = [name for name, passed in active_results.items() if passed]
-    failed_active = [name for name, passed in active_results.items() if not passed]
-    total_active = len(rotation["active_checks"])
-    active_ratio = (len(passed_active) / total_active) if total_active else 1.0
+    unmeasurable = _structurally_unmeasurable_checks(device_arch, fingerprint)
+
+    active_results = {}
+    for name in rotation["active_checks"]:
+        entry = checks.get(name)
+        if entry is None and name in unmeasurable:
+            active_results[name] = None          # structurally unmeasured
+        else:
+            active_results[name] = _fingerprint_check_passed(entry)
+
+    passed_active = [n for n, v in active_results.items() if v is True]
+    failed_active = [n for n, v in active_results.items() if v is False]
+    unmeasured_active = [n for n, v in active_results.items() if v is None]
+    measured_total = len(passed_active) + len(failed_active)
+
+    if measured_total:
+        active_ratio = len(passed_active) / measured_total
+    elif micro_accepted and unmeasured_active:
+        # Capability-limited class, validated on device-native evidence.
+        active_ratio = 1.0
+    else:
+        active_ratio = 0.0
+
     return {
         **rotation,
         "active_results": active_results,
         "passed_active_checks": passed_active,
         "failed_active_checks": failed_active,
+        "unmeasured_active_checks": unmeasured_active,
         "active_pass_count": len(passed_active),
-        "active_total": total_active,
+        "active_total": measured_total,
+        "measured_total": measured_total,
         "active_ratio": active_ratio,
     }
 
@@ -2340,6 +2686,40 @@ def resolve_enroll_fingerprint(conn, miner_pk: str, data: dict) -> dict:
     except (sqlite3.Error, json.JSONDecodeError, TypeError, ValueError):
         pass
     return {}
+
+
+def resolve_enroll_weight_device(conn, miner_pk: str, data: dict) -> tuple:
+    """Pick the (family, arch) used for the HARDWARE_WEIGHTS reward multiplier.
+
+    SECURITY: the reward weight MUST be bound to the hardware the miner
+    actually attested and fingerprinted, not to whatever ``device`` the
+    enrollment request body claims. The enrollment signature covers only
+    ``miner_pubkey|miner_id|epoch`` (see enroll_epoch), so ``device`` is
+    unsigned and fully attacker-controlled. Trusting it lets a miner that
+    attested on ordinary x86 (``x86``/``modern`` -> 0.8x) enroll claiming e.g.
+    ARM ``arm2`` (4.0x) — or ``console``/vintage tiers — and collect a ~5x
+    inflated share of the fixed per-epoch reward pot, draining honest miners.
+
+    Prefer the verified device stored at attestation
+    (``miner_attest_recent.device_family`` / ``device_arch``, written from
+    ``derive_verified_device`` against the submitted fingerprint). Fall back to
+    the request body only when no stored verified device exists (legacy /
+    pre-migration rows), mirroring the resolve_enroll_fingerprint fallback so
+    deployed miners are not regressed. Robust to a missing row/column.
+    """
+    try:
+        row = conn.execute(
+            "SELECT device_family, device_arch FROM miner_attest_recent WHERE miner = ?",
+            (miner_pk,),
+        ).fetchone()
+        if row and row[0]:
+            return str(row[0]), str(row[1] or "default")
+    except sqlite3.Error:
+        pass
+    device = data.get("device")
+    if not isinstance(device, dict):
+        device = {}
+    return str(device.get("family", "x86")), str(device.get("arch", "default"))
 
 
 def _claimed_family_and_arch(device: dict) -> tuple:
@@ -2409,6 +2789,27 @@ def _has_powerpc_simd_evidence(fingerprint: dict) -> bool:
     return has_ppc and not has_x86
 
 
+def _cache_measurement_is_degenerate(cache_data: dict) -> bool:
+    """True when the cache timings are physically impossible, i.e. noise.
+
+    L2 cannot be faster than L1 on real silicon. When the reported ratio says
+    it is, the client did not measure a cache hierarchy, it measured its own
+    interpreter. The deployed Mac client walks a Python bytearray at fixed
+    x86-shaped sizes (8K/128K/4M); on a 2005 PowerPC 970 those accesses are
+    interpreter-bound, and the live Power Mac G5 reports l2_l1=0.801.
+
+    Distinct from "no cache evidence at all", which stays a failure. Here the
+    client tried and the result is uninformative.
+    """
+    if not isinstance(cache_data, dict):
+        return False
+    try:
+        l2_l1 = float(cache_data.get("l2_l1_ratio", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return False
+    return 0.0 < l2_l1 < 1.0
+
+
 def _has_powerpc_cache_profile(fingerprint: dict) -> bool:
     """Verify cache fingerprint is consistent with a PowerPC machine.
 
@@ -2426,20 +2827,37 @@ def _has_powerpc_cache_profile(fingerprint: dict) -> bool:
     """
     cache_data = _fingerprint_check_data(fingerprint, "cache_timing")
     arch_hint = str(cache_data.get("arch") or cache_data.get("architecture") or "").lower()
-    if "powerpc" in arch_hint or "ppc" in arch_hint:
+    if _is_powerpc_arch_label(arch_hint):
         return True
 
     # v3 fingerprint_checks.py places the arch label in simd_identity, not
     # cache_timing. Accept either source.
     simd_data = _fingerprint_check_data(fingerprint, "simd_identity")
     simd_arch = str(simd_data.get("arch") or simd_data.get("architecture") or "").lower()
-    if "powerpc" in simd_arch or "ppc" in simd_arch:
+    if _is_powerpc_arch_label(simd_arch):
         return True
 
     l2_l1_ratio = float(cache_data.get("l2_l1_ratio", 0.0) or 0.0)
     l3_l2_ratio = float(cache_data.get("l3_l2_ratio", 0.0) or 0.0)
     hierarchy_ratio = float(cache_data.get("hierarchy_ratio", 0.0) or 0.0)
-    return (l2_l1_ratio >= 1.05 and l3_l2_ratio >= 1.05) or hierarchy_ratio >= 1.2
+    if hierarchy_ratio >= 1.2:
+        return True
+    if l2_l1_ratio >= 1.05:
+        # A PowerPC 970/970FX (Power Mac G5) has L1 and L2 and NO L3 AT ALL, so
+        # l3_l2_ratio is absent or zero on genuine silicon. Requiring it
+        # rejected every real G5 with "lacks PowerPC cache profile" — the
+        # machine was failing for not having a cache level it was never built
+        # with. An absent L3 is a fact about the hardware, not a missing
+        # measurement, so it is not treated as a failure.
+        #
+        # Safe because this function only ever runs AFTER
+        # _has_powerpc_simd_evidence has already passed: AltiVec/VSX is the
+        # strong proof of PowerPC and the cache profile is corroboration. A
+        # forger must already have produced convincing PowerPC SIMD evidence
+        # to reach here, and a two-level hierarchy alone was never the barrier.
+        if l3_l2_ratio >= 1.05 or l3_l2_ratio <= 0.0:
+            return True
+    return False
 
 
 def _detect_arm_evidence(device: dict, fingerprint: dict) -> bool:
@@ -2645,6 +3063,383 @@ def _detect_x86_vintage(cpu_brand: str, machine: str, simd_data: dict):
     return None
 
 
+_X86_VINTAGE_REWARD_ARCHES = {
+    "386", "486", "pentium", "pentium_mmx", "pentium_pro",
+    "pentium_ii", "pentium_iii", "pentium_m_banias",
+    "pentium_m_dothan", "pentium_m_yonah",
+}
+
+
+def _passed_fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
+    """Return measurement data only for an explicitly passed check."""
+    item = _fingerprint_checks_map(fingerprint).get(check_name, {})
+    if not isinstance(item, dict) or item.get("passed") is not True:
+        return {}
+    data = item.get("data")
+    return data if isinstance(data, dict) and data else {}
+
+
+def _fingerprint_check_data(fingerprint: dict, check_name: str) -> dict:
+    """Return raw check data regardless of the client-reported result.
+
+    Failed checks are not positive evidence, but their observations can still
+    disprove a vintage claim (for example a failed SIMD check that saw AVX).
+    """
+    item = _fingerprint_checks_map(fingerprint).get(check_name, {})
+    if not isinstance(item, dict):
+        return {}
+    data = item.get("data")
+    return data if isinstance(data, dict) and data else {}
+
+
+def _is_positive_measurement(value) -> bool:
+    """Return true only for a concrete, finite, positive measurement."""
+    return (
+        value is not None
+        and value != ""
+        and not isinstance(value, bool)
+        and _attest_metric_is_valid(value)
+        and float(value) > 0
+    )
+
+
+def _measurement_close(actual, expected, relative_tolerance: float = 0.02) -> bool:
+    """Compare a reported derived metric to values recomputed by the node."""
+    if not _is_positive_measurement(actual) or not _is_positive_measurement(expected):
+        return False
+    actual_f = float(actual)
+    expected_f = float(expected)
+    return abs(actual_f - expected_f) <= max(0.001, abs(expected_f) * relative_tolerance)
+
+
+def _canonical_attestation_signer_owns_miner(pubkey_hex: str, miner: str) -> bool:
+    """Require canonical measurement evidence to be signed by its RTC owner.
+
+    A valid Ed25519 signature proves only that *some* key signed the payload.
+    Reward evidence must additionally bind that key to the credited identity;
+    otherwise an arbitrary key can authenticate fabricated measurements for a
+    caller-chosen RTC address.  Named/legacy miners remain valid attestations,
+    but cannot use that unrelated signature as vintage-reward evidence.
+    """
+    if not isinstance(pubkey_hex, str) or not isinstance(miner, str):
+        return False
+    pubkey_hex = pubkey_hex.strip().lower()
+    miner = miner.strip()
+    if not pubkey_hex or not miner:
+        return False
+    try:
+        return miner.lower() == pubkey_hex or address_from_pubkey(pubkey_hex) == miner
+    except Exception:
+        return False
+
+
+def _has_validated_x86_measurement(check_name: str, data: dict) -> bool:
+    """Recompute pass invariants for measurement-bearing producer output.
+
+    A client-provided ``passed`` bit and correctly named fields are insufficient.
+    Require the complete current producer schema and independently verify the
+    same relationships used by ``fingerprint_checks.py``.
+    """
+    if check_name == "cache_timing":
+        l1, l2, l3 = data.get("l1_ns"), data.get("l2_ns"), data.get("l3_ns")
+        l2_l1 = data.get("l2_l1_ratio")
+        l3_l2 = data.get("l3_l2_ratio")
+        if not all(_is_positive_measurement(v) for v in (l1, l2, l3, l2_l1, l3_l2)):
+            return False
+        return (
+            _measurement_close(l2_l1, float(l2) / float(l1))
+            and _measurement_close(l3_l2, float(l3) / float(l2))
+            and (float(l2_l1) >= 1.01 or float(l3_l2) >= 1.01)
+        )
+
+    if check_name in ("simd_identity", "simd_bias"):
+        flags = data.get("sample_flags")
+        count = data.get("simd_flags_count")
+        if not isinstance(flags, list) or not flags or not _is_positive_measurement(count):
+            return False
+        normalized = [flag.strip().lower() for flag in flags if isinstance(flag, str) and flag.strip()]
+        if len(normalized) != len(flags) or float(count) < len(normalized):
+            return False
+        observed = {
+            "sse": any("sse" in flag for flag in normalized),
+            "avx": any("avx" in flag for flag in normalized),
+            "altivec": any("altivec" in flag for flag in normalized),
+            "neon": any("neon" in flag for flag in normalized),
+        }
+        return all(data.get(f"has_{feature}") is value for feature, value in observed.items())
+
+    if check_name == "thermal_drift":
+        cold, hot = data.get("cold_avg_ns"), data.get("hot_avg_ns")
+        cold_sd, hot_sd = data.get("cold_stdev"), data.get("hot_stdev")
+        ratio = data.get("drift_ratio")
+        if not all(_is_positive_measurement(v) for v in (cold, hot, ratio)):
+            return False
+        if not all(v is not None and not isinstance(v, bool) and _attest_metric_is_valid(v)
+                   and float(v) >= 0 for v in (cold_sd, hot_sd)):
+            return False
+        return (
+            (float(cold_sd) > 0 or float(hot_sd) > 0)
+            and _measurement_close(ratio, float(hot) / float(cold))
+        )
+
+    if check_name == "instruction_jitter":
+        averages = (data.get("int_avg_ns"), data.get("fp_avg_ns"), data.get("branch_avg_ns"))
+        deviations = (data.get("int_stdev"), data.get("fp_stdev"), data.get("branch_stdev"))
+        if not all(_is_positive_measurement(v) for v in averages):
+            return False
+        if not all(v is not None and not isinstance(v, bool) and _attest_metric_is_valid(v)
+                   and float(v) >= 0 for v in deviations):
+            return False
+        return any(float(v) > 0 for v in deviations)
+
+    return False
+
+
+def _simd_measurement_has_feature(data: dict, feature: str) -> bool:
+    """Read SIMD contradictions from booleans and the measured flag sample."""
+    if data.get(f"has_{feature}") is True:
+        return True
+    flags = data.get("sample_flags")
+    if not isinstance(flags, list):
+        return False
+    normalized = {
+        flag.strip().lower() for flag in flags
+        if isinstance(flag, str) and flag.strip()
+    }
+    if feature == "sse":
+        # SSE2/SSSE3 are not evidence that the original SSE bit was observed.
+        return "sse" in normalized
+    return any(flag.startswith(feature) for flag in normalized)
+
+
+def _has_complete_x86_simd_observation(data: dict) -> bool:
+    """Require the current producer's full-count and boolean SIMD schema.
+
+    The dedicated producer computes feature booleans from the complete CPU flag
+    list even though ``sample_flags`` is bounded. Requiring this observation
+    prevents a caller from omitting SIMD entirely and using another measurement
+    to hide modern flags beyond the age oracle's truncated sample.
+    """
+    flags = data.get("sample_flags")
+    count = data.get("simd_flags_count")
+    feature_values = tuple(
+        data.get(f"has_{feature}") for feature in ("sse", "avx", "altivec", "neon")
+    )
+    if not isinstance(flags, list) or not _is_positive_measurement(count):
+        return False
+    normalized = [
+        flag.strip().lower() for flag in flags
+        if isinstance(flag, str) and flag.strip()
+    ]
+    return (
+        bool(normalized)
+        and len(normalized) == len(flags)
+        and len(normalized) <= float(count)
+        and all(isinstance(value, bool) for value in feature_values)
+    )
+
+
+def _simd_measurement_exceeds_vintage_arch(data: dict, claimed_arch: str) -> bool:
+    """Reject sampled x86 SIMD generations newer than the claimed CPU.
+
+    ``has_sse`` is intentionally broad in the current producer (SSE2 and
+    SSSE3 also set it), so it cannot distinguish the original SSE bit from a
+    later generation.  Use the measured flag names for that distinction and
+    fail closed when they exceed the vintage architecture's real ceiling.
+    """
+    flags = data.get("sample_flags")
+    if not isinstance(flags, list):
+        return False
+    normalized = {
+        flag.strip().lower().replace(".", "_") for flag in flags
+        if isinstance(flag, str) and flag.strip()
+    }
+    # Linux exposes SSE3 as ``pni`` on many x86 CPUs; AMD exposes its later
+    # non-Intel generation as ``sse4a``. Both must participate in the same
+    # ceiling as the more obvious SSE spellings.
+    sse_generations = {
+        "sse3" if flag == "pni" else flag
+        for flag in normalized
+        if re.fullmatch(r"(?:sse(?:[2-4](?:_[12])?|4a)?|ssse3|pni)", flag)
+    }
+    allowed = {
+        "pentium_iii": {"sse"},
+        "pentium_m_banias": {"sse", "sse2"},
+        "pentium_m_dothan": {"sse", "sse2"},
+        "pentium_m_yonah": {"sse", "sse2", "sse3"},
+    }.get(claimed_arch, set())
+    return bool(sse_generations - allowed)
+
+
+def _classify_validated_x86_brand(cpu_brand: str):
+    """Map an anchored CPU brand to (reward arch, CPUID family)."""
+    brand = " ".join(str(cpu_brand or "").strip().split()).lower()
+    vendor = r"(?:(?:genuineintel|authenticamd|intel(?:\(r\))?|amd)\s+)?"
+    speed = r"\d+(?:\.\d+)?(?:\s*[-/]\s*\d+(?:\.\d+)?)?\s*(?:mhz|ghz)?"
+    patterns = (
+        ("386", 3, rf"^{vendor}(?:i?80386|i?386|am386)(?:[\s/-]?[a-z0-9]+)*$"),
+        (
+            "486",
+            4,
+            rf"^{vendor}(?:(?:i?80486|i?486|am486)(?:[\s/-]?[a-z0-9]+)*|"
+            rf"am5x86(?:-[a-z0-9]+)?|cyrix\s+cx486(?:[a-z0-9/-]+)?)$",
+        ),
+        ("pentium_mmx", 5, rf"^{vendor}pentium(?:\(r\))?\s+mmx(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        ("pentium_pro", 6, rf"^{vendor}pentium(?:\(r\))?\s+pro(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        (
+            "pentium_iii",
+            6,
+            rf"^{vendor}pentium(?:\(r\))?\s+iii"
+            rf"(?:\s+\((?:katmai|coppermine|tualatin)\)|"
+            rf"(?:\s+(?:cpu|processor))?(?:\s+family)?(?:\s+{speed})?)$",
+        ),
+        (
+            "pentium_ii",
+            6,
+            rf"^{vendor}(?:mobile\s+)?pentium(?:\(r\))?\s+ii"
+            rf"(?:\s+\((?:klamath|deschutes|dixon)\)|"
+            rf"(?:\s+(?:cpu|processor))?(?:\s+{speed})?)$",
+        ),
+        ("pentium_m", 6, rf"^{vendor}pentium(?:\(r\))?\s+m(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        ("pentium", 5, rf"^{vendor}pentium(?:\(r\))?(?:\s+(?:cpu|processor))?(?:\s+{speed})?$"),
+    )
+    for arch, cpu_family, pattern in patterns:
+        if re.fullmatch(pattern, brand, flags=re.IGNORECASE):
+            return arch, cpu_family
+    return None
+
+
+def _derive_enroll_weight_device(
+    verified_device: dict, fingerprint: dict, fingerprint_passed: bool = True,
+    measurement_report_verified: bool = False,
+) -> dict:
+    """Fail closed for vintage-x86 reward tiers without rewriting identity.
+
+    The general device classifier remains useful to APIs and inventory.  Only
+    the epoch-enrollment reward lookup calls this helper, so a rejected reward
+    claim cannot mutate the stored device family or architecture.
+    """
+    family = str(verified_device.get("device_family") or "")
+    claimed_arch = str(verified_device.get("device_arch") or "").lower()
+    if family.lower() not in ("x86", "x86_64") or claimed_arch not in _X86_VINTAGE_REWARD_ARCHES:
+        return verified_device
+
+    if not fingerprint_passed or not measurement_report_verified:
+        return {"device_family": "x86", "device_arch": "default"}
+
+    oracle = _passed_fingerprint_check_data(fingerprint, "device_age_oracle")
+    oracle_arch = str(oracle.get("arch") or "").lower()
+    oracle_mismatches = oracle.get("mismatch_reasons")
+    oracle_confidence = oracle.get("confidence")
+    oracle_flags = oracle.get("flags_sample")
+    oracle_complete = (
+        oracle_arch in ("i386", "i486", "i586", "i686", "x86", "x86_64", "amd64")
+        and oracle_mismatches == []
+        and isinstance(oracle_flags, list)
+        and all(isinstance(flag, str) and flag.strip() for flag in oracle_flags)
+        and _attest_metric_is_valid(oracle_confidence)
+        and float(oracle_confidence) >= 0.6
+    )
+    brand_result = _classify_validated_x86_brand(oracle.get("cpu_model"))
+    try:
+        observed_family = int(str(oracle.get("cpu_family", "")).strip())
+    except (TypeError, ValueError):
+        observed_family = None
+
+    measurement_names = (
+        "cache_timing", "simd_identity", "simd_bias",
+        "thermal_drift", "instruction_jitter",
+    )
+    measurements = {
+        name: _passed_fingerprint_check_data(fingerprint, name)
+        for name in measurement_names
+    }
+    has_measurement = any(
+        _has_validated_x86_measurement(name, data)
+        for name, data in measurements.items()
+    )
+    # Contradictions are authoritative even when their check failed. A failed
+    # check cannot earn a tier, but it must not erase a modern feature it saw.
+    simd_observations = (
+        _fingerprint_check_data(fingerprint, "simd_identity"),
+        _fingerprint_check_data(fingerprint, "simd_bias"),
+    )
+    simd_observation_complete = any(
+        _has_complete_x86_simd_observation(data)
+        for data in simd_observations
+    )
+    # SSE is legitimate positive evidence on Pentium III and Pentium M, but is
+    # a contradiction for older tiers. AVX contradicts every vintage tier.
+    has_avx = any(_simd_measurement_has_feature(data, "avx") for data in simd_observations)
+    has_sse = any(_simd_measurement_has_feature(data, "sse") for data in simd_observations)
+    unsupported_sse = any(
+        _simd_measurement_exceeds_vintage_arch(data, claimed_arch)
+        for data in simd_observations
+    )
+    # The age oracle independently samples /proc/cpuinfo flags. It is not
+    # positive measurement evidence, but impossible generations remain
+    # authoritative contradictions even when the dedicated SIMD check is
+    # missing or its observation was truncated differently.
+    oracle_simd = {"sample_flags": oracle_flags} if isinstance(oracle_flags, list) else {}
+    oracle_has_avx = _simd_measurement_has_feature(oracle_simd, "avx")
+    oracle_unsupported_sse = _simd_measurement_exceeds_vintage_arch(oracle_simd, claimed_arch)
+    modern_simd = has_avx or oracle_has_avx or unsupported_sse or oracle_unsupported_sse or (
+        has_sse
+        and claimed_arch not in {"pentium_iii", "pentium_m_banias", "pentium_m_dothan", "pentium_m_yonah"}
+    )
+
+    if (
+        not oracle_complete
+        or not brand_result
+        or not has_measurement
+        or not simd_observation_complete
+        or modern_simd
+    ):
+        return {"device_family": "x86", "device_arch": "default"}
+
+    observed_arch, expected_family = brand_result
+    if observed_family != expected_family:
+        return {"device_family": "x86", "device_arch": "default"}
+
+    if observed_arch == "pentium_m":
+        model = str(oracle.get("cpu_model") or "").lower()
+        mhz_match = re.search(r"(\d+)\s*mhz", model)
+        ghz_match = re.search(r"(\d+(?:\.\d+)?)\s*ghz", model)
+        speed_mhz = int(mhz_match.group(1)) if mhz_match else (
+            int(float(ghz_match.group(1)) * 1000) if ghz_match else None
+        )
+        if oracle_arch in ("x86_64", "amd64"):
+            observed_arch = "pentium_m_yonah"
+        elif speed_mhz is not None and speed_mhz <= 1700:
+            observed_arch = "pentium_m_banias"
+        elif speed_mhz is not None:
+            observed_arch = "pentium_m_dothan"
+        else:
+            # An undifferentiated Pentium M cannot justify the highest subtype.
+            observed_arch = "pentium_m_yonah"
+
+        if claimed_arch.startswith("pentium_m_"):
+            chosen = min(
+                (claimed_arch, observed_arch),
+                key=lambda arch: HARDWARE_WEIGHTS["x86"].get(arch, 1.0),
+            )
+            return {"device_family": "x86", "device_arch": chosen}
+        return {"device_family": "x86", "device_arch": "default"}
+
+    # A plain Pentium observation can only downgrade an MMX claim. Conversely,
+    # an MMX observation never upgrades a plain Pentium claim.
+    if {claimed_arch, observed_arch} <= {"pentium", "pentium_mmx"}:
+        chosen = min(
+            (claimed_arch, observed_arch),
+            key=lambda arch: HARDWARE_WEIGHTS["x86"].get(arch, 1.0),
+        )
+        return {"device_family": "x86", "device_arch": chosen}
+
+    if claimed_arch != observed_arch:
+        return {"device_family": "x86", "device_arch": "default"}
+    return {"device_family": "x86", "device_arch": claimed_arch}
+
+
 def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: bool) -> dict:
     family, arch = _claimed_family_and_arch(device)
     cpu_brand = _cpu_brand_string(device)
@@ -2671,7 +3466,7 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
         is_apple_silicon = (
             "apple m" in cpu_brand_lower or "apple_silicon" in arch.lower()
             or any(f"m{n}" in cpu_brand_lower for n in ("1", "2", "3", "4"))
-            or device.get("platform_system", "").lower() == "darwin"
+            or str(device.get("platform_system") or "").lower() == "darwin"
             or "mac" in str(device.get("model") or device.get("device_model") or "").lower()
         )
         if is_apple_silicon:
@@ -3269,11 +4064,30 @@ def extract_temporal_profile(fingerprint: dict) -> dict:
     jitter = _check_data("instruction_jitter")
     cache = _check_data("cache_timing")
 
+    # Prefer the keys the fingerprint producers (fingerprint_checks.py) actually
+    # emit; keep the legacy names as fallbacks so older payloads still populate.
+    # check_thermal_drift emits `drift_ratio` (not `variance`),
+    # check_instruction_jitter emits `int_stdev`/`int_avg_ns` (not `cv`/`stddev_ns`),
+    # check_cache_timing emits `l2_l1_ratio` (not `hierarchy_ratio`). Without this
+    # three of the four TEMPORAL_DRIFT_BANDS read 0.0 for every real miner and are
+    # silently skipped (validate_temporal_consistency scores <3-sample metrics 1.0),
+    # collapsing the anti-spoofing detector onto clock_drift_cv alone. Mirrors the
+    # primary/legacy handling already used for cache ratios at _detect_x86_evidence.
+    int_avg = _attest_metric_float(jitter.get("int_avg_ns", 0.0))
+    int_stdev = _attest_metric_float(jitter.get("int_stdev", 0.0))
+    jitter_cv = jitter.get("cv", jitter.get("stddev_ns"))
+    if jitter_cv is None:
+        jitter_cv = (int_stdev / int_avg) if int_avg > 0 else 0.0
+
     return {
         "clock_drift_cv": _attest_metric_float(clock.get("cv", 0.0)),
-        "thermal_variance": _attest_metric_float(thermal.get("variance", 0.0)),
-        "jitter_cv": _attest_metric_float(jitter.get("cv", jitter.get("stddev_ns", 0.0))),
-        "cache_hierarchy_ratio": _attest_metric_float(cache.get("hierarchy_ratio", 0.0)),
+        "thermal_variance": _attest_metric_float(
+            thermal.get("drift_ratio", thermal.get("variance", 0.0))
+        ),
+        "jitter_cv": _attest_metric_float(jitter_cv),
+        "cache_hierarchy_ratio": _attest_metric_float(
+            cache.get("l2_l1_ratio", cache.get("hierarchy_ratio", 0.0))
+        ),
     }
 
 
@@ -3324,6 +4138,317 @@ def fetch_miner_fingerprint_sequence(conn, miner: str) -> list:
     return out
 
 
+# === RIP-309d: operator clustering (observe only) ===
+# Every other defence on this chain is per-miner, so a farm of N identities is
+# N independent, individually cheap trust-building exercises. Clustering makes
+# the OPERATOR the unit, which is the constraint the contributor-tenure panel
+# insisted on: per-cluster, not per-account.
+#
+# Co-location is NOT evidence of fraud, and on this chain the largest cluster
+# is an honest lab: seven machines behind one WAN address, a Cobalt Qube 3, a
+# G5, a POWER8 and a Victus among them. Clustering alone would penalise the
+# most genuine vintage fleet on the network first. So clustering is only half
+# the mechanism. The half that discriminates is whether the members'
+# measurement histories are INDEPENDENT.
+#
+# Real hardware of different vintages is wildly separated. Measured on that
+# lab: Qube 0.0021, sophiacore 0.0762, Victus 0.1102, G5 0.1227 — a ~58x
+# spread. A farm running one generator across many identities lands its
+# members close together. Independence is what a forger cannot cheaply
+# manufacture, because escaping it means modelling every fake machine
+# separately while each one still has to stay self-consistent over time.
+CLUSTER_INDEPENDENCE_METRIC = "clock_drift_cv"
+CLUSTER_MIN_MEMBERS_TO_JUDGE = 3
+CLUSTER_INDEPENDENT_SPREAD = 0.35
+# Row cap per link query. Generous relative to the current fleet, and every
+# truncation is logged, because a silently partial graph would make a farm
+# look like several small unrelated operators.
+CLUSTER_LINK_ROW_CAP = 200_000
+
+
+def _union_find_groups(pairs, singletons=()):
+    """Group ids transitively linked by any observed shared signal."""
+    parent = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for a, b in pairs:
+        union(a, b)
+    for s in singletons:
+        find(s)
+
+    groups = {}
+    for node in list(parent):
+        groups.setdefault(find(node), set()).add(node)
+    return [sorted(v) for v in groups.values()]
+
+
+def build_operator_clusters(conn) -> list:
+    """Cluster miners by SERVER-OBSERVED shared signals.
+
+    Deliberately excludes anything the miner asserts about itself. `client_ip`
+    is observed at request time by the node; hardware_id and mac_hash are
+    payload-derived but are already load-bearing for hardware binding, so
+    reusing them adds no new trust assumption.
+    """
+    pairs, seen = [], set()
+
+    def _link_by(sql):
+        groups = {}
+        try:
+            # Bounded read. Clustering wants the whole graph, but an
+            # unbounded fetchall in the node is the UTXO-OOM class (#6627),
+            # and these tables grow with every miner and every address they
+            # have ever attested from. Truncation is logged rather than
+            # silent: a partial graph splits one operator into several
+            # clusters, which reads as MORE independent than reality, so a
+            # caller must know the view was cut.
+            rows = conn.execute(
+                sql + " LIMIT ?", (CLUSTER_LINK_ROW_CAP + 1,)
+            ).fetchall()  # fetchall-ok: already-paginated (LIMIT CLUSTER_LINK_ROW_CAP)
+            if len(rows) > CLUSTER_LINK_ROW_CAP:
+                rows = rows[:CLUSTER_LINK_ROW_CAP]
+                app.logger.warning(
+                    "[CLUSTER] link query truncated at %d rows; clustering is "
+                    "incomplete and will understate operator size: %s",
+                    CLUSTER_LINK_ROW_CAP, sql,
+                )
+        except sqlite3.Error:
+            return
+        for key, miner in rows:
+            if key is None or miner is None:
+                continue
+            groups.setdefault(str(key), []).append(str(miner))
+            seen.add(str(miner))
+        for members in groups.values():
+            first = members[0]
+            for other in members[1:]:
+                pairs.append((first, other))
+
+    _link_by("SELECT client_ip, miner_id FROM ip_rate_limit")
+    _link_by("SELECT hardware_id, bound_miner FROM hardware_bindings")
+    _link_by("SELECT mac_hash, miner FROM miner_macs")
+    return _union_find_groups(pairs, singletons=seen)
+
+
+def cluster_independence(conn, members) -> dict:
+    """Do these miners look like different machines, or one generator?
+
+    Returns a verdict, never a penalty. `spread` is the coefficient of
+    variation of the members' median measurement, so it asks whether the
+    group's hardware differs from itself, not whether any member is genuine.
+
+    KNOWN FALSE POSITIVE, and the reason this stays observe-only: an operator
+    honestly running several IDENTICAL machines — five of the same SBC — looks
+    correlated by construction. Low independence is a reason to look, never a
+    reason to dock a reward on its own.
+    """
+    members = [m for m in (members or []) if m]
+    verdict = {"members": len(members), "spread": None, "state": "unjudged",
+               "medians": {}}
+    if len(members) < CLUSTER_MIN_MEMBERS_TO_JUDGE:
+        verdict["state"] = "too_small_to_judge"
+        return verdict
+
+    medians = {}
+    for miner in members:
+        values = []
+        for sample in fetch_miner_fingerprint_sequence(conn, miner):
+            try:
+                v = float((sample.get("profile") or {}).get(
+                    CLUSTER_INDEPENDENCE_METRIC, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if v > 0:
+                values.append(v)
+        if values:
+            medians[miner] = statistics.median(values)
+
+    verdict["medians"] = medians
+    if len(medians) < CLUSTER_MIN_MEMBERS_TO_JUDGE:
+        verdict["state"] = "insufficient_history"
+        return verdict
+
+    vals = list(medians.values())
+    mean = sum(vals) / len(vals)
+    spread = statistics.pstdev(vals) / mean if mean > 0 else 0.0
+    verdict["spread"] = round(spread, 4)
+    verdict["state"] = (
+        "independent" if spread >= CLUSTER_INDEPENDENT_SPREAD else "correlated"
+    )
+    return verdict
+
+
+# === RIP-309c: measurement freshness binding ===
+# The attestation ENVELOPE is already fresh: /attest/submit requires a live
+# server-issued challenge from /attest/challenge, single-use, 300s expiry. What
+# is not bound is the measurement CONTENT. Nothing stops a client wrapping
+# values measured once, long ago, in a nonce fetched a second ago — and the
+# reference client does exactly that, measuring at startup and caching for the
+# life of the process (miners/linux/rustchain_linux_miner.py: the re-measure is
+# guarded by `not self.fingerprint_data`).
+#
+# The fix is to make the measurement DEPEND on the challenge. The client
+# already holds the nonce before it would measure, so no protocol reordering is
+# needed: derive the size of the timing workload from the nonce, and report
+# what was run. A binding computed for a different nonce carries the wrong
+# iteration count and is detectable by recomputation alone.
+MEASUREMENT_WORKLOAD_MIN = 1000
+MEASUREMENT_WORKLOAD_SPAN = 1000
+
+
+def derive_measurement_workload(nonce: str) -> int:
+    """Iterations the client must run this round, derived from the challenge.
+
+    Deterministic and cheap on both sides: a 6502 or a 386 can take four hex
+    digits and loop. The server recomputes it rather than trusting the client's
+    claim, so a replayed binding built for last round's nonce does not match.
+    """
+    text = str(nonce or "")
+    if len(text) < 4:
+        return MEASUREMENT_WORKLOAD_MIN
+    try:
+        seed = int(text[:4], 16)
+    except ValueError:
+        seed = sum(ord(c) for c in text[:4])
+    return MEASUREMENT_WORKLOAD_MIN + (seed % MEASUREMENT_WORKLOAD_SPAN)
+
+
+def verify_measurement_binding(nonce: str, binding, expected_rate_ns=None,
+                               rate_tolerance: float = 4.0) -> dict:
+    """Check a measurement was produced for THIS challenge.
+
+    Two independent checks:
+
+    1. `iterations` must equal what this nonce implies. Exact, needs no
+       hardware model, and is what kills replay: a binding built for another
+       nonce carries another iteration count.
+    2. If a per-iteration cost is known for this miner from its own history,
+       the reported duration must be within `rate_tolerance` of it. This is
+       what makes fabricating a duration expensive rather than free, and it is
+       the same self-consistency argument as the temporal gate: the forger has
+       to keep reproducing its own claimed hardware's speed.
+
+    Returns a verdict dict; never raises on malformed input. `state` is
+    "absent" when the client sent nothing, which during rollout is normal and
+    must not be treated as failure.
+    """
+    if binding is None:
+        return {"state": "absent", "ok": False, "reason": "no_binding"}
+    if not isinstance(binding, dict):
+        return {"state": "malformed", "ok": False, "reason": "binding_not_dict"}
+
+    claimed_nonce = str(binding.get("nonce") or "")
+    if claimed_nonce and claimed_nonce != str(nonce or ""):
+        return {"state": "mismatch", "ok": False, "reason": "binding_nonce_mismatch"}
+
+    expected_iterations = derive_measurement_workload(nonce)
+    try:
+        iterations = int(binding.get("iterations"))
+    except (TypeError, ValueError):
+        return {"state": "malformed", "ok": False, "reason": "iterations_not_int"}
+    if iterations != expected_iterations:
+        return {
+            "state": "stale",
+            "ok": False,
+            "reason": f"workload_mismatch:expected={expected_iterations}:got={iterations}",
+        }
+
+    try:
+        duration_ns = float(binding.get("duration_ns"))
+    except (TypeError, ValueError):
+        return {"state": "malformed", "ok": False, "reason": "duration_not_numeric"}
+    if duration_ns <= 0:
+        return {"state": "malformed", "ok": False, "reason": "duration_not_positive"}
+
+    rate_ns = duration_ns / max(iterations, 1)
+    verdict = {
+        "state": "bound",
+        "ok": True,
+        "reason": "binding_ok",
+        "iterations": iterations,
+        "rate_ns": rate_ns,
+    }
+    if expected_rate_ns:
+        try:
+            expected = float(expected_rate_ns)
+        except (TypeError, ValueError):
+            expected = 0.0
+        if expected > 0:
+            ratio = rate_ns / expected
+            verdict["rate_ratio"] = ratio
+            if ratio > rate_tolerance or ratio < (1.0 / rate_tolerance):
+                verdict.update({
+                    "state": "rate_implausible",
+                    "ok": False,
+                    "reason": f"rate_deviates:ratio={ratio:.3f}",
+                })
+    return verdict
+
+
+# An identity with too little history to check is not trusted with the full
+# antiquity premium, and is not punished either. Zero would re-implement a
+# tenure gate at full strength and penalise honest newcomers; one would make a
+# freshly minted identity the cheapest possible way to claim the premium, which
+# is the exact behaviour the premium attracts. Half is a deliberate middle.
+# NOTE: this fraction is a tokenomics knob, not a purely technical constant.
+TEMPORAL_UNVERIFIED_BONUS_FRACTION = 0.5
+
+
+def apply_temporal_consistency_to_weight(hw_weight: float, temporal_review: dict) -> float:
+    """Gate the ANTIQUITY BONUS on the miner's consistency with its own history.
+
+    Antiquity multipliers above 1.0 are the only thing worth forging on this
+    chain, so they are the only thing this gates. Weight at or below baseline
+    is returned untouched: a modern miner at 0.8x is unaffected, and no miner
+    is ever pushed below the baseline every participant already earns. A false
+    positive therefore costs a miner its bonus, never its participation.
+
+        effective = 1.0 + (hw_weight - 1.0) * score
+
+    `score` comes from validate_temporal_consistency, which measures a miner
+    against ITS OWN past measurements rather than a population band. That is
+    the point: a global band is satisfied forever by one in-range constant,
+    while a self-history has to keep being reproduced. The two failure modes it
+    already detects are exactly the two a forger falls into — `frozen_profile`
+    (the same value replayed, rel_var < 0.01) and `noisy_profile` (an RNG with
+    no physical model behind it, rel_var > 0.8).
+
+    Not a tenure multiplier. Nothing here pays for age. History length only
+    determines whether we have enough observations to CHECK a claim; the
+    reward is for staying consistent, which a farm cannot mass-produce, because
+    each identity must be self-consistent AND independent of the others at the
+    same time. See finding-contributor-tenure-multiplier-rejected.
+    """
+    try:
+        weight = float(hw_weight)
+    except (TypeError, ValueError):
+        return hw_weight
+    if weight <= 1.0:
+        return weight
+
+    review = temporal_review if isinstance(temporal_review, dict) else {}
+    if review.get("reason") == "insufficient_history":
+        score = TEMPORAL_UNVERIFIED_BONUS_FRACTION
+    else:
+        try:
+            score = float(review.get("score", 1.0))
+        except (TypeError, ValueError):
+            score = 1.0
+    score = max(0.0, min(1.0, score))
+    return 1.0 + (weight - 1.0) * score
+
+
 def validate_temporal_consistency(sequence: list, current_profile: dict = None) -> dict:
     samples = list(sequence or [])
     if current_profile is not None:
@@ -3349,7 +4474,20 @@ def validate_temporal_consistency(sequence: list, current_profile: dict = None) 
                     values.append(v)
 
         if len(values) < 3:
-            check_scores[metric] = 1.0
+            # Not enough samples to judge this metric. Excluded from the
+            # average rather than scored 1.0.
+            #
+            # Scoring it a pass was the same mistake the rotating checks made:
+            # "could not measure" is not "passed". It matters more here because
+            # most miners populate only clock_drift, so three metrics returned
+            # a free 1.0 and diluted the one real verdict. A fully replayed
+            # constant profile scored 0.8 and a 2.5x miner kept 2.2 of it. With
+            # the absent metrics excluded the same profile scores 0.2.
+            #
+            # It is also required for the vintage fleet to be judged honestly:
+            # a 6502 genuinely cannot produce thermal_variance, and awarding it
+            # a pass for that would hand every capability-limited miner three
+            # free credits toward a premium.
             continue
 
         avg = sum(values) / len(values)
@@ -3369,7 +4507,18 @@ def validate_temporal_consistency(sequence: list, current_profile: dict = None) 
 
         check_scores[metric] = score
 
-    score = sum(check_scores.values()) / max(len(check_scores), 1)
+    if not check_scores:
+        # Nothing could be judged at all. Treat as unverified rather than
+        # perfect, matching the rotating-check denominator: proving nothing is
+        # not the same as passing everything.
+        return {
+            "score": 1.0,
+            "review_flag": False,
+            "reason": "insufficient_history",
+            "flags": flags,
+            "check_scores": {},
+        }
+    score = sum(check_scores.values()) / len(check_scores)
     review_flag = any(f.startswith("frozen_profile") or f.startswith("noisy_profile") or f.startswith("drift_out_of_band") for f in flags)
     return {
         "score": round(score, 4),
@@ -3413,7 +4562,9 @@ KNOWN_VM_SIGNATURES = {
     "bhyve", "openvz", "virtuozzo", "systemd-nspawn",
 }
 
-def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) -> tuple:
+def validate_fingerprint_data(
+    fingerprint: dict, claimed_device: dict = None,
+) -> tuple:
     """
     Server-side validation of miner fingerprint check results.
     Returns: (passed: bool, reason: str)
@@ -3437,8 +4588,34 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
     checks = _fingerprint_checks_map(fingerprint)
     claimed_device = claimed_device if isinstance(claimed_device, dict) else {}
 
+    # RIP-309b: classify the device BEFORE bailing on an empty checks map.
+    # The flat vintage C miners (miners/apple2, miners/i386) send device-native
+    # measurements at top level and no `checks` map at all, so an early return
+    # here scored the honest Apple II and 386 fleet at zero. A limited claim is
+    # only honoured when nothing in the payload contradicts it.
+    _claimed_arch_early = (claimed_device.get("device_arch")
+                           or claimed_device.get("arch", "")) if claimed_device else ""
+    _claimed_arch_early = str(_claimed_arch_early).lower()
+    _is_limited_claim = (
+        _claimed_arch_early in MICRO_LIMITED_ARCHES
+        or _claimed_arch_early in CONSOLE_BRIDGE_ARCHES
+        or (isinstance(fingerprint, dict)
+            and fingerprint.get("bridge_type") == "pico_serial")
+    )
+    if _is_limited_claim:
+        _veto = _capability_contradiction(claimed_device, fingerprint)
+        if _veto:
+            return False, f"capability_claim_contradicted:{_veto}"
+
     # FIX #305: Reject empty fingerprint payloads (e.g. fingerprint={} or checks={})
     if not checks:
+        # A standalone micro with no checks map may still attest on at least
+        # two device-native measurements. Fewer than two is not evidence.
+        if _is_limited_claim:
+            _native = _micro_native_evidence_count(fingerprint)
+            if _native >= 2:
+                return True, f"micro_native_evidence:{_native}"
+            return False, "micro_insufficient_native_evidence"
         return False, "empty_fingerprint_checks"
 
     # FIX #305: Require at least anti_emulation and clock_drift evidence
@@ -3459,7 +4636,16 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
                      "genesis_68000", "sms_z80", "saturn_sh2",
                      "gameboy_z80", "gameboy_color_z80", "ps1_mips",
                      "6502", "65c816", "z80", "sh2"}
-    is_vintage = claimed_arch_lower in vintage_relaxed_archs
+    # 386/486 predate RDTSC, so they cannot measure clock drift at all. That
+    # is a structural property of the silicon, not a per-call-site policy, so
+    # it is handled here for every consumer rather than behind a flag one
+    # caller happened to set. RIP-309b replaced the old
+    # allow_tscless_x86_reward parameter, which relaxed the same rule for the
+    # reward path only and left the other validator consumers disagreeing
+    # about the same hardware.
+    is_vintage = claimed_arch_lower in vintage_relaxed_archs or (
+        claimed_arch_lower in {"386", "486"}
+    )
     is_console = claimed_arch_lower in console_archs
 
     # RIP-304: Console miners use Pico bridge fingerprinting (ctrl_port_timing
@@ -3494,8 +4680,9 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
         if isinstance(check_entry, dict) and not check_entry.get("data"):
             return False, f"empty_check_data:{check_name}"
 
-    # If vintage and clock_drift IS present, still validate it (do not skip)
-    # This only relaxes the REQUIREMENT, not the validation
+    # If vintage and clock_drift IS present, its raw metrics are still
+    # validated. A plain unavailable/failed result is soft only for the
+    # pre-RDTSC 386/486 reward path.
 
     def get_check_status(check_data):
         """Handle both bool and dict formats for check results"""
@@ -3520,8 +4707,14 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
         if not isinstance(anti_emu_data, dict):
             anti_emu_data = {}
         # Require evidence of actual checks being performed
+        # `emulator_indicators` is what the Pico console bridge emits, and its
+        # absence from this list rejected the entire console fleet with
+        # anti_emulation_no_evidence: they were supplying evidence, under a
+        # name nobody had whitelisted. Same shape as the flat micro clients
+        # dying on an empty checks map.
         has_evidence = (
             "vm_indicators" in anti_emu_data or
+            "emulator_indicators" in anti_emu_data or
             "dmesg_scanned" in anti_emu_data or
             "paths_checked" in anti_emu_data or
             "cpuinfo_flags" in anti_emu_data or
@@ -3531,9 +4724,42 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
             print(f"[FINGERPRINT] REJECT: anti_emulation claims pass but has no raw evidence")
             return False, "anti_emulation_no_evidence"
 
-        if anti_emu_check.get("passed") == False:
-            vm_indicators = anti_emu_data.get("vm_indicators", [])
-            return False, f"vm_detected:{vm_indicators}"
+        # Read the EVIDENCE, not the client's verdict.
+        #
+        # This branch used to fire only when the client volunteered
+        # `passed == False`, so the server held the string "qemu" in
+        # vm_indicators and never looked at it unless the VM had already
+        # confessed. Three payloads were accepted:
+        #
+        #   {"passed": true,  "data": {"vm_indicators": ["qemu"]}}   accepted
+        #   {"passed": true,  "data": {"is_likely_vm": true}}        accepted
+        #   {                 "data": {"vm_indicators": ["qemu"]}}   accepted
+        #
+        # and the only one rejected was the honest VM that reported
+        # `passed: false`. The control fired exclusively on truthful clients.
+        #
+        # Safe for real hardware: fingerprint_checks.py emits
+        # `vm_indicators: []` on a clean machine, so an empty list, a missing
+        # key and a false is_likely_vm all still pass.
+        vm_indicators = anti_emu_data.get("vm_indicators")
+        if not isinstance(vm_indicators, (list, tuple)):
+            vm_indicators = None
+        # Consoles report under their own key; read it here too, or accepting
+        # emulator_indicators as evidence above would hand the console fleet
+        # the exact free pass this block exists to close.
+        emu_indicators = anti_emu_data.get("emulator_indicators")
+        if not isinstance(emu_indicators, (list, tuple)):
+            emu_indicators = None
+        reported = list(vm_indicators or []) + list(emu_indicators or [])
+        if reported:
+            return False, f"vm_detected:{reported}"
+        if anti_emu_data.get("is_likely_vm") is True:
+            return False, "vm_detected:is_likely_vm"
+
+        # `is not True` rather than `== False`: omitting the key entirely used
+        # to skip both branches and sail through.
+        if anti_emu_check.get("passed") is not True:
+            return False, f"vm_detected:no_pass_verdict:{anti_emu_data.get('vm_indicators', [])}"
     elif isinstance(anti_emu_check, bool):
         # C miner simple bool - accept for now but flag for reduced weight
         if not anti_emu_check:
@@ -3559,7 +4785,10 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
         if cv < 0.0001 and cv != 0:
             return False, "timing_too_uniform"
 
-        if clock_check.get("passed") == False:
+        if (
+            clock_check.get("passed") == False
+            and claimed_arch_lower not in {"386", "486"}
+        ):
             return False, f"clock_drift_failed:{clock_data.get('fail_reason', 'unknown')}"
 
         # Cross-validate: vintage hardware should have MORE drift
@@ -3570,7 +4799,7 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
             print(f"[FINGERPRINT] SUSPICIOUS: claims {claimed_arch} but cv={cv:.6f} is too stable for vintage")
             return False, f"vintage_timing_too_stable:cv={cv}"
     elif isinstance(clock_check, bool):
-        if not clock_check:
+        if not clock_check and claimed_arch_lower not in {"386", "486"}:
             return False, "clock_drift_failed_bool"
 
     # ── PHASE 2: Cross-validate device claims against fingerprint ──
@@ -3603,8 +4832,25 @@ def validate_fingerprint_data(fingerprint: dict, claimed_device: dict = None) ->
             return False, f"missing_powerpc_simd:{claimed_arch}"
 
         if not _has_powerpc_cache_profile(fingerprint):
-            print(f"[FINGERPRINT] REJECT: claims {claimed_arch} but lacks PowerPC cache profile")
-            return False, f"missing_powerpc_cache_profile:{claimed_arch}"
+            _cd = _fingerprint_check_data(fingerprint, "cache_timing")
+
+            # An uninformative measurement is not evidence of a lie. Reaching
+            # this line means _has_powerpc_simd_evidence already passed, so
+            # AltiVec/VSX has proven the architecture and the cache profile is
+            # corroboration. When the reported hierarchy is physically
+            # impossible (L2 faster than L1) the client measured interpreter
+            # overhead rather than cache. The live Power Mac G5 reports
+            # l2_l1=0.801 and was rejected on EVERY attestation for it.
+            if _cache_measurement_is_degenerate(_cd):
+                print(f"[FINGERPRINT] {claimed_arch}: cache hierarchy unmeasurable "
+                      f"(l2_l1={_cd.get('l2_l1_ratio')!r}, L2 cannot outrun L1) - "
+                      f"treating as unmeasured, PowerPC SIMD already verified")
+            else:
+                print(f"[FINGERPRINT] REJECT: claims {claimed_arch} but lacks PowerPC cache profile "
+                      f"(l2_l1={_cd.get('l2_l1_ratio')!r} l3_l2={_cd.get('l3_l2_ratio')!r} "
+                      f"hierarchy={_cd.get('hierarchy_ratio')!r} arch={_cd.get('arch')!r} "
+                      f"keys={sorted(_cd)[:8]})")
+                return False, f"missing_powerpc_cache_profile:{claimed_arch}"
 
     # ── PHASE 3: ROM fingerprint (retro platforms) ──
     rom_passed, rom_data = get_check_status(checks.get("rom_fingerprint"))
@@ -4035,6 +5281,18 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             print(f"[SECURITY] No valid miners for epoch {epoch} after RIP-309 filtering")
             return
 
+        # Reward settlement must work with both balance schemas that the node
+        # supports.  Fresh/legacy databases use (miner_pk, balance_rtc), while
+        # migrated production databases use (miner_id, amount_i64) (optionally
+        # retaining balance_rtc as a display column).  The old direct UPDATE
+        # below assumed only the latter and made enabling UTXO dual-write fail
+        # the whole epoch with "no such column: amount_i64" on a legacy DB.
+        reward_balance_cols = _balance_columns(c)
+        if not _supports_wallet_balance_updates(reward_balance_cols):
+            raise RuntimeError(
+                "unsupported balances schema for epoch reward settlement"
+            )
+
         # ATOMIC TRANSACTION: claim the epoch first, then credit — all under an
         # IMMEDIATE write lock so two concurrent finalize_epoch calls cannot both
         # credit balances (double-settlement / reward inflation past the cap).
@@ -4089,10 +5347,26 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 if amount_i64 >= 2**63 or amount_nrtc >= 2**63:
                     raise ValueError(f"Reward overflow for miner {pk}: {amount_i64}")
 
-                upd = c.execute(
-                    "UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?",
-                    (amount_i64, amount_i64, pk)
-                )
+                # Preserve the existing no-phantom invariant: finalize_epoch
+                # must not create an account row for an enrolled miner that has
+                # no balance record.  Once the row exists, use the
+                # schema-tolerant helper so legacy (miner_pk, balance_rtc) and
+                # modern integer-unit databases receive the same reward.
+                if "miner_id" in reward_balance_cols:
+                    balance_row = c.execute(
+                        "SELECT 1 FROM balances WHERE miner_id = ?", (pk,)
+                    ).fetchone()
+                else:
+                    balance_row = c.execute(
+                        "SELECT 1 FROM balances WHERE miner_pk = ?", (pk,)
+                    ).fetchone()
+                if balance_row:
+                    _apply_wallet_balance_delta(
+                        c, pk, amount_i64, reward_balance_cols
+                    )
+                    updated = 1
+                else:
+                    updated = 0
 
                 # Ledger an audit row ONLY for an actual credit: amount_i64 > 0 AND the
                 # balance row existed (UPDATE mutated exactly one row — miner_id is the
@@ -4102,7 +5376,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 # exists to prevent. Integer truncation of tiny shares also yields
                 # amount_i64 == 0 (no mutation → no row). Best-effort: a ledger failure
                 # must not roll back the (valid) reward credit.
-                if amount_i64 > 0 and upd.rowcount == 1 and ledger_writable:
+                if amount_i64 > 0 and updated == 1 and ledger_writable:
                     # Best-effort audit row, isolated in a SAVEPOINT: on success it
                     # commits together with the credit (reconciliation intact); on
                     # failure ROLLBACK TO removes ONLY the failed insert and clears any
@@ -4461,7 +5735,8 @@ def _submit_attestation_impl():
     #   1. v3 canonical-JSON (current rustchain-miner, GPT-5.4 audit finding #2):
     #      miner signs canonical_json(attestation_dict) BEFORE adding the
     #      signature/signature_type fields — covers the full payload including
-    #      device, fingerprint, signals. signature_type='ed25519'.
+    #      device, fingerprint, signals. signature_type is 'ed25519' or
+    #      the more explicit 'canonical_json'.
     #   2. v2 legacy 4-field MAC: miner signs "miner_id|wallet|nonce|commitment".
     #      Narrower coverage — wallet hijack protection only.
     # The canonical-JSON scheme is verified first; legacy is the fallback.
@@ -4488,8 +5763,86 @@ def _submit_attestation_impl():
 
     sig_hex = (raw_sig or '').strip().lower()
     pubkey_hex = (raw_pubkey or '').strip().lower()
+    canonical_payload_verified = False
     miner_id_raw = _attest_valid_miner(data.get('miner_id')) or miner
     commitment = report.get('commitment') or ''
+    # ── Ed25519 identity binding & phased enforcement (#8016 hardened) ──────────
+    # signing_pubkey is the authority /epoch/enroll verifies against, so this gate
+    # decides (a) whether an UNSIGNED submission is allowed this phase and (b) later
+    # which verified keys are safe to pin. See _is_rtc_hex_address / _attest_*.
+    enforce_mode = _attest_enforce_mode()
+    _enforcing = (enforce_mode != "log_only")
+    has_signature = bool(sig_hex and pubkey_hex)
+
+    # Reject partial pairs — a lone signature or lone public_key is malformed and
+    # must never fall through to the "unsigned" path (would strip auth silently).
+    # ALWAYS-ON (input validation, not phase enforcement): identical in log_only.
+    if bool(sig_hex) != bool(pubkey_hex):
+        return jsonify({
+            "ok": False,
+            "error": "incomplete_signature",
+            "message": "Both signature and public_key are required together",
+            "code": "INCOMPLETE_SIGNATURE",
+        }), 400
+
+    # FAIL CLOSED on identity-state read errors while enforcing; a broken DB must
+    # not be treated as 'no key on file' (which would be fail-open).
+    try:
+        stored_signing_pubkey, is_grandfathered, is_pin_frozen = _attest_identity_state(miner)
+    except Exception as _id_err:
+        if _enforcing:
+            print(f"[ATTEST/ENFORCE:{enforce_mode}] IDENTITY STATE READ FAILED "
+                  f"(fail-closed): miner={str(miner)[:32]} err={_id_err}")
+            return jsonify({
+                "ok": False,
+                "error": "identity_state_unavailable",
+                "message": "Unable to verify miner identity state; try again shortly",
+                "code": "IDENTITY_STATE_UNAVAILABLE",
+            }), 503
+        stored_signing_pubkey, is_grandfathered, is_pin_frozen = None, False, False
+        print(f"[ATTEST/ENFORCE:log_only] identity state read failed "
+              f"(fail-open in log_only): miner={str(miner)[:32]} err={_id_err}")
+
+    allowlisted = miner in _attest_unsigned_allowlist()  # case-SENSITIVE
+    is_rtc_hex = _is_rtc_hex_address(miner)
+
+    if not has_signature:
+        if allowlisted:
+            pass  # operator-permitted structural-no-signature hardware
+        elif enforce_mode == "log_only":
+            if stored_signing_pubkey:
+                print(f"[ATTEST/ENFORCE:log_only] UNSIGNED but key on file — would "
+                      f"reject in enforce_new+: miner={str(miner)[:32]}")
+            elif not is_grandfathered:
+                print(f"[ATTEST/ENFORCE:log_only] UNSIGNED new identity — would "
+                      f"reject in enforce_new+: miner={str(miner)[:32]}")
+        else:
+            # enforce_new / enforce_all
+            must_sign = (
+                bool(stored_signing_pubkey)        # key on file → must use it
+                or enforce_mode == "enforce_all"   # Phase 2 → everyone signs
+                or not is_grandfathered             # Phase 1 → new identities sign
+            )
+            if must_sign:
+                if stored_signing_pubkey:
+                    _why = "a signing key is already on file for this miner"
+                elif enforce_mode == "enforce_all":
+                    _why = "all miners must sign in the enforce_all phase"
+                else:
+                    _why = "new miners must sign from their first attestation"
+                print(f"[ATTEST/ENFORCE:{enforce_mode}] REJECT unsigned: "
+                      f"miner={str(miner)[:32]} ({_why})")
+                return jsonify({
+                    "ok": False,
+                    "error": "missing_signature",
+                    "message": f"Ed25519 signature required — {_why}",
+                    "code": "MISSING_SIGNATURE",
+                }), 400
+            else:
+                print(f"[ATTEST/ENFORCE:{enforce_mode}] grandfathered unsigned "
+                      f"attestation allowed (add a signing key before Phase 2): "
+                      f"miner={str(miner)[:32]}")
+
     if sig_hex and pubkey_hex:
         if HAVE_NACL:
             # Type-guard signature_type too — reject a non-string value with 400,
@@ -4507,8 +5860,8 @@ def _submit_attestation_impl():
             verified = False
 
             # Scheme 1: v3 canonical-JSON full-payload signature.
-            # Try when signature_type is 'ed25519' or unspecified (the v3 miner
-            # always sets signature_type='ed25519'; older callers may omit it).
+            # Try when signature_type is 'ed25519', 'canonical_json', or
+            # unspecified (older callers may omit it).
             # IMPORTANT: the miner adds 'signature', 'public_key', AND
             # 'signature_type' to the dict AFTER signing (see miner lines
             # 515-517). All three must be stripped to reproduce the canonical
@@ -4523,6 +5876,9 @@ def _submit_attestation_impl():
                 ).encode('utf-8')
                 if verify_rtc_signature(pubkey_hex, canonical_msg, sig_hex):
                     verified = True
+                    canonical_payload_verified = _canonical_attestation_signer_owns_miner(
+                        pubkey_hex, miner
+                    )
 
             # Scheme 2: v2 legacy 4-field MAC (backward compat) — but ONLY for
             # callers that did NOT explicitly claim the stronger v3 scheme. A
@@ -4566,6 +5922,80 @@ def _submit_attestation_impl():
                 ),
                 "code": "ED25519_UNAVAILABLE",
             }), 503
+
+    # ── Post-verification identity binding & pin decision (#8016 hardened) ──────
+    # If has_signature, the signature is now cryptographically verified (else we
+    # already returned 400/503). Decide which — if any — key is safe to PIN.
+    # pin_pubkey is what we persist into miner_attest_recent.signing_pubkey; None
+    # means 'do not add a key' (COALESCE keeps any existing pin).
+    pin_pubkey = None
+    if has_signature:
+        derives_to_addr = False
+        if is_rtc_hex:
+            try:
+                derives_to_addr = (address_from_pubkey(pubkey_hex) == miner)
+            except Exception:
+                derives_to_addr = False
+
+        # RTC-hex identities MUST prove ownership by key derivation. A regex match
+        # alone is insufficient — the key must hash to the claimed address.
+        if is_rtc_hex and not derives_to_addr:
+            if _enforcing:
+                print(f"[ATTEST/SIG] PUBKEY-ADDRESS MISMATCH (reject): "
+                      f"miner={miner[:24]}...")
+                return jsonify({
+                    "ok": False,
+                    "error": "pubkey_address_mismatch",
+                    "message": "The public key does not derive to this RTC address",
+                    "code": "PUBKEY_ADDRESS_MISMATCH",
+                }), 400
+            print(f"[ATTEST/ENFORCE:log_only] PUBKEY-ADDRESS MISMATCH — would "
+                  f"reject in enforcing phase: miner={miner[:24]}...")
+
+        # Rotation block: a pinned key cannot be swapped by re-signing with a new
+        # key. Legitimate rotation goes through the admin path (freeze + set).
+        if stored_signing_pubkey and pubkey_hex != stored_signing_pubkey:
+            if _enforcing:
+                print(f"[ATTEST/SIG] KEY ROTATION BLOCKED (reject): miner={miner[:24]}... "
+                      f"provided={pubkey_hex[:12]}... pinned={stored_signing_pubkey[:12]}...")
+                return jsonify({
+                    "ok": False,
+                    "error": "signing_key_mismatch",
+                    "message": "The provided signing key does not match the pinned key; "
+                               "use the admin rotate path to change keys",
+                    "code": "SIGNING_KEY_MISMATCH",
+                }), 400
+            print(f"[ATTEST/ENFORCE:log_only] KEY ROTATION — would reject in "
+                  f"enforcing phase: miner={miner[:24]}...")
+
+        # Pin eligibility (first-signer-hijack protection). Persist a key ONLY when
+        # trust-on-first-use cannot be used to capture someone else's identity:
+        #   • already pinned         → keep existing (COALESCE); pin_pubkey None.
+        #   • pin_frozen             → admin unpinned it; only admin 'set' may re-pin.
+        #   • self-certifying RTC-hex→ pin iff the key derives to the address
+        #                              (cryptographic proof of ownership).
+        #   • brand-NEW identity     → TOFU-safe: no existing owner to hijack, and
+        #                              Phase 1 forces new miners to sign, so the id
+        #                              is key-bound from birth (kills cheap minting).
+        #   • grandfathered + not derivable (existing symbolic/legacy name such as
+        #     dual-g4-125) → HELD: never public-TOFU-pinned; key must be admin-
+        #     enrolled via /admin/attest/key. This is the anti-hijack core.
+        if stored_signing_pubkey:
+            pin_pubkey = None
+        elif is_pin_frozen:
+            pin_pubkey = None
+            print(f"[ATTEST/PIN] HELD (pin frozen — admin 'set' required): miner={miner[:32]}")
+        elif is_rtc_hex:
+            pin_pubkey = pubkey_hex if derives_to_addr else None
+            if not derives_to_addr:
+                print(f"[ATTEST/PIN] HELD (RTC-hex key does not derive): miner={miner[:32]}")
+        elif not is_grandfathered:
+            pin_pubkey = pubkey_hex
+        else:
+            pin_pubkey = None
+            print(f"[ATTEST/PIN] HELD (grandfathered identity — admin enrollment "
+                  f"required to pin a key): miner={miner[:32]}")
+
 
     # IP rate limiting (Security Hardening 2026-02-02)
     ip_ok, ip_reason = check_ip_rate_limit(client_ip, miner)
@@ -4774,7 +6204,9 @@ def _submit_attestation_impl():
 
     # FIX #305: Always validate - pass None/empty to validator which rejects them
     if fingerprint is not None:
-        fingerprint_passed, fingerprint_reason = validate_fingerprint_data(fingerprint, claimed_device=device)
+        fingerprint_passed, fingerprint_reason = validate_fingerprint_data(
+            fingerprint, claimed_device=device,
+        )
     else:
         fingerprint_reason = "no_fingerprint_submitted"
 
@@ -4829,7 +6261,7 @@ def _submit_attestation_impl():
         except Exception:
             pass
 
-    record_attestation_success(miner, device, fingerprint_passed, client_ip, signals=signals, fingerprint=fingerprint, signing_pubkey=pubkey_hex or None, entropy_score=entropy_score)
+    record_attestation_success(miner, device, fingerprint_passed, client_ip, signals=signals, fingerprint=fingerprint, signing_pubkey=pin_pubkey, entropy_score=entropy_score)
 
     temporal_review = {"score": 1.0, "review_flag": False, "reason": "insufficient_history", "flags": [], "check_scores": {}}
     try:
@@ -4838,17 +6270,22 @@ def _submit_attestation_impl():
     except Exception as _te:
         print(f"[TEMPORAL] Warning: {_te}")
 
-    # Update warthog_bonus in attestation record
-    if warthog_bonus > 1.0:
-        try:
-            with closing(sqlite3.connect(DB_PATH)) as wb_conn:
-                wb_conn.execute(
-                    "UPDATE miner_attest_recent SET warthog_bonus=? WHERE miner=?",
-                    (warthog_bonus, miner)
-                )
-                wb_conn.commit()
-        except Exception:
-            pass  # Column may not exist yet
+    # Update warthog_bonus in attestation record.
+    # Written unconditionally: warthog_bonus describes THIS attestation, and
+    # record_attestation_success() does not carry the column in its upsert. A
+    # `> 1.0` guard here would make the column a one-way ratchet — a miner that
+    # stops dual-mining, or that starts failing the fingerprint gate above,
+    # would keep the multiplier forever and dilute every honest miner's share
+    # of the fixed epoch pot in calculate_epoch_rewards_time_aged().
+    try:
+        with closing(sqlite3.connect(DB_PATH)) as wb_conn:
+            wb_conn.execute(
+                "UPDATE miner_attest_recent SET warthog_bonus=? WHERE miner=?",
+                (warthog_bonus, miner)
+            )
+            wb_conn.commit()
+    except Exception:
+        pass  # Column may not exist yet
 
     # Record MACs if provided
     if macs:
@@ -4869,16 +6306,49 @@ def _submit_attestation_impl():
             if not _device2.get("machine"):
                 _device2["machine"] = "ppc64le" if "power8" in _miner_lower2 else "ppc"
         verified_device = derive_verified_device(_device2, fingerprint if isinstance(fingerprint, dict) else {}, fingerprint_passed)
-        family = verified_device["device_family"]
-        arch_for_weight = verified_device["device_arch"]
+        reward_device = _derive_enroll_weight_device(
+            verified_device,
+            fingerprint if isinstance(fingerprint, dict) else {},
+            fingerprint_passed=fingerprint_passed,
+            measurement_report_verified=canonical_payload_verified,
+        )
+        family = reward_device["device_family"]
+        arch_for_weight = reward_device["device_arch"]
         hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch_for_weight, HARDWARE_WEIGHTS.get(family, {}).get("default", 1.0))
+        # The temporal score used to be computed and then discarded into a log
+        # line, so a miner contradicting its own measurement history still
+        # collected the full antiquity premium. Gate the bonus on it.
+        hw_weight_raw = hw_weight
+        hw_weight = apply_temporal_consistency_to_weight(hw_weight, temporal_review)
+
+        # RIP-309c phase 0: observe only. Record whether this submission bound
+        # its measurement to the challenge, so fleet adoption can be measured
+        # before anything depends on it. Deliberately NOT enforced here: a hard
+        # cutover is what made the unsigned-attestation change unmergeable, and
+        # the fleet includes vintage clients that are slow to update. When
+        # adoption is high enough, an unbound submission should lose part of
+        # the bonus through the temporal gate above, not be rejected.
+        measurement_binding_verdict = verify_measurement_binding(
+            nonce, data.get("measurement_binding")
+        )
+        if measurement_binding_verdict.get("state") not in ("absent", "bound"):
+            app.logger.warning(
+                f"[MEASUREMENT-BINDING] {miner[:20]}... "
+                f"state={measurement_binding_verdict.get('state')} "
+                f"reason={measurement_binding_verdict.get('reason')}"
+            )
         miner_id = _attest_valid_miner(data.get("miner_id")) or miner
 
         with closing(sqlite3.connect(DB_PATH)) as enroll_conn:
+            _fp_for_rotation = fingerprint if isinstance(fingerprint, dict) else {}
             rotation_eval = evaluate_rotating_fingerprint_checks(
                 enroll_conn,
                 epoch,
-                fingerprint if isinstance(fingerprint, dict) else {},
+                _fp_for_rotation,
+                device_arch=arch_for_weight,
+                micro_accepted=_micro_accepted_for_rotation(
+                    arch_for_weight, _fp_for_rotation, device
+                ),
             )
             if not fingerprint_passed:
                 enroll_weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
@@ -4909,7 +6379,10 @@ def _submit_attestation_impl():
 
         # Issue #19 temporal consistency only sets a review flag (no hard-fail).
         if temporal_review.get("review_flag"):
-            app.logger.warning(f"[TEMPORAL-REVIEW] {miner[:20]}... flags={temporal_review.get('flags', [])}")
+            app.logger.warning(
+                f"[TEMPORAL-REVIEW] {miner[:20]}... flags={temporal_review.get('flags', [])} "
+                f"score={temporal_review.get('score')} weight {hw_weight_raw:.3f} -> {hw_weight:.3f}"
+            )
 
         app.logger.info(
             f"[RIP-309] epoch={epoch} miner={miner[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
@@ -4955,6 +6428,11 @@ def _submit_attestation_impl():
         "device": device,
         "fingerprint_passed": fingerprint_passed,
         "temporal_review_flag": bool(temporal_review.get("review_flag")),
+        # RIP-309c: tells a client whether its measurement was bound to the
+        # challenge, and what workload the NEXT round expects. A client can
+        # adopt binding without a coordinated release by reading this.
+        "measurement_binding_state": measurement_binding_verdict.get("state"),
+        "measurement_workload_next": derive_measurement_workload(nonce),
         "macs_recorded": len(macs) if macs else 0,
         "warthog_bonus": warthog_bonus
     })
@@ -5029,7 +6507,6 @@ def enroll_epoch():
     client_ip = get_client_ip()
     miner_pk = data.get('miner_pubkey')
     miner_id = data.get('miner_id', miner_pk)  # Use miner_id if provided
-    device = data.get('device', {})
 
     if not miner_pk:
         return jsonify({"error": "Missing miner_pubkey"}), 400
@@ -5178,22 +6655,50 @@ def enroll_epoch():
         ENROLL_REJ[reason] = ENROLL_REJ.get(reason, 0) + 1
         return jsonify(check_result), 412
 
-    # Calculate weight based on hardware
-    family = device.get('family', 'x86')
-    arch = device.get('arch', 'default')
-    hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch, 1.0)
-
     # RIP-PoA Phase 2: failed fingerprints are tracked but receive zero rewards.
     fingerprint_failed = check_result.get('fingerprint_failed', False)
 
     with sqlite3.connect(DB_PATH) as c:
+        # Calculate weight based on hardware.
+        # SECURITY: derive the reward multiplier from the hardware the miner
+        # actually attested + fingerprinted (miner_attest_recent), NOT the
+        # caller-supplied `device` in the request body. The enrollment
+        # signature only covers (miner_pubkey|miner_id|epoch), so trusting body
+        # `device` let a miner that attested on ordinary x86 (0.8x) enroll
+        # claiming e.g. ARM 'arm2' (4.0x) and collect a ~5x inflated share of
+        # the fixed epoch reward pot.
+        family, arch = resolve_enroll_weight_device(c, miner_pk, data)
+        hw_weight = HARDWARE_WEIGHTS.get(family, {}).get(arch, 1.0)
+        # Gate the antiquity bonus on consistency here too. Enrollment is the
+        # path that actually sets epoch weight, so leaving it ungated would
+        # make the attestation-side gate cosmetic: a miner could fail the
+        # temporal check on attest and still enroll at the full premium.
+        # Keyed on the same stored miner id the weight itself is derived from.
+        # miner_fingerprint_history is keyed on the same identifier
+        # resolve_enroll_weight_device reads miner_attest_recent by, so the
+        # history consulted here is the history of the hardware the weight was
+        # derived from. No rows yields "insufficient_history", which withholds
+        # part of the bonus rather than failing the enrollment.
+        _temporal_enroll = validate_temporal_consistency(
+            fetch_miner_fingerprint_sequence(c, miner_pk)
+        )
+        hw_weight = apply_temporal_consistency_to_weight(hw_weight, _temporal_enroll)
+
+        _enroll_fp = resolve_enroll_fingerprint(c, miner_pk, data)
         rotation_eval = evaluate_rotating_fingerprint_checks(
             c,
             epoch,
             # Fall back to the stored attestation fingerprint when the enroll
             # body omits one, so a signed-but-fingerprint-less enrollment does
             # not collapse to zero weight under the rotating check.
-            resolve_enroll_fingerprint(c, miner_pk, data),
+            _enroll_fp,
+            # Server-derived arch from resolve_enroll_weight_device, never the
+            # request body: otherwise a miner could self-select which checks
+            # it is excused from.
+            device_arch=arch,
+            micro_accepted=_micro_accepted_for_rotation(
+                arch, _enroll_fp, data.get("device") if isinstance(data, dict) else None
+            ),
         )
         if fingerprint_failed:
             weight_units = FAILED_FINGERPRINT_WEIGHT_UNITS
@@ -5532,6 +7037,112 @@ def miner_set_header_key():
         db.commit()
     return jsonify({"ok":True,"miner_id":miner_id,"pubkey_hex":pubkey_hex})
 
+@app.route('/admin/attest/key', methods=['POST'])
+def admin_attest_key():
+    """Admin management of a miner's ATTESTATION signing key (#8016 hardened).
+
+    This is the authenticated unpin/rotate path that closes the lockout attack:
+    a real owner who lost a key, or an entry pinned by the wrong party, is fixed
+    here. It manages miner_attest_recent.signing_pubkey (the key /epoch/enroll
+    verifies against) plus the freeze/generation ledger (attest_key_admin).
+
+    Body: {"miner":"<id>", "action":"status|unpin|set|unfreeze",
+           "public_key":"<64 hex>"   # required for action=set
+           "note":"<audit note>"}     # optional
+
+      status   — report pinned key, pin_frozen, generation.
+      unpin    — clear the pinned key AND set pin_frozen=1 (bump generation). The
+                 freeze stops a stranger from immediately public-TOFU re-capturing
+                 the identity; re-pin then requires an admin 'set' (or, for a
+                 self-certifying RTC-hex address, an admin 'unfreeze' so only the
+                 key that derives to the address can re-pin).
+      set      — pin an operator-supplied key directly (authoritative rotate/
+                 enroll). Clears the freeze. This is the ONLY way a symbolic/legacy
+                 name (dual-g4-125, power8-s824-sophia, …) ever gets a pinned key.
+      unfreeze — clear pin_frozen without setting a key (allows RTC-hex self-
+                 certifying public re-pin to resume).
+    """
+    gate = _require_admin_request(request)
+    if gate is not None:
+        return gate
+
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return jsonify({"ok": False, "error": "invalid_json_body", "code": "INVALID_JSON_BODY"}), 400
+    miner = _attest_valid_miner(body.get("miner"))
+    if not miner:
+        return jsonify({"ok": False, "error": "invalid_miner", "code": "INVALID_MINER"}), 400
+    action = body.get("action")
+    action = action.strip().lower() if isinstance(action, str) else ""
+    if action not in ("status", "unpin", "set", "unfreeze"):
+        return jsonify({"ok": False, "error": "invalid_action",
+                        "message": "action must be one of status|unpin|set|unfreeze",
+                        "code": "INVALID_ACTION"}), 400
+
+    new_key = None
+    if action == "set":
+        new_key = _valid_ed25519_pubkey_hex(body.get("public_key"))
+        if not new_key:
+            return jsonify({"ok": False, "error": "invalid_public_key",
+                            "message": "action=set requires a 64-hex-char Ed25519 public_key",
+                            "code": "INVALID_PUBLIC_KEY"}), 400
+
+    note = body.get("note")
+    note = note.strip()[:256] if isinstance(note, str) else ""
+    now = int(time.time())
+
+    with closing(sqlite3.connect(DB_PATH)) as db:
+        _ensure_attest_key_admin_table(db)
+        # Ensure the target row / column exist so status is meaningful even for a
+        # miner that has not attested yet.
+        try:
+            db.execute("ALTER TABLE miner_attest_recent ADD COLUMN signing_pubkey TEXT")
+        except Exception:
+            pass
+        cur = db.execute(
+            "SELECT signing_pubkey FROM miner_attest_recent WHERE miner = ?", (miner,)
+        ).fetchone()
+        current_key = (cur[0].strip().lower() if cur and cur[0] else None)
+        adm = db.execute(
+            "SELECT pin_frozen, generation FROM attest_key_admin WHERE miner = ?", (miner,)
+        ).fetchone()
+        pin_frozen = bool(adm[0]) if adm else False
+        generation = int(adm[1]) if adm else 0
+
+        if action == "status":
+            return jsonify({"ok": True, "miner": miner, "pinned_pubkey": current_key,
+                            "pin_frozen": pin_frozen, "generation": generation})
+
+        if action == "unpin":
+            db.execute("UPDATE miner_attest_recent SET signing_pubkey = NULL WHERE miner = ?", (miner,))
+            new_frozen, new_key_val = 1, None
+        elif action == "set":
+            # Direct authoritative write bypasses the COALESCE pin-once guard.
+            db.execute(
+                "INSERT INTO miner_attest_recent (miner, ts_ok, signing_pubkey) VALUES (?, ?, ?) "
+                "ON CONFLICT(miner) DO UPDATE SET signing_pubkey = excluded.signing_pubkey",
+                (miner, now, new_key),
+            )
+            new_frozen, new_key_val = 0, new_key
+        else:  # unfreeze
+            new_frozen, new_key_val = 0, current_key
+
+        db.execute(
+            "INSERT INTO attest_key_admin (miner, pin_frozen, generation, updated_at, note) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(miner) DO UPDATE SET pin_frozen = excluded.pin_frozen, "
+            "generation = attest_key_admin.generation + 1, updated_at = excluded.updated_at, "
+            "note = excluded.note",
+            (miner, new_frozen, generation + 1, now, note),
+        )
+        db.commit()
+
+    print(f"[ADMIN/ATTEST-KEY] action={action} miner={miner[:32]} "
+          f"frozen={bool(new_frozen)} gen={generation + 1} note={note!r}")
+    return jsonify({"ok": True, "miner": miner, "action": action,
+                    "pinned_pubkey": new_key_val, "pin_frozen": bool(new_frozen),
+                    "generation": generation + 1})
+
 @app.route('/headers/ingest_signed', methods=['POST'])
 def ingest_signed_header():
     """Ingest signed block header from v2 miners.
@@ -5686,9 +7297,27 @@ def ingest_signed_header():
         }), 403
 
     # Update tip + metrics
+    # header_json is a legacy column carrying a NOT NULL constraint from the
+    # original two-column table shape; nothing reads it back (see
+    # _migrate_headers_columns), but on a table that still has it, it must be
+    # supplied or this INSERT raises "NOT NULL constraint failed:
+    # headers.header_json". Some fixtures (and possibly some already-migrated
+    # deployments) rebuild `headers` without that legacy column at all, so
+    # probe live columns rather than hardcoding either shape — same
+    # dual-schema-tolerant pattern as lock_ledger.py / governance.py.
     with sqlite3.connect(DB_PATH) as db:
-        db.execute("INSERT OR REPLACE INTO headers(slot, miner_id, message_hex, signature_hex, pubkey_hex, ts) VALUES(?,?,?,?,?,strftime('%s','now'))",
-                   (slot, miner_id, msg_hex, sig_hex, verified_pubkey_hex))
+        _hdr_live_cols = {r[1] for r in db.execute("PRAGMA table_info(headers)").fetchall()}
+        _hdr_fields = ["slot", "miner_id", "message_hex", "signature_hex", "pubkey_hex", "ts"]
+        _hdr_vals = [slot, miner_id, msg_hex, sig_hex, verified_pubkey_hex]
+        _hdr_placeholders = ["?", "?", "?", "?", "?", "strftime('%s','now')"]
+        if "header_json" in _hdr_live_cols:
+            _hdr_fields.append("header_json")
+            _hdr_placeholders.append("?")
+            _hdr_vals.append(json.dumps(header) if header else "{}")
+        db.execute(
+            "INSERT OR REPLACE INTO headers(%s) VALUES(%s)" % (",".join(_hdr_fields), ",".join(_hdr_placeholders)),
+            _hdr_vals,
+        )
         db.commit()
 
 
@@ -5832,6 +7461,19 @@ def ensure_wallet_review_tables(conn):
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_wallet ON wallet_review_holds(wallet, created_at DESC)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_wallet_review_status ON wallet_review_holds(status, created_at DESC)")
+    # get_wallet_review_entry() also reads the legacy blocked_wallets table, so
+    # ensure it exists here too — otherwise the gate raises "no such table:
+    # blocked_wallets" on any DB where the main startup init never ran (e.g. a
+    # node/tool that only touches the review helpers). The gate must be safe to
+    # call from every endpoint, not just /attest/submit.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS blocked_wallets(
+            wallet TEXT PRIMARY KEY,
+            reason TEXT
+        )
+        """
+    )
 
 
 _ADMIN_SESSIONS: dict = {}
@@ -6479,6 +8121,17 @@ def request_withdrawal():
     if not all([miner_pk, destination, signature, nonce]):
         return jsonify({"error": "Missing required fields"}), 400
 
+    # SECURITY: a wallet under review / blocked (wallet_review_holds or the
+    # legacy blocked_wallets table) must not be able to move funds out. The
+    # same gate already guards /attest/submit, but the fund-EXIT paths never
+    # consulted it — so a flagged wallet could drain its whole balance before
+    # a maintainer released it, defeating the entire purpose of a review hold.
+    # Checked before the BEGIN IMMEDIATE write transaction below so the gate's
+    # own read connection cannot contend with the reserved write lock.
+    review_gate = wallet_review_gate_response(miner_pk)
+    if review_gate is not None:
+        return review_gate
+
     # SECURITY: Validate amount is a number (CVE-style float injection)
     raw_amount = data.get('amount', 0)
     if isinstance(raw_amount, bool):
@@ -6876,6 +8529,12 @@ def gov_rotate_stage():
                      VALUES(?,?,?,?)""", (epoch, thr, members_json, int(time.time())))
         c.execute("DELETE FROM gov_rotation WHERE epoch_effective=?", (epoch,))
         c.execute("DELETE FROM gov_rotation_members WHERE epoch_effective=?", (epoch,))
+        # (Re)staging redefines the canonical signing message
+        # (ROTATE|epoch|threshold|sha256(members_json)); any approvals collected
+        # for a prior member set / threshold no longer authorize this proposal.
+        # Clear them so /gov/rotate/commit cannot count a stale signature toward
+        # committing a member set it never signed (multisig bypass).
+        c.execute("DELETE FROM gov_rotation_approvals WHERE epoch_effective=?", (epoch,))
         c.execute("""INSERT INTO gov_rotation
                      (epoch_effective, committed, threshold, created_ts)
                      VALUES(?,?,?,?)""", (epoch, 0, thr, int(time.time())))
@@ -8996,11 +10655,21 @@ def _backup_age_hours():
     return None
 
 def _tip_age_slots():
-    """Check tip freshness - query DB directly to avoid Response object"""
+    """Check tip freshness - query DB directly to avoid Response object
+
+    Returns the number of slots since the most recent header, or None if
+    the headers table is empty or the query fails.  A healthy chain that
+    produces one block per slot should have an age of 0-2 slots.
+    """
     try:
         with sqlite3.connect(DB_PATH, timeout=3) as db:
             row = db.execute("SELECT slot FROM headers ORDER BY slot DESC LIMIT 1").fetchone()
-        return 0 if row else None
+        if row is None:
+            return None
+        latest_slot = row[0]
+        now_slot = current_slot()
+        age = now_slot - latest_slot
+        return max(0, age)
     except Exception:
         return None
 
@@ -9795,15 +11464,42 @@ def wallet_transfer_v2():
     to_miner = pre.details["to_miner"]
     amount_rtc = pre.details["amount_rtc"]
     amount_i64 = int(pre.details["amount_i64"])
-    reason = str((data or {}).get('reason', 'admin_transfer'))
-    idempotency_key = ""
+    # AUDIT HARDENING (2026-08-20, live on both prod nodes): `reason` is
+    # REQUIRED (`memo` accepted as fallback attribution). 86% of historical
+    # payouts carried no attribution because the silent default
+    # "admin_transfer" was accepted.
+    raw_reason = (data or {}).get("reason") or (data or {}).get("memo")
+    if not isinstance(raw_reason, str) or not raw_reason.strip():
+        return jsonify({
+            "error": "reason_required",
+            "hint": "Pass a non-empty `reason` (or `memo`), e.g. bounty:12444:poa-vs-storage:2026-08-22"
+        }), 400
+    reason = raw_reason.strip()
+    if len(reason) > 500:
+        # Explicit rejection instead of silent truncation - a truncated
+        # reason is a corrupted audit record.
+        return jsonify({"error": "reason_too_long", "max_chars": 500}), 400
+
+    # PHASE-2 HARDENING (2026-08-22, live on both prod nodes):
+    # `idempotency_key` is REQUIRED. A keyless admin transfer is a caller that
+    # double-pays on retry, so it is rejected rather than silently accepted.
+    # Every first-party payer sends a stable key (bounty_payout, auto-pay,
+    # award_rtc, rtc-reward, rtc-pay, node_rewards, github_tip_bot, ut99,
+    # otc bridge, minecraft bridge, faucet). Error split: missing/empty ->
+    # idempotency_key_required; present-but-malformed -> invalid_idempotency_key.
     raw_idempotency_key = (data or {}).get("idempotency_key")
-    if raw_idempotency_key not in (None, ""):
-        if not isinstance(raw_idempotency_key, str):
-            return jsonify({"error": "invalid_idempotency_key"}), 400
-        idempotency_key = raw_idempotency_key.strip()
-        if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", idempotency_key):
-            return jsonify({"error": "invalid_idempotency_key"}), 400
+    if raw_idempotency_key is None or raw_idempotency_key == "":
+        return jsonify({
+            "error": "idempotency_key_required",
+            "hint": "Pass a stable `idempotency_key` ([A-Za-z0-9._:-]{1,128}) unique to this "
+                    "payment, e.g. bounty:12444:poa-vs-storage:2026-08-22. A retry with the "
+                    "same key returns the existing pending row instead of paying twice."
+        }), 400
+    if not isinstance(raw_idempotency_key, str):
+        return jsonify({"error": "invalid_idempotency_key"}), 400
+    idempotency_key = raw_idempotency_key.strip()
+    if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", idempotency_key):
+        return jsonify({"error": "invalid_idempotency_key"}), 400
     
     now = int(time.time())
     confirms_at = now + CONFIRMATION_DELAY_SECONDS
@@ -9835,13 +11531,30 @@ def wallet_transfer_v2():
                 if (
                     existing_from != from_miner or
                     existing_to != to_miner or
-                    int(existing_amount) != amount_i64 or
-                    str(existing_reason or "") != reason
+                    int(existing_amount) != amount_i64
                 ):
+                    # reason deliberately NOT compared: from/to/amount is the
+                    # money-relevant triple, and legacy rows stored the old
+                    # default reason "admin_transfer" - comparing it would
+                    # 409 legitimate replays of pre-hardening payments and
+                    # invite a manual re-pay under a fresh key (double-pay).
                     conn.rollback()
                     return jsonify({
                         "error": "idempotency_key_conflict",
                         "tx_hash": tx_hash,
+                    }), 409
+
+                if str(status or "") == "voided":
+                    # A voided transfer must not replay as success. Callers
+                    # that check only `ok` would read the void as "paid".
+                    # Re-issuing after a void is a deliberate act: new key.
+                    conn.rollback()
+                    return jsonify({
+                        "ok": False,
+                        "error": "idempotency_key_voided",
+                        "phase": "voided",
+                        "tx_hash": tx_hash,
+                        "hint": "This key's transfer was voided. Use a new idempotency_key to intentionally re-issue."
                     }), 409
 
                 conn.rollback()
@@ -9958,7 +11671,18 @@ def _pending_confirm_limit(raw_limit=None):
 
 def _pending_overdue_stats(c, now):
     """Read-only: how many pending transfers are past their confirm window, and
-    the oldest one's overdue seconds. Pure observability — never mutates."""
+    the oldest one's overdue seconds. Pure observability — never mutates.
+
+    On a DB error the counts come back as None, NOT 0, alongside
+    `overdue_stats_measured: False` and an explicit `overdue_stats_error`.
+
+    This used to return zeros. A locked pending_ledger therefore reported a
+    healthy "0 overdue" — which is precisely the hourly confirmer's stop
+    condition (confirm-pending.yml reads stale_pending_count, sees 0, logs
+    "queue drained", breaks, and the run goes green). RTC delivery would halt
+    while the job that exists to deliver it reported success. "Could not
+    measure" is not "nothing to do"; callers must fail closed on None.
+    """
     try:
         row = c.execute(
             """
@@ -9969,15 +11693,21 @@ def _pending_overdue_stats(c, now):
             (now, now),
         ).fetchone()
     except sqlite3.Error as e:
-        # Degrade gracefully so observability never 500s the endpoint, but LOG it:
-        # a locked DB or schema drift on pending_ledger must not masquerade as a
-        # healthy "0 overdue" — monitors that trust these fields would miss a real
-        # backlog. Narrowed from bare Exception so genuine bugs still surface.
-        print(f"[WARN] _pending_overdue_stats DB error (reporting 0 overdue): {e!r}", flush=True)
-        return {"stale_pending_count": 0, "max_confirm_overdue_seconds": 0}
+        # Degrade without 500ing the endpoint, but say plainly that the number
+        # is unknown. Narrowed from bare Exception so genuine bugs still surface.
+        print(f"[WARN] _pending_overdue_stats DB error (counts UNKNOWN, not 0): {e!r}",
+              flush=True)
+        return {
+            "stale_pending_count": None,
+            "max_confirm_overdue_seconds": None,
+            "overdue_stats_measured": False,
+            "overdue_stats_error": f"{type(e).__name__}: {e}",
+        }
     return {
         "stale_pending_count": int(row[0] or 0),
         "max_confirm_overdue_seconds": max(0, int(row[1] or 0)),
+        "overdue_stats_measured": True,
+        "overdue_stats_error": None,
     }
 
 
@@ -10455,6 +12185,11 @@ def confirm_pending():
             "errors": errors if errors else None,
             "stale_pending_count_before": before_stats["stale_pending_count"],
             "max_confirm_overdue_seconds_before": before_stats["max_confirm_overdue_seconds"],
+            "overdue_stats_measured_before": before_stats["overdue_stats_measured"],
+            # after_stats supplies stale_pending_count, max_confirm_overdue_seconds,
+            # overdue_stats_measured and overdue_stats_error. When
+            # overdue_stats_measured is False, stale_pending_count is null —
+            # callers must NOT read that as a drained queue.
             **after_stats,
         })
 
@@ -11308,6 +13043,16 @@ def wallet_transfer_signed():
     to_address = pre.details["to_address"]
     nonce_int = pre.details["nonce"]
     chain_id = pre.details.get("chain_id")
+
+    # SECURITY: freeze fund-exit for a wallet under review / blocked. Mirrors
+    # the guard on /attest/submit and /withdraw/request — a flagged sender must
+    # not be able to sweep its balance to another address while a maintainer
+    # review is pending. Checked on the sender (from_address) before any state
+    # mutation or the debit below.
+    review_gate = wallet_review_gate_response(from_address)
+    if review_gate is not None:
+        return review_gate
+
     # SECURITY (#6127): Validate signature/public_key types before str() coercion
     _raw_sig = data.get("signature")
     _raw_pubkey = data.get("public_key")
