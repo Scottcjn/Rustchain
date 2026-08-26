@@ -30,6 +30,8 @@ from contextlib import closing
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 
+from epoch_settlement_claim import claim_epoch
+
 # Canonical genesis timestamp — must match rip_200_round_robin_1cpu1vote.py
 GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
 BLOCK_TIME = 600
@@ -679,19 +681,19 @@ def settle_epoch_with_anti_double_mining(
         db.execute("BEGIN IMMEDIATE")
 
     try:
-        # Atomic check-and-set for settlement
-        # We use an UPDATE that only succeeds if settled is currently 0.
-        # This prevents the race condition.
-        res = db.execute("UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ? AND settled = 0", (int(time.time()), epoch))
-        claimed = res.rowcount > 0
-        if res.rowcount == 0:
-            # If no row was updated, it was either already settled or doesn't exist
-            st = db.execute("SELECT settled FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
-            if st and int(st[0]) == 1:
-                if own_conn:
-                    db.rollback()
-                return {"ok": True, "epoch": epoch, "already_settled": True}
-            # If it doesn't exist, we can proceed to create it (handled by the later INSERT)
+        # Atomic check-and-set for settlement (Rustchain#6749: shared with
+        # finalize_epoch and settle_epoch_rip200 via claim_epoch() so all three
+        # settlement paths claim the same epoch_state.settled row the same way,
+        # closing both the own-path and cross-path double-credit race).
+        # claim_epoch()'s own INSERT ON CONFLICT DO NOTHING guarantees the row
+        # exists before the UPDATE, so a lost claim always means "already
+        # settled" here -- no separate SELECT needed to tell that apart from
+        # "row doesn't exist yet" the way the previous hand-rolled version did.
+        claimed = claim_epoch(db, epoch)
+        if not claimed:
+            if own_conn:
+                db.rollback()
+            return {"ok": True, "epoch": epoch, "already_settled": True}
 
 
         # Calculate rewards with anti-double-mining.
