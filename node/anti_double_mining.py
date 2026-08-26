@@ -575,8 +575,17 @@ def calculate_anti_double_mining_rewards(
                         "SELECT warthog_bonus FROM miner_attest_recent WHERE miner=?",
                         (miner_id,)
                     ).fetchone()
-                    if wart_row and wart_row[0] and wart_row[0] > 1.0:
-                        weight *= wart_row[0]
+                    # Apply capped warthog bonus (MAX = 2.0) to prevent reward inflation.
+                    # Must match _calculate_anti_double_mining_rewards_conn exactly, or the
+                    # same epoch settles to a different split depending on whether the caller
+                    # passed an existing connection (settle_epoch_with_anti_double_mining
+                    # dispatches to the two paths on that condition).
+                    if wart_row and wart_row[0]:
+                        bonus = float(wart_row[0])
+                        if 1.0 < bonus <= 2.0:
+                            weight *= bonus
+                        elif bonus > 2.0:
+                            weight *= 2.0
                 except Exception:
                     pass
             
@@ -674,6 +683,7 @@ def settle_epoch_with_anti_double_mining(
         # We use an UPDATE that only succeeds if settled is currently 0.
         # This prevents the race condition.
         res = db.execute("UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ? AND settled = 0", (int(time.time()), epoch))
+        claimed = res.rowcount > 0
         if res.rowcount == 0:
             # If no row was updated, it was either already settled or doesn't exist
             st = db.execute("SELECT settled FROM epoch_state WHERE epoch=?", (epoch,)).fetchone()
@@ -698,6 +708,19 @@ def settle_epoch_with_anti_double_mining(
         if not rewards:
             if own_conn:
                 db.rollback()
+            elif claimed:
+                # Shared connection: the caller owns the transaction and commits
+                # on return (see settle_epoch_rip200), so `own_conn`-gated rollback
+                # never runs and the claim above would be committed despite paying
+                # nothing — burning the epoch's emission and making every retry
+                # answer already_settled. Rolling back is not ours to do here, so
+                # undo only our own claim and leave the epoch retryable. This
+                # matches the standard path, which rolls back before returning the
+                # same error.
+                db.execute(
+                    "UPDATE epoch_state SET settled = 0, settled_ts = NULL WHERE epoch = ?",
+                    (epoch,)
+                )
             return {"ok": False, "error": "no_eligible_miners", "epoch": epoch}
 
         # Credit rewards to miners
