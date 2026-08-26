@@ -12,6 +12,7 @@ from flask import Flask, request, jsonify, g, send_from_directory, send_file, ab
 import json
 from decimal import Decimal, ROUND_HALF_UP
 from beacon_anchor import init_beacon_table, store_envelope, compute_beacon_digest, get_recent_envelopes, normalize_beacon_pagination, VALID_KINDS
+from epoch_settlement_claim import claim_epoch
 try:
     # Deployment compatibility: production may run this file as a single script.
     from payout_preflight import validate_wallet_transfer_admin, validate_wallet_transfer_signed
@@ -5251,23 +5252,14 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         # ATOMIC TRANSACTION: claim the epoch first, then credit — all under an
         # IMMEDIATE write lock so two concurrent finalize_epoch calls cannot both
         # credit balances (double-settlement / reward inflation past the cap).
+        # claim_epoch() reads/writes the same epoch_state.settled row that
+        # settle_epoch_rip200 and settle_epoch_with_anti_double_mining claim
+        # against, so this also closes the cross-path race (Rustchain#6749):
+        # whichever settlement path's BEGIN IMMEDIATE gets there first wins.
         try:
             c.execute("BEGIN IMMEDIATE")
 
-            # Ensure the row exists, then atomically CLAIM settlement. If the
-            # claim affects 0 rows another settlement already won this epoch, so
-            # abort WITHOUT crediting. This (not the autocommit pre-check above)
-            # is the authoritative replay guard.
-            c.execute(
-                "INSERT INTO epoch_state (epoch, settled) VALUES (?, 0) "
-                "ON CONFLICT(epoch) DO NOTHING",
-                (epoch,)
-            )
-            claim = c.execute(
-                "UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ? AND settled = 0",
-                (int(time.time()), epoch)
-            )
-            if claim.rowcount != 1:
+            if not claim_epoch(c, epoch):
                 c.execute("ROLLBACK")
                 print(f"[SECURITY] Epoch {epoch} already settled (claim lost) — skipping to prevent double-reward")
                 return
