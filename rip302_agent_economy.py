@@ -533,14 +533,26 @@ def register_agent_economy(app: Flask, db_path: str):
                 return jsonify({"error": "Job not found"}), 404
             j = dict(zip(cols, row))
 
-            if j["status"] != STATUS_CLAIMED:
-                return jsonify({"error": f"Job must be in 'claimed' status (current: {j['status']})"}), 409
+            # A disputed job is a re-delivery, not a first delivery: /dispute
+            # answers the worker with "Worker can re-deliver or admin can
+            # refund", and no route ever moved 'disputed' back to 'claimed',
+            # so rejecting it here left the worker with no way to act on the
+            # rejection reason while the escrow stayed locked.
+            if j["status"] not in (STATUS_CLAIMED, STATUS_DISPUTED):
+                return jsonify({
+                    "error": f"Job must be in 'claimed' or 'disputed' status (current: {j['status']})"
+                }), 409
+            redelivery = j["status"] == STATUS_DISPUTED
 
             if j["worker_wallet"] != worker:
                 return jsonify({"error": "Only the assigned worker can deliver"}), 403
 
             now = int(time.time())
-            if now > j["expires_at"]:
+            # TTL only gates a first delivery. A disputed job is deliberately
+            # outside the expiry sweep (_expire_refundable_job ignores it), so
+            # applying the gate here would fail re-delivery with a misleading
+            # STATE_RACE once the original TTL elapsed.
+            if not redelivery and now > j["expires_at"]:
                 if _expire_refundable_job(c, j, now):
                     conn.commit()
                     return jsonify({"error": "Job has expired"}), 410
@@ -550,12 +562,14 @@ def register_agent_economy(app: Flask, db_path: str):
                     "code": "STATE_RACE",
                 }), 409
 
+            expected_status = STATUS_DISPUTED if redelivery else STATUS_CLAIMED
             c.execute("""
                 UPDATE agent_jobs
                 SET status = 'delivered', deliverable_url = ?,
-                    deliverable_hash = ?, result_summary = ?, delivered_at = ?
+                    deliverable_hash = ?, result_summary = ?, delivered_at = ?,
+                    rejection_reason = ''
                 WHERE job_id = ? AND status = ?
-            """, (deliverable_url, deliverable_hash, result_summary, now, job_id, STATUS_CLAIMED))
+            """, (deliverable_url, deliverable_hash, result_summary, now, job_id, expected_status))
             if c.rowcount == 0:
                 conn.rollback()
                 return jsonify({
@@ -563,7 +577,7 @@ def register_agent_economy(app: Flask, db_path: str):
                     "code": "STATE_RACE",
                 }), 409
 
-            _log_job_action(c, job_id, "delivered", worker,
+            _log_job_action(c, job_id, "redelivered" if redelivery else "delivered", worker,
                            f"url={deliverable_url}")
             conn.commit()
 
@@ -750,7 +764,9 @@ def register_agent_economy(app: Flask, db_path: str):
                 "ok": True,
                 "job_id": job_id,
                 "status": STATUS_DISPUTED,
-                "message": "Job disputed. Escrow held pending resolution. Worker can re-deliver or admin can refund."
+                "message": ("Job disputed. Escrow held pending resolution. The assigned worker "
+                            "can re-deliver via POST /agent/jobs/<id>/deliver, or the poster can "
+                            "refund the escrow via POST /agent/jobs/<id>/cancel.")
             })
 
         except Exception as e:
@@ -980,9 +996,11 @@ def register_agent_economy(app: Flask, db_path: str):
                 trust_score = 50  # Neutral for new agents
             else:
                 success_rate = completed / total
-                trust_score = int(min(100, max(0,
-                    success_rate * 80 +
+                rating_bonus = (
                     min(r["avg_rating"] / 5 * 20, 20) if r["rating_count"] > 0 else 10
+                )
+                trust_score = int(min(100, max(0,
+                    success_rate * 80 + rating_bonus
                 )))
 
             r["trust_score"] = trust_score
