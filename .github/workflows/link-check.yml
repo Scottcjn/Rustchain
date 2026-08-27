@@ -1,0 +1,40 @@
+name: Link Checker
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # weekly Monday 06:00 UTC
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Link Checker
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --no-progress
+            --exclude-mail
+            --exclude "http://127.0.0.1.*"
+            --exclude "https://127.0.0.1.*"
+            --exclude "http://localhost.*"
+            --exclude "https://localhost.*"
+            --exclude "https://50.28.86.131*"
+            --exclude "https://rustchain.org/faq"
+            --accept 200,206,301,302,304,403,405,429
+            --max-concurrency 4
+            --timeout 20
+            --retry-wait-time 2
+            --max-retries 2
+            "**/*.md"
+          fail: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
