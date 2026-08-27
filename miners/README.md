@@ -36,19 +36,19 @@ The Linux miner auto-detects your hardware via `platform.machine()` and reports 
 ```bash
 # Linux
 python3 -m pip install -r linux/requirements-miner.txt
-python3 rustchain_linux_miner.py
+python3 linux/rustchain_linux_miner.py
 
 # Linux dry run: print hardware fingerprint/preflight details without mining
-python3 rustchain_linux_miner.py --dry-run --wallet YOUR_WALLET_ID
+python3 linux/rustchain_linux_miner.py --dry-run --wallet YOUR_WALLET_ID
 
 # macOS
-python3 rustchain_mac_miner_v2.4.py
+python3 macos/rustchain_mac_miner_v2.4.py
 
 # Windows
-python rustchain_windows_miner.py
+python windows/rustchain_windows_miner.py
 
 # If your Python does not include Tcl/Tk (common on minimal/embeddable installs):
-python rustchain_windows_miner.py --headless --wallet YOUR_WALLET_ID --node https://rustchain.org
+python windows/rustchain_windows_miner.py --headless --wallet YOUR_WALLET_ID --node https://rustchain.org
 ```
 
 ## Windows installer & build helpers
