@@ -210,6 +210,23 @@ def _selected_account_mirror_boxes(conn: sqlite3.Connection, selected: list) -> 
     return [r[0] for r in rows]
 
 
+def _spendable_utxo_candidates(conn: sqlite3.Connection, candidates: list) -> tuple:
+    """Remove account-mirror boxes from UTXO selection while dual-write is off."""
+    mirrored = set(_selected_account_mirror_boxes(conn, candidates))
+    if not mirrored:
+        return candidates, []
+    return [box for box in candidates if box.get('box_id') not in mirrored], sorted(mirrored)
+
+
+def _account_mirror_blocked_response(box_ids: list):
+    return jsonify({
+        'error': 'Box mirrors an account balance; move it via the account '
+                 'transfer path while dual-write is off',
+        'code': 'ACCOUNT_MIRROR_BOX_NOT_SPENDABLE',
+        'box_ids': box_ids,
+    }), 409
+
+
 def _ensure_transfer_nonce_table(conn: sqlite3.Connection) -> None:
     conn.execute(
         """
@@ -705,9 +722,19 @@ def utxo_transfer():
     # slice of a wallet, so loading every unspent box let a third party inflate
     # the cost of this call by sending dust to the sender's address.
     utxos = _utxo_db.get_coin_select_candidates(from_address)
+    all_candidate_total_nrtc = sum(u['value_nrtc'] for u in utxos)
+    mirror_candidate_ids = []
+    if not _dual_write:
+        conn = sqlite3.connect(_db_path)
+        try:
+            utxos, mirror_candidate_ids = _spendable_utxo_candidates(conn, utxos)
+        finally:
+            conn.close()
     selected, change_nrtc = coin_select(utxos, target_nrtc)
 
     if not selected:
+        if mirror_candidate_ids and all_candidate_total_nrtc >= target_nrtc:
+            return _account_mirror_blocked_response(mirror_candidate_ids)
         utxo_balance = _utxo_db.get_balance(from_address)
         return jsonify({
             'error': 'Insufficient UTXO balance',
@@ -786,12 +813,7 @@ def utxo_transfer():
             mirrored = _selected_account_mirror_boxes(conn, selected)
             if mirrored:
                 conn.rollback()
-                return jsonify({
-                    'error': 'Box mirrors an account balance; move it via the account '
-                             'transfer path while dual-write is off',
-                    'code': 'ACCOUNT_MIRROR_BOX_NOT_SPENDABLE',
-                    'box_ids': mirrored,
-                }), 409
+                return _account_mirror_blocked_response(mirrored)
 
         ok = _utxo_db.apply_transaction(tx, block_height, conn=conn)
         if not ok:

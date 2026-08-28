@@ -470,15 +470,27 @@ class UtxoDB:
         whole thing. Fetching a bounded slice keeps the cost of a transfer
         independent of how fragmented the wallet is.
 
-        Returns the union of both slices, deduplicated by box_id. Feeding this
-        to coin_select() yields the same selection as feeding it every unspent
-        box, because both of its passes see an identical prefix.
+        Returns the union of both immediately-spendable slices, deduplicated by
+        box_id. Feeding this to coin_select() yields the same selection as
+        feeding it every unspent, unclaimed box, because both of its passes see
+        an identical prefix.
+
+        Pending mempool spend-claims are intentionally excluded. /utxo/transfer
+        creates an immediate settlement transaction, not a block-candidate
+        confirmation of the stored mempool tx_id, so selecting a claimed box
+        only makes apply_transaction() fail after coin selection even when an
+        unclaimed box can fund the payment.
         """
         if not isinstance(max_inputs, int) or isinstance(max_inputs, bool) or max_inputs < 1:
             raise ValueError("max_inputs must be a positive integer")
 
         base = """SELECT * FROM utxo_boxes
-                  WHERE owner_address = ? AND spent_at IS NULL"""
+                  WHERE owner_address = ? AND spent_at IS NULL
+                    AND NOT EXISTS (
+                        SELECT 1 FROM utxo_mempool_inputs mi
+                        WHERE mi.box_id = utxo_boxes.box_id
+                    )"""
+        self.mempool_clear_expired()
         conn = self._conn()
         try:
             # Smallest-first needs one extra row: it is the row that proves the

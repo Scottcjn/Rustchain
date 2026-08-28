@@ -1700,6 +1700,40 @@ def _ensure_transfer_ledger_table(db):
     )
 
 
+def _migrate_headers_columns(c):
+    """Idempotently add the signed-header columns (``miner_id``, ``message_hex``,
+    ``signature_hex``, ``pubkey_hex``, ``ts``) to ``headers`` if a prior run of
+    ``CREATE TABLE IF NOT EXISTS headers(slot, header_json)`` left the table in
+    its original two-column shape.
+
+    Every real consumer of this table — ``/headers/ingest_signed`` (INSERT),
+    ``/headers/tip`` (SELECT), the ``api_v1`` blueprint's ``/blocks*`` routes and
+    ``rustchain_p2p_sync_secure.get_blocks_for_sync`` — reads or writes these five
+    columns and none of them ever wrote/read ``header_json``. Without this
+    migration a brand-new node crashes on the very first signed header it
+    receives with ``sqlite3.OperationalError: table headers has no column named
+    miner_id``.
+
+    Idempotent + safe on an existing/populated table: ``ALTER TABLE ... ADD
+    COLUMN`` only needs a nullable column (or a constant default) to work on a
+    non-empty SQLite table, and no code path here requires these NOT NULL at the
+    schema level — the row is fully populated in the same INSERT that creates it.
+    """
+    _hdr_cols = {row[1] for row in c.execute("PRAGMA table_info(headers)").fetchall()}  # fetchall-ok: pragma-result
+    if not _hdr_cols:
+        return  # table not created yet (fresh DB path creates it with all columns implicitly on next run)
+    for _col, _ctype in (
+        ("miner_id", "TEXT"),
+        ("message_hex", "TEXT"),
+        ("signature_hex", "TEXT"),
+        ("pubkey_hex", "TEXT"),
+        ("ts", "INTEGER"),
+    ):
+        if _col not in _hdr_cols:
+            c.execute("ALTER TABLE headers ADD COLUMN %s %s" % (_col, _ctype))
+            logging.info(f"[migrate] headers: added missing column {_col}")
+
+
 def _migrate_miner_header_keys_composite(c):
     """Idempotently upgrade a legacy single-column-PK ``miner_header_keys`` to the
     composite ``(miner_id, pubkey_hex)`` PK so one wallet identity can hold a header
@@ -2051,6 +2085,17 @@ def init_db():
                 header_json TEXT NOT NULL
             )
         """)
+        # Every consumer of this table (/headers/ingest_signed, /headers/tip,
+        # api_v1 blueprint's /blocks* routes, rustchain_p2p_sync_secure's
+        # get_blocks_for_sync) reads/writes miner_id, message_hex, signature_hex,
+        # pubkey_hex and ts — none of which the CREATE TABLE above ever defined.
+        # On a fresh DB every POST to /headers/ingest_signed raised
+        # "sqlite3.OperationalError: table headers has no column named miner_id"
+        # (see _migrate_headers_columns docstring / regression test for repro).
+        # ADD COLUMN is idempotent-safe here: SQLite allows a nullable column to
+        # be added to a non-empty table, and no code path relies on these being
+        # NOT NULL at the schema level.
+        _migrate_headers_columns(c)
         c.execute("""
             CREATE TABLE IF NOT EXISTS miner_header_keys(
                 miner_id TEXT NOT NULL,
@@ -7258,9 +7303,27 @@ def ingest_signed_header():
         }), 403
 
     # Update tip + metrics
+    # header_json is a legacy column carrying a NOT NULL constraint from the
+    # original two-column table shape; nothing reads it back (see
+    # _migrate_headers_columns), but on a table that still has it, it must be
+    # supplied or this INSERT raises "NOT NULL constraint failed:
+    # headers.header_json". Some fixtures (and possibly some already-migrated
+    # deployments) rebuild `headers` without that legacy column at all, so
+    # probe live columns rather than hardcoding either shape — same
+    # dual-schema-tolerant pattern as lock_ledger.py / governance.py.
     with sqlite3.connect(DB_PATH) as db:
-        db.execute("INSERT OR REPLACE INTO headers(slot, miner_id, message_hex, signature_hex, pubkey_hex, ts) VALUES(?,?,?,?,?,strftime('%s','now'))",
-                   (slot, miner_id, msg_hex, sig_hex, verified_pubkey_hex))
+        _hdr_live_cols = {r[1] for r in db.execute("PRAGMA table_info(headers)").fetchall()}  # fetchall-ok: pragma-result
+        _hdr_fields = ["slot", "miner_id", "message_hex", "signature_hex", "pubkey_hex", "ts"]
+        _hdr_vals = [slot, miner_id, msg_hex, sig_hex, verified_pubkey_hex]
+        _hdr_placeholders = ["?", "?", "?", "?", "?", "strftime('%s','now')"]
+        if "header_json" in _hdr_live_cols:
+            _hdr_fields.append("header_json")
+            _hdr_placeholders.append("?")
+            _hdr_vals.append(json.dumps(header) if header else "{}")
+        db.execute(
+            "INSERT OR REPLACE INTO headers(%s) VALUES(%s)" % (",".join(_hdr_fields), ",".join(_hdr_placeholders)),
+            _hdr_vals,
+        )
         db.commit()
 
 
