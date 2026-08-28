@@ -14,10 +14,12 @@
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
-[![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer/)
+[![Attestation Nodes](https://img.shields.io/badge/Attestation%20Nodes-5%20Live-brightgreen)](https://rustchain.org/explorer/)
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
 [![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/WHITEPAPER.md)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19442753-blue)](https://doi.org/10.5281/zenodo.19442753)
+
+**Network scale:** **5 attestation nodes** (validator infrastructure that accepts miner attestations) and **attesting miners** (individual machines contributing proofs — live count via [`/api/miners`](https://rustchain.org/api/miners)). These are different populations; see [Attestation Nodes](#attestation-nodes).
 
 A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
@@ -202,7 +204,7 @@ This isn't a roadmap. This is deployed and running:
 
 | Layer | What | Status |
 |-------|------|--------|
-| **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live, 20+ miners |
+| **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live — attesting miners ([live count](https://rustchain.org/api/miners); not attestation nodes) |
 | **Currency** | RTC (native) + wRTC (Solana bridge) — agent-native money with micropayment support | Live (native); wRTC swappable, liquidity experimental |
 | **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) — agents find and negotiate with other agents, with a RustChain transport for Ed25519-signed RTC micropayments | Live |
 | **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) — zero-dep local LLM agent that runs on anything | Live |
@@ -282,8 +284,8 @@ Payments run over the [Beacon](https://github.com/Scottcjn/beacon-skill) RustCha
 
 | Fact | Proof |
 |------|-------|
-| 5 nodes across 3 continents (NA ×3, Asia ×1, Local ×1) | [Live explorer](https://rustchain.org/explorer/) |
-| 20+ miners attesting | `curl -fsS https://rustchain.org/api/miners` |
+| 5 attestation nodes across 3 continents (NA ×3, Asia ×1, Local ×1) | [Live explorer](https://rustchain.org/explorer/) |
+| Attesting miners (hardware contributors; count changes) | `curl -fsS https://rustchain.org/api/miners` |
 | 44 BCOS certificates issued | [Certified repos](BCOS.md) |
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
 | 64,000+ RTC paid to 1,000+ recipients ([live counter](https://rustchain.org/payouts.json)) | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
