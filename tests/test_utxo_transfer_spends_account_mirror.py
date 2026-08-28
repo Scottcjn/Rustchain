@@ -188,3 +188,53 @@ def test_independently_earned_boxes_are_unaffected(rig):
     })
 
     assert resp.status_code == 200, resp.get_json()
+
+
+def test_non_mirror_box_spends_when_same_wallet_also_has_small_mirror(rig):
+    """A small mirror box must not poison selection of spendable UTXOs.
+
+    With dual-write off, account-mirror boxes are correctly blocked because
+    the account balance behind them would not be debited. But a wallet may also
+    hold independently earned UTXOs. If a small mirror box sorts ahead of a
+    larger non-mirror box, smallest-first coin selection currently includes the
+    mirror in the selected set and the endpoint rejects the whole transfer even
+    though the non-mirror box alone can fund it.
+    """
+    client, utxo_db, db_path = rig
+
+    # Make the existing mirror small enough that smallest-first selection
+    # includes it before the independently earned box below.
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE balances SET amount_i64 = ? WHERE miner_id = ?",
+            (1_000_000, ALICE),
+        )
+        conn.execute(
+            "UPDATE utxo_boxes SET value_nrtc = ? WHERE box_id = ?",
+            (1 * UNIT, "mirror_box_alice"),
+        )
+        conn.execute(
+            "UPDATE account_mirror_boxes SET value_nrtc = ? WHERE box_id = ?",
+            (1 * UNIT, "mirror_box_alice"),
+        )
+
+    assert utxo_db.apply_transaction(
+        {"tx_type": "mining_reward", "inputs": [],
+         "outputs": [{"address": ALICE, "value_nrtc": 50 * UNIT}],
+         "timestamp": int(time.time()), "_allow_minting": True},
+        block_height=5,
+    ) is True
+
+    resp = _transfer(
+        client,
+        to_address="RTC_test_receiver",
+        amount_rtc=10.0,
+        nonce=1733420000002,
+    )
+
+    assert resp.status_code == 200, resp.get_json()
+    data = resp.get_json()
+    assert data["inputs_consumed"] == 1
+    assert data["to_address"] == "RTC_test_receiver"
+    assert utxo_db.get_balance("RTC_test_receiver") == 10 * UNIT
+    assert _unspent_mirror_value(db_path, ALICE) == 1 * UNIT
