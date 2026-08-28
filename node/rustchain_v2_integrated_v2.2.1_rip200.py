@@ -5652,40 +5652,57 @@ def _compute_hardware_id(device: dict, signals: dict = None, source_ip: str = No
 def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, source_ip: str = None):
     """Check if hardware is already bound to a different wallet. One machine = One wallet."""
     hardware_id = _compute_hardware_id(device, signals, source_ip=source_ip)
-    
+
     with closing(sqlite3.connect(DB_PATH)) as conn:
         c = conn.cursor()
-        
-        # Check existing binding
-        c.execute('SELECT bound_miner, attestation_count FROM hardware_bindings WHERE hardware_id = ?',
-                  (hardware_id,))
-        row = c.fetchone()
-        
         now = int(time.time())
-        
-        if row is None:
-            # No binding - create one
-            try:
-                c.execute("""INSERT INTO hardware_bindings 
-                    (hardware_id, bound_miner, device_arch, device_model, bound_at, attestation_count)
-                    VALUES (?, ?, ?, ?, ?, 1)""",
-                    (hardware_id, miner_id, device.get('device_arch'), device.get('device_model'), now))
+
+        # Serialize read-check-insert under one write lock so two concurrent
+        # first-time submissions for the same hardware_id cannot both pass.
+        c.execute('BEGIN IMMEDIATE')
+        try:
+            c.execute(
+                'SELECT bound_miner, attestation_count FROM hardware_bindings WHERE hardware_id = ?',
+                (hardware_id,),
+            )
+            row = c.fetchone()
+
+            if row is None:
+                try:
+                    c.execute(
+                        """INSERT INTO hardware_bindings
+                        (hardware_id, bound_miner, device_arch, device_model, bound_at, attestation_count)
+                        VALUES (?, ?, ?, ?, ?, 1)""",
+                        (hardware_id, miner_id, device.get('device_arch'), device.get('device_model'), now),
+                    )
+                    conn.commit()
+                    return True, 'Hardware bound', miner_id
+                except sqlite3.IntegrityError:
+                    c.execute(
+                        'SELECT bound_miner FROM hardware_bindings WHERE hardware_id = ?',
+                        (hardware_id,),
+                    )
+                    row = c.fetchone()
+                    if row is None:
+                        conn.rollback()
+                        raise
+                    bound_miner = row[0]
+            else:
+                bound_miner, _ = row
+
+            if bound_miner == miner_id:
+                c.execute(
+                    'UPDATE hardware_bindings SET attestation_count = attestation_count + 1 WHERE hardware_id = ?',
+                    (hardware_id,),
+                )
                 conn.commit()
-            except:
-                pass  # Race condition - another thread created it
-            return True, 'Hardware bound', miner_id
-        
-        bound_miner, _ = row
-        
-        if bound_miner == miner_id:
-            # Same wallet - allow
-            c.execute('UPDATE hardware_bindings SET attestation_count = attestation_count + 1 WHERE hardware_id = ?',
-                      (hardware_id,))
-            conn.commit()
-            return True, 'Authorized', miner_id
-        else:
-            # DIFFERENT wallet on same hardware!
+                return True, 'Authorized', miner_id
+
+            conn.rollback()
             return False, f'Hardware bound to {bound_miner[:16]}...', bound_miner
+        except Exception:
+            conn.rollback()
+            raise
 
 
 @app.route('/attest/submit', methods=['POST'])
@@ -6088,7 +6105,18 @@ def _submit_attestation_impl():
         print(f"[HW_BIND_V2] OK: {miner} - {hw_msg}")
     else:
         # Legacy binding check (for miners not yet sending serial)
-        hw_ok, hw_msg, bound_wallet = _check_hardware_binding(miner, device, signals, source_ip=client_ip)
+        try:
+            hw_ok, hw_msg, bound_wallet = _check_hardware_binding(
+                miner, device, signals, source_ip=client_ip,
+            )
+        except Exception as exc:
+            app.logger.error(f"[HW_BINDING] unavailable for {miner}: {exc}")
+            return jsonify({
+                "ok": False,
+                "error": "hardware_binding_unavailable",
+                "message": "Could not verify hardware binding; retry later",
+                "code": "BINDING_UNAVAILABLE",
+            }), 503
         if not hw_ok:
             print(f"[HW_BINDING] REJECTED: {miner} trying to use hardware bound to {bound_wallet}")
             return jsonify({
