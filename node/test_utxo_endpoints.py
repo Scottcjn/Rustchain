@@ -7,6 +7,7 @@ Run: python3 -m pytest test_utxo_endpoints.py -v
 
 import json
 import os
+import sqlite3
 import tempfile
 import time
 import unittest
@@ -288,6 +289,52 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(self.utxo_db.get_balance('bob'), 60 * UNIT)
         sender_bal = self.utxo_db.get_balance('RTC_test_aabbccdd')
         self.assertEqual(sender_bal, 40 * UNIT)
+
+    def test_transfer_skips_mempool_claimed_inputs_when_clean_box_can_fund(self):
+        """A pending mempool spend must not poison /utxo/transfer coin selection."""
+        sender = 'RTC_test_aabbccdd'
+        self._seed_coinbase(sender, 1 * UNIT, height=1)
+        self._seed_coinbase(sender, 50 * UNIT, height=2)
+        boxes = sorted(
+            self.utxo_db.get_unspent_for_address(sender),
+            key=lambda box: box['value_nrtc'],
+        )
+        claimed_box = boxes[0]
+
+        self.assertTrue(self.utxo_db.mempool_add({
+            'tx_id': 'pending-small-input',
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': claimed_box['box_id'], 'spending_proof': 'sig'}],
+            'outputs': [{'address': 'carol', 'value_nrtc': 1 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': int(time.time()),
+        }))
+        self.assertTrue(self.utxo_db.mempool_check_double_spend(claimed_box['box_id']))
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': 'bob',
+            'amount_rtc': 10.0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+
+        self.assertEqual(r.status_code, 200, r.get_json())
+        self.assertEqual(r.get_json()['inputs_consumed'], 1)
+        self.assertEqual(self.utxo_db.get_balance('bob'), 10 * UNIT)
+        self.assertEqual(self.utxo_db.get_balance(sender), 41 * UNIT)
+        self.assertTrue(self.utxo_db.mempool_check_double_spend(claimed_box['box_id']))
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            spent = conn.execute(
+                'SELECT spent_at FROM utxo_boxes WHERE box_id = ?',
+                (claimed_box['box_id'],),
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        self.assertIsNone(spent)
 
     def test_transfer_insufficient(self):
         self._seed_coinbase('RTC_test_aabbccdd', 50 * UNIT)
