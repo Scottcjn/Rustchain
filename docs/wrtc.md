@@ -9,6 +9,7 @@
 ## 📋 Table of Contents
 
 - [Anti-Scam Checklist](#-anti-scam-checklist)
+- [Custody & Supply](#-custody--supply-verified-on-chain-2026-08-28)
 - [What is wRTC?](#-what-is-wrtc)
 - [Buying wRTC on Raydium](#-buying-wrtc-on-raydium)
 - [Bridging RTC to wRTC](#-bridging-rtc-to-wrtc)
@@ -37,6 +38,30 @@
 - [ ] Someone DM'd you a "better" bridge link
 - [ ] Token shows different decimal places (e.g., 9 or 18)
 - [ ] Price seems too good to be true (likely honeypot)
+
+---
+
+## 🔒 Custody & Supply (verified on-chain 2026-08-28)
+
+Facts any third party can re-check against Solana mainnet:
+
+| Fact | Value | Verify |
+|------|-------|--------|
+| Total wRTC supply | **8,300,000** (fixed forever) | `getTokenSupply` on the mint |
+| Mint authority | **`null` — burned.** Nobody can mint more wRTC. | `getAccountInfo` on the mint |
+| Freeze authority | **`null` — burned.** Nobody can freeze holder accounts. | `getAccountInfo` on the mint |
+| Reserve | ~8.296M wRTC in the published reserve wallet `3n7RJanhRghRzW2PBg1UbkV9syiod8iUMugTvLzwTRkW` | `getTokenAccountsByOwner` |
+| Circulating | ~4,000 wRTC (Raydium pool + holders) | supply − reserve |
+
+**How release works:** wRTC leaves the reserve only through the custodial [bridge](https://bottube.ai/bridge/wrtc) — a deposit of native RTC credits a 1:1 withdrawal from the reserve, via an authenticated, queued withdrawal that is signed out-of-band (the web server holds no signing key). Because the mint authority is burned, the reserve can shrink but the supply can never grow: every wRTC in circulation is 1:1 backed by RTC that actually moved.
+
+```bash
+# Verify the mint yourself
+curl -s https://api.mainnet-beta.solana.com -H 'Content-Type: application/json' -d '{
+  "jsonrpc":"2.0","id":1,"method":"getAccountInfo",
+  "params":["12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X",{"encoding":"jsonParsed"}]}'
+# → mintAuthority: null, freezeAuthority: null, supply: 8300000000000 (6 decimals)
+```
 
 ---
 
