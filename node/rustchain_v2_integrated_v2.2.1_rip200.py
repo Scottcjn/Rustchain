@@ -5652,40 +5652,47 @@ def _compute_hardware_id(device: dict, signals: dict = None, source_ip: str = No
 def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, source_ip: str = None):
     """Check if hardware is already bound to a different wallet. One machine = One wallet."""
     hardware_id = _compute_hardware_id(device, signals, source_ip=source_ip)
+    now = int(time.time())
     
-    with closing(sqlite3.connect(DB_PATH)) as conn:
-        c = conn.cursor()
-        
-        # Check existing binding
-        c.execute('SELECT bound_miner, attestation_count FROM hardware_bindings WHERE hardware_id = ?',
-                  (hardware_id,))
-        row = c.fetchone()
-        
-        now = int(time.time())
-        
-        if row is None:
-            # No binding - create one
-            try:
+    try:
+        with closing(sqlite3.connect(DB_PATH, timeout=10, isolation_level=None)) as conn:
+            c = conn.cursor()
+            c.execute("BEGIN IMMEDIATE")
+
+            # Check and mutate under the same write lock so a losing concurrent
+            # first bind cannot be treated as successful for a different wallet.
+            c.execute('SELECT bound_miner, attestation_count FROM hardware_bindings WHERE hardware_id = ?',
+                      (hardware_id,))
+            row = c.fetchone()
+
+            if row is None:
                 c.execute("""INSERT INTO hardware_bindings 
                     (hardware_id, bound_miner, device_arch, device_model, bound_at, attestation_count)
                     VALUES (?, ?, ?, ?, ?, 1)""",
                     (hardware_id, miner_id, device.get('device_arch'), device.get('device_model'), now))
                 conn.commit()
-            except:
-                pass  # Race condition - another thread created it
-            return True, 'Hardware bound', miner_id
-        
-        bound_miner, _ = row
-        
-        if bound_miner == miner_id:
-            # Same wallet - allow
-            c.execute('UPDATE hardware_bindings SET attestation_count = attestation_count + 1 WHERE hardware_id = ?',
-                      (hardware_id,))
-            conn.commit()
-            return True, 'Authorized', miner_id
-        else:
+                return True, 'Hardware bound', miner_id
+
+            bound_miner, _ = row
+
+            if bound_miner == miner_id:
+                # Same wallet - allow
+                c.execute('UPDATE hardware_bindings SET attestation_count = attestation_count + 1 WHERE hardware_id = ?',
+                          (hardware_id,))
+                conn.commit()
+                return True, 'Authorized', miner_id
+
             # DIFFERENT wallet on same hardware!
+            conn.rollback()
             return False, f'Hardware bound to {bound_miner[:16]}...', bound_miner
+    except sqlite3.Error as exc:
+        app.logger.warning(
+            "legacy hardware binding check failed closed for %s/%s: %s",
+            miner_id,
+            hardware_id[:16],
+            exc,
+        )
+        return False, 'hardware_binding_unavailable', ''
 
 
 @app.route('/attest/submit', methods=['POST'])
@@ -6091,10 +6098,17 @@ def _submit_attestation_impl():
         hw_ok, hw_msg, bound_wallet = _check_hardware_binding(miner, device, signals, source_ip=client_ip)
         if not hw_ok:
             print(f"[HW_BINDING] REJECTED: {miner} trying to use hardware bound to {bound_wallet}")
+            if hw_msg == 'hardware_binding_unavailable':
+                return jsonify({
+                    "ok": False,
+                    "error": "hardware_binding_unavailable",
+                    "message": "Hardware binding is temporarily unavailable; retry shortly",
+                    "code": "HARDWARE_BINDING_UNAVAILABLE"
+                }), 503
             return jsonify({
                 "ok": False,
                 "error": "hardware_already_bound",
-                "message": f"This hardware is already registered to wallet {bound_wallet[:20]}...",
+                "message": f"This hardware is already registered to wallet {(bound_wallet or '')[:20]}...",
                 "code": "DUPLICATE_HARDWARE"
             }), 409
 
