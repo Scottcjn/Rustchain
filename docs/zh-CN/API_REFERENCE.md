@@ -211,37 +211,48 @@ curl -fsS https://rustchain.org/api/miners | jq .
 
 **响应 (200 OK):**
 ```json
-[
-  {
-    "miner": "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC",
-    "device_arch": "G4",
-    "device_family": "PowerPC",
-    "hardware_type": "PowerPC G4 (古董)",
-    "antiquity_multiplier": 2.5,
-    "entropy_score": 0.0,
-    "last_attest": 1770112912
-  },
-  {
-    "miner": "g5-selena-179",
-    "device_arch": "G5",
-    "device_family": "PowerPC",
-    "hardware_type": "PowerPC G5 (古董)",
-    "antiquity_multiplier": 2.0,
-    "entropy_score": 0.0,
-    "last_attest": 1770112865
+{
+  "miners": [
+    {
+      "miner": "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC",
+      "device_arch": "G4",
+      "device_family": "PowerPC",
+      "hardware_type": "PowerPC G4 (古董)",
+      "antiquity_multiplier": 2.5,
+      "entropy_score": 0.0,
+      "last_attest": 1770112912
+    },
+    {
+      "miner": "g5-selena-179",
+      "device_arch": "G5",
+      "device_family": "PowerPC",
+      "hardware_type": "PowerPC G5 (古董)",
+      "antiquity_multiplier": 2.0,
+      "entropy_score": 0.0,
+      "last_attest": 1770112865
+    }
+  ],
+  "pagination": {
+    "count": 2,
+    "limit": 50,
+    "offset": 0,
+    "total": 2,
+    "total_enrolled": 2
   }
-]
+}
 ```
 
 | 字段 | 类型 | 描述 |
 |-------|------|-------------|
-| `miner` | string | 矿工钱包 ID |
-| `device_arch` | string | CPU 架构 (G4, G5, x86_64, M2 等) |
-| `device_family` | string | CPU 系列 (PowerPC, Intel 等) |
-| `hardware_type` | string | 人类可读的硬件描述 |
-| `antiquity_multiplier` | float | 奖励乘数 (1.0–2.5x) |
-| `entropy_score` | float | 硬件熵质量 |
-| `last_attest` | integer | 上次认证的 Unix 时间戳 |
+| `miners` | array | 活跃/已注册矿工对象列表 |
+| `miners[].miner` | string | 矿工钱包 ID |
+| `miners[].device_arch` | string | CPU 架构 (G4, G5, x86_64, M2 等) |
+| `miners[].device_family` | string | CPU 系列 (PowerPC, Intel 等) |
+| `miners[].hardware_type` | string | 人类可读的硬件描述 |
+| `miners[].antiquity_multiplier` | float | 奖励乘数 (1.0–2.5x) |
+| `miners[].entropy_score` | float | 硬件熵质量 |
+| `miners[].last_attest` | integer | 上次认证的 Unix 时间戳 |
+| `pagination` | object | 分页元数据对象 (`count`, `limit`, `offset`, `total`, `total_enrolled`) |
 
 **错误代码:** `500 INTERNAL_ERROR`
 
@@ -1275,8 +1286,8 @@ print(f"余额: {data['amount_rtc']} RTC ({data['amount_i64']} 微 RTC)")
 
 # 列出矿工
 resp = requests.get(f"{BASE_URL}/api/miners")
-for m in resp.json():
-    print(f"{m['miner'][:20]}... | {m['device_arch']} | 乘数={m['antiquity_multiplier']}x")
+for m in resp.json().get("miners", []):
+    print(f"{m['miner'][:20]}... | {m['device_arch']} | mult={m['antiquity_multiplier']}x")
 ```
 
 ### Python — 签名转账
