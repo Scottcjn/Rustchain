@@ -141,6 +141,68 @@ def test_legacy_hardware_binding_ignores_spoofable_cpu_serial(tmp_path, monkeypa
     assert second_bound == "miner-a"
 
 
+def test_legacy_hardware_binding_migrates_same_wallet_old_hash(tmp_path, monkeypatch):
+    """A same-wallet row keyed by the old client-serial hash is rewritten once."""
+    db_path = tmp_path / "hardware-binding-legacy-migration.sqlite3"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE hardware_bindings (
+                hardware_id TEXT PRIMARY KEY,
+                bound_miner TEXT NOT NULL,
+                device_arch TEXT,
+                device_model TEXT,
+                bound_at INTEGER NOT NULL,
+                attestation_count INTEGER DEFAULT 0
+            )
+            """
+        )
+
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+
+    device = {
+        "device_model": "shared-host",
+        "device_arch": "x86_64",
+        "device_family": "modern",
+        "cores": 8,
+        "cpu_serial": "OLD-CLIENT-SERIAL",
+    }
+    signals = {"macs": ["aa:bb:cc:dd:ee:ff"]}
+    source_ip = "203.0.113.50"
+    old_hardware_id = integrated_node._compute_legacy_hardware_id_with_client_serial(
+        device, signals, source_ip=source_ip
+    )
+    new_hardware_id = integrated_node._compute_hardware_id(
+        device, signals, source_ip=source_ip
+    )
+    assert old_hardware_id != new_hardware_id
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO hardware_bindings
+                (hardware_id, bound_miner, device_arch, device_model, bound_at, attestation_count)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (old_hardware_id, "miner-a", "x86_64", "shared-host", 1_700_000_000, 4),
+        )
+
+    ok, reason, bound_miner = integrated_node._check_hardware_binding(
+        "miner-a", device, signals, source_ip=source_ip
+    )
+
+    assert ok is True
+    assert reason == "Authorized"
+    assert bound_miner == "miner-a"
+
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT hardware_id, bound_miner, attestation_count FROM hardware_bindings"
+        ).fetchall()
+
+    assert rows == [(new_hardware_id, "miner-a", 5)]
+
+
 def test_legacy_hardware_binding_fails_closed_when_db_unavailable(monkeypatch):
     """Binding state must not be treated as accepted when SQLite cannot be read."""
 

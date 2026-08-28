@@ -5649,9 +5649,30 @@ def _compute_hardware_id(device: dict, signals: dict = None, source_ip: str = No
     
     return hw_id
 
+def _compute_legacy_hardware_id_with_client_serial(
+    device: dict, signals: dict = None, source_ip: str = None
+) -> str:
+    """Compute the pre-hardening legacy binding key for one deploy-window migration."""
+    signals = signals or {}
+
+    model = device.get('device_model') or device.get('model', 'unknown')
+    arch = device.get('device_arch') or device.get('arch', 'modern')
+    family = device.get('device_family') or device.get('family', 'unknown')
+    cores = str(device.get('cores', 1))
+    cpu_serial = device.get('cpu_serial') or device.get('hardware_id', '')
+    ip_component = source_ip or 'unknown_ip'
+    macs = signals.get('macs', [])
+    mac_str = ','.join(sorted(macs)) if macs else ''
+
+    hw_fields = [ip_component, model, arch, family, cores, mac_str, cpu_serial]
+    return hashlib.sha256('|'.join(str(f) for f in hw_fields).encode()).hexdigest()[:32]
+
 def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, source_ip: str = None):
     """Check if hardware is already bound to a different wallet. One machine = One wallet."""
     hardware_id = _compute_hardware_id(device, signals, source_ip=source_ip)
+    legacy_hardware_id = _compute_legacy_hardware_id_with_client_serial(
+        device, signals, source_ip=source_ip
+    )
     now = int(time.time())
     
     try:
@@ -5666,6 +5687,44 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
             row = c.fetchone()
 
             if row is None:
+                # Migration bridge for rows written before client-controlled
+                # cpu_serial/hardware_id was removed from the binding key. If
+                # the same wallet already owns the old key, preserve continuity
+                # by rewriting that row to the hardened key instead of creating
+                # a second binding.
+                c.execute(
+                    'SELECT bound_miner, attestation_count FROM hardware_bindings WHERE hardware_id = ?',
+                    (legacy_hardware_id,),
+                )
+                legacy_row = c.fetchone()
+                if legacy_row is not None:
+                    legacy_bound_miner, _ = legacy_row
+                    if legacy_bound_miner != miner_id:
+                        conn.rollback()
+                        return (
+                            False,
+                            f'Hardware bound to {legacy_bound_miner[:16]}...',
+                            legacy_bound_miner,
+                        )
+
+                    c.execute(
+                        """UPDATE hardware_bindings
+                           SET hardware_id = ?,
+                               device_arch = ?,
+                               device_model = ?,
+                               attestation_count = attestation_count + 1
+                           WHERE hardware_id = ? AND bound_miner = ?""",
+                        (
+                            hardware_id,
+                            device.get('device_arch'),
+                            device.get('device_model'),
+                            legacy_hardware_id,
+                            miner_id,
+                        ),
+                    )
+                    conn.commit()
+                    return True, 'Authorized', miner_id
+
                 c.execute("""INSERT INTO hardware_bindings 
                     (hardware_id, bound_miner, device_arch, device_model, bound_at, attestation_count)
                     VALUES (?, ?, ?, ?, ?, 1)""",
