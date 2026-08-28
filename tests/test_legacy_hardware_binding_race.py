@@ -100,6 +100,47 @@ def test_legacy_hardware_binding_rechecks_after_concurrent_insert(tmp_path, monk
     assert rejected[2] == bound_miner
 
 
+def test_legacy_hardware_binding_ignores_spoofable_cpu_serial(tmp_path, monkeypatch):
+    """Changing client-reported cpu_serial must not create a new legacy binding."""
+    db_path = tmp_path / "hardware-binding-cpu-serial.sqlite3"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE hardware_bindings (
+                hardware_id TEXT PRIMARY KEY,
+                bound_miner TEXT NOT NULL,
+                device_arch TEXT,
+                device_model TEXT,
+                bound_at INTEGER NOT NULL,
+                attestation_count INTEGER DEFAULT 0
+            )
+            """
+        )
+
+    monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+
+    base_device = {"device_model": "same-machine", "device_arch": "x86_64", "cores": 8}
+    signals = {"macs": ["aa:bb:cc:dd:ee:ff"]}
+
+    first_ok, _, first_bound = integrated_node._check_hardware_binding(
+        "miner-a",
+        {**base_device, "cpu_serial": "SERIAL-A"},
+        signals,
+        source_ip="203.0.113.50",
+    )
+    second_ok, _, second_bound = integrated_node._check_hardware_binding(
+        "miner-b",
+        {**base_device, "cpu_serial": "SERIAL-B"},
+        signals,
+        source_ip="203.0.113.50",
+    )
+
+    assert first_ok is True
+    assert first_bound == "miner-a"
+    assert second_ok is False
+    assert second_bound == "miner-a"
+
+
 def test_legacy_hardware_binding_fails_closed_when_db_unavailable(monkeypatch):
     """Binding state must not be treated as accepted when SQLite cannot be read."""
 

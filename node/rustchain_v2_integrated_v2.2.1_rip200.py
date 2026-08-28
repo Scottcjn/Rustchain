@@ -5630,8 +5630,8 @@ def _compute_hardware_id(device: dict, signals: dict = None, source_ip: str = No
     family = device.get('device_family') or device.get('family', 'unknown')
     cores = str(device.get('cores', 1))
     
-    # cpu_serial is UNTRUSTED (client can fake it) - use only as secondary entropy
-    cpu_serial = device.get('cpu_serial') or device.get('hardware_id', '')
+    # cpu_serial/hardware_id are client-controlled in the legacy path. Do not let
+    # them mint a distinct binding key; serial-bearing miners use binding v2.
     
     # Primary binding: IP + arch + model + cores (cannot be faked from same machine)
     # Note: This means miners behind same NAT share an IP binding pool.
@@ -5642,7 +5642,7 @@ def _compute_hardware_id(device: dict, signals: dict = None, source_ip: str = No
     macs = signals.get('macs', [])
     mac_str = ','.join(sorted(macs)) if macs else ''
     
-    hw_fields = [ip_component, model, arch, family, cores, mac_str, cpu_serial]
+    hw_fields = [ip_component, model, arch, family, cores, mac_str]
     hw_id = hashlib.sha256('|'.join(str(f) for f in hw_fields).encode()).hexdigest()[:32]
     
     print(f"[HW_ID] {hw_id[:16]} = IP:{ip_component} arch:{arch} model:{model} cores:{cores} macs:{len(macs)}")
