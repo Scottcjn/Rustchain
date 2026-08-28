@@ -4,8 +4,14 @@ This guide explains wallet basics, balance checks, and safe transfer practices f
 
 ## 1) Wallet basics
 
-- In RustChain docs, wallet identity is often represented by `miner_id`.
-- Keep your wallet/miner id consistent across setup, mining, and balance checks.
+RustChain uses two public wallet identifiers:
+
+- **Miner ID** — a human-readable `miner_id` used for mining rewards and balance checks.
+- **`RTC...` address** — an Ed25519-backed wallet address that can sign native transfers.
+
+Keep your wallet/miner id consistent across setup, mining, and balance checks.
+A miner ID can receive payouts, but `POST /wallet/transfer/signed` requires an
+Ed25519-backed `RTC...` wallet with the corresponding private key.
 
 ## 2) Check wallet balance
 
@@ -50,6 +56,23 @@ The API supports signed transfers:
 - Reference examples: `docs/API.md`
 
 Only use this when you fully understand signing and key custody.
+
+## 6) Moving funds from a miner ID into a signed wallet
+
+If you already received RTC at a human-readable miner ID, there is **no documented
+automatic self-service migration flow** that converts that miner ID into a signed
+wallet. The supported user path today is:
+
+1. Create or restore an Ed25519-backed `RTC...` wallet first.
+2. Keep using the original miner ID for mining rewards and balance lookups.
+3. For native transfers or the official wRTC bridge, move funds only from a wallet
+   that can produce Ed25519 signatures.
+
+Important: the bridge API in `docs/bridge-api.md` is **operator/admin-facing**, not
+a public endpoint a miner can call to sweep balances from a readable miner ID.
+If you have funds on a legacy miner ID and need them moved into a signed wallet,
+collect proof of ownership (miner ID, payout tx, timestamps) and contact the
+maintainers for an explicit operator-assisted transfer path before sending funds.
 
 ## 6) Common wallet issues
 

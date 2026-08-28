@@ -342,6 +342,24 @@ print(resp.json())
 PY
 ```
 
+### Can I migrate funds from a readable miner ID into a signed wallet?
+
+Not automatically, based on the public docs in this repository.
+
+A readable miner ID can receive mining rewards and bounty payouts, but it does
+not give you the private key material needed for `POST /wallet/transfer/signed`.
+The public bridge management API is also operator-assisted/admin-authenticated,
+so it is not a self-service "convert my miner ID to wRTC" endpoint.
+
+If you already have RTC on a legacy miner ID and need to move it into a new
+`RTC...` wallet, the safe documented path today is:
+
+1. Create the new `RTC...` wallet first.
+2. Keep the original miner ID unchanged for existing reward history.
+3. Ask the maintainers for an operator-assisted migration or transfer flow, and
+   provide only public identifiers plus proof of ownership.
+4. Never post a seed phrase or private key in an issue or PR.
+
 ### Why Ed25519 signatures matter
 
 RustChain requires Ed25519 signatures so the network can verify:
