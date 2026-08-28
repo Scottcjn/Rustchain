@@ -13444,9 +13444,14 @@ if HAVE_UTXO:
             review_gate_fn=wallet_review_gate_response,
         )
     except ImportError as e:
+        # Optional module genuinely absent: run without the UTXO layer.
         print(f"[UTXO] Endpoints not available: {e}")
     except Exception as e:
+        # The module is present but wiring it failed. Do NOT swallow this:
+        # a half-registered UTXO layer (or none, silently) is exactly the
+        # false-green shape that hid the /utxo/* 404s in production.
         print(f"[UTXO] Endpoint registration failed: {e}")
+        raise
 
 
 if __name__ == "__main__":
