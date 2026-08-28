@@ -102,6 +102,79 @@ class LockEntry:
 
 
 # =============================================================================
+# balances-table schema tolerance
+# =============================================================================
+#
+# init_db() bootstraps a fresh node with `balances(miner_pk, balance_rtc REAL)`
+# ("NOTE: Production DBs may already have a different balances schema; this
+# table is additive."), but the live/migrated schema most nodes actually run
+# is `balances(miner_id, amount_i64 INTEGER)` -- the one this module was
+# written against. governance.py already had to make its own balance checks
+# tolerant to both (see _balance_rtc_for_miner / _deduct_proposal_fee) after
+# schema-A nodes 500'd on every proposal. create_lock()/release_lock() had the
+# same unconditional schema-B assumption: on a schema-A node, locking or
+# releasing a bridge deposit throws sqlite3.OperationalError (no such column:
+# miner_id), which the outer `except sqlite3.Error` turns into a plain
+# "Database error" 500 -- funds get hard-debited by the bridge but the lock
+# can never be created or released.
+
+def _balances_columns(cursor: sqlite3.Cursor) -> Tuple[str, str]:
+    """Return the (id_column, amount_column) pair the live `balances` table
+    actually has: ("miner_id", "amount_i64") or ("miner_pk", "balance_rtc").
+
+    Falls back to the schema this module has always assumed if the table
+    does not exist yet (a fresh DB gets it via init_db() before this runs).
+    """
+    cols = {row[1] for row in cursor.execute("PRAGMA table_info(balances)").fetchall()}
+    if "balance_rtc" in cols and "miner_pk" in cols and "amount_i64" not in cols:
+        return "miner_pk", "balance_rtc"
+    return "miner_id", "amount_i64"
+
+
+def _ensure_balance_row(cursor: sqlite3.Cursor, miner_id: str) -> Tuple[str, str]:
+    """INSERT OR IGNORE a zero-balance row for miner_id, on whichever schema
+    is live. Returns the (id_column, amount_column) pair used, so callers
+    don't have to call _balances_columns() twice."""
+    id_col, amt_col = _balances_columns(cursor)
+    cursor.execute(
+        f"INSERT OR IGNORE INTO balances ({id_col}, {amt_col}) VALUES (?, 0)",
+        (miner_id,)
+    )
+    return id_col, amt_col
+
+
+def _adjust_balance_i64(cursor: sqlite3.Cursor, miner_id: str, delta_i64: int) -> int:
+    """Add delta_i64 micro-RTC to miner_id's balance (negative to debit),
+    tolerant to both known `balances` schemas. Returns cursor.rowcount."""
+    id_col, amt_col = _ensure_balance_row(cursor, miner_id)
+    if amt_col == "amount_i64":
+        cursor.execute(
+            f"UPDATE balances SET {amt_col} = {amt_col} + ? WHERE {id_col} = ?",
+            (delta_i64, miner_id)
+        )
+    else:
+        cursor.execute(
+            f"UPDATE balances SET {amt_col} = {amt_col} + ? WHERE {id_col} = ?",
+            (delta_i64 / LOCK_UNIT, miner_id)
+        )
+    return cursor.rowcount
+
+
+def _read_balance_i64(cursor: sqlite3.Cursor, miner_id: str) -> Optional[int]:
+    """Read miner_id's balance in micro-RTC (int), tolerant to both known
+    `balances` schemas. Returns None if the miner has no balance row."""
+    id_col, amt_col = _balances_columns(cursor)
+    row = cursor.execute(
+        f"SELECT {amt_col} FROM balances WHERE {id_col} = ?", (miner_id,)
+    ).fetchone()
+    if row is None:
+        return None
+    if amt_col == "amount_i64":
+        return int(row[0] or 0)
+    return int(round(float(row[0] or 0) * LOCK_UNIT))
+
+
+# =============================================================================
 # Core Lock Functions
 # =============================================================================
 
@@ -151,21 +224,13 @@ def create_lock(
     try:
         # Deduct locked amount from miner's balance atomically.
         # This ensures locked funds are unavailable for withdrawal/transfer.
-        # INSERT OR IGNORE creates the row if the miner has no prior balance record.
-        cursor.execute(
-            "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
-            (miner_id,)
-        )
-        cursor.execute(
-            "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
-            (amount_i64, miner_id)
-        )
+        # Tolerant to both known `balances` schemas (see comment above
+        # _balances_columns) so a schema-A node doesn't 500 on every lock.
+        _adjust_balance_i64(cursor, miner_id, -amount_i64)
 
         # Verify the deduction did not go negative (sanity check)
-        row = cursor.execute(
-            "SELECT amount_i64 FROM balances WHERE miner_id = ?",
-            (miner_id,)
-        ).fetchone()
+        row_val = _read_balance_i64(cursor, miner_id)
+        row = (row_val,) if row_val is not None else None
         if row and row[0] < 0:
             # Roll back the deduction — this should never happen if callers
             # checked available balance before calling create_lock
@@ -310,19 +375,12 @@ def release_lock(
             }
 
         # Credit the locked amount back to the miner's available balance.
-        # The miner_id was validated by the SELECT above; if the credit
-        # affects zero rows the miner has no balance row (INSERT OR IGNORE
-        # was skipped earlier), so fail closed rather than silently losing
-        # funds.
-        cursor.execute(
-            "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
-            (miner_id,)
-        )
-        cursor.execute(
-            "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
-            (amount_i64, miner_id)
-        )
-        if cursor.rowcount == 0:
+        # Tolerant to both known `balances` schemas (see comment above
+        # _balances_columns). The miner_id was validated by the SELECT
+        # above; if the credit affects zero rows, fail closed rather than
+        # silently losing funds.
+        rowcount = _adjust_balance_i64(cursor, miner_id, amount_i64)
+        if rowcount == 0:
             db_conn.rollback()
             return False, {
                 "error": "Failed to credit released balance",
