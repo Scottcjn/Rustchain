@@ -500,6 +500,7 @@ def get_public_beacon_agent(agent_id):
 # BEACON JOIN ROUTING ENDPOINTS (Issue #2127)
 # ============================================================
 
+@beacon_api.route('/api/join', methods=['POST', 'OPTIONS'])
 @beacon_api.route('/beacon/join', methods=['POST', 'OPTIONS'])
 def beacon_join():
     """
