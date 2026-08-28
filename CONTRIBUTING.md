@@ -130,6 +130,8 @@ For package-specific work, use the closest local manifest or test folder:
 
 ## RTC Payout Process
 
+You do **not** need an RTC wallet address before opening your PR. If the PR is merged, the project will ask for your wallet address during the payout step.
+
 1. PR gets reviewed and merged
 2. We comment asking for your wallet address
 3. RTC is transferred from the community fund
