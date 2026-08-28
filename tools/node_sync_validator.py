@@ -364,6 +364,16 @@ def compare_snapshots(snaps: List[NodeSnapshot], tip_drift_threshold: int) -> Di
     return out
 
 
+def report_needs_attention(report: Dict[str, Any]) -> bool:
+    """Return True when a validator report found C6-relevant failures."""
+    if report.get("down_nodes"):
+        return True
+    discrepancies = report.get("discrepancies", {})
+    if not isinstance(discrepancies, dict):
+        return False
+    return any(bool(items) for items in discrepancies.values())
+
+
 def build_summary(report: Dict[str, Any]) -> str:
     d = report.get("discrepancies", {})
     lines = []
@@ -391,7 +401,7 @@ def build_summary(report: Dict[str, Any]) -> str:
     for k, v in counts.items():
         lines.append(f"- {k}: {v}")
 
-    if sum(counts.values()) == 0 and not report.get("down_nodes"):
+    if not report_needs_attention(report):
         lines.append("Status: OK (no discrepancies detected)")
     else:
         lines.append("Status: ATTENTION (review discrepancy details in JSON)")
@@ -408,6 +418,11 @@ def main() -> int:
     parser.add_argument("--sample-balances", type=int, default=5)
     parser.add_argument("--output-json", default="")
     parser.add_argument("--output-text", default="")
+    parser.add_argument(
+        "--allow-attention-exit-zero",
+        action="store_true",
+        help="print ATTENTION reports but still exit 0 for exploratory/manual runs",
+    )
     args = parser.parse_args()
 
     verify_ssl = bool(args.verify_ssl)
@@ -428,6 +443,8 @@ def main() -> int:
         with open(args.output_text, "w", encoding="utf-8") as f:
             f.write(summary + "\n")
 
+    if report_needs_attention(report) and not args.allow_attention_exit_zero:
+        return 1
     return 0
 
 
