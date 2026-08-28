@@ -4,6 +4,8 @@
 
 # RustChain
 
+<img src="docs/rustchain_hero_terminal.png" alt="RustChain — Make Mining Meaningful Again" width="420">
+
 ### DePIN for Vintage Hardware — AI-Augmented Proof of Real Machines
 
 **The blockchain where old hardware outearns new hardware.**
@@ -14,7 +16,8 @@
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
-[![Nodes](https://img.shields.io/badge/Nodes-5%20Active-brightgreen)](https://rustchain.org/explorer/)
+[![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/XnRp7M5gBW)
+[![Nodes](https://img.shields.io/badge/Nodes-Live%20on%20explorer-brightgreen)](https://rustchain.org/explorer/)
 [![DePIN](https://img.shields.io/badge/DePIN-Vintage%20Hardware-8B4513)](https://rustchain.org)
 [![Proof of Antiquity](https://img.shields.io/badge/Consensus-Proof%20of%20Antiquity-DAA520)](docs/WHITEPAPER.md)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.19442753-blue)](https://doi.org/10.5281/zenodo.19442753)
@@ -24,7 +27,7 @@ A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most resp
 
 > ⭐ **Help us reach 512 stars** — the 2⁹ binary milestone (our supply is 2²³). If Proof-of-Antiquity is your kind of weird, [a star](https://github.com/Scottcjn/Rustchain) helps more old machines get found. [Why 512?](https://github.com/Scottcjn/Rustchain/issues/7540)
 
-[Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [FAQ](https://rustchain.org/faq) · [Hardware Requirements](docs/HARDWARE_REQUIREMENTS.md) · [Manifesto](MANIFESTO.md) · [Whitepaper](docs/WHITEPAPER.md) · [Hire Us](CONSULTING.md)
+[Discord](https://discord.gg/XnRp7M5gBW) · [Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [FAQ](https://rustchain.org/faq) · [Hardware Requirements](docs/HARDWARE_REQUIREMENTS.md) · [Manifesto](MANIFESTO.md) · [Whitepaper](docs/WHITEPAPER.md) · [Hire Us](CONSULTING.md)
 
 Languages: [English](README.md) · [简体中文](docs/zh-CN/README.md) · [简体中文 (根目录)](README_ZH.md) · [繁體中文](README_ZH-TW.md) · [Español](README_ES.md) · [Deutsch](README_DE.md) · [日本語](README_JA.md) · [Русский](README_RU.md) · [Tiếng Việt](README.vi.md) · [Português (BR)](README.pt-BR.md) · [हिन्दी](README_HI.md) · [Italiano](docs/it-IT/README.md) · [한국어](docs/ko-KR/README.md) · [中文 API 快速参考](docs/zh-CN/API.md)
 
@@ -276,13 +279,13 @@ Payments run over the [Beacon](https://github.com/Scottcjn/beacon-skill) RustCha
 |------|----------|-------|
 | **Node 1** — 50.28.86.131 | Louisiana, US | Primary (LiquidWeb VPS) |
 | **Node 2** — 50.28.86.153 | Louisiana, US | Secondary + BoTTube (LiquidWeb VPS) |
-| **Node 3** — 76.8.228.245:8099 | US | First external node (Ryan's Proxmox) |
-| **Node 4** — 38.76.217.189:8099 | Hong Kong | First Asian node (CognetCloud) |
+| **Node 3** — 76.8.228.245:8099 | US | First external node (Ryan's Proxmox) — *volunteer node, offline since mid-2026* |
+| **Node 4** — 38.76.217.189:8099 | Hong Kong | First Asian node (CognetCloud) — *volunteer node, retired by operator* |
 | **Node 5** — POWER8 S824 | Local Lab | First non-x86 node (IBM ppc64le, 512GB RAM) |
 
 | Fact | Proof |
 |------|-------|
-| 5 nodes across 3 continents (NA ×3, Asia ×1, Local ×1) | [Live explorer](https://rustchain.org/explorer/) |
+| Attestation nodes: 2 always-on (Louisiana) + lab POWER8; 2 volunteer nodes have come and gone — that's what volunteer infra does | [Live explorer](https://rustchain.org/explorer/) |
 | 20+ miners attesting | `curl -fsS https://rustchain.org/api/miners` |
 | 44 BCOS certificates issued | [Certified repos](BCOS.md) |
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
@@ -477,11 +480,11 @@ Full tokenomics detail: [WHITEPAPER §6](docs/WHITEPAPER.md). Scenario analysis:
 | | Link |
 |--|------|
 | **Swap** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **Chart** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
+| **Pool** | [Raydium CPMM pool `8CF2…nYzb`](https://raydium.io/liquidity-pools/?token=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
 | **Bridge** | [Bridge](https://bottube.ai/bridge/wrtc) |
 | **Guide** | [wRTC Quickstart](docs/wrtc.md) |
 
-> **Honest status:** wRTC is live and swappable on Solana, but the pool is **early-stage with very thin liquidity** — treat it as experimental, not a deep market. The `$0.15` figure for RTC is an **internal reference rate** for bounty accounting, not a market price or a promise of convertibility.
+> **Honest status:** wRTC is live and swappable on Solana, but the pool is **early-stage with very thin liquidity** (≈$1.5k TVL, near-zero volume as of 2026-08-28) — treat it as experimental, not a deep market. The `$0.15` figure for RTC is an **internal reference rate** for bounty accounting, not a market price or a promise of convertibility.
 
 ---
 
