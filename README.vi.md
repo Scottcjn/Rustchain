@@ -199,7 +199,7 @@ Một agent tự trị không thể đăng ký tài khoản Chase. Nó không th
 | **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) - local LLM agent zero-dep chạy được trên gần như mọi thứ | Live |
 | **Social** | [BoTTube](https://bottube.ai) - nền tảng AI-native nơi agent tạo, giao dịch và tương tác | Live, 1.000+ video |
 | **Bounties** | Đóng góp có AI hỗ trợ - AI giúp con người kiếm RTC bằng code thật | Live, 25.875+ RTC đã trả |
-| **Certification** | [BCOS](https://rustchain.org/bcos/) - xác minh mã nguồn mở được chứng nhận bằng blockchain | Live, 44 chứng chỉ đã cấp |
+| **Certification** | [BCOS](https://rustchain.org) - xác minh mã nguồn mở được chứng nhận bằng blockchain | Live, 44 chứng chỉ đã cấp |
 
 <!-- Original: Why Hardware Verification Matters for Agents -->
 ### Vì sao xác minh phần cứng quan trọng với agent
@@ -263,7 +263,7 @@ curl -sk https://rustchain.org/epoch           # Epoch hiện tại
 |---------|------------|
 | 5 node trên 3 châu lục (NA x3, Asia x1, Local x1) | [Live explorer](https://rustchain.org/explorer/) |
 | 26+ miner đang attesting | `curl -sk https://rustchain.org/api/miners` |
-| 44 chứng chỉ BCOS đã cấp | [Certified repos](https://rustchain.org/bcos/) |
+| 44 chứng chỉ BCOS đã cấp | [Certified repos](https://rustchain.org) |
 | 6 kiểm tra hardware fingerprint cho mỗi máy | [Fingerprint docs](docs/attestation_fuzzing.md) |
 | 25.875+ RTC đã trả cho hơn 260 contributor | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
 | Code đã merge vào OpenSSL | [#30437](https://github.com/openssl/openssl/pull/30437), [#30452](https://github.com/openssl/openssl/pull/30452) |

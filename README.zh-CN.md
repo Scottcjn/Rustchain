@@ -8,9 +8,9 @@
 
 一台 2003 年的 PowerBook G4 比现代线程撕裂者多赚 **2.5 倍**。一台 Power Mac G5 多赚 2.0 倍。一台带锈迹串口的 486 赚得最多尊重。
 
-[Explorer](https://rustchain.org) · [已保存的机器](https://rustchain.org/machines) · [安装矿工程序](https://rustchain.org/install) · [新手指南](https://rustchain.org/beginner) · [宣言](https://rustchain.org/manifesto) · [白皮书](https://rustchain.org/whitepaper)
+[Explorer](https://rustchain.org) · [已保存的机器](https://rustchain.org/preserved.html) · [安装矿工程序](#快速开始) · [新手指南](docs/QUICKSTART.md) · [宣言](MANIFESTO.md) · [白皮书](docs/WHITEPAPER.md)
 
-**中文入口：中文文档 · [中文 API 快速参考](https://rustchain.org/api-zh)**
+**中文入口：中文文档 · [中文 API 快速参考](docs/zh-CN/API.md)**
 
 ---
 
@@ -474,7 +474,7 @@ Linux（x86_64、ppc64le）· macOS（Intel、Apple Silicon、PowerPC）· IBM P
 
 *"Mais, it still works, so why you gonna throw it away?"（它还能用，你干嘛要扔？）*
 
-[Boudreaux Principles](https://rustchain.org/principles) · [Green Tracker](https://rustchain.org/green) · [Bounties](https://github.com/Scottcjn/rustchain-bounties)
+[Boudreaux Principles](https://rustchain.org/principles.html) · [Green Tracker](https://rustchain.org/preserved.html) · [Bounties](https://github.com/Scottcjn/rustchain-bounties)
 
 ---
 
