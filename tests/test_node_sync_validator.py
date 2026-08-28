@@ -330,3 +330,54 @@ def test_build_summary_marks_clean_and_attention_reports():
     assert "Status: OK (no discrepancies detected)" in module.build_summary(clean)
     assert "Down/unreachable nodes:" in module.build_summary(dirty)
     assert "Status: ATTENTION (review discrepancy details in JSON)" in module.build_summary(dirty)
+    assert module.report_needs_attention(clean) is False
+    assert module.report_needs_attention(dirty) is True
+
+
+def test_main_exits_zero_for_clean_report(monkeypatch, capsys):
+    module = load_module()
+
+    def fake_snapshot_node(node, timeout, verify_ssl, sample_balances):
+        return snapshot(module, node, miners=["alice"], balances={"alice": 3.0})
+
+    monkeypatch.setattr(module, "snapshot_node", fake_snapshot_node)
+    monkeypatch.setattr(sys, "argv", ["node_sync_validator.py", "--nodes", "n1", "n2"])
+
+    assert module.main() == 0
+    assert "Status: OK" in capsys.readouterr().out
+
+
+def test_main_exits_nonzero_for_attention_report_by_default(monkeypatch, capsys):
+    module = load_module()
+
+    def fake_snapshot_node(node, timeout, verify_ssl, sample_balances):
+        if node == "n2":
+            return snapshot(module, node, ok=False, error="refused")
+        return snapshot(module, node, miners=["alice"])
+
+    monkeypatch.setattr(module, "snapshot_node", fake_snapshot_node)
+    monkeypatch.setattr(sys, "argv", ["node_sync_validator.py", "--nodes", "n1", "n2"])
+
+    assert module.main() == 1
+    out = capsys.readouterr().out
+    assert "Down/unreachable nodes:" in out
+    assert "Status: ATTENTION" in out
+
+
+def test_main_allows_attention_exit_zero_for_manual_runs(monkeypatch, capsys):
+    module = load_module()
+
+    def fake_snapshot_node(node, timeout, verify_ssl, sample_balances):
+        if node == "n2":
+            return snapshot(module, node, ok=False, error="refused")
+        return snapshot(module, node, miners=["alice"])
+
+    monkeypatch.setattr(module, "snapshot_node", fake_snapshot_node)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["node_sync_validator.py", "--nodes", "n1", "n2", "--allow-attention-exit-zero"],
+    )
+
+    assert module.main() == 0
+    assert "Status: ATTENTION" in capsys.readouterr().out
