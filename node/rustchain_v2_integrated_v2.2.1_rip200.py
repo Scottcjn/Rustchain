@@ -7306,7 +7306,7 @@ def ingest_signed_header():
     # probe live columns rather than hardcoding either shape — same
     # dual-schema-tolerant pattern as lock_ledger.py / governance.py.
     with sqlite3.connect(DB_PATH) as db:
-        _hdr_live_cols = {r[1] for r in db.execute("PRAGMA table_info(headers)").fetchall()}
+        _hdr_live_cols = {r[1] for r in db.execute("PRAGMA table_info(headers)").fetchall()}  # fetchall-ok: pragma-result
         _hdr_fields = ["slot", "miner_id", "message_hex", "signature_hex", "pubkey_hex", "ts"]
         _hdr_vals = [slot, miner_id, msg_hex, sig_hex, verified_pubkey_hex]
         _hdr_placeholders = ["?", "?", "?", "?", "?", "strftime('%s','now')"]

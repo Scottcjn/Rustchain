@@ -125,7 +125,7 @@ def _balances_columns(cursor: sqlite3.Cursor) -> Tuple[str, str]:
     Falls back to the schema this module has always assumed if the table
     does not exist yet (a fresh DB gets it via init_db() before this runs).
     """
-    cols = {row[1] for row in cursor.execute("PRAGMA table_info(balances)").fetchall()}
+    cols = {row[1] for row in cursor.execute("PRAGMA table_info(balances)").fetchall()}  # fetchall-ok: pragma-result
     if "balance_rtc" in cols and "miner_pk" in cols and "amount_i64" not in cols:
         return "miner_pk", "balance_rtc"
     return "miner_id", "amount_i64"
