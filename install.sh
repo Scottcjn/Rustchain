@@ -218,9 +218,9 @@ echo -e "${GREEN}[2/6]${NC} Checking Python..."
 PYTHON=""
 for cmd in python3 python; do
     if command -v $cmd &>/dev/null; then
-        ver=$($cmd --version 2>&1 | grep -oP '\d+\.\d+')
-        major=$(echo $ver | cut -d. -f1)
-        minor=$(echo $ver | cut -d. -f2)
+        ver=$($cmd --version 2>&1 | grep -E '[0-9]+\.[0-9]+' | head -1)
+        major=$(echo "$ver" | cut -d. -f1)
+        minor=$(echo "$ver" | cut -d. -f2)
         if [ "$major" -ge 3 ] && [ "$minor" -ge 6 ]; then
             PYTHON=$cmd
             echo "  Found: $cmd ($($cmd --version 2>&1))"
@@ -251,7 +251,7 @@ echo -e "${GREEN}[3/6]${NC} Wallet setup..."
 if [ -z "$WALLET" ]; then
     # Generate a default wallet name from hostname
     HOSTNAME=$(hostname 2>/dev/null | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-' | head -c 20)
-    DEFAULT_WALLET="${HOSTNAME:-miner}-$(echo $ARCH | tr '[:upper:]' '[:lower:]')"
+    DEFAULT_WALLET="${HOSTNAME:-miner}-$(echo "$ARCH" | tr '[:upper:]' '[:lower:]')"
 
     echo "  Enter your wallet name (or press Enter for: $DEFAULT_WALLET)"
     echo -n "  Wallet: "
