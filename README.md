@@ -14,6 +14,7 @@
 *For AI teams: this is **Sybil-resistant agent authentication** — **hardware-attested agent identity** where a machine's compute provenance is verified by physics (oscillator drift, cache timing, thermal entropy), not by self-report. VM farms and bot swarms fingerprint as what they are.*
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
+[![Link Check](https://github.com/Scottcjn/Rustchain/actions/workflows/lychee.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/lychee.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/XnRp7M5gBW)
@@ -431,7 +432,7 @@ Emission is a fixed 1.5 RTC per epoch and does not halve. It continues at that r
 
 ### Reference rate climbs as holder count grows
 
-The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates. The live rate is always at [`/api/tokenomics`](https://rustchain.org/api/tokenomics).
+The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates. The live rate is always at [`/payouts.json`](https://rustchain.org/payouts.json).
 
 | Holder count | Reference rate | Bounty rate scale |
 |--------------|----------------|-------------------|

@@ -171,7 +171,7 @@ RTC is earned through work, spent on services, and anchored to physical reality.
 
 *RustChain is MIT-licensed open source. Star the repo: github.com/Scottcjn/Rustchain*
 *Block Explorer: rustchain.org/explorer*
-*BCOS Certification: rustchain.org/bcos*
+*BCOS Certification: [Proof of Provenance (RIP-0310)](../../rips/docs/RIP-0310-proof-of-provenance.md)*
 
 ---
 
