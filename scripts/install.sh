@@ -97,7 +97,7 @@ detect_vm() {
     # Check DMI vendor
     if [ -f /sys/class/dmi/id/sys_vendor ]; then
         local vendor
-        vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null | tr '[:upper:]' '[:lower:]')
+        vendor=$(tr '[:upper:]' '[:lower:]' < /sys/class/dmi/id/sys_vendor 2>/dev/null || true)
         case "$vendor" in
             *qemu*|*kvm*|*vmware*|*virtualbox*|*xen*|*parallels*|*bochs*)
                 vm_detected=1
@@ -109,7 +109,7 @@ detect_vm() {
     # Check product name
     if [ -f /sys/class/dmi/id/product_name ]; then
         local product
-        product=$(cat /sys/class/dmi/id/product_name 2>/dev/null | tr '[:upper:]' '[:lower:]')
+        product=$(tr '[:upper:]' '[:lower:]' < /sys/class/dmi/id/product_name 2>/dev/null || true)
         case "$product" in
             *virtual*|*qemu*|*kvm*|*vmware*|*bochs*)
                 vm_detected=1
@@ -181,7 +181,7 @@ detect_arch() {
             family="ARM"
             # Detect Raspberry Pi
             if [ -f /proc/device-tree/model ]; then
-                rpi_model=$(cat /proc/device-tree/model 2>/dev/null | tr -d '\0' || true)
+                rpi_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)
                 case "$rpi_model" in
                     *"Raspberry Pi 5"*|*BCM2712*)
                         is_rpi=1; arch="rpi5" ;;
@@ -602,7 +602,13 @@ CFGEOF
 
     # --- Generate miner ID ---
     local miner_id
-    miner_id=$(echo -n "${wallet}-${arch}-$(hostname)" | sha256sum 2>/dev/null | cut -c1-16 || echo "${wallet}")
+    if command -v sha256sum >/dev/null 2>&1; then
+        miner_id=$(printf '%s' "${wallet}-${arch}-$(hostname)" | sha256sum | cut -c1-16)
+    elif command -v shasum >/dev/null 2>&1; then
+        miner_id=$(printf '%s' "${wallet}-${arch}-$(hostname)" | shasum -a 256 | cut -c1-16)
+    else
+        miner_id="${wallet}"
+    fi
 
     # --- Create service ---
     echo ""
