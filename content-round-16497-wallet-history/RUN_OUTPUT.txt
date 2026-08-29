@@ -1,0 +1,6 @@
+transactions: 3
+status: confirmed=2, pending=1
+direction: received=2, sent=1
+received_rtc: 3.750000
+sent_rtc: 0.750000
+net_flow_rtc: 3.000000
