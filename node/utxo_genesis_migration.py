@@ -23,6 +23,7 @@ import json
 import sqlite3
 import sys
 import time
+from pathlib import Path
 
 from utxo_db import (
     UtxoDB, address_to_proposition, compute_box_id, UNIT,
@@ -151,6 +152,62 @@ def check_existing_non_genesis_utxo_state(utxo_db: UtxoDB, conn=None) -> bool:
             conn.close()
 
 
+def _open_readonly(db_path: str) -> sqlite3.Connection:
+    """Open the migration target without creating journals or schema objects."""
+    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _has_complete_utxo_schema(conn: sqlite3.Connection) -> bool:
+    """Return whether both UTXO tables exist; reject a partial schema."""
+    required = {"utxo_boxes", "utxo_transactions"}
+    present = {
+        row["name"]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('utxo_boxes', 'utxo_transactions')"
+        )
+    }
+    if present and present != required:
+        raise RuntimeError(
+            "incomplete UTXO schema: expected utxo_boxes and utxo_transactions"
+        )
+    return present == required
+
+
+def _state_root_from_boxes(boxes: list[dict]) -> str:
+    """Compute the same Merkle root as UtxoDB.compute_state_root, in memory."""
+    rows = sorted(boxes, key=lambda box: box["box_id"])
+    if not rows:
+        return hashlib.sha256(b"empty").hexdigest()
+    count_bytes = len(rows).to_bytes(8, "little")
+    hashes = []
+    for row in rows:
+        leaf = {
+            "box_id": row["box_id"],
+            "value_nrtc": row["value_nrtc"],
+            "proposition": row["proposition"],
+            "owner_address": row["owner_address"],
+            "creation_height": row["creation_height"],
+            "transaction_id": row["transaction_id"],
+            "output_index": row["output_index"],
+            "tokens_json": row["tokens_json"],
+            "registers_json": row["registers_json"],
+        }
+        leaf_bytes = json.dumps(leaf, sort_keys=True, separators=(",", ":")).encode()
+        hashes.append(hashlib.sha256(count_bytes + leaf_bytes).digest())
+    while len(hashes) > 1:
+        if len(hashes) % 2:
+            hashes.append(hashlib.sha256(b"\x01" + hashes[-1]).digest())
+        hashes = [
+            hashlib.sha256(hashes[i] + hashes[i + 1]).digest()
+            for i in range(0, len(hashes), 2)
+        ]
+    return hashes[0].hex()
+
+
 def migrate(db_path: str, dry_run: bool = False) -> dict:
     """
     Run the genesis migration.
@@ -161,7 +218,6 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
     utxo_db = UtxoDB(db_path)
 
     if dry_run:
-        _retry_locked(utxo_db.init_tables)
         print("=== DRY RUN — computing what would be created ===")
         print()
 
@@ -169,23 +225,30 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
     conn = None
     now = int(time.time())
     boxes_created = 0
+    preview_boxes = []
 
     try:
-        if not dry_run:
+        if dry_run:
+            # A preview must be observational only: do not call UtxoDB._conn()
+            # (it enables WAL) and do not initialize missing UTXO tables.
+            conn = _open_readonly(db_path)
+            has_utxo_schema = _has_complete_utxo_schema(conn)
+        else:
             conn = _retry_locked(utxo_db._conn)
             conn.execute("BEGIN IMMEDIATE")
             utxo_db.init_tables(conn=conn)
+            has_utxo_schema = True
 
-        # For real migrations, this check runs under the same write
-        # transaction that will insert the genesis boxes.
-        if check_existing_genesis(utxo_db, conn=conn):
+        # Real migrations check under the write transaction. Dry runs only
+        # inspect UTXO tables when they already exist.
+        if has_utxo_schema and check_existing_genesis(utxo_db, conn=conn):
             if not dry_run:
                 conn.execute("ROLLBACK")
             print("ERROR: Genesis boxes already exist. Aborting.")
             print("To re-run, use rollback_genesis() first.")
             return {'error': 'genesis_already_exists'}
 
-        if check_existing_non_genesis_utxo_state(utxo_db, conn=conn):
+        if has_utxo_schema and check_existing_non_genesis_utxo_state(utxo_db, conn=conn):
             if not dry_run:
                 conn.execute("ROLLBACK")
             print("ERROR: Non-genesis UTXO state already exists. Aborting.")
@@ -214,7 +277,19 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
                 amount_nrtc, prop, GENESIS_HEIGHT, tx_id, 0
             )
 
+            registers_json = json.dumps({"R4": "genesis"})
             if dry_run:
+                preview_boxes.append({
+                    "box_id": box_id,
+                    "value_nrtc": amount_nrtc,
+                    "proposition": prop,
+                    "owner_address": miner_id,
+                    "creation_height": GENESIS_HEIGHT,
+                    "transaction_id": tx_id,
+                    "output_index": 0,
+                    "tokens_json": "[]",
+                    "registers_json": registers_json,
+                })
                 print(f"  {miner_id:40s} | {amount_nrtc / UNIT:>14.6f} RTC | box={box_id[:16]}...")
             else:
                 # Insert box
@@ -228,7 +303,7 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
                         box_id, amount_nrtc, prop, miner_id,
                         GENESIS_HEIGHT, tx_id, 0,
                         '[]',
-                        json.dumps({'R4': 'genesis'}),
+                        registers_json,
                         now,
                     ),
                 )
@@ -287,8 +362,12 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
         if conn is not None:
             conn.close()
 
-    # Compute and verify state root
-    state_root = utxo_db.compute_state_root()
+    # A dry-run hashes the boxes it would create, not current disk state.
+    state_root = (
+        _state_root_from_boxes(preview_boxes)
+        if dry_run
+        else utxo_db.compute_state_root()
+    )
 
     # Integrity check
     if not dry_run:
