@@ -2062,9 +2062,24 @@ def init_db():
                 device_arch TEXT,
                 device_model TEXT,
                 bound_at INTEGER NOT NULL,
-                attestation_count INTEGER DEFAULT 0
+                attestation_count INTEGER DEFAULT 0,
+                stable_hw_id TEXT
             )
         """)
+        # stable_hw_id is the SERIAL-FREE machine identity (equal to the hardened
+        # hardware_id). It lets _check_hardware_binding resolve prior ownership of
+        # a machine WITHOUT trusting the client-supplied cpu_serial, which closes
+        # the alternate-serial migration-takeover (#71). DDL lives here in init,
+        # NEVER inside the BEGIN IMMEDIATE write lock in the attest path (running
+        # ALTER there would commit the transaction and reopen the first-bind race
+        # #8267 was written to close). Idempotent for already-deployed DBs.
+        _hwb_cols = [r[1] for r in c.execute("PRAGMA table_info(hardware_bindings)").fetchall()]
+        if "stable_hw_id" not in _hwb_cols:
+            try:
+                c.execute("ALTER TABLE hardware_bindings ADD COLUMN stable_hw_id TEXT")
+            except sqlite3.OperationalError:
+                pass  # concurrent worker already added it
+        c.execute("CREATE INDEX IF NOT EXISTS idx_hwb_stable ON hardware_bindings(stable_hw_id)")
         c.execute("""
             CREATE TABLE IF NOT EXISTS oui_deny(
                 oui TEXT PRIMARY KEY,
@@ -5667,14 +5682,49 @@ def _compute_legacy_hardware_id_with_client_serial(
     hw_fields = [ip_component, model, arch, family, cores, mac_str, cpu_serial]
     return hashlib.sha256('|'.join(str(f) for f in hw_fields).encode()).hexdigest()[:32]
 
+_HWB_STABLE_COL_READY_FOR = None
+
+
+def _ensure_stable_hw_id_column():
+    """Idempotently add hardware_bindings.stable_hw_id + its index, once per
+    DB_PATH, OUTSIDE any BEGIN IMMEDIATE write lock.
+
+    This must not depend on init_db(): init_db() only runs under
+    `if __name__ == "__main__"`, so under gunicorn/WSGI it never fires and the
+    column would be missing -> every bind would fail closed -> full attest
+    outage. Calling this from the attest path makes the schema self-heal on any
+    launcher. Readiness is keyed to DB_PATH (not a bare flag) so a runtime DB
+    switch re-ensures. Concurrent workers racing the ALTER are tolerated."""
+    global _HWB_STABLE_COL_READY_FOR
+    if _HWB_STABLE_COL_READY_FOR == DB_PATH:
+        return
+    try:
+        with closing(sqlite3.connect(DB_PATH, timeout=10)) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(hardware_bindings)").fetchall()]
+            if 'stable_hw_id' not in cols:
+                try:
+                    conn.execute("ALTER TABLE hardware_bindings ADD COLUMN stable_hw_id TEXT")
+                except sqlite3.OperationalError:
+                    pass  # another worker won the race; column now exists
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_hwb_stable ON hardware_bindings(stable_hw_id)")
+            conn.commit()
+        _HWB_STABLE_COL_READY_FOR = DB_PATH
+    except sqlite3.Error:
+        # Leave readiness unset so the next attest retries. Do NOT mark ready.
+        pass
+
+
 def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, source_ip: str = None):
     """Check if hardware is already bound to a different wallet. One machine = One wallet."""
+    _ensure_stable_hw_id_column()
     hardware_id = _compute_hardware_id(device, signals, source_ip=source_ip)
     legacy_hardware_id = _compute_legacy_hardware_id_with_client_serial(
         device, signals, source_ip=source_ip
     )
     now = int(time.time())
     
+    req_arch = device.get('device_arch')
+    req_model = device.get('device_model')
     try:
         with closing(sqlite3.connect(DB_PATH, timeout=10, isolation_level=None)) as conn:
             c = conn.cursor()
@@ -5682,68 +5732,79 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
 
             # Check and mutate under the same write lock so a losing concurrent
             # first bind cannot be treated as successful for a different wallet.
+            # (The stable_hw_id column/index are created in init_db, never here:
+            # DDL under BEGIN IMMEDIATE would commit and reopen the race.)
             c.execute('SELECT bound_miner, attestation_count FROM hardware_bindings WHERE hardware_id = ?',
                       (hardware_id,))
             row = c.fetchone()
 
-            if row is None:
-                # Migration bridge for rows written before client-controlled
-                # cpu_serial/hardware_id was removed from the binding key. If
-                # the same wallet already owns the old key, preserve continuity
-                # by rewriting that row to the hardened key instead of creating
-                # a second binding.
-                c.execute(
-                    'SELECT bound_miner, attestation_count FROM hardware_bindings WHERE hardware_id = ?',
-                    (legacy_hardware_id,),
-                )
-                legacy_row = c.fetchone()
-                if legacy_row is not None:
-                    legacy_bound_miner, _ = legacy_row
-                    if legacy_bound_miner != miner_id:
-                        conn.rollback()
-                        return (
-                            False,
-                            f'Hardware bound to {legacy_bound_miner[:16]}...',
-                            legacy_bound_miner,
-                        )
-
+            if row is not None:
+                bound_miner = row[0]
+                if bound_miner == miner_id:
+                    # Same wallet re-attesting. Backfill stable_hw_id on touch so
+                    # this machine's serial-free identity is recorded for (a) below.
                     c.execute(
-                        """UPDATE hardware_bindings
-                           SET hardware_id = ?,
-                               device_arch = ?,
-                               device_model = ?,
-                               attestation_count = attestation_count + 1
-                           WHERE hardware_id = ? AND bound_miner = ?""",
-                        (
-                            hardware_id,
-                            device.get('device_arch'),
-                            device.get('device_model'),
-                            legacy_hardware_id,
-                            miner_id,
-                        ),
+                        'UPDATE hardware_bindings '
+                        'SET attestation_count = attestation_count + 1, '
+                        '    stable_hw_id = COALESCE(stable_hw_id, ?) '
+                        'WHERE hardware_id = ?',
+                        (hardware_id, hardware_id),
                     )
                     conn.commit()
                     return True, 'Authorized', miner_id
+                # DIFFERENT wallet on the same hardened hardware id.
+                conn.rollback()
+                return False, f'Hardware bound to {bound_miner[:16]}...', bound_miner
 
-                c.execute("""INSERT INTO hardware_bindings 
-                    (hardware_id, bound_miner, device_arch, device_model, bound_at, attestation_count)
-                    VALUES (?, ?, ?, ?, ?, 1)""",
-                    (hardware_id, miner_id, device.get('device_arch'), device.get('device_model'), now))
-                conn.commit()
-                return True, 'Hardware bound', miner_id
+            # No hardened row yet. Resolve prior ownership of this machine
+            # INDEPENDENTLY of the client-supplied serial before minting the key.
 
-            bound_miner, _ = row
+            # (a) A migrated or freshly-bound row already claims this serial-free
+            #     machine identity. A different wallet must not take it over by
+            #     presenting a different serial (this is the #71 fix). stable_hw_id
+            #     equals the hardened id, so it is not forgeable from the serial.
+            c.execute('SELECT bound_miner FROM hardware_bindings WHERE stable_hw_id = ?',
+                      (hardware_id,))
+            stable_row = c.fetchone()
+            if stable_row is not None and stable_row[0] != miner_id:
+                conn.rollback()
+                return False, f'Hardware bound to {stable_row[0][:16]}...', stable_row[0]
 
-            if bound_miner == miner_id:
-                # Same wallet - allow
-                c.execute('UPDATE hardware_bindings SET attestation_count = attestation_count + 1 WHERE hardware_id = ?',
-                          (hardware_id,))
+            # (b) Same-wallet legacy continuity: a pre-hardening row keyed with
+            #     THIS wallet's own serial is rewritten once to the hardened key
+            #     and stamped with stable_hw_id so it is protected from then on.
+            c.execute(
+                'SELECT bound_miner FROM hardware_bindings WHERE hardware_id = ?',
+                (legacy_hardware_id,),
+            )
+            legacy_row = c.fetchone()
+            if legacy_row is not None:
+                legacy_bound_miner = legacy_row[0]
+                if legacy_bound_miner != miner_id:
+                    conn.rollback()
+                    return (False, f'Hardware bound to {legacy_bound_miner[:16]}...', legacy_bound_miner)
+                c.execute(
+                    """UPDATE hardware_bindings
+                       SET hardware_id = ?, stable_hw_id = ?,
+                           device_arch = ?, device_model = ?,
+                           attestation_count = attestation_count + 1
+                       WHERE hardware_id = ? AND bound_miner = ?""",
+                    (hardware_id, hardware_id, req_arch, req_model, legacy_hardware_id, miner_id),
+                )
                 conn.commit()
                 return True, 'Authorized', miner_id
 
-            # DIFFERENT wallet on same hardware!
-            conn.rollback()
-            return False, f'Hardware bound to {bound_miner[:16]}...', bound_miner
+            # (c) No prior owner resolvable without trusting the serial -> fresh
+            #     hardened binding, stable_hw_id set so it is takeover-proof.
+            #     NOTE: device_arch/device_model are NOT used as a machine
+            #     identity here on purpose -- they are shared across thousands of
+            #     unrelated miners and would reject honest first binds.
+            c.execute("""INSERT INTO hardware_bindings
+                (hardware_id, bound_miner, device_arch, device_model, bound_at, attestation_count, stable_hw_id)
+                VALUES (?, ?, ?, ?, ?, 1, ?)""",
+                (hardware_id, miner_id, req_arch, req_model, now, hardware_id))
+            conn.commit()
+            return True, 'Hardware bound', miner_id
     except sqlite3.Error as exc:
         app.logger.warning(
             "legacy hardware binding check failed closed for %s/%s: %s",
