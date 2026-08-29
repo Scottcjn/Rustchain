@@ -710,13 +710,19 @@ def utxo_transfer():
     # the cost of this call by sending dust to the sender's address.
     utxos = _utxo_db.get_coin_select_candidates(from_address)
     all_candidate_total_nrtc = sum(u['value_nrtc'] for u in utxos)
+    # SECURITY(danaher-j / #2819 residual): exclude account-mirror boxes from
+    # UTXO coin selection in BOTH dual-write states. Under UTXO_DUAL_WRITE=1 the
+    # /utxo/transfer path mints receiver+change outputs with NO
+    # account_mirror_boxes provenance; a later rollback to dual_write=0 then
+    # leaves that migrated value spendable through BOTH the UTXO and account
+    # models (double spend). Migrated funds must always move via the account
+    # path, so the mirror-box exclusion cannot be gated on dual-write.
     mirror_candidate_ids = []
-    if not _dual_write:
-        conn = sqlite3.connect(_db_path)
-        try:
-            utxos, mirror_candidate_ids = _spendable_utxo_candidates(conn, utxos)
-        finally:
-            conn.close()
+    conn = sqlite3.connect(_db_path)
+    try:
+        utxos, mirror_candidate_ids = _spendable_utxo_candidates(conn, utxos)
+    finally:
+        conn.close()
     selected, change_nrtc = coin_select(utxos, target_nrtc)
 
     if not selected:
@@ -792,15 +798,19 @@ def utxo_transfer():
         # The account->UTXO direction is reconciled by the node's
         # _settle_account_transfer_in_utxo, which runs independent of dual-write
         # precisely because "a migrated box must be reconciled whenever it exists".
-        # This is the same crossing in reverse: with dual-write off there is no
-        # account debit to pair the spend with, so spending a mirror box here
-        # would leave the balance behind it fully spendable. Fail closed --
-        # migrated funds move via the account path in this config.
-        if not _dual_write:
-            mirrored = _selected_account_mirror_boxes(conn, selected)
-            if mirrored:
-                conn.rollback()
-                return _account_mirror_blocked_response(mirrored)
+        # This is the same crossing in reverse. Spending a mirror box through the
+        # UTXO path mints change with no mirror provenance; under dual_write=1 the
+        # shadow debit hides it until a rollback to dual_write=0 makes the same
+        # value spendable via BOTH models (danaher-j double spend). Fail closed in
+        # EVERY dual-write state -- migrated funds move via the account path.
+        # In-transaction recheck (preserved): candidates were pre-filtered above,
+        # but re-verify under BEGIN IMMEDIATE to close the TOCTOU window against a
+        # concurrent migration that marks a selected box as a mirror after
+        # selection.
+        mirrored = _selected_account_mirror_boxes(conn, selected)
+        if mirrored:
+            conn.rollback()
+            return _account_mirror_blocked_response(mirrored)
 
         ok = _utxo_db.apply_transaction(tx, block_height, conn=conn)
         if not ok:

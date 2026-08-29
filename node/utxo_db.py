@@ -36,6 +36,8 @@ from typing import Any, Dict, List, Optional, Tuple
 # ---------------------------------------------------------------------------
 
 UNIT = 100_000_000          # 1 RTC = 100,000,000 nanoRTC (8 decimals)
+ACCOUNT_UNIT = 1_000_000    # account model: 1 RTC = 1,000,000 uRTC (6 decimals)
+NRTC_PER_ACCOUNT_UNIT = UNIT // ACCOUNT_UNIT  # 100: uRTC (i64) -> nRTC scale
 DUST_THRESHOLD = 1_000      # nanoRTC below which change is absorbed into fee
 MAX_COINBASE_OUTPUT_NRTC = 150 * UNIT  # Max minting output per block (150 RTC)
 MAX_POOL_SIZE = 10_000
@@ -1185,9 +1187,76 @@ class UtxoDB:
                     result['ok'] = False
                     result['diff_nrtc'] = total - expected_total
 
+            # SECURITY(danaher-j / #2819 residual): a total-only comparison stays
+            # models_agree=True even when a specific wallet holds more unspent
+            # account-mirror UTXO value than its account balance -- the exact
+            # signature of the dual-write double spend (migrated value spendable
+            # via BOTH models nets to zero across all wallets). Assert the
+            # per-wallet invariant that summed unspent mirror-box value never
+            # exceeds that wallet's account balance, and fail with a DISTINCT key
+            # so the divergence cannot hide behind matching totals.
+            self._check_mirror_provenance(conn, result)
+
             return result
         finally:
             conn.close()
+
+    @staticmethod
+    def _check_mirror_provenance(conn: sqlite3.Connection, result: dict) -> None:
+        """Per-wallet assertion: unspent account-mirror value <= account balance.
+
+        Guards the danaher-j dual-write double spend, where migrated value became
+        spendable through both the UTXO and account models. A total-only
+        integrity comparison misses it because the surplus in one wallet nets
+        against a deficit elsewhere; this checks each wallet independently.
+
+        Skips silently (records ``mirror_provenance_checked=False``) on a
+        pure-UTXO database that lacks the ``account_mirror_boxes`` or ``balances``
+        table. On violation sets ``ok=False`` and populates the DISTINCT key
+        ``mirror_exceeds_account`` so the failure is not confused with a
+        total-sum mismatch.
+        """
+        have = {
+            row[0]
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name IN ('account_mirror_boxes','balances')"
+            )
+        }
+        if {'account_mirror_boxes', 'balances'} - have:
+            result['mirror_provenance_checked'] = False
+            return
+
+        result['mirror_provenance_checked'] = True
+        violations = []
+        # Stream the cursor row-by-row (no full materialization); one row per
+        # wallet that owns at least one unspent mirror box.
+        rows = conn.execute(
+            """
+            SELECT m.account_wallet AS wallet,
+                   COALESCE(SUM(b.value_nrtc), 0) AS mirror_nrtc,
+                   COALESCE((SELECT amount_i64 FROM balances
+                             WHERE miner_id = m.account_wallet), 0) AS acct_i64
+            FROM account_mirror_boxes m
+            JOIN utxo_boxes b
+              ON b.box_id = m.box_id AND b.spent_at IS NULL
+            GROUP BY m.account_wallet
+            """
+        )
+        for row in rows:
+            mirror_nrtc = row['mirror_nrtc']
+            account_nrtc = row['acct_i64'] * NRTC_PER_ACCOUNT_UNIT
+            if mirror_nrtc > account_nrtc:
+                violations.append({
+                    'wallet': row['wallet'],
+                    'mirror_unspent_nrtc': mirror_nrtc,
+                    'account_balance_nrtc': account_nrtc,
+                    'excess_nrtc': mirror_nrtc - account_nrtc,
+                })
+
+        if violations:
+            result['ok'] = False
+            result['mirror_exceeds_account'] = violations
 
     # -- mempool -------------------------------------------------------------
 
