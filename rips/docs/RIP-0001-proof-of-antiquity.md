@@ -86,7 +86,7 @@ Not compatible with PoW or PoS. Requires full node support of PoA consensus modu
 
 # Implementation Notes
 
-Implemented as part of the `rustchain-core` runtime (see: `consensus/poa.rs`).
+Implemented as part of the `rustchain-core` runtime (see: `rips/src/proof_of_antiquity.rs` and `rips/rustchain-core/consensus/poa.py`).
 APIs:
 - `GET /api/node/antiquity` — return AS and validation eligibility
 - `POST /api/node/claim` — submit block claim with PoA metadata

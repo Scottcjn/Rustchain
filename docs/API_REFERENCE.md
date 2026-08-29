@@ -211,37 +211,48 @@ curl -fsS https://rustchain.org/api/miners | jq .
 
 **Response (200 OK):**
 ```json
-[
-  {
-    "miner": "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC",
-    "device_arch": "G4",
-    "device_family": "PowerPC",
-    "hardware_type": "PowerPC G4 (Vintage)",
-    "antiquity_multiplier": 2.5,
-    "entropy_score": 0.0,
-    "last_attest": 1770112912
-  },
-  {
-    "miner": "g5-selena-179",
-    "device_arch": "G5",
-    "device_family": "PowerPC",
-    "hardware_type": "PowerPC G5 (Vintage)",
-    "antiquity_multiplier": 2.0,
-    "entropy_score": 0.0,
-    "last_attest": 1770112865
+{
+  "miners": [
+    {
+      "miner": "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC",
+      "device_arch": "G4",
+      "device_family": "PowerPC",
+      "hardware_type": "PowerPC G4 (Vintage)",
+      "antiquity_multiplier": 2.5,
+      "entropy_score": 0.0,
+      "last_attest": 1770112912
+    },
+    {
+      "miner": "g5-selena-179",
+      "device_arch": "G5",
+      "device_family": "PowerPC",
+      "hardware_type": "PowerPC G5 (Vintage)",
+      "antiquity_multiplier": 2.0,
+      "entropy_score": 0.0,
+      "last_attest": 1770112865
+    }
+  ],
+  "pagination": {
+    "count": 2,
+    "limit": 50,
+    "offset": 0,
+    "total": 2,
+    "total_enrolled": 2
   }
-]
+}
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `miner` | string | Miner wallet ID |
-| `device_arch` | string | CPU architecture (G4, G5, x86_64, M2, etc.) |
-| `device_family` | string | CPU family (PowerPC, Intel, etc.) |
-| `hardware_type` | string | Human-readable hardware description |
-| `antiquity_multiplier` | float | Reward multiplier (1.0–2.5x) |
-| `entropy_score` | float | Hardware entropy quality |
-| `last_attest` | integer | Unix timestamp of last attestation |
+| `miners` | array | List of active/enrolled miner objects |
+| `miners[].miner` | string | Miner wallet ID |
+| `miners[].device_arch` | string | CPU architecture (G4, G5, x86_64, M2, etc.) |
+| `miners[].device_family` | string | CPU family (PowerPC, Intel, etc.) |
+| `miners[].hardware_type` | string | Human-readable hardware description |
+| `miners[].antiquity_multiplier` | float | Reward multiplier (1.0–2.5x) |
+| `miners[].entropy_score` | float | Hardware entropy quality |
+| `miners[].last_attest` | integer | Unix timestamp of last attestation |
+| `pagination` | object | Pagination metadata object (`count`, `limit`, `offset`, `total`, `total_enrolled`) |
 
 **Error Codes:** `500 INTERNAL_ERROR`
 
@@ -1293,7 +1304,7 @@ print(f"Balance: {data['amount_rtc']} RTC ({data['amount_i64']} micro-RTC)")
 
 # List miners
 resp = requests.get(f"{BASE_URL}/api/miners")
-for m in resp.json():
+for m in resp.json().get("miners", []):
     print(f"{m['miner'][:20]}... | {m['device_arch']} | mult={m['antiquity_multiplier']}x")
 ```
 

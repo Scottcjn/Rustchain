@@ -5,6 +5,8 @@ on:
     paths:
       - '**.md'
       - 'docs/**'
+  schedule:
+    - cron: '0 4 * * 1'
   workflow_dispatch:
 
 jobs:
@@ -23,6 +25,9 @@ jobs:
             --exclude "https?://(twitter|x)\.com"
             --exclude "https://github.com/Scottcjn/Rustchain/actions"
             --exclude "https?://(www\.)?(linkedin|facebook|instagram|tiktok)"
+            --exclude "https?://(127\.0\.0\.1|localhost)(:\d+)?"
+            --exclude "https?://50\.28\.86\.131(:\d+)?"
+            --exclude "https://rustchain.org/faq"
             -- './**/*.md' './**/*.html'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
