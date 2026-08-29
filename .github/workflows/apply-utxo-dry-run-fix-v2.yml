@@ -1,0 +1,95 @@
+name: Apply UTXO dry-run fix v2
+
+on:
+  push:
+    branches:
+      - test/utxo-genesis-dry-run-side-effects
+    paths:
+      - .github/workflows/apply-utxo-dry-run-fix-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test/utxo-genesis-dry-run-side-effects
+
+      - name: Apply fix and expand regression coverage
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('node/utxo_genesis_migration.py')
+          text = path.read_text()
+          text = text.replace(
+              'import sqlite3\nimport sys\nimport time\n',
+              'import sqlite3\nimport sys\nimport time\nfrom pathlib import Path\n',
+              1,
+          )
+
+          anchor = 'def migrate(db_path: str, dry_run: bool = False) -> dict:\n'
+          helpers = '''def _open_readonly(db_path: str) -> sqlite3.Connection:\n    """Open the migration target without creating journals or schema objects."""\n    uri = Path(db_path).resolve().as_uri() + "?mode=ro"\n    conn = sqlite3.connect(uri, uri=True)\n    conn.row_factory = sqlite3.Row\n    return conn\n\n\ndef _has_complete_utxo_schema(conn: sqlite3.Connection) -> bool:\n    """Return whether both UTXO tables exist; reject a partial schema."""\n    required = {"utxo_boxes", "utxo_transactions"}\n    present = {\n        row["name"]\n        for row in conn.execute(\n            "SELECT name FROM sqlite_master WHERE type='table' "\n            "AND name IN ('utxo_boxes', 'utxo_transactions')"\n        )\n    }\n    if present and present != required:\n        raise RuntimeError(\n            "incomplete UTXO schema: expected utxo_boxes and utxo_transactions"\n        )\n    return present == required\n\n\ndef _state_root_from_boxes(boxes: list[dict]) -> str:\n    """Compute the same Merkle root as UtxoDB.compute_state_root, in memory."""\n    rows = sorted(boxes, key=lambda box: box["box_id"])\n    if not rows:\n        return hashlib.sha256(b"empty").hexdigest()\n    count_bytes = len(rows).to_bytes(8, "little")\n    hashes = []\n    for row in rows:\n        leaf = {\n            "box_id": row["box_id"],\n            "value_nrtc": row["value_nrtc"],\n            "proposition": row["proposition"],\n            "owner_address": row["owner_address"],\n            "creation_height": row["creation_height"],\n            "transaction_id": row["transaction_id"],\n            "output_index": row["output_index"],\n            "tokens_json": row["tokens_json"],\n            "registers_json": row["registers_json"],\n        }\n        leaf_bytes = json.dumps(leaf, sort_keys=True, separators=(",", ":")).encode()\n        hashes.append(hashlib.sha256(count_bytes + leaf_bytes).digest())\n    while len(hashes) > 1:\n        if len(hashes) % 2:\n            hashes.append(hashlib.sha256(b"\\x01" + hashes[-1]).digest())\n        hashes = [\n            hashlib.sha256(hashes[i] + hashes[i + 1]).digest()\n            for i in range(0, len(hashes), 2)\n        ]\n    return hashes[0].hex()\n\n\n'''
+          if helpers not in text:
+              text = text.replace(anchor, helpers + anchor, 1)
+
+          old = '''    if dry_run:\n        _retry_locked(utxo_db.init_tables)\n        print("=== DRY RUN — computing what would be created ===")\n        print()\n\n    # Create genesis boxes\n    conn = None\n    now = int(time.time())\n    boxes_created = 0\n\n    try:\n        if not dry_run:\n            conn = _retry_locked(utxo_db._conn)\n            conn.execute("BEGIN IMMEDIATE")\n            utxo_db.init_tables(conn=conn)\n\n        # For real migrations, this check runs under the same write\n        # transaction that will insert the genesis boxes.\n        if check_existing_genesis(utxo_db, conn=conn):\n'''
+          new = '''    if dry_run:\n        print("=== DRY RUN — computing what would be created ===")\n        print()\n\n    # Create genesis boxes\n    conn = None\n    now = int(time.time())\n    boxes_created = 0\n    preview_boxes = []\n\n    try:\n        if dry_run:\n            # A preview must be observational only: do not call UtxoDB._conn()\n            # (it enables WAL) and do not initialize missing UTXO tables.\n            conn = _open_readonly(db_path)\n            has_utxo_schema = _has_complete_utxo_schema(conn)\n        else:\n            conn = _retry_locked(utxo_db._conn)\n            conn.execute("BEGIN IMMEDIATE")\n            utxo_db.init_tables(conn=conn)\n            has_utxo_schema = True\n\n        # Real migrations check under the write transaction. Dry runs only\n        # inspect UTXO tables when they already exist.\n        if has_utxo_schema and check_existing_genesis(utxo_db, conn=conn):\n'''
+          if old not in text:
+              raise SystemExit('first migration anchor not found')
+          text = text.replace(old, new, 1)
+          text = text.replace(
+              '        if check_existing_non_genesis_utxo_state(utxo_db, conn=conn):\n',
+              '        if has_utxo_schema and check_existing_non_genesis_utxo_state(utxo_db, conn=conn):\n',
+              1,
+          )
+
+          old = '''            if dry_run:\n                print(f"  {miner_id:40s} | {amount_nrtc / UNIT:>14.6f} RTC | box={box_id[:16]}...")\n            else:\n                # Insert box\n'''
+          new = '''            registers_json = json.dumps({"R4": "genesis"})\n            if dry_run:\n                preview_boxes.append({\n                    "box_id": box_id,\n                    "value_nrtc": amount_nrtc,\n                    "proposition": prop,\n                    "owner_address": miner_id,\n                    "creation_height": GENESIS_HEIGHT,\n                    "transaction_id": tx_id,\n                    "output_index": 0,\n                    "tokens_json": "[]",\n                    "registers_json": registers_json,\n                })\n                print(f"  {miner_id:40s} | {amount_nrtc / UNIT:>14.6f} RTC | box={box_id[:16]}...")\n            else:\n                # Insert box\n'''
+          if old not in text:
+              raise SystemExit('preview anchor not found')
+          text = text.replace(old, new, 1)
+          text = text.replace("                        json.dumps({'R4': 'genesis'}),\n", "                        registers_json,\n", 1)
+          text = text.replace(
+              '    # Compute and verify state root\n    state_root = utxo_db.compute_state_root()\n',
+              '''    # A dry-run hashes the boxes it would create, not current disk state.\n    state_root = (\n        _state_root_from_boxes(preview_boxes)\n        if dry_run\n        else utxo_db.compute_state_root()\n    )\n''',
+              1,
+          )
+          path.write_text(text)
+
+          test_path = Path('node/tests/test_utxo_genesis_dry_run_side_effects.py')
+          test = test_path.read_text()
+          test = test.replace(
+              'from utxo_genesis_migration import migrate\n',
+              '''from utxo_genesis_migration import migrate\n\n\ndef _make_balance_db(db_path: Path) -> None:\n    with sqlite3.connect(db_path) as conn:\n        conn.execute(\n            "CREATE TABLE balances (miner_id TEXT PRIMARY KEY, amount_i64 INTEGER NOT NULL)"\n        )\n        conn.executemany(\n            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",\n            [\n                ("RTCaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 1_000_000),\n                ("RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", 2_500_000),\n            ],\n        )\n        conn.commit()\n''',
+              1,
+          )
+          old_fixture = '''    with sqlite3.connect(db_path) as conn:\n        conn.execute(\n            "CREATE TABLE balances (miner_id TEXT PRIMARY KEY, amount_i64 INTEGER NOT NULL)"\n        )\n        conn.execute(\n            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",\n            ("RTCaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 1_000_000),\n        )\n        conn.commit()\n'''
+          if old_fixture not in test:
+              raise SystemExit('test fixture anchor not found')
+          test = test.replace(old_fixture, '    _make_balance_db(db_path)\n', 1)
+          test += '''\n\ndef test_genesis_dry_run_reports_the_prospective_state_root(tmp_path):\n    """Preview root must equal the corresponding real migration root."""\n    preview_db = tmp_path / "preview.db"\n    real_db = tmp_path / "real.db"\n    _make_balance_db(preview_db)\n    _make_balance_db(real_db)\n\n    preview = migrate(str(preview_db), dry_run=True)\n    real = migrate(str(real_db), dry_run=False)\n\n    assert "error" not in preview\n    assert "error" not in real\n    assert preview["state_root"] == real["state_root"]\n    assert _schema_names(preview_db) == {"balances"}\n'''
+          test_path.write_text(test)
+          PY
+
+      - name: Verify targeted regression suite
+        shell: bash
+        run: |
+          python -m pip install --quiet pytest
+          python -m py_compile node/utxo_genesis_migration.py node/tests/test_utxo_genesis_dry_run_side_effects.py
+          PYTHONPATH=node python -m pytest -q node/tests/test_utxo_genesis_dry_run_side_effects.py
+          git diff --check
+
+      - name: Commit clean branch result
+        shell: bash
+        run: |
+          git config user.name "bountybridge-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add node/utxo_genesis_migration.py node/tests/test_utxo_genesis_dry_run_side_effects.py
+          git rm .github/workflows/apply-utxo-dry-run-fix.yml .github/workflows/apply-utxo-dry-run-fix-v2.yml
+          git commit -m "fix(utxo): make genesis dry-run read-only and truthful"
+          git push origin HEAD:test/utxo-genesis-dry-run-side-effects
