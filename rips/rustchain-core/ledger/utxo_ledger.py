@@ -53,6 +53,8 @@ class Box:
     registers: Dict[str, bytes] = field(default_factory=dict)  # R4-R9
 
     def __post_init__(self):
+        if self.value <= 0:
+            raise ValueError(f"Box value must be strictly positive (nanoRTC > 0), got {self.value}")
         if not self.box_id:
             self.box_id = self._compute_id()
 
@@ -257,6 +259,19 @@ class UtxoSet:
         Returns:
             True if successful, False if validation fails
         """
+        # Validate: fee must be non-negative
+        if tx.fee < 0:
+            return False
+
+        # Validate: all output values must be strictly positive
+        if any(out.value <= 0 for out in tx.outputs):
+            return False
+
+        # Validate: input box IDs must be distinct within the transaction
+        input_ids = [inp.box_id for inp in tx.inputs]
+        if len(input_ids) != len(set(input_ids)):
+            return False
+
         # Validate: all inputs must exist and not be spent
         input_boxes = []
         for inp in tx.inputs:
@@ -271,6 +286,10 @@ class UtxoSet:
             total_out = tx.total_output_value() + tx.fee
             if total_out > total_in:
                 return False  # Spending more than available
+        else:
+            # Coinbase / Mining reward transaction validation
+            if tx.tx_type != TransactionType.MINING_REWARD or tx.fee != 0:
+                return False
 
         # Atomic application: spend inputs, create outputs
         spent_boxes = []
@@ -385,12 +404,34 @@ class TransactionPool:
         if tx.tx_id in self._pending:
             return False
 
-        # Check for double-spend within pool
+        # Check for non-negative fee and positive outputs
+        if tx.fee < 0:
+            return False
+        if any(out.value <= 0 for out in tx.outputs):
+            return False
+
+        # Check for duplicate inputs within transaction
+        input_ids = [inp.box_id for inp in tx.inputs]
+        if len(input_ids) != len(set(input_ids)):
+            return False
+
+        # Check for double-spend within pool and existence in UTXO set
+        total_in = 0
         for inp in tx.inputs:
             if inp.box_id in self._by_input:
                 return False
-            if not self._utxo_set.get_box(inp.box_id):
+            box = self._utxo_set.get_box(inp.box_id)
+            if not box:
                 return False
+            total_in += box.value
+
+        # Conservation check for non-coinbase transactions
+        if tx.inputs:
+            total_out = tx.total_output_value() + tx.fee
+            if total_out > total_in:
+                return False
+        elif tx.tx_type == TransactionType.MINING_REWARD and tx.fee != 0:
+            return False
 
         # Add to pool
         self._pending[tx.tx_id] = tx
