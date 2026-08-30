@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-# Deployment-compat shim: some production environments run the node server as a
-# single script (no package layout). Keep this module at repo root so
-# `from payout_preflight import ...` works, while tests can still import it.
-
 import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
@@ -15,28 +11,33 @@ MAX_I64 = 2**63 - 1
 _RTC_ADDRESS_RE = re.compile(r"RTC[0-9A-Fa-f]{40}")
 
 
+def _is_rtc_address(value: str) -> bool:
+    """Validate if the input string conforms to native 43-character RTC address regex."""
+    return bool(_RTC_ADDRESS_RE.fullmatch(value))
+
+
+def _is_bcn_address(value: str) -> bool:
+    """Validate if the input string is a valid Beacon agent identifier starting with bcn_."""
+    return value.startswith("bcn_") and len(value) >= 8
+
+
 @dataclass(frozen=True)
 class PreflightResult:
+    """Structured result wrapper containing validation status, error code, and parsed details."""
     ok: bool
     error: str
     details: Dict[str, Any]
 
 
-def _is_rtc_address(value: str) -> bool:
-    return bool(_RTC_ADDRESS_RE.fullmatch(value))
-
-
-def _is_bcn_address(value: str) -> bool:
-    return value.startswith("bcn_") and len(value) >= 8
-
-
 def _as_dict(payload: Any) -> Tuple[Optional[Dict[str, Any]], str]:
+    """Ensure incoming request payload is a non-null Python dictionary."""
     if not isinstance(payload, dict):
         return None, "invalid_json_body"
     return payload, ""
 
 
 def _safe_decimal(v: Any) -> Tuple[Optional[Decimal], str]:
+    """Parse raw value into a finite Python Decimal, rejecting NaN, Inf, or invalid types."""
     try:
         amount = Decimal(str(v))
     except (InvalidOperation, TypeError, ValueError):
@@ -47,10 +48,12 @@ def _safe_decimal(v: Any) -> Tuple[Optional[Decimal], str]:
 
 
 def _amount_i64(amount_rtc: Decimal) -> int:
+    """Convert an RTC decimal amount into integer micro-RTC units using floor rounding."""
     return int((amount_rtc * MICRO_RTC).to_integral_value(rounding=ROUND_DOWN))
 
 
 def _validate_amount_i64(amount_rtc: Decimal) -> Tuple[Optional[int], str]:
+    """Validate that quantized micro-RTC amount is strictly positive and within i64 bounds."""
     amount_i64 = _amount_i64(amount_rtc)
     if amount_i64 <= 0:
         return None, "amount_too_small_after_quantization"
@@ -60,6 +63,7 @@ def _validate_amount_i64(amount_rtc: Decimal) -> Tuple[Optional[int], str]:
 
 
 def _miner_id_field(value: Any) -> Tuple[Optional[str], str]:
+    """Extract and validate non-empty string miner identifier."""
     if value is None or value == "":
         return None, "missing_from_or_to"
     if not isinstance(value, str):

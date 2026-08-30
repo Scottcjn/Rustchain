@@ -43,10 +43,12 @@ PAYOUT_LEDGER_COLUMNS = [
 
 
 def _get_columns():
+    """Return the ordered list of column names defined in PAYOUT_LEDGER_COLUMNS."""
     return [name for name, _definition in PAYOUT_LEDGER_COLUMNS]
 
 
 def _select_columns_sql():
+    """Build a comma-separated SQL column selection string from the ledger schema."""
     return ", ".join(_get_columns())
 
 
@@ -298,6 +300,7 @@ def _require_admin_key():
 
 
 def _json_object_body():
+    """Extract and validate that the incoming Flask request body is a JSON dictionary."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return None, (jsonify({"error": "JSON object required"}), 400)
@@ -310,10 +313,12 @@ def register_ledger_routes(app):
 
     @app.errorhandler(LedgerStateError)
     def _handle_ledger_state_error(error):
+        """Handle state machine transition violations by returning an HTTP 409 Conflict."""
         return jsonify({"error": str(error)}), 409
 
     @app.route("/ledger")
     def ledger_page():
+        """Render the HTML administrative ledger dashboard with filtering and summary metrics."""
         auth_error = _require_admin_key()
         if auth_error:
             return auth_error
@@ -325,6 +330,7 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger", methods=["GET"])
     def api_ledger_list():
+        """Return JSON list of payout records filtered optionally by status or contributor."""
         auth_error = _require_admin_key()
         if auth_error:
             return auth_error
@@ -336,6 +342,7 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger/<record_id>", methods=["GET"])
     def api_ledger_get(record_id):
+        """Fetch a single payout ledger record by its unique UUID identifier."""
         auth_error = _require_admin_key()
         if auth_error:
             return auth_error
@@ -347,6 +354,7 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger", methods=["POST"])
     def api_ledger_create():
+        """Create a new queued payout record with strict parameter and amount validation."""
         auth_error = _require_admin_key()
         if auth_error:
             return auth_error
@@ -374,6 +382,7 @@ def register_ledger_routes(app):
 
     @app.route("/api/ledger/<record_id>/status", methods=["PATCH"])
     def api_ledger_update(record_id):
+        """Update the lifecycle status, transaction hash, or metadata of an existing payout record."""
         auth_error = _require_admin_key()
         if auth_error:
             return auth_error
