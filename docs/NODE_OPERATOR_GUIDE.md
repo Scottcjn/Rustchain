@@ -1,6 +1,8 @@
 # RustChain Node Operator Guide
 
 > Complete step-by-step guide for running RustChain attestation nodes and miners.
+>
+> **Corrected 2026-08-30 to match the real deployment.** RustChain nodes are a **Python/Flask** app served by **gunicorn** on port **8099** — not a Rust binary. New operators run a **sync node** (no fleet secrets); settlement-node credentials are issued privately after verification.
 
 **Part of the [Documentation Sprint #72](https://github.com/Scottcjn/rustchain-bounties/issues/72)**
 
@@ -45,305 +47,218 @@
 
 | Port | Protocol | Purpose |
 |------|----------|---------|
-| 3000 | HTTPS | REST API & Attestation |
-| 3001 | TCP | P2P peer communication |
+| 8099 | HTTP | REST API & attestation (bind localhost; put nginx/TLS in front for public) |
+| 443 | HTTPS | Public endpoint — nginx reverse-proxies to 8099 (recommended for public nodes) |
 | 80 | HTTP | Optional redirect to HTTPS |
+
+> **Note:** RustChain nodes are a **Python/Flask** application served by **gunicorn**. There is no Rust binary or `cargo build` step — earlier drafts of this guide were incorrect.
 
 ---
 
 ## 2. Installation
 
-### Option A: From Source (Recommended)
+RustChain nodes run a **Python 3.8+** application (Flask app served by gunicorn). No compiler or Rust toolchain is required.
+
+### Step 1 — Clone the repository
 
 ```bash
-# Clone the repository
 git clone https://github.com/Scottcjn/Rustchain.git
-cd Rustchain
-
-# Build
-cargo build --release
-
-# Binary will be at ./target/release/rustchain
+cd Rustchain/node
 ```
 
-### Option B: Pre-built Binary
+### Step 2 — Install Python dependencies
 
 ```bash
-# Download the latest release
-# For Linux x86_64:
-curl -L https://github.com/Scottcjn/Rustchain/releases/latest/download/rustchain-linux-x86_64 -o rustchain
-chmod +x rustchain
-
-# For macOS (Apple Silicon):
-curl -L https://github.com/Scottcjn/Rustchain/releases/latest/download/rustchain-macos-aarch64 -o rustchain
-chmod +x rustchain
-
-# For Windows (x86_64):
-# Download from GitHub Releases
+# System python3 (3.8+) or a virtualenv, your choice:
+python3 -m venv venv && source venv/bin/activate     # optional but recommended
+pip install -r ../requirements-node.txt
+# Installs: Flask, requests, psutil, PyNaCl, gunicorn
 ```
 
-### Option C: Docker
+### Step 3 — Verify
 
 ```bash
-docker pull scottcjn/rustchain:latest
-
-docker run -d \
-  --name rustchain-node \
-  -p 3000:3000 \
-  -p 3001:3001 \
-  -v $(pwd)/data:/data \
-  -v $(pwd)/config:/config \
-  scottcjn/rustchain:latest \
-  --config /config/config.yaml
+python3 -c "import flask, nacl, psutil, requests; print('deps ok')"
+python3 -c "import ast; ast.parse(open('rustchain_v2_integrated_v2.2.1_rip200.py').read()); print('node source ok')"
 ```
 
-### Verify Installation
+### Option: Docker (miner)
+
+The published Docker image is a **Python miner**, not a full node:
 
 ```bash
-./rustchain --version
-# Expected output: rustchain v2.2.1-rip200
+docker pull scottcjn/rustchain:latest   # RustChain Python miner
+# See README_DOCKER_MINER.md for miner usage.
 ```
 
 ---
 
 ## 3. Configuration
 
-### Configuration File
+RustChain nodes are configured entirely through **environment variables** (set them in the systemd unit or your shell). There is no `config.yaml`.
 
-Create `config.yaml`:
+### Node roles
 
-```yaml
-# Node configuration
-node:
-  # Node type: "attestation" or "miner"
-  type: attestation
+| Role | What it does | Who it's for | Fleet secrets needed |
+|------|--------------|--------------|----------------------|
+| **Sync node** *(default for new operators)* | Serves the API, syncs chain state from the public network, accepts attestations, but does **not** settle epochs | New / unverified operators | **None** |
+| **Full settlement node** | Everything a sync node does **plus** epoch settlement and authenticated P2P consensus | Verified operators only | Yes — issued privately by the RustChain team |
 
-  # HTTP API settings
-  api:
-    host: "0.0.0.0"
-    port: 3000
+> **New operators start as a sync node.** A settlement node mints rewards and joins consensus, so its credentials (`RC_SETTLEMENT_PUBKEY`, `RC_P2P_SECRET`, a fleet `RC_ADMIN_KEY`) are **issued privately after verification** and are never published. Do not invent or copy these values.
 
-  # P2P network settings
-  p2p:
-    port: 3001
-    # Bootstrap nodes for initial peer discovery
-    bootstrap_nodes:
-      - "https://50.28.86.131"
+### Environment variables
 
-  # Database path
-  db_path: "./data/rustchain.db"
+| Variable | Sync node | Settlement node | Description |
+|----------|-----------|-----------------|-------------|
+| `RC_DB_PATH` | ✅ | ✅ | SQLite DB path, e.g. `/opt/rustchain/rustchain_v2.db` |
+| `RC_NODE_ID` | ✅ | ✅ | A label for this node, e.g. `sync-hardik-1` |
+| `RC_ADMIN_KEY` | generate your own (32-byte hex) for your own admin endpoints | fleet key (issued) | Admin API auth. `openssl rand -hex 32` for a sync node. |
+| `RC_SETTLEMENT_PUBKEY` | — (omit) | issued | Grants settlement authority — settlement nodes only |
+| `RC_P2P_SECRET` | — (omit) | issued | Authenticated P2P mesh HMAC — settlement nodes only |
+| `BOOTSTRAP` / peer endpoint | `https://rustchain.org` | fleet peers | Where the node pulls chain state to sync |
 
-  # Logging
-  logging:
-    level: "info"  # debug, info, warn, error
-    file: "./data/rustchain.log"
-
-# Attestation settings (only for attestation nodes)
-attestation:
-  # Enable hardware fingerprinting
-  fingerprinting_enabled: true
-
-  # Accepted CPU architectures
-  accepted_architectures:
-    - ppc
-    - sparc
-    - m68k
-    - x86
-    - arm
-    - mips
-    - alpha
-
-# Mining settings (only for miners)
-mining:
-  # Wallet address for receiving rewards
-  wallet_address: "YOUR_WALLET_ADDRESS"
-
-  # Attestation node URL
-  attestation_node_url: "https://50.28.86.131"
-
-  # Work cycle interval (seconds)
-  cycle_interval: 3600
-```
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `RUSTCHAIN_CONFIG` | Path to config file | `./config.yaml` |
-| `RUSTCHAIN_LOG_LEVEL` | Logging level | `info` |
-| `RUSTCHAIN_DB_PATH` | Database path | `./data/rustchain.db` |
-| `RUSTCHAIN_API_HOST` | API bind host | `0.0.0.0` |
-| `RUSTCHAIN_API_PORT` | API port | `3000` |
-| `RUSTCHAIN_ADMIN_KEY` | Admin API key | (required for admin endpoints) |
+A sync node syncs read-only from the public network (`https://rustchain.org`) — it does **not** need the authenticated P2P secret.
 
 ---
 
 ## 4. Wallet Setup
 
-### Create a New Wallet
+RustChain addresses are `RTC` followed by 40 hex characters (e.g. `RTCc5449fe1b93385961152720c864c0f073dae5855`). Wallets are managed with the Python wallet tools in this repo — see the dedicated **[Wallet Setup guide](WALLET_SETUP.md)** for full details.
+
+### Create a wallet (self-custody)
 
 ```bash
-./rustchain wallet create
+# GUI wallet (BIP39 seed + Ed25519, encrypted keystore)
+python3 wallet/rustchain_wallet_secure.py
+
+# Or the CLI for scripted use
+python3 tools/rustchain_wallet_cli.py create
 ```
 
-Output:
-```
-Wallet created successfully!
-Address: rust1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Pubkey:  ed25519:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+Save the 24-word seed phrase offline — it is the only recovery path.
 
-⚠️  IMPORTANT: Save your private key securely. It cannot be recovered.
-```
-
-### Import an Existing Wallet
+### Check a balance (public API, no key needed)
 
 ```bash
-./rustchain wallet import <private-key>
+curl -s "https://rustchain.org/wallet/balance?address=RTC...your_address"
 ```
 
-### Check Wallet Balance
-
-```bash
-# Using the CLI
-./rustchain wallet balance
-
-# Using the API
-curl -sk https://50.28.86.131/wallet/balance?address=rust1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-### Wallet Security Best Practices
-- Store private key in a secure location (hardware wallet, encrypted file)
-- Never share your private key
-- Use a separate wallet for mining vs. personal holdings
-- Regularly check balance via API
+### Security
+- Never share your seed phrase or private key; never paste them into a form or chat.
+- Keep a separate wallet for node/mining rewards vs. personal holdings.
+- Back up the encrypted keystore files.
 
 ---
 
 ## 5. Starting the Node
 
-### Start an Attestation Node
+### Quick start (development / first run)
+
+Run the app directly with Python. This uses the built-in Flask dev server and runs `init_db()` automatically:
 
 ```bash
-# Using config file
-./rustchain --config config.yaml
-
-# Using environment variables
-RUSTCHAIN_CONFIG=config.yaml ./rustchain
-
-# In background (Linux)
-nohup ./rustchain --config config.yaml > rustchain.log 2>&1 &
+cd Rustchain/node
+export RC_DB_PATH=$PWD/rustchain_v2.db
+export RC_NODE_ID=sync-1
+export RC_ADMIN_KEY=$(openssl rand -hex 32)   # your own admin key for a sync node
+python3 rustchain_v2_integrated_v2.2.1_rip200.py
 ```
 
-### Verify Node is Running
+### Production (gunicorn — recommended)
+
+Production nodes are served by **gunicorn** via `wsgi.py` (which imports the app and calls `init_db()`):
 
 ```bash
-# Health check
-curl -sk https://localhost:3000/health
-# Expected: {"status":"ok","epoch":1234,...}
+cd Rustchain/node
+export RC_DB_PATH=/opt/rustchain/rustchain_v2.db
+export RC_NODE_ID=sync-1
+export RC_ADMIN_KEY=$(openssl rand -hex 32)
+gunicorn -w 4 -b 0.0.0.0:8099 wsgi:app --timeout 120
+```
+
+### Verify the node is running
+
+```bash
+# Health check (note: port 8099, and the field is "ok")
+curl -s http://127.0.0.1:8099/health
+# Expected: {"ok":true,"version":"2.2.1-rip200","db_rw":true,...}
 
 # Ready check
-curl -sk https://localhost:3000/ready
-# Expected: {"ready":true}
+curl -s http://127.0.0.1:8099/ready
 
-# Network info
-curl -sk https://localhost:3000/api/network
-# Expected: {"peers":3,"epoch":1234,...}
+# Current epoch
+curl -s http://127.0.0.1:8099/epoch
 ```
 
-### Start as Systemd Service (Linux)
+### Run as a systemd service (sync node)
 
-Create `/etc/systemd/system/rustchain.service`:
+Create `/etc/systemd/system/rustchain-sync.service`:
 
 ```ini
 [Unit]
-Description=RustChain Attestation Node
-After=network.target
+Description=RustChain Sync Node
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=rustchain
 Group=rustchain
-WorkingDirectory=/opt/rustchain
-ExecStart=/opt/rustchain/rustchain --config /opt/rustchain/config.yaml
-Restart=on-failure
+WorkingDirectory=/opt/rustchain/node
+Environment="RC_NODE_ID=sync-1"
+Environment="RC_DB_PATH=/opt/rustchain/rustchain_v2.db"
+Environment="RC_ADMIN_KEY=REPLACE_WITH_YOUR_OWN_32_BYTE_HEX"
+# Sync nodes do NOT set RC_SETTLEMENT_PUBKEY or RC_P2P_SECRET —
+# those are issued privately to verified settlement-node operators only.
+ExecStart=/usr/local/bin/gunicorn -w 4 -b 0.0.0.0:8099 wsgi:app --timeout 120 \
+  --access-logfile /var/log/rustchain_access.log \
+  --error-logfile /var/log/rustchain_error.log
+Restart=always
 RestartSec=10
-
-# Security
-NoNewPrivileges=true
-ProtectSystem=strict
-ReadWritePaths=/opt/rustchain/data
 
 [Install]
 WantedBy=multi-user.target
 ```
 
 ```bash
-# Reload systemd
 sudo systemctl daemon-reload
-
-# Enable and start
-sudo systemctl enable rustchain
-sudo systemctl start rustchain
-
-# Check status
-sudo systemctl status rustchain
-
-# View logs
-sudo journalctl -u rustchain -f
+sudo systemctl enable rustchain-sync
+sudo systemctl start rustchain-sync
+sudo systemctl status rustchain-sync
 ```
+
+> **Public exposure:** bind gunicorn to `127.0.0.1:8099` and put **nginx + TLS (certbot)** in front on 443 if you want the node reachable publicly. Do not expose admin endpoints (`X-Admin-Key`) to the internet.
 
 ---
 
 ## 6. Starting a Miner
 
-### Configure the Miner
+A **miner** is separate from a node: it attests your hardware to the network and earns RTC. Most contributors want this, not a full node. The miner is a Python client — the authoritative install is **[INSTALL.md](../INSTALL.md)**.
 
-Edit your `config.yaml`:
-
-```yaml
-node:
-  type: miner
-
-mining:
-  wallet_address: "rust1your_wallet_address"
-  attestation_node_url: "https://50.28.86.131"
-  cycle_interval: 3600
-```
-
-### Start Mining
+### One-line install (recommended)
 
 ```bash
-./rustchain --config config.yaml
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash
+# Flags: --dry-run (preview), --wallet YOUR_WALLET, --test-only (fingerprint test only)
 ```
 
-### Console Mining Setup
+The installer auto-installs Python 3.8+, sets up a systemd user service, runs your first attestation, and points at `https://rustchain.org` by default.
 
-For real-time mining output:
+### Manual run
 
 ```bash
-# Run with verbose logging
-RUSTCHAIN_LOG_LEVEL=debug ./rustchain --config config.yaml
-
-# Or use the mining console
-./rustchain mine --console --config config.yaml
+cd Rustchain/node
+python3 rustchain_linux_miner.py            # attests to https://rustchain.org
 ```
 
-### Verify Mining Status
+### Verify your miner is attesting
 
 ```bash
-# Check if your miner appears in the active miners list
-curl -sk https://50.28.86.131/api/miners
+curl -s https://rustchain.org/api/miners            # your miner should appear here
+curl -s "https://rustchain.org/wallet/balance?address=RTC...your_wallet"
 ```
 
-### Check Mining Earnings
-
-```bash
-# Check wallet balance
-curl -sk "https://50.28.86.131/wallet/balance?address=rust1your_wallet"
-
-# Check epoch settlement
-curl -sk "https://50.28.86.131/api/settlement/1234"
-```
+VMs are detected by the fingerprint checks and earn ~a billionth of real-hardware rewards by design — run on real silicon.
 
 ---
 
@@ -353,7 +268,7 @@ curl -sk "https://50.28.86.131/api/settlement/1234"
 
 | Endpoint | Description | Expected Response |
 |----------|-------------|-------------------|
-| `/health` | Node health status | `{"status":"ok"}` |
+| `/health` | Node health status | `{"ok":true}` |
 | `/ready` | Ready to serve requests | `{"ready":true}` |
 | `/epoch` | Current epoch info | `{"epoch":1234,...}` |
 | `/api/miners` | Active miners list | `[...]` |
@@ -374,7 +289,7 @@ If your node exposes Prometheus metrics, scrape `/metrics` for:
 #!/bin/bash
 # monitor.sh — Simple RustChain node monitoring
 
-NODE_URL="https://localhost:3000"
+NODE_URL="http://127.0.0.1:8099"
 
 # Health check
 HEALTH=$(curl -sk $NODE_URL/health 2>/dev/null)
@@ -411,10 +326,10 @@ echo "Active miners: $(echo $MINERS | grep -o '"id"' | wc -l)"
 **Fix:**
 ```bash
 # Check what's using port 3000
-lsof -i :3000  # Linux/macOS
-netstat -ano | findstr :3000  # Windows
+lsof -i :8099  # Linux/macOS
+netstat -ano | findstr :8099  # Windows
 
-# Kill the process or change the port in config.yaml
+# Kill the process, or change the gunicorn -b bind port
 ```
 
 #### "Database locked" error
@@ -430,7 +345,7 @@ pkill rustchain
 rm -f ./data/rustchain.db.lock
 
 # Restart
-./rustchain --config config.yaml
+gunicorn -w 4 -b 0.0.0.0:8099 wsgi:app --timeout 120
 ```
 
 #### Attestation rejected: "Clock drift too high"
@@ -455,7 +370,7 @@ w32tm /resync
 **Cause:** Your CPU architecture is not in the accepted list.
 
 **Fix:**
-- Check `config.yaml` → `attestation.accepted_architectures`
+- Architecture acceptance is server-side (`derive_verified_device()`); no client config controls it
 - Add your architecture to the list
 - Restart the attestation node
 
@@ -471,7 +386,7 @@ sudo ufw allow 3001/tcp  # Linux
 # Verify bootstrap node is reachable
 curl -sk https://50.28.86.131/health
 
-# Check config.yaml bootstrap_nodes list
+# Confirm the node can reach its sync source (https://rustchain.org)
 ```
 
 #### Low mining rewards
@@ -510,7 +425,7 @@ tail -f ./data/rustchain.log
 ### Database Optimization
 
 ```yaml
-# In config.yaml
+# via environment variables (see Section 3)
 database:
   # Increase cache size (MB)
   cache_size: 1024
@@ -525,7 +440,7 @@ database:
 ### Network Tuning
 
 ```yaml
-# In config.yaml
+# via environment variables (see Section 3)
 network:
   # Increase max peer connections
   max_peers: 50
@@ -542,7 +457,7 @@ network:
 For systems with limited RAM:
 
 ```yaml
-# In config.yaml
+# via environment variables (see Section 3)
 performance:
   # Reduce memory cache
   cache_size: 256  # MB
@@ -565,7 +480,7 @@ server {
     ssl_certificate_key /etc/ssl/private/rustchain.key;
 
     location / {
-        proxy_pass http://localhost:3000;
+        proxy_pass http://127.0.0.1:8099;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -585,57 +500,40 @@ server {
 
 ### Multiple Miners on One Machine
 
-```yaml
-# miner-1.yaml
-node:
-  type: miner
-mining:
-  wallet_address: "rust1wallet_1_address"
-  attestation_node_url: "https://50.28.86.131"
-
-# miner-2.yaml
-node:
-  type: miner
-mining:
-  wallet_address: "rust1wallet_2_address"
-  attestation_node_url: "https://50.28.86.131"
-```
+Run one miner process per wallet, each with its own `MINER_WALLET`:
 
 ```bash
-# Run both miners
-./rustchain --config miner-1.yaml &
-./rustchain --config miner-2.yaml &
+cd Rustchain/node
+MINER_WALLET=RTC...wallet_1 NODE_URL=https://rustchain.org python3 rustchain_linux_miner.py &
+MINER_WALLET=RTC...wallet_2 NODE_URL=https://rustchain.org python3 rustchain_linux_miner.py &
 ```
+
+Note: the hardware fingerprint binds one physical machine to one wallet, so multiple miners on the *same* box share one hardware identity — this is by design (one machine = one vote).
 
 ### Updating RustChain
 
 ```bash
-# From source
+# Pull the latest node code and restart the service
+cd Rustchain
 git pull origin main
-cargo build --release
+pip install -r requirements-node.txt   # in case deps changed
+sudo systemctl restart rustchain-sync  # (or your service name)
 
-# Pre-built binary
-curl -L https://github.com/Scottcjn/Rustchain/releases/latest/download/rustchain-linux-x86_64 -o rustchain
-chmod +x rustchain
-
-# Docker
-docker pull scottcjn/rustchain:latest
-docker stop rustchain-node
-docker rm rustchain-node
-# Then re-run the docker run command
+# Verify it came back healthy
+curl -s http://127.0.0.1:8099/health
 ```
 
 ### Backup & Recovery
 
 ```bash
 # Backup database
-cp ./data/rustchain.db ./backup/rustchain-$(date +%Y%m%d).db
+cp $RC_DB_PATH ./backup/rustchain-$(date +%Y%m%d).db   # e.g. /opt/rustchain/rustchain_v2.db
 
 # Backup wallet keys
-cp ~/.rustchain/wallet.json ./backup/wallet-$(date +%Y%m%d).json
+cp -r ~/.rustchain/*_wallets ./backup/wallets-$(date +%Y%m%d)/   # encrypted keystores
 
 # Restore from backup
-cp ./backup/rustchain-20260527.db ./data/rustchain.db
+cp ./backup/rustchain-20260527.db $RC_DB_PATH
 ```
 
 ### Payout Preflight Checklist
@@ -654,12 +552,13 @@ Before expecting rewards, verify:
 
 | Command | Description |
 |---------|-------------|
-| `rustchain --config config.yaml` | Start node |
-| `rustchain --version` | Show version |
-| `rustchain wallet create` | Create new wallet |
-| `rustchain wallet balance` | Check balance |
-| `rustchain wallet import <key>` | Import wallet |
-| `rustchain mine --console` | Start mining with console output |
+| `gunicorn -w 4 -b 0.0.0.0:8099 wsgi:app --timeout 120` | Start node (production) |
+| `python3 rustchain_v2_integrated_v2.2.1_rip200.py` | Start node (dev, runs init_db) |
+| `curl -s http://127.0.0.1:8099/health` | Health / version check |
+| `python3 wallet/rustchain_wallet_secure.py` | Create / manage a wallet |
+| `python3 tools/rustchain_wallet_cli.py balance` | Check balance |
+| `python3 rustchain_linux_miner.py` | Start a miner |
+| `bash install-miner.sh` | One-line miner install |
 
 ---
 
