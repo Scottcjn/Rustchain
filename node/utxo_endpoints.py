@@ -97,6 +97,16 @@ def _nrtc_to_rtc_float(amount_nrtc: int) -> float:
     return float(Decimal(amount_nrtc) / Decimal(UNIT))
 
 
+def _safe_json_loads(raw, default_val):
+    """Safely deserialize JSON string, falling back to default on None or corrupt values."""
+    if raw is None or not isinstance(raw, (str, bytes, bytearray)):
+        return default_val
+    try:
+        return json.loads(raw)
+    except Exception:
+        return default_val
+
+
 def _public_mempool_transaction(tx: dict) -> dict:
     """Return a public-safe view of a pending UTXO transaction."""
     public_tx = {
@@ -409,7 +419,7 @@ def utxo_boxes(address):
                 'creation_height': b['creation_height'],
                 'transaction_id': b['transaction_id'],
                 'output_index': b['output_index'],
-                'registers': json.loads(b.get('registers_json', '{}')),
+                'registers': _safe_json_loads(b.get('registers_json'), {}),
             }
             for b in boxes
         ],
@@ -433,8 +443,8 @@ def utxo_box(box_id):
         'spent': box['spent_at'] is not None,
         'spent_at': box['spent_at'],
         'spent_by_tx': box['spent_by_tx'],
-        'registers': json.loads(box.get('registers_json', '{}')),
-        'tokens': json.loads(box.get('tokens_json', '[]')),
+        'registers': _safe_json_loads(box.get('registers_json'), {}),
+        'tokens': _safe_json_loads(box.get('tokens_json'), []),
     })
 
 
