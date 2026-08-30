@@ -279,14 +279,14 @@ Payments run over the [Beacon](https://github.com/Scottcjn/beacon-skill) RustCha
 |------|----------|-------|
 | **Node 1** — 50.28.86.131 | Louisiana, US | Primary (LiquidWeb VPS) |
 | **Node 2** — 50.28.86.153 | Louisiana, US | Secondary + BoTTube (LiquidWeb VPS) |
-| **Node 3** — 76.8.228.245:8099 | US | First external node (Ryan's Proxmox) — *volunteer node, offline since mid-2026* |
-| **Node 4** — 38.76.217.189:8099 | Hong Kong | First Asian node (CognetCloud) — *volunteer node, retired by operator* |
+| **Node 3** — 76.8.228.245:8099 | US | First external node (Ryan's Proxmox) — *historical volunteer node; verify current reachability in the explorer before citing it as live* |
+| **Node 4** — 38.76.217.189:8099 | Hong Kong | First Asian node (CognetCloud) — *historical volunteer node; verify current reachability in the explorer before citing it as live* |
 | **Node 5** — POWER8 S824 | Local Lab | First non-x86 node (IBM ppc64le, 512GB RAM) |
 
 | Fact | Proof |
 |------|-------|
-| Attestation nodes: 2 always-on (Louisiana) + lab POWER8; 2 volunteer nodes have come and gone — that's what volunteer infra does | [Live explorer](https://rustchain.org/explorer/) |
-| 15 active miners attesting (`pagination.total` from `/api/miners`) | `curl -i -fsS https://rustchain.org/api/miners` |
+| Explorer node counts can change as volunteer infrastructure comes and goes; treat the explorer as the source of truth for current live nodes | [Live explorer](https://rustchain.org/explorer/) |
+| 15 active miners attesting (`pagination.total` from `/api/miners`, checked 2026-08-30) | `curl -i -fsS https://rustchain.org/api/miners` |
 | 44 BCOS certificates issued | [Certified repos](BCOS.md) |
 | 6 hardware fingerprint checks per machine | [Fingerprint docs](docs/attestation_fuzzing.md) |
 | 64,000+ RTC paid to 1,000+ recipients ([live counter](https://rustchain.org/payouts.json)) | [Public ledger](https://github.com/Scottcjn/rustchain-bounties/issues/104) |
