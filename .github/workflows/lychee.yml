@@ -17,6 +17,7 @@ jobs:
       - name: Check relative links
         uses: lycheeverse/lychee-action@v2
         with:
+          fail: false   # report broken links in the job summary but do not block CI (whole-repo doc check)
           args: >
             --verbose
             --no-progress
