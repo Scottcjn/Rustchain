@@ -497,8 +497,8 @@ def get_time_aged_multiplier(device_arch: str, chain_age_years: float) -> float:
     Calculate time-decayed antiquity multiplier.
     
     - Year 0: Full multiplier (G4 = 2.5×)
-    - Year 10: Approaches modern baseline (1.0×)
-    - Year 16.67: Vintage bonus fully decayed
+    - Year 5: Vintage bonus 75% decayed (G4 = 1.375×)
+    - Year 6.67: Vintage bonus fully decayed (back to 1.0× baseline)
     """
     base_multiplier = ANTIQUITY_MULTIPLIERS.get(device_arch.lower(), 1.0)
     
