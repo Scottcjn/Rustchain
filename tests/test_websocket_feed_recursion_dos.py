@@ -32,7 +32,7 @@ def test_circular_payload_does_not_cause_recursion_error():
     # Should not raise RecursionError and return True for existing address
     assert feed.payload_references_address(payload, "RTC14241718572ec3bd1c0c4ee26ed2fc4bf6fca15") is True
     # Should safely return False for non-matching address
-    assert feed.payload_reBounty #356...ferences_address(payload, "RTC0000000000000000000000000000000000000000") is False
+    assert feed.payload_references_address(payload, "RTC0000000000000000000000000000000000000000") is False
 
 
 def test_deeply_nested_payload_bounds_recursion():
