@@ -401,7 +401,7 @@ summary() {
   echo -e "  curl -sk '$NODE_URL/wallet/balance?miner_id=$WALLET_NAME' | python3 -m json.tool"
   echo ""
   echo -e "  ${BOLD}Join the community:${NC}"
-  echo -e "  Discord: https://discord.gg/rustchain"
+  echo -e "  Discord: https://discord.gg/XnRp7M5gBW"
   echo -e "  GitHub:  https://github.com/Scottcjn/Rustchain"
   echo ""
   echo -e "  ${GREEN}Happy mining! ⛏️${NC}"

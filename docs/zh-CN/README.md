@@ -336,6 +336,6 @@ Apache 2.0 — 见 [LICENSE](../../LICENSE)
 
 **让旧机器再战五百年。**
 
-[官网](https://rustchain.org) • [浏览器](https://rustchain.org/explorer) • [赏金](https://github.com/Scottcjn/rustchain-bounties/issues) • [Discord](https://discord.gg/rustchain) • [Twitter](https://twitter.com/rustchain)
+[官网](https://rustchain.org) • [浏览器](https://rustchain.org/explorer) • [赏金](https://github.com/Scottcjn/rustchain-bounties/issues) • [Discord](https://discord.gg/XnRp7M5gBW) • [Twitter](https://twitter.com/rustchain)
 
 </div>

@@ -167,7 +167,7 @@ python3 wallet/rustchain_wallet.py generate
 
 ### 获取帮助
 
-- 加入 [Discord](https://discord.gg/rustchain) 获取实时支持
+- 加入 [Discord](https://discord.gg/XnRp7M5gBW) 获取实时支持
 - 在 [GitHub](https://github.com/Scottcjn/rustchain/issues) 上提交 Issue 报告错误
 - 查看 [FAQ_TROUBLESHOOTING.md](../FAQ_TROUBLESHOOTING.md) 获取常见解决方案
 
