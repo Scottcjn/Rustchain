@@ -28,6 +28,13 @@ jobs:
             --exclude "https?://(127\.0\.0\.1|localhost)(:\d+)?"
             --exclude "https?://50\.28\.86\.131(:\d+)?"
             --exclude "https://rustchain.org/faq"
+            --exclude "https?://img\.shields\.io"
+            --exclude "https?://(www\.)?raydium\.io"
+            --exclude "https?://openreview\.net"
+            --exclude "https?://dexscreener\.com"
+            --max-retries 3
+            --retry-wait-time 5
+            --timeout 20
             -- './**/*.md' './**/*.html'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
