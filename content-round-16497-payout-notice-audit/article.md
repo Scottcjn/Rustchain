@@ -41,7 +41,7 @@ python -m unittest discover -s content-round-16497-payout-notice-audit \
   -p "test_payout_notice_audit.py" -v
 ```
 
-The tests cover all three classifications and reject a malformed top-level JSON object. They also assert that even a complete authorized notice remains unsettled at this stage.
+The tests cover all three classifications, case-insensitive GitHub login matching, and malformed JSON structures. They also assert that even a complete authorized notice remains unsettled at this stage.
 
 ## Where real verification begins
 

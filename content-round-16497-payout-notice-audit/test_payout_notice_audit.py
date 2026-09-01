@@ -35,6 +35,19 @@ class PayoutNoticeAuditTests(unittest.TestCase):
         self.assertEqual(result["status"], "reject_unauthorized_author")
         self.assertIs(result["settled"], False)
 
+    def test_authorized_login_match_is_case_insensitive(self):
+        result = audit_notice(
+            {
+                "author": "SCOTTCJN",
+                "body": (
+                    "amount: 33_RTC wallet: demo-wallet pending_id: pending-42 "
+                    "tx_hash: tx-demo-abc confirms_at: 2026-09-02T12:00:00Z"
+                ),
+            }
+        )
+
+        self.assertEqual(result["status"], "ready_for_project_record_verification")
+
     def test_authorized_notice_with_missing_fields_is_held(self):
         result = audit_notice({"author": "AutoJanitor", "body": "amount: 33_RTC"})
 
@@ -51,6 +64,16 @@ class PayoutNoticeAuditTests(unittest.TestCase):
             path = Path(directory) / "notice.json"
             path.write_text(json.dumps({"author": "Scottcjn"}), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "JSON array"):
+                audit_file(path)
+
+    def test_each_file_item_must_be_an_object(self):
+        from tempfile import TemporaryDirectory
+        from pathlib import Path
+
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "notice.json"
+            path.write_text(json.dumps(["not-an-object"]), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "each notice"):
                 audit_file(path)
 
 

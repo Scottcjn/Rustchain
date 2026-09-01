@@ -11,6 +11,7 @@ from typing import Any
 
 
 AUTHORIZED_AUTHORS = {"Scottcjn", "sophiaeagent-beep", "AutoJanitor"}
+AUTHORIZED_AUTHOR_KEYS = {author.casefold() for author in AUTHORIZED_AUTHORS}
 FIELD_PATTERNS = {
     "amount": re.compile(r"(?i)\b(?:amount|payout)\s*[:=]\s*([^\s,;]+)"),
     "wallet": re.compile(r"(?i)\b(?:recipient|wallet)\s*[:=]\s*([^\s,;]+)"),
@@ -32,12 +33,14 @@ def extract_fields(body: str) -> dict[str, str]:
 
 def audit_notice(notice: dict[str, Any]) -> dict[str, Any]:
     """Classify one notice for manual follow-up, never as settled payment."""
+    if not isinstance(notice, dict):
+        raise ValueError("each notice must be a JSON object")
     author = str(notice.get("author", ""))
     body = str(notice.get("body", ""))
     fields = extract_fields(body)
     missing = [name for name in FIELD_PATTERNS if name not in fields]
 
-    if author not in AUTHORIZED_AUTHORS:
+    if author.casefold() not in AUTHORIZED_AUTHOR_KEYS:
         status = "reject_unauthorized_author"
     elif missing:
         status = "hold_missing_fields"
