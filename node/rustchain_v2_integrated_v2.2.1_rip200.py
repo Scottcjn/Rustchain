@@ -2073,7 +2073,7 @@ def init_db():
         # NEVER inside the BEGIN IMMEDIATE write lock in the attest path (running
         # ALTER there would commit the transaction and reopen the first-bind race
         # #8267 was written to close). Idempotent for already-deployed DBs.
-        _hwb_cols = [r[1] for r in c.execute("PRAGMA table_info(hardware_bindings)").fetchall()]
+        _hwb_cols = [r[1] for r in c.execute("PRAGMA table_info(hardware_bindings)").fetchall()]  # fetchall-ok: pragma-result
         if "stable_hw_id" not in _hwb_cols:
             try:
                 c.execute("ALTER TABLE hardware_bindings ADD COLUMN stable_hw_id TEXT")
@@ -5700,7 +5700,7 @@ def _ensure_stable_hw_id_column():
         return
     try:
         with closing(sqlite3.connect(DB_PATH, timeout=10)) as conn:
-            cols = [r[1] for r in conn.execute("PRAGMA table_info(hardware_bindings)").fetchall()]
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(hardware_bindings)").fetchall()]  # fetchall-ok: pragma-result
             if 'stable_hw_id' not in cols:
                 try:
                     conn.execute("ALTER TABLE hardware_bindings ADD COLUMN stable_hw_id TEXT")
