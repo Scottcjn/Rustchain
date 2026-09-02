@@ -1819,7 +1819,17 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
         """Require the shared P2P secret for sensitive read-only sync endpoints."""
         provided = request.headers.get("X-P2P-Key", "")
         if not provided or not hmac.compare_digest(provided, P2P_SECRET):
-            return jsonify({"error": "unauthorized", "message": "valid X-P2P-Key required"}), 401
+            return jsonify({
+                "error": "unauthorized",
+                "message": "valid X-P2P-Key required",
+                # Onboarding: external operators kept hitting this with a
+                # self-generated secret. The header must carry the SAME
+                # RC_P2P_SECRET as this node, which is fleet-only.
+                "hint": ("/p2p/* is the authenticated fleet mesh: X-P2P-Key must equal "
+                         "this node's RC_P2P_SECRET, which is issued privately to "
+                         "settlement-node operators. Sync nodes do not need it; use the "
+                         "public endpoints (/health, /epoch, /api/miners, /wallet/balance)."),
+            }), 401
         return None
 
     @app.route('/p2p/gossip', methods=['POST'])
