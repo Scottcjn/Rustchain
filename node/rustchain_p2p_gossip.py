@@ -1825,6 +1825,18 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
     @app.route('/p2p/gossip', methods=['POST'])
     def receive_gossip():
         """Receive and process gossip message"""
+        # SECURITY(#8177): Gossip POST is the WRITE endpoint that feeds the
+        # CRDT merge path. All other P2P endpoints require X-P2P-Key; this
+        # one previously only had per-IP rate limiting, so any
+        # network-accessible peer could inject fake attestation/epoch
+        # records without holding the shared secret. Auth runs BEFORE the
+        # rate-limit so we don't leak a per-IP timing oracle; it runs
+        # BEFORE content-length so unauthenticated clients don't waste
+        # server bandwidth on big bodies.
+        auth_error = _require_p2p_read_auth()
+        if auth_error:
+            return auth_error
+
         # FIX(#2867 M5): per-IP rate limit BEFORE expensive verify+CRDT work.
         remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or 'unknown').split(',')[0].strip()
         if not _gossip_rate_check(remote_ip):

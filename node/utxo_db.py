@@ -1115,8 +1115,13 @@ class UtxoDB:
             if not rows:
                 return hashlib.sha256(b"empty").hexdigest()
 
-            # Mix element count into leaf hashes to bind tree to cardinality
-            count_bytes = len(rows).to_bytes(8, 'little')
+            # SECURITY(#8177): Use big-endian here to match the big-endian
+            # convention used by compute_box_id() (L139-141), which encodes
+            # value_nrtc / creation_height / output_index via to_bytes(N, "big").
+            # Mixing little-endian count into a tree whose leaves are big-endian
+            # made the state root non-deterministic across implementations that
+            # interpret the count prefix differently.
+            count_bytes = len(rows).to_bytes(8, 'big')
             hashes = []
             for row in rows:
                 leaf = {
