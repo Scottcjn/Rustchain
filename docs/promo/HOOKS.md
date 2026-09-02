@@ -68,15 +68,19 @@ This branch contains finished, original Stage 1 awareness assets. The default br
 **CTA:** Start with one machine and one clip.  
 **Tags:** #VintageComputing #BoTTube #RustChain
 
-## Three finished vertical shorts
+## Three planned vertical shorts (not yet produced)
 
-All videos are original, silent-first, H.264 MP4, 720×1280, and 8–12 seconds long.
+Three short-form videos were scoped alongside the memes but have not yet been produced for this asset pack. The script beats below are the planned treatment; once the MP4 files land in this directory, the rows in the table below should be updated with the final durations and SHA-256 hashes, and the `Verification manifest` section should be regenerated.
 
-| Asset | Duration | Core message | CTA |
+Planned assets, target spec 720×1280, H.264 MP4, 8–12 seconds, silent-first:
+
+| Asset (planned) | Target duration | Core message | CTA |
 |---|---:|---|---|
-| [`short_01_old_laptop.mp4`](short_01_old_laptop.mp4) | 10s | An old laptop can remain useful | `pip install clawrtc` |
-| [`short_02_upgrade_cycle.mp4`](short_02_upgrade_cycle.mp4) | 12s | Replace-it culture vs physical continuity | Start a dry run today |
-| [`short_03_bottube_create.mp4`](short_03_bottube_create.mp4) | 8s | Make one small original idea | Upload it to BoTTube |
+| `short_01_old_laptop.mp4` | 10s | An old laptop can remain useful | `pip install clawrtc` |
+| `short_02_upgrade_cycle.mp4` | 12s | Replace-it culture vs physical continuity | Start a dry run today |
+| `short_03_bottube_create.mp4` | 8s | Make one small original idea | Upload it to BoTTube |
+
+> None of the three `short_*.mp4` files is present in `docs/promo/` on `main`. Treat the rows above as a backlog, not as shipped deliverables, until the matching MP4 files exist in this directory.
 
 ## Five finished meme images
 
@@ -100,4 +104,14 @@ Each PNG is 1200×675 with final overlay text and a direct CTA.
 
 ## Verification manifest
 
-See [`manifest.json`](manifest.json) for file dimensions, durations, codecs, byte sizes, and SHA-256 hashes.
+A `manifest.json` with file dimensions, durations, codecs, byte sizes, and SHA-256 hashes for the meme PNGs has not yet been published in this directory. Until it is, the per-file summary below is the authoritative reference for the shipped meme assets:
+
+| Asset | Dimensions | Format | Notes |
+|---|---|---|---|
+| [`meme_01.png`](meme_01.png) | 1200×675 | PNG | Upgrade cycle vs RustChain |
+| [`meme_02.png`](meme_02.png) | 1200×675 | PNG | Closet laptop gets another job |
+| [`meme_03.png`](meme_03.png) | 1200×675 | PNG | Infinite scroll vs one 8-second idea |
+| [`meme_04.png`](meme_04.png) | 1200×675 | PNG | 2009 laptop gets a job again |
+| [`meme_05.png`](meme_05.png) | 1200×675 | PNG | Physical continuity over time |
+
+SHA-256 hashes for the five PNGs can be regenerated locally with `sha256sum docs/promo/meme_*.png`; once the planned `short_*.mp4` files are produced, they should be added to the same table and (if desired) re-exported as a `manifest.json`.
