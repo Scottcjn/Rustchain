@@ -299,6 +299,14 @@ class AirdropV2:
         # Create indexes
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_claims_github ON airdrop_claims(github_username)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_claims_wallet ON airdrop_claims(wallet_address)")
+
+        # The dedup rule enforced by _has_claimed() is "github_username OR
+        # wallet_address, per chain", but the table-level UNIQUE constraint
+        # covers the *triple* (github_username, wallet_address, chain).  Two
+        # concurrent claims for the same username with different wallets
+        # therefore both pass the SELECT and both INSERT.  These partial unique
+        # indexes make the database enforce the rule that the code intends.
+        self._create_dedup_indexes(cursor)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_locks_from ON bridge_locks(from_address)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_locks_to ON bridge_locks(to_address)")
         
@@ -309,6 +317,74 @@ class AirdropV2:
             self._close_conn(conn)
         
         logger.info("Airdrop V2 database initialized")
+
+    # Claims in these states hold an allocation and must block a second claim.
+    # 'failed'/'cancelled' rows deliberately stay claimable again.
+    ACTIVE_CLAIM_STATUSES = ("pending", "completed")
+
+    def _create_dedup_indexes(self, cursor: sqlite3.Cursor) -> None:
+        """Enforce the one-claim-per-username / per-wallet rule in the database.
+
+        A pre-existing database may already contain duplicates created before
+        this guard existed.  In that case SQLite refuses to build the index; we
+        log loudly instead of making the node unbootable, because refusing to
+        start would be a worse failure mode than the accounting drift we are
+        trying to stop.
+        """
+        statuses = ", ".join(f"'{s}'" for s in self.ACTIVE_CLAIM_STATUSES)
+        for name, column in (
+            ("idx_claims_unique_github", "github_username"),
+            ("idx_claims_unique_wallet", "wallet_address"),
+        ):
+            try:
+                cursor.execute(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS {name} "
+                    f"ON airdrop_claims(chain, {column}) "
+                    f"WHERE status IN ({statuses})"
+                )
+            except sqlite3.IntegrityError:
+                cursor.execute(
+                    f"SELECT chain, {column}, COUNT(*) AS n FROM airdrop_claims "
+                    f"WHERE status IN ({statuses}) "
+                    f"GROUP BY chain, {column} HAVING n > 1"
+                )
+                dupes = cursor.fetchall()
+                logger.error(
+                    "Cannot create %s: %d duplicate %s group(s) already exist in "
+                    "airdrop_claims. These are double-allocated claims and need "
+                    "manual reconciliation before the constraint can be enforced.",
+                    name,
+                    len(dupes),
+                    column,
+                )
+
+    def _has_claimed_on(
+        self,
+        conn: sqlite3.Connection,
+        github_username: str,
+        wallet_address: str,
+        chain: str,
+    ) -> bool:
+        """_has_claimed() against a caller-supplied connection.
+
+        process_claim() must re-check *inside* its own write transaction; using
+        a second connection there would read outside that transaction and
+        reintroduce the very race this guards against.
+        """
+        github_username = self._normalize_github_username(github_username)
+        wallet_address = self._normalize_wallet_address(wallet_address, chain)
+        placeholders = ", ".join("?" for _ in self.ACTIVE_CLAIM_STATUSES)
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SELECT 1 FROM airdrop_claims
+            WHERE chain = ?
+            AND (github_username = ? OR wallet_address = ?)
+            AND status IN ({placeholders})
+            """,
+            (chain, github_username, wallet_address, *self.ACTIVE_CLAIM_STATUSES),
+        )
+        return cursor.fetchone() is not None
 
     def _generate_id(self, prefix: str, *args: str) -> str:
         """Generate unique ID from components."""
@@ -716,22 +792,11 @@ class AirdropV2:
         self, github_username: str, wallet_address: str, chain: str
     ) -> bool:
         """Check if a GitHub account or wallet already claimed an airdrop."""
-        github_username = self._normalize_github_username(github_username)
-        wallet_address = self._normalize_wallet_address(wallet_address, chain)
         conn = self._get_conn()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT 1 FROM airdrop_claims
-            WHERE chain = ?
-            AND (github_username = ? OR wallet_address = ?)
-            AND status IN ('pending', 'completed')
-            """,
-            (chain, github_username, wallet_address),
-        )
-        result = cursor.fetchone() is not None
-        self._close_conn(conn)
-        return result
+        try:
+            return self._has_claimed_on(conn, github_username, wallet_address, chain)
+        finally:
+            self._close_conn(conn)
 
     def _has_allocation(self, chain: str, amount_uwrtc: int) -> bool:
         """Check if chain has remaining allocation."""
@@ -927,11 +992,31 @@ class AirdropV2:
             status="pending",
         )
 
-        # Store claim
+        # Store claim.
+        #
+        # BEGIN IMMEDIATE takes the write lock up front, so the re-check below
+        # and the INSERT happen as one serialized unit.  Without it the
+        # _has_claimed() call above is a plain SELECT that commits nothing, and
+        # two concurrent claims for the same username with different wallets
+        # both pass it before either inserts.
         conn = self._get_conn()
+        prev_isolation = conn.isolation_level
+        conn.isolation_level = None  # take manual control of the transaction
         cursor = conn.cursor()
 
         try:
+            cursor.execute("BEGIN IMMEDIATE")
+
+            if self._has_claimed_on(
+                conn, github_username, wallet_address, chain_lower
+            ):
+                conn.rollback()
+                return (
+                    False,
+                    "Claim already exists for this GitHub account or wallet",
+                    None,
+                )
+
             cursor.execute(
                 """
                 INSERT INTO airdrop_claims
@@ -974,14 +1059,21 @@ class AirdropV2:
 
             return True, "Claim created successfully", claim
 
-        except sqlite3.IntegrityError as e:
+        except sqlite3.IntegrityError:
+            # The partial unique indexes are the backstop when a writer from
+            # another process slipped in between the re-check and the INSERT.
             conn.rollback()
-            return False, "Claim already exists for this wallet/github pair", None
+            return (
+                False,
+                "Claim already exists for this GitHub account or wallet",
+                None,
+            )
         except Exception as e:
             conn.rollback()
             logger.error(f"Claim processing error: {e}")
             return False, f"Processing error: {e}", None
         finally:
+            conn.isolation_level = prev_isolation
             self._close_conn(conn)
 
     def finalize_claim(
