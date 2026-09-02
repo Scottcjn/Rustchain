@@ -686,10 +686,51 @@ def lookup_hardware(hw_id: str, family: Optional[str] = None) -> Optional[Hardwa
         if norm_id in db:
             return db[norm_id]
 
-        # Try partial matching for common variants
-        for key, entry in db.items():
-            if norm_id in key or key in norm_id:
-                return entry
+        # Try partial matching for common variants. A substring match only
+        # proves the probe belongs to SOME entry's family — it does not
+        # identify which generation. normalize_id("SPARC-T") == "sparc_t"
+        # has no exact key, but IS a superstring of the generic "sparc" entry
+        # (Sun-4, 1987, 3.0x LEGENDARY) and NOT a substring/superstring of
+        # any other sparc_* key, so a naive "return the matched entry" (or
+        # even "return the cheapest of the LITERAL key matches") still
+        # answers with that single 1987 row — a 2013 SPARC T5 grades as
+        # 1987 silicon. Once we know the family, anchor to the lowest
+        # base_multiplier across every entry in that family (e.g. SPARC's
+        # own ultrasparc_iii/iv rows are 2.5x ANCIENT), not just whichever
+        # key happened to substring-match. Same fail-closed principle as
+        # RIP-309b: an unidentified generation must never grade at the
+        # family's most expensive tier.
+        candidates = [(key, entry) for key, entry in db.items() if norm_id in key or key in norm_id]
+        if candidates:
+            # The substring fallback only fails closed to the family's minimum
+            # when the matched keys are themselves bare family roots (i.e. the
+            # normalized key IS the family name with no generation suffix).
+            # When a more specific match exists, prefer it (longest key wins)
+            # so an explicit `486dx2_66` is not silently downgraded to
+            # Broadwell 0.8x just because the probe also substring-matches the
+            # generic "x86" root. See issue #8252 review for the regression
+            # table this guards against.
+            matched_families = {entry.family for _, entry in candidates}
+            # A "bare family root" is a key whose normalized form equals the
+            # family's own normalized name. Anything longer than that is
+            # generation-specific.
+            bare_root_candidates = [
+                (k, e) for k, e in candidates
+                if normalize_id(e.family) == k
+            ]
+            non_root_candidates = [
+                (k, e) for k, e in candidates
+                if normalize_id(e.family) != k
+            ]
+            if non_root_candidates:
+                # We have at least one generation-specific match. Prefer the
+                # most specific (longest key) so the probe is not flattened
+                # to the family min.
+                return max(non_root_candidates, key=lambda kv: len(kv[0]))[1]
+            # Every candidate is a bare family root -> the probe's generation
+            # is unknown, fail closed to the family's lowest multiplier.
+            family_entries = [e for e in db.values() if e.family in matched_families]
+            return min(family_entries, key=lambda e: e.base_multiplier)
 
     return None
 
