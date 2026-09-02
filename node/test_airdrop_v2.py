@@ -251,6 +251,67 @@ class TestEligibilityChecks(unittest.TestCase):
         self.assertIn("ownership verification required", message)
         self.assertIsNone(claim)
 
+    def test_concurrent_claim_same_username_no_double_allocate(self):
+        """Regression #8245: concurrent claims for the SAME github_username
+        with DIFFERENT wallets must not both insert (double-allocate).
+
+        The dedup rule is `github_username OR wallet_address`, but the schema's
+        UNIQUE constraint only covers the composite (github_username,
+        wallet_address, chain). So two racing claims with the same username and
+        different wallets could both pass the early SELECT and both INSERT.
+        The fix serializes the insert via BEGIN IMMEDIATE plus an in-transaction
+        re-check. We exercise the race with real threads against a file-backed
+        DB (the :memory: path shares a single connection and cannot race).
+        """
+        import tempfile
+        import threading
+
+        wallet_a = "RTC1234567890123456789012345678901234567890"
+        wallet_b = "RTC2234567890123456789012345678901234567890"
+
+        for _ in range(10):
+            tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+            tmp.close()
+            db_path = tmp.name
+            try:
+                airdrop = AirdropV2(db_path=db_path)
+                username = "raceuser"
+                results = []
+                barrier = threading.Barrier(2)
+
+                def worker(wallet):
+                    try:
+                        barrier.wait()
+                        ok, _, _ = airdrop.claim_airdrop(
+                            github_username=username,
+                            wallet_address=wallet,
+                            chain="base",
+                            tier="contributor",
+                            skip_antisybil=True,
+                        )
+                        results.append(ok)
+                    except Exception as e:  # pragma: no cover
+                        results.append(f"exc:{e}")
+
+                t1 = threading.Thread(target=worker, args=(wallet_a,))
+                t2 = threading.Thread(target=worker, args=(wallet_b,))
+                t1.start()
+                t2.start()
+                t1.join(timeout=10)
+                t2.join(timeout=10)
+
+                # Exactly one of the two concurrent claims may succeed; never both.
+                self.assertEqual(
+                    sum(1 for r in results if r is True),
+                    1,
+                    f"expected exactly 1 successful claim, got {results}",
+                )
+            finally:
+                try:
+                    os.remove(db_path)
+                except OSError:
+                    pass
+
     def test_duplicate_github_with_different_wallet_rejected(self):
         """A GitHub account cannot claim again with a different wallet."""
         success, _, _ = self.airdrop.claim_airdrop(
