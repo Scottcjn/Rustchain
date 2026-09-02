@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: MIT
 """
-Unit tests for UTXO value conservation, fee bounds, and input uniqueness invariants.
+Unit tests for UTXO value conservation, fee bounds, coinbase invariants, and mempool alignment.
 Security Bounty Reference: #2819
 """
 
@@ -59,12 +59,12 @@ class TestUtxoConservation(unittest.TestCase):
             value=100_000_000,  # 1 RTC
             proposition_bytes=Box.wallet_to_proposition(self.miner_wallet),
             creation_height=1,
-            transaction_id=b'\x01' * 32,
+            transaction_id=b'' * 32,
             output_index=0,
         )
         self.utxo.add_box(self.genesis_box, self.miner_wallet)
 
-    def test_box_creation_rejects_non_positive_value(self):
+    def test_box_creation_rejects_negative_and_zero_values(self):
         """Boxes must not be instantiated with zero or negative nanoRTC values."""
         with self.assertRaises(ValueError):
             Box(
@@ -72,7 +72,17 @@ class TestUtxoConservation(unittest.TestCase):
                 value=-50_000_000,
                 proposition_bytes=Box.wallet_to_proposition(self.recipient),
                 creation_height=2,
-                transaction_id=b'\x02' * 32,
+                transaction_id=b'' * 32,
+                output_index=0,
+            )
+
+        with self.assertRaises(ValueError):
+            Box(
+                box_id=b'',
+                value=-1,
+                proposition_bytes=Box.wallet_to_proposition(self.recipient),
+                creation_height=2,
+                transaction_id=b'' * 32,
                 output_index=0,
             )
 
@@ -82,19 +92,18 @@ class TestUtxoConservation(unittest.TestCase):
                 value=0,
                 proposition_bytes=Box.wallet_to_proposition(self.recipient),
                 creation_height=2,
-                transaction_id=b'\x02' * 32,
+                transaction_id=b'' * 32,
                 output_index=0,
             )
 
     def test_apply_transaction_rejects_negative_fee(self):
         """Negative fees must not be used to bypass value conservation."""
-        # Attempt to spend 100_000_000 (1 RTC) to create 150_000_000 (1.5 RTC) with -50_000_000 fee
         out_inflated = Box(
             box_id=b'',
             value=150_000_000,
             proposition_bytes=Box.wallet_to_proposition(self.recipient),
             creation_height=2,
-            transaction_id=b'\x02' * 32,
+            transaction_id=b'' * 32,
             output_index=0,
         )
         tx = Transaction(
@@ -114,7 +123,7 @@ class TestUtxoConservation(unittest.TestCase):
             value=180_000_000,
             proposition_bytes=Box.wallet_to_proposition(self.recipient),
             creation_height=2,
-            transaction_id=b'\x02' * 32,
+            transaction_id=b'' * 32,
             output_index=0,
         )
         tx = Transaction(
@@ -129,6 +138,85 @@ class TestUtxoConservation(unittest.TestCase):
         applied = self.utxo.apply_transaction(tx, block_height=2)
         self.assertFalse(applied, "Transaction with duplicate inputs must be rejected")
 
+    def test_empty_input_non_reward_rejected_at_both_mempool_and_apply(self):
+        """Empty-input transactions that are not MINING_REWARD must be rejected at both mempool and apply."""
+        pool = TransactionPool(self.utxo)
+        out_box = Box(
+            box_id=b'',
+            value=10_000_000,
+            proposition_bytes=Box.wallet_to_proposition(self.recipient),
+            creation_height=2,
+            transaction_id=b'' * 32,
+            output_index=0,
+        )
+
+        for non_reward_type in [
+            TransactionType.TRANSFER,
+            TransactionType.BADGE_MINT,
+            TransactionType.GOVERNANCE_VOTE,
+            TransactionType.CONTRACT_CALL,
+        ]:
+            tx_empty_input = Transaction(
+                tx_type=non_reward_type,
+                inputs=[],
+                outputs=[out_box],
+                fee=0,
+            )
+            self.assertFalse(
+                self.utxo.apply_transaction(tx_empty_input, block_height=2),
+                f"apply_transaction must reject empty-input {non_reward_type.value}",
+            )
+            self.assertFalse(
+                pool.add_transaction(tx_empty_input),
+                f"add_transaction (mempool) must reject empty-input {non_reward_type.value}",
+            )
+
+    def test_mining_reward_with_nonzero_fee_rejected_at_both_mempool_and_apply(self):
+        """MINING_REWARD transactions with non-zero fee must be rejected at both mempool and apply."""
+        pool = TransactionPool(self.utxo)
+        reward_tx = Transaction.mining_reward(
+            miner_wallet=self.miner_wallet,
+            reward_amount=50_000_000,
+            block_height=2,
+            antiquity_score=1.5,
+            hardware_model="PowerBook_G4",
+        )
+        reward_tx.fee = 10_000  # corrupt fee
+
+        self.assertFalse(
+            self.utxo.apply_transaction(reward_tx, block_height=2),
+            "apply_transaction must reject MINING_REWARD with non-zero fee",
+        )
+        self.assertFalse(
+            pool.add_transaction(reward_tx),
+            "add_transaction must reject MINING_REWARD with non-zero fee",
+        )
+
+    def test_valid_mining_reward_applies_and_enters_mempool(self):
+        """A valid MINING_REWARD transaction succeeds at apply and enters mempool."""
+        pool = TransactionPool(self.utxo)
+        valid_reward = Transaction.mining_reward(
+            miner_wallet=self.miner_wallet,
+            reward_amount=50_000_000,
+            block_height=2,
+            antiquity_score=2.0,
+            hardware_model="iMac_G5",
+        )
+
+        self.assertTrue(
+            pool.add_transaction(valid_reward),
+            "Valid MINING_REWARD must be accepted by mempool",
+        )
+        self.assertTrue(
+            self.utxo.apply_transaction(valid_reward, block_height=2),
+            "Valid MINING_REWARD must apply cleanly to UTXO set",
+        )
+        self.assertEqual(
+            self.utxo.get_balance(self.miner_wallet),
+            150_000_000,
+            "Miner balance must increase by mining reward amount",
+        )
+
     def test_mempool_rejects_negative_fee_and_inflation(self):
         """TransactionPool must reject negative fees, negative outputs, and inflation."""
         pool = TransactionPool(self.utxo)
@@ -138,7 +226,7 @@ class TestUtxoConservation(unittest.TestCase):
             value=200_000_000,
             proposition_bytes=Box.wallet_to_proposition(self.recipient),
             creation_height=2,
-            transaction_id=b'\x03' * 32,
+            transaction_id=b'' * 32,
             output_index=0,
         )
         tx_neg_fee = Transaction(
@@ -164,7 +252,7 @@ class TestUtxoConservation(unittest.TestCase):
             value=60_000_000,
             proposition_bytes=Box.wallet_to_proposition(self.recipient),
             creation_height=2,
-            transaction_id=b'\x04' * 32,
+            transaction_id=b'' * 32,
             output_index=0,
         )
         out_change = Box(
@@ -172,7 +260,7 @@ class TestUtxoConservation(unittest.TestCase):
             value=39_990_000,
             proposition_bytes=Box.wallet_to_proposition(self.miner_wallet),
             creation_height=2,
-            transaction_id=b'\x04' * 32,
+            transaction_id=b'' * 32,
             output_index=1,
         )
         tx = Transaction(

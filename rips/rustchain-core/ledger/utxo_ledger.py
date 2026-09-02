@@ -425,13 +425,14 @@ class TransactionPool:
                 return False
             total_in += box.value
 
-        # Conservation check for non-coinbase transactions
-        if tx.inputs:
+        # Conservation check for non-coinbase transactions; empty inputs must be MINING_REWARD with fee == 0
+        if not tx.inputs:
+            if tx.tx_type != TransactionType.MINING_REWARD or tx.fee != 0:
+                return False
+        else:
             total_out = tx.total_output_value() + tx.fee
             if total_out > total_in:
                 return False
-        elif tx.tx_type == TransactionType.MINING_REWARD and tx.fee != 0:
-            return False
 
         # Add to pool
         self._pending[tx.tx_id] = tx
