@@ -4694,6 +4694,20 @@ def validate_fingerprint_data(
         # But dict checks MUST have a "data" field with actual content
         if isinstance(check_entry, dict) and not check_entry.get("data"):
             return False, f"empty_check_data:{check_name}"
+        # SECURITY(#8078): a bare-bool `True` check (no `data` object at all)
+        # is treated as UNMEASURED rather than as a pass. A VM that simply
+        # asserts `True` for every check has zero measurements; letting that
+        # pass makes the anti-emulation gate decorative. The phase checks
+        # below (L4778+, L4816+) keep the bool-false path that rejects
+        # obvious failures — this block only catches the missing-data case.
+        # Limited-arch claims (Apple II, 386, console/Pico bridge) are
+        # exempt because they structurally cannot produce measurements.
+        if (
+            isinstance(check_entry, bool)
+            and check_entry is True
+            and not _is_limited_claim
+        ):
+            return False, f"check_unmeasured:{check_name}"
 
     # If vintage and clock_drift IS present, its raw metrics are still
     # validated. A plain unavailable/failed result is soft only for the
