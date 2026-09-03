@@ -1540,7 +1540,10 @@ if HAVE_REWARDS:
 # RIP-305: Airdrop V2 endpoints
 if HAVE_AIRDROP:
     try:
-        airdrop_instance = AirdropV2()
+        # A5: without db_path AirdropV2 falls back to a per-process :memory:
+        # SQLite DB (one per gunicorn worker, wiped on every restart), so the
+        # one-claim-per-user rule never persisted. Share the node's DB file.
+        airdrop_instance = AirdropV2(db_path=DB_PATH)
         init_airdrop_routes(app, airdrop_instance, DB_PATH)
         print("[RIP-305] Airdrop V2 endpoints registered")
     except Exception as e:
@@ -3876,26 +3879,51 @@ def _ledger_reward_row(c, ledger_cols, epoch, miner_id, amount_i64, reason):
     return True
 
 
+def _welcome_bonus_source_balance_i64(conn: sqlite3.Connection) -> Optional[int]:
+    """Current balance of the fund that pays welcome bonuses, or None if absent."""
+    row = conn.execute(
+        "SELECT amount_i64 FROM balances WHERE miner_id = ?", (WELCOME_BONUS_SOURCE,)
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return int(row[0])
+
+
 def _check_welcome_bonus(miner: str):
-    """Award welcome bonus on first-ever attestation. Funded from founder_community."""
+    """Award welcome bonus on first-ever attestation. Funded from founder_community.
+
+    Callers must only invoke this for attestations that PASSED the hardware
+    fingerprint (see the /attest/submit call site). The payer itself refuses to
+    drive WELCOME_BONUS_SOURCE negative and takes the write lock up front so two
+    concurrent first attests cannot both pass the already-paid check.
+    """
     try:
         with closing(sqlite3.connect(DB_PATH)) as conn:
+            conn.execute("BEGIN IMMEDIATE")
             # Check if this miner has ever attested before
             history_count = conn.execute(
                 "SELECT COUNT(*) FROM miner_attest_history WHERE miner = ?", (miner,)
             ).fetchone()[0]
-            
+
             if history_count <= 1:  # First attestation (just recorded)
                 ledger_cols = _table_columns(conn, "ledger")
                 balance_cols = _table_columns(conn, "balances")
                 # Check if welcome bonus already paid
                 already_paid = _welcome_bonus_already_paid(conn, miner, ledger_cols)
-                
+
                 if not already_paid:
                     bonus_i64 = int(WELCOME_BONUS_RTC * 1_000_000)
+                    source_balance = _welcome_bonus_source_balance_i64(conn)
+                    if source_balance is None or source_balance < bonus_i64:
+                        print(f"[WELCOME] SKIPPED for {miner}: {WELCOME_BONUS_SOURCE} "
+                              f"balance {source_balance} < {bonus_i64} uRTC")
+                        conn.rollback()
+                        return
                     _write_welcome_bonus(conn, miner, bonus_i64, ledger_cols, balance_cols)
                     conn.commit()
                     print(f"[WELCOME] {miner} received {WELCOME_BONUS_RTC} RTC welcome bonus!")
+                    return
+            conn.rollback()
     except Exception as e:
         print(f"[WELCOME] Error for {miner}: {e}")
 
@@ -4019,7 +4047,7 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
                 device_arch = excluded.device_arch,
                 source_ip = excluded.source_ip,
                 fingerprint_passed = MAX(miner_attest_recent.fingerprint_passed, excluded.fingerprint_passed),
-                signing_pubkey = excluded.signing_pubkey,
+                signing_pubkey = COALESCE(excluded.signing_pubkey, miner_attest_recent.signing_pubkey),
                 fingerprint_checks_json = excluded.fingerprint_checks_json
         """, (miner, now, verified_device["device_family"], verified_device["device_arch"], entropy_score, new_fp, source_ip, signing_pubkey, fingerprint_checks_json))
         _ = append_fingerprint_snapshot(conn, miner, fingerprint if isinstance(fingerprint, dict) else {}, now)
@@ -6425,8 +6453,11 @@ def _submit_attestation_impl():
     if macs:
         record_macs(miner, macs)
 
-    # Check for welcome bonus (first attestation)
-    _check_welcome_bonus(miner)
+    # Check for welcome bonus (first attestation). Only a miner that PASSED the
+    # hardware fingerprint earns it: a VM/emulator/missing-fingerprint attest is
+    # still recorded (zero reward weight) but must not drain founder_community.
+    if fingerprint_passed:
+        _check_welcome_bonus(miner)
 
     # AUTO-ENROLL: Automatically enroll miner in current epoch on successful attestation
     # This eliminates the need for miners to make a separate POST /epoch/enroll call
