@@ -24,7 +24,7 @@ jobs:
     steps:
       - name: Award RTC to contributor
         continue-on-error: true  # rewards are best-effort; never gate CI
-        uses: Scottcjn/rustchain-bounties/actions/rtc-reward@main
+        uses: Scottcjn/rustchain-bounties/actions/rtc-reward@0de7a37bebfefde4f0c4baeebc3a17ffd1ba76e3 # pinned 2026-09-03 (was @main)
         env:
           # The action reads GITHUB_TOKEN from env; without this it crashed on
           # every merge ("Error: GITHUB_TOKEN not set") and paid no one, masked
