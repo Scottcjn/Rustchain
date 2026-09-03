@@ -10,15 +10,17 @@ import ipaddress
 import os
 from urllib.parse import urlparse
 
-# All RustChain nodes - includes both Tailscale and public URLs
+# Live RustChain attestation nodes - includes both Tailscale and public URLs.
+# 2026-09-03: node3 (Ryan's Proxmox, 76.8.228.245 / 100.88.109.32) has been
+# offline for ~3 months and node4 (POWER8 Funnel / 100.94.28.32) is down; both
+# were removed so the sync loop stops posting the P2P secret to dead hosts.
+# node2 now uses https:// - 50.28.86.153 serves /health over TLS (verified
+# 2026-09-03) and plain http://...:8099 is not reachable from outside.
+# Extra peers belong in RC_P2P_PEERS, not in this list.
 PEER_NODES = {
     "node1": "https://rustchain.org",           # VPS Primary (public)
     "node1_ts": "http://100.125.31.50:8099",       # VPS via Tailscale
-    "node2": "http://50.28.86.153:8099",           # VPS Secondary / Ergo Anchor
-    "node3": "http://100.88.109.32:8099",          # Ryan's (Tailscale)
-    "node3_public": "http://76.8.228.245:8099",    # Ryan's (public)
-    "node4": "http://100.94.28.32:8099",           # POWER8 S824 (Tailscale)
-    "node4_public": "https://sophiapower8.tailbac22e.ts.net"  # POWER8 (Funnel - public!)
+    "node2": "https://50.28.86.153",               # VPS Secondary / Ergo Anchor
 }
 
 
