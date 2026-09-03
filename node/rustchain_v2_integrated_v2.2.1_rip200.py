@@ -12608,8 +12608,15 @@ try:
             print(f"[ERROR] p2p request failed: {e!r}")
             return jsonify({"ok": False, "error": "internal_error"}), 400
 
-    # Start background sync unless an integration test explicitly disables it.
-    if os.environ.get("RUSTCHAIN_DISABLE_P2P_AUTO_START") != "1":
+    # Start background sync unless an integration test explicitly disables it,
+    # or no shared RC_P2P_KEY is configured. Sync/external nodes have no fleet
+    # key: without it every gunicorn worker mints its own random HMAC key and
+    # each outbound sync request 401s every 30s (security audit 2026-09-02, A14).
+    if os.environ.get("RUSTCHAIN_DISABLE_P2P_AUTO_START") == "1":
+        pass
+    elif not os.environ.get("RC_P2P_KEY"):
+        print("[P2P] RC_P2P_KEY not set: legacy block sync not started (fleet-only); public API unaffected")
+    else:
         block_sync.start()
 
     print("[P2P] [OK] Endpoints registered successfully")
