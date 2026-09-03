@@ -3292,12 +3292,12 @@ def _classify_validated_x86_brand(cpu_brand: str):
     vendor = r"(?:(?:genuineintel|authenticamd|intel(?:\(r\))?|amd)\s+)?"
     speed = r"\d+(?:\.\d+)?(?:\s*[-/]\s*\d+(?:\.\d+)?)?\s*(?:mhz|ghz)?"
     patterns = (
-        ("386", 3, rf"^{vendor}(?:i?80386|i?386|am386)(?:[\s/-]?[a-z0-9]+)*$"),
+        ("386", 3, rf"^{vendor}(?:i?80386|i?386(?:dx|sx)?|am386(?:dx|sx)?)(?:[\s/-]?[a-z0-9]+)*$"),
         (
             "486",
             4,
-            rf"^{vendor}(?:(?:i?80486|i?486|am486)(?:[\s/-]?[a-z0-9]+)*|"
-            rf"am5x86(?:-[a-z0-9]+)?|cyrix\s+cx486(?:[a-z0-9/-]+)?)$",
+            rf"^{vendor}(?:(?:i?80486|i?486(?:sx|dx|dx2|dx4)?|am486(?:dx|dx2|dx4)?|ti486(?:sx|dx|dx2|dx4)?)(?:[\s/-]?[a-z0-9]+)*|"
+            rf"am5x86(?:-(?:wt|dx4|[a-z0-9]+))?|cyrix\s+cx486(?:s|dx|dx2|dx4)?(?:[a-z0-9/-]+)?)$",
         ),
         ("pentium_mmx", 5, rf"^{vendor}pentium(?:\(r\))?\s+mmx(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
         ("pentium_pro", 6, rf"^{vendor}pentium(?:\(r\))?\s+pro(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
@@ -3336,8 +3336,10 @@ def _derive_enroll_weight_device(
     """
     family = str(verified_device.get("device_family") or "")
     claimed_arch = str(verified_device.get("device_arch") or "").lower()
-    if family.lower() not in ("x86", "x86_64") or claimed_arch not in _X86_VINTAGE_REWARD_ARCHES:
+    if family.lower() not in ("x86", "x86_64"):
         return verified_device
+    if claimed_arch not in _X86_VINTAGE_REWARD_ARCHES:
+        return {"device_family": "x86", "device_arch": "default"}
 
     if not fingerprint_passed or not measurement_report_verified:
         return {"device_family": "x86", "device_arch": "default"}
@@ -3452,7 +3454,12 @@ def _derive_enroll_weight_device(
 
     if claimed_arch != observed_arch:
         return {"device_family": "x86", "device_arch": "default"}
-    return {"device_family": "x86", "device_arch": claimed_arch}
+    # Final allowlist guard: even if brand and oracle agree, the resolved arch
+    # must be in the vintage reward set. This prevents arbitrary arch strings
+    # injected via oracle or brand from earning a tier.
+    if observed_arch not in _X86_VINTAGE_REWARD_ARCHES:
+        return {"device_family": "x86", "device_arch": "default"}
+    return {"device_family": "x86", "device_arch": observed_arch}
 
 
 def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: bool) -> dict:
