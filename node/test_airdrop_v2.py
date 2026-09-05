@@ -141,7 +141,11 @@ class TestEligibilityChecks(unittest.TestCase):
                 return mock_user
             elif "starred" in url:
                 return mock_stars
-            elif "search/commits" in url:
+            elif "search/issues" in url:
+                self.assertEqual(
+                    kwargs["params"]["q"],
+                    "author:testuser org:Scottcjn is:pr is:merged",
+                )
                 return mock_contrib
             return Mock(status_code=404)
 
@@ -155,10 +159,54 @@ class TestEligibilityChecks(unittest.TestCase):
             skip_antisybil=True,  # Skip wallet checks, but still determine tier from GitHub
         )
 
-        # With mock returning 3 PRs, user should be eligible for Builder tier
+        # With mock returning 3 org-scoped merged PRs, user should be eligible for Builder tier
         self.assertTrue(result.eligible)
-        self.assertEqual(result.tier, "builder")  # 3 PRs = Builder tier
+        self.assertEqual(result.tier, "builder")  # 3 merged PRs in Scottcjn org = Builder tier
         self.assertEqual(result.reward_uwrtc, 100 * 1_000_000)
+
+    @patch("requests.get")
+    def test_tier_search_ignores_global_commit_history(self, mock_get):
+        """Tiering must use org-scoped merged PRs, not global commit counts."""
+        mock_user = Mock(status_code=200)
+        mock_user.json.return_value = {
+            "login": "octocat",
+            "created_at": "2020-01-01T00:00:00Z",
+        }
+        mock_user.headers = {}
+
+        mock_contrib = Mock(status_code=200)
+        mock_contrib.json.return_value = {"total_count": 0}
+
+        mock_stars = Mock(status_code=200)
+        mock_stars.headers = {
+            "Link": '<https://api.github.com/user/starred?page=12>; rel="last"'
+        }
+        mock_stars.json.return_value = []
+
+        seen = []
+
+        def side_effect(url, *args, **kwargs):
+            seen.append((url, kwargs.get("params")))
+            if url.endswith("/users/octocat"):
+                return mock_user
+            if url.endswith("/search/issues"):
+                return mock_contrib
+            if url.endswith("/users/octocat/starred"):
+                return mock_stars
+            return Mock(status_code=404)
+
+        mock_get.side_effect = side_effect
+
+        tier = self.airdrop._determine_tier("octocat")
+
+        self.assertEqual(tier, EligibilityTier.STARGAZER)
+        self.assertIn(
+            (
+                "https://api.github.com/search/issues",
+                {"q": "author:octocat org:Scottcjn is:pr is:merged", "per_page": 1},
+            ),
+            seen,
+        )
 
     def test_invalid_chain(self):
         """Test eligibility check with invalid chain."""
