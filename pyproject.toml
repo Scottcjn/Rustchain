@@ -18,7 +18,11 @@ dependencies = [
     "cryptography>=41",
     "pynacl>=1.5",
     "psutil>=5.9",
+    "openapi-spec-validator>=0.7,<0.8",
 ]
+
+[project.scripts]
+rustchain-compat = "compatibility_lab.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/Scottcjn/Rustchain"
@@ -26,7 +30,8 @@ Repository = "https://github.com/Scottcjn/Rustchain"
 Issues = "https://github.com/Scottcjn/Rustchain/issues"
 
 [tool.setuptools]
-packages = ["node"]
+packages = ["node", "compatibility_lab"]
 
 [tool.setuptools.package-data]
 "node" = ["*.sql", "*.json"]
+"compatibility_lab" = ["read_only_api.openapi.json", "fixtures/*.json"]

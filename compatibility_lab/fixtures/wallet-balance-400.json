@@ -1,0 +1,10 @@
+{
+  "fixture_version": 1,
+  "operation_id": "getWalletBalance",
+  "status": 400,
+  "content_type": "application/json",
+  "body": {
+    "ok": false,
+    "error": "invalid miner_id"
+  }
+}
