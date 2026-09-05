@@ -138,11 +138,9 @@ def test_console_arch_no_longer_skips_clock_drift(node):
 
     ok_modern, reason_modern = node.validate_fingerprint_data(
         no_clock, claimed_device={"family": "x86_64", "arch": "modern"},
-        allow_tscless_x86_reward=True,
     )
     ok_console, reason_console = node.validate_fingerprint_data(
         no_clock, claimed_device={"family": "console", "arch": "nes_6502"},
-        allow_tscless_x86_reward=True,
     )
 
     assert ok_modern is False and reason_modern == "missing_required_check:clock_drift"
