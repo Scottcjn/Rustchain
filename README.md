@@ -74,12 +74,12 @@ Here's what no one else in DePIN has figured out:
 
 **Your brand-new Threadripper will be vintage hardware someday.** Your M4 MacBook will be a museum piece. That RTX 5090 will be a curiosity. Time is undefeated.
 
-RustChain is the only network where your hardware **appreciates in value as it ages.** Start mining today at 1.0x. In ten years, when that CPU is a relic and you're still running it? Your multiplier grows. In twenty years? It's legendary.
+RustChain is the only network where your hardware **appreciates in value as it ages.** Start mining today at 0.8x. In ten years, when that CPU is a relic and you're still running it? Your multiplier grows. In twenty years? It's legendary.
 
 Every other blockchain punishes old hardware. Proof-of-Work demands the newest ASICs. Proof-of-Stake demands the biggest wallet. RustChain demands **patience and preservation.**
 
 ```
-2026:  Your Ryzen 9 mines at 1.0x         ░░░░░░░░░░
+2026:  Your Ryzen 9 mines at 0.8x         ░░░░░░░░░░
 2031:  Same machine, now "retro" at 1.3x   ░░░░░░░░░░░░░
 2036:  Vintage tier unlocked at 1.8x        ░░░░░░░░░░░░░░░░░░
 2041:  Ancient tier — 2.2x and climbing     ░░░░░░░░░░░░░░░░░░░░░░
@@ -131,7 +131,7 @@ Proof-of-Antiquity rewards hardware for *surviving*, not for being fast. Older m
 | PowerPC G4 (2003) | **2.5x** | ANCIENT | Still running, still earning |
 | RISC-V (2014) | **1.4x** | EXOTIC | Open ISA, the future |
 | Apple Silicon M1 (2020) | **1.2x** | MODERN | Efficient, welcome |
-| Modern x86_64 | **1.0x** | MODERN | Baseline — *for now* |
+| Modern x86_64 | **0.8x** | MODERN | Below par on purpose — *for now* |
 | Modern ARM NAS/SBC | **0.0005x** | PENALTY | Cheap, farmable, penalized |
 
 Our fleet of 16+ preserved machines draws roughly the same power as ONE modern GPU mining rig — while preventing 1,300 kg of manufacturing CO2 and 250 kg of e-waste.
