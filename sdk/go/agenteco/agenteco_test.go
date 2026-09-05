@@ -134,6 +134,31 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+func TestBaseURLPathPrefixIsPreserved(t *testing.T) {
+	var requestedPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestedPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(&Health{Status: "healthy"})
+	}))
+	defer server.Close()
+
+	client, err := NewClient(&ClientConfig{
+		BaseURL: server.URL + "/api/agent-economy",
+	})
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+	defer client.Close()
+
+	if _, err := client.Health(context.Background()); err != nil {
+		t.Fatalf("Health check failed: %v", err)
+	}
+	if requestedPath != "/api/agent-economy/health" {
+		t.Fatalf("Expected prefixed path /api/agent-economy/health, got %s", requestedPath)
+	}
+}
+
 // Test Agent Operations
 
 func TestListAgents(t *testing.T) {
