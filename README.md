@@ -26,7 +26,7 @@ A PowerBook G4 from 2003 earns **2.5x** more than a modern Threadripper.
 A Power Mac G5 earns **2.0x**. A 486 with rusty serial ports earns the most respect of all.
 
 
-[Discord](https://discord.gg/XnRp7M5gBW) · [Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](docs/QUICKSTART.md) · [FAQ](https://rustchain.org/faq) · [Hardware Requirements](docs/HARDWARE_REQUIREMENTS.md) · [Manifesto](MANIFESTO.md) · [Whitepaper](docs/WHITEPAPER.md) · [Hire Us](CONSULTING.md)
+[Discord](https://discord.gg/XnRp7M5gBW) · [Explorer](https://rustchain.org/explorer/) · [Machines Preserved](https://rustchain.org/preserved.html) · [Install Miner](#quickstart) · [Beginner Guide](START_HERE.md) · [FAQ](https://rustchain.org/faq) · [Hardware Requirements](docs/HARDWARE_REQUIREMENTS.md) · [Manifesto](MANIFESTO.md) · [Whitepaper](docs/WHITEPAPER.md) · [Hire Us](CONSULTING.md)
 
 Languages: [English](README.md) · [简体中文](docs/zh-CN/README.md) · [简体中文 (根目录)](README_ZH.md) · [繁體中文](README_ZH-TW.md) · [Español](README_ES.md) · [Deutsch](README_DE.md) · [日本語](README_JA.md) · [Русский](README_RU.md) · [Tiếng Việt](README.vi.md) · [Português (BR)](README.pt-BR.md) · [हिन्दी](README_HI.md) · [Italiano](docs/it-IT/README.md) · [한국어](docs/ko-KR/README.md) · [中文 API 快速参考](docs/zh-CN/API.md)
 
@@ -335,7 +335,7 @@ launchctl list | grep rustchain
 tail -f ~/.rustchain/miner.log
 ```
 
-**New to RustChain?** Read the [step-by-step Beginner Quickstart](docs/QUICKSTART.md) — covers everything from install to your first RTC, with every command explained.
+**New to RustChain?** Read the [step-by-step Beginner Quickstart](START_HERE.md) — covers everything from install to your first RTC, with every command explained.
 
 ---
 
@@ -619,7 +619,7 @@ curl -fsS https://rustchain.org/epoch
 - **Service did not start after install**: Check `systemctl --user status rustchain-miner` (Linux) or `~/.rustchain/miner.log` (macOS).
 - **Building the node from source**: Rust and dev tooling are only needed for node development, not for mining. See the [Build Guide](docs/BUILD.md).
 
-For more details, see the [Beginner Quickstart](docs/QUICKSTART.md).
+For more details, see the [Beginner Quickstart](START_HERE.md).
 </details>
 
 For deeper debugging, see the [CLI Wallet Walkthrough](docs/CLI.md) and [Local Devnet Guide](docs/DEVNET.md).
