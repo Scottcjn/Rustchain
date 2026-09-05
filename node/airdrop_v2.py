@@ -926,11 +926,35 @@ class AirdropV2:
             status="pending",
         )
 
-        # Store claim
+        # Store claim atomically.
+        # Serialize on the DB write lock (BEGIN IMMEDIATE) and re-check the
+        # dedup rule INSIDE the transaction. Closes #8245: the _has_claimed()
+        # SELECT at the top of this method and the INSERT below were not
+        # atomic, so two concurrent claims for the SAME github_username with
+        # DIFFERENT wallets could both pass the check and both INSERT (the
+        # UNIQUE constraint only covers the composite
+        # (github_username, wallet_address, chain)), double-allocating.
         conn = self._get_conn()
         cursor = conn.cursor()
 
         try:
+            # Acquire the write lock immediately so concurrent claims serialize
+            # on this (github_username, chain) instead of racing SELECT+INSERT.
+            cursor.execute("BEGIN IMMEDIATE")
+
+            # Re-check dedup inside the locked transaction.
+            cursor.execute(
+                """
+                SELECT 1 FROM airdrop_claims
+                WHERE chain = ? AND (github_username = ? OR wallet_address = ?)
+                AND status IN ('pending', 'completed')
+                """,
+                (chain_lower, github_username, wallet_address),
+            )
+            if cursor.fetchone() is not None:
+                conn.rollback()
+                return False, "Claim already exists for this GitHub account or wallet", None
+
             cursor.execute(
                 """
                 INSERT INTO airdrop_claims
@@ -976,6 +1000,10 @@ class AirdropV2:
         except sqlite3.IntegrityError as e:
             conn.rollback()
             return False, "Claim already exists for this wallet/github pair", None
+        except sqlite3.OperationalError as e:
+            # BEGIN IMMEDIATE / write lock contention under concurrency.
+            conn.rollback()
+            return False, "Concurrent claim conflict (database busy), please retry", None
         except Exception as e:
             conn.rollback()
             logger.error(f"Claim processing error: {e}")
