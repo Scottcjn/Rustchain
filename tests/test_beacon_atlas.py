@@ -3,6 +3,7 @@
 Test suite for Beacon Atlas 3D Agent World - Bounty #1524
 Tests backend API endpoints, data integrity, and visualization logic.
 """
+import re
 import unittest
 import json
 import time
@@ -306,6 +307,90 @@ class TestBeaconAtlasAgentSearch(unittest.TestCase):
         self.assertIn("searchResults.replaceChildren()", ui)
         self.assertIn("name.textContent = agent.name || agent.id", ui)
         self.assertIn("selectAgent(agent.id)", ui)
+
+
+class TestBeaconAtlasPerformanceMode(unittest.TestCase):
+    """Test the actual frontend LOD policy without requiring a WebGL browser."""
+
+    @classmethod
+    def setUpClass(cls):
+        root = pathlib.Path(__file__).resolve().parents[1]
+        cls.agents_source = (root / "site" / "beacon" / "agents.js").read_text()
+        cls.scene_source = (root / "site" / "beacon" / "scene.js").read_text()
+
+    def run_agents_probe(self, expression):
+        source = re.sub(
+            r"^import[\s\S]*?;\s*$",
+            "",
+            self.agents_source,
+            flags=re.MULTILINE,
+        )
+        source = re.sub(r"\bexport\s+", "", source)
+        result = subprocess.run(
+            ["node", "--input-type=module", "--eval", source + "\n" + expression],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_lod_boundaries_and_population_gate(self):
+        result = self.run_agents_probe("""
+          console.log(JSON.stringify({
+            levels: [0, 19600, 19601, 102400, 102401].map(selectAgentLod),
+            enabled: [99, 100, 125].map(shouldUseAgentPerformanceMode),
+          }));
+        """)
+        self.assertEqual(
+            result["levels"],
+            ["high", "high", "medium", "medium", "low"],
+        )
+        self.assertEqual(result["enabled"], [False, True, True])
+
+    def test_lod_transition_reuses_geometry_and_culls_detail_effects(self):
+        result = self.run_agents_probe("""
+          const mesh = {
+            core: { geometry: 'initial' },
+            glow: { visible: true },
+            light: { visible: true },
+            label: { visible: true },
+            group: { userData: {} },
+            lodGeometries: { high: 'HIGH', medium: 'MEDIUM', low: 'LOW' },
+          };
+          const first = applyAgentLod(mesh, 'low');
+          const snapshot = {
+            geometry: mesh.core.geometry,
+            glow: mesh.glow.visible,
+            light: mesh.light.visible,
+            label: mesh.label.visible,
+            level: mesh.group.userData.lod,
+          };
+          const duplicate = applyAgentLod(mesh, 'low');
+          const restored = applyAgentLod(mesh, 'high');
+          console.log(JSON.stringify({ first, snapshot, duplicate, restored }));
+        """)
+        self.assertTrue(result["first"])
+        self.assertEqual(
+            result["snapshot"],
+            {
+                "geometry": "LOW",
+                "glow": False,
+                "light": False,
+                "label": False,
+                "level": "low",
+            },
+        )
+        self.assertFalse(result["duplicate"])
+        self.assertTrue(result["restored"])
+
+    def test_performance_mode_is_integrated_into_render_loop(self):
+        self.assertIn("camera.position.distanceToSquared", self.agents_source)
+        self.assertIn("LOD_UPDATE_INTERVAL_SECONDS", self.agents_source)
+        self.assertIn("mesh.group.userData.lod === 'low'", self.agents_source)
+        self.assertIn("setAgentPerformanceMode(performanceMode)", self.agents_source)
+        self.assertIn("PERFORMANCE_PIXEL_RATIO_CAP = 1.25", self.scene_source)
+        self.assertIn("renderer.setPixelRatio", self.scene_source)
+
 
 
 class TestBeaconAtlasDataIntegrity(unittest.TestCase):
