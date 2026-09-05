@@ -4534,13 +4534,6 @@ def validate_fingerprint_data(
     FIX #1147: Added defensive type checking for all nested access to prevent crashes
     from malformed payloads.
     """
-    if not fingerprint:
-        # FIX #305: Missing fingerprint data is a validation failure
-        return False, "no_fingerprint_data"
-    if not isinstance(fingerprint, dict):
-        return False, "fingerprint_not_dict"
-
-    checks = _fingerprint_checks_map(fingerprint)
     claimed_device = claimed_device if isinstance(claimed_device, dict) else {}
 
     # RIP-309b: classify the device BEFORE bailing on an empty checks map.
@@ -4548,6 +4541,18 @@ def validate_fingerprint_data(
     # measurements at top level and no `checks` map at all, so an early return
     # here scored the honest Apple II and 386 fleet at zero. A limited claim is
     # only honoured when nothing in the payload contradicts it.
+    #
+    # RIP-309c (closes #8342): classification only needs claimed_device, so it
+    # is safe to run before the fingerprint shape is even checked. Under
+    # RIP-309b alone, `empty_fingerprint_checks` was gone, but `fingerprint`
+    # being None or not a dict at all still short-circuited above this block
+    # with `no_fingerprint_data` / `fingerprint_not_dict` — so an i386 client
+    # that sends no separate fingerprint object, or an Apple II client whose
+    # payload is a bare identity string rather than a dict, still enrolled at
+    # zero even though the multiplier table rewards those machines. The
+    # flattest clients put their native-evidence fields directly on
+    # claimed_device when they never construct a fingerprint blob, so that is
+    # checked here too.
     _claimed_arch_early = (claimed_device.get("device_arch")
                            or claimed_device.get("arch", "")) if claimed_device else ""
     _claimed_arch_early = str(_claimed_arch_early).lower()
@@ -4557,6 +4562,23 @@ def validate_fingerprint_data(
         or (isinstance(fingerprint, dict)
             and fingerprint.get("bridge_type") == "pico_serial")
     )
+
+    if not fingerprint or not isinstance(fingerprint, dict):
+        if _is_limited_claim:
+            _veto = _capability_contradiction(claimed_device, fingerprint)
+            if _veto:
+                return False, f"capability_claim_contradicted:{_veto}"
+            _native = _micro_native_evidence_count(claimed_device)
+            if _native >= 2:
+                return True, f"micro_native_evidence:{_native}"
+            return False, "micro_insufficient_native_evidence"
+        # FIX #305: Missing fingerprint data is a validation failure
+        if not fingerprint:
+            return False, "no_fingerprint_data"
+        return False, "fingerprint_not_dict"
+
+    checks = _fingerprint_checks_map(fingerprint)
+
     if _is_limited_claim:
         _veto = _capability_contradiction(claimed_device, fingerprint)
         if _veto:
