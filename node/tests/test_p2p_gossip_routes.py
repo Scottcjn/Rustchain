@@ -54,7 +54,7 @@ def test_p2p_gossip_requires_json_object():
     app, node = _app_and_node()
 
     with app.test_client() as client:
-        resp = client.post("/p2p/gossip", json=["not", "an", "object"])
+        resp = client.post("/p2p/gossip", json=["not", "an", "object"], headers={"X-P2P-Key": "a" * 64})
 
     assert resp.status_code == 400
     assert resp.get_json()["error"] == "JSON object required"
@@ -66,7 +66,7 @@ def test_p2p_gossip_forwards_valid_object_body():
     payload = {"msg_type": "ping"}
 
     with app.test_client() as client:
-        resp = client.post("/p2p/gossip", json=payload)
+        resp = client.post("/p2p/gossip", json=payload, headers={"X-P2P-Key": "a" * 64})
 
     assert resp.status_code == 200
     assert resp.get_json()["status"] == "ok"
@@ -89,7 +89,7 @@ def test_p2p_gossip_rejects_oversized_payload_before_handler():
     }
 
     with app.test_client() as client:
-        resp = client.post("/p2p/gossip", json=payload)
+        resp = client.post("/p2p/gossip", json=payload, headers={"X-P2P-Key": "a" * 64})
 
     assert resp.status_code == 400
     assert "too many keys" in resp.get_json()["error"]
@@ -112,3 +112,24 @@ def test_gossip_message_rejects_payload_that_exceeds_serialized_cap():
 
     with pytest.raises(ValueError, match="maximum serialized size"):
         GossipMessage.from_dict(payload)
+
+
+def test_p2p_gossip_requires_auth_header():
+    """Without X-P2P-Key the gossip POST should be rejected."""
+    app, node = _app_and_node()
+    with app.test_client() as client:
+        resp = client.post("/p2p/gossip", json={"msg_type": "ping"})
+    assert resp.status_code == 401
+    assert node.handled == []
+
+
+def test_p2p_gossip_accepts_valid_auth():
+    """With the correct X-P2P-Key the gossip POST should succeed."""
+    app, node = _app_and_node()
+    payload = {"msg_type": "ping"}
+    with app.test_client() as client:
+        resp = client.post(
+            "/p2p/gossip", json=payload, headers={"X-P2P-Key": "a" * 64}
+        )
+    assert resp.status_code == 200
+    assert node.handled == [payload]
