@@ -3,12 +3,13 @@
 // ============================================================
 
 import {
-  AGENTS, CITIES, CONTRACTS, CALIBRATIONS,
-  GRADE_COLORS, cityRegion, addContract, getProviderColor, resolveAgentId, searchAgents,
+  AGENTS, CITIES, CONTRACTS, CALIBRATIONS, GRADE_COLORS,
+  cityRegion, addContract, getProviderColor, resolveAgentId, searchAgents, REGIONS,
 } from './data.js';
 import { lerpCameraTo, resetCamera, setClickHandler, setMissHandler, setHoverHandler } from './scene.js';
 import { getAgentPosition, highlightAgent } from './agents.js';
 import { getCityCenter } from './cities.js';
+import { buildCityTeleportGroups, resolveTeleportCity } from './city-teleport.mjs';
 import { highlightAgentConnections, addContractLine } from './connections.js';
 import { initChat, setCurrentAgent, getChatHTML, bindChatEvents } from './chat.js';
 import { buildContractHistory, formatContractTimestamp } from './contract-history.mjs';
@@ -117,6 +118,7 @@ export function initUI() {
   // HUD stats
   updateHUD();
   initAgentSearch();
+  initCityTeleport();
 
   // Click handlers
   setClickHandler(onObjectClick);
@@ -280,6 +282,34 @@ function hideAgentSearchResults() {
   searchInput.setAttribute('aria-expanded', 'false');
   searchInput.removeAttribute('aria-activedescendant');
   activeSearchIndex = -1;
+function initCityTeleport() {
+  const select = document.getElementById('hud-city-teleport');
+  if (!select) return;
+
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = '[CITY TELEPORT]';
+  select.replaceChildren(placeholder);
+
+  for (const group of buildCityTeleportGroups(CITIES, REGIONS)) {
+    const optionGroup = document.createElement('optgroup');
+    optionGroup.label = group.name.toUpperCase();
+
+    for (const city of group.cities) {
+      const option = document.createElement('option');
+      option.value = city.id;
+      option.textContent = city.name;
+      optionGroup.append(option);
+    }
+
+    select.append(optionGroup);
+  }
+
+  select.addEventListener('change', () => {
+    const city = resolveTeleportCity(CITIES, select.value);
+    select.value = '';
+    if (city) selectCity(city.id);
+  });
 }
 
 function updateHUD() {
