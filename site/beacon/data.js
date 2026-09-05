@@ -803,6 +803,66 @@ export const CONTRACT_STATE_OPACITY = {
 // ============================================================
 export const REGION_RADIUS = 120;
 
+/**
+ * Find agents by identity and visible Atlas metadata.
+ *
+ * Every whitespace-delimited query token must match somewhere in the agent's
+ * searchable fields. Exact identities and name-prefix matches rank ahead of
+ * broader role, capability, provider, source, status, or city matches.
+ */
+export function searchAgents(query, agents = AGENTS, limit = 8) {
+  const normalizedQuery = String(query ?? '').trim().toLowerCase();
+  if (!normalizedQuery) return [];
+
+  const tokens = normalizedQuery.split(/\s+/).filter(Boolean);
+  const safeLimit = Number.isFinite(Number(limit))
+    ? Math.min(20, Math.max(1, Math.trunc(Number(limit))))
+    : 8;
+
+  return agents
+    .map((agent, index) => {
+      const city = CITIES.find(candidate => candidate.id === agent.city);
+      const name = String(agent.name ?? '').toLowerCase();
+      const id = String(agent.id ?? '').toLowerCase();
+      const beacon = String(agent.beacon ?? agent.relay_agent_id ?? '').toLowerCase();
+      const cityName = String(city?.name ?? '').toLowerCase();
+      const searchable = [
+        name,
+        id,
+        beacon,
+        agent.role,
+        agent.provider,
+        agent.model_id,
+        agent.status,
+        agent.grade,
+        agent.city,
+        cityName,
+        ...(Array.isArray(agent.capabilities) ? agent.capabilities : []),
+        ...(Array.isArray(agent.sources) ? agent.sources : []),
+      ].map(value => String(value ?? '').toLowerCase()).join(' ');
+
+      if (!tokens.every(token => searchable.includes(token))) return null;
+
+      let rank = 6;
+      if (id === normalizedQuery || beacon === normalizedQuery || name === normalizedQuery) rank = 0;
+      else if (name.startsWith(normalizedQuery)) rank = 1;
+      else if (id.startsWith(normalizedQuery) || beacon.startsWith(normalizedQuery)) rank = 2;
+      else if (name.includes(normalizedQuery)) rank = 3;
+      else if (cityName.startsWith(normalizedQuery)) rank = 4;
+      else if (cityName.includes(normalizedQuery)) rank = 5;
+
+      return { agent, index, rank, name };
+    })
+    .filter(Boolean)
+    .sort((left, right) => (
+      left.rank - right.rank
+      || left.name.localeCompare(right.name)
+      || left.index - right.index
+    ))
+    .slice(0, safeLimit)
+    .map(result => result.agent);
+}
+
 export function regionPosition(region) {
   const rad = (region.angle * Math.PI) / 180;
   return { x: Math.cos(rad) * REGION_RADIUS, z: Math.sin(rad) * REGION_RADIUS };

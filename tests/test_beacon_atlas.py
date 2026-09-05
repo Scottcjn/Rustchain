@@ -8,9 +8,13 @@ import json
 import time
 import sys
 import os
+import pathlib
+import subprocess
+import textwrap
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class TestBeaconAtlasAPI(unittest.TestCase):
@@ -231,6 +235,79 @@ class TestBeaconAtlasVisualization(unittest.TestCase):
             self.assertLessEqual(opacity, 1.0, "Opacity must be <= 1")
 
 
+class TestBeaconAtlasAgentSearch(unittest.TestCase):
+    """Test the browser-independent agent search/filter behavior."""
+
+    def test_searches_identity_metadata_and_city_with_stable_ranking(self):
+        script = textwrap.dedent(
+            """
+            import { searchAgents } from './site/beacon/data.js';
+
+            const agents = [
+              {
+                id: 'bcn_sophia_elya', name: 'Sophia Elya', role: 'Inference Orchestrator',
+                city: 'compiler_heights', provider: 'elyan', status: 'active',
+                capabilities: ['coding', 'automation'], sources: ['beacon'],
+              },
+              {
+                id: 'bcn_doc_clint', name: 'Doc Clint Otis', role: 'Research Physician',
+                city: 'tensor_valley', provider: 'anthropic', status: 'active',
+                capabilities: ['research', 'documentation'], sources: ['beacon', 'bottube'],
+              },
+              {
+                id: 'bcn_silent_builder', name: 'Builder Zero', role: 'Code Agent',
+                city: 'compiler_heights', provider: 'openai', status: 'silent',
+                capabilities: ['coding'], sources: ['beacon'],
+              },
+            ];
+
+            const result = {
+              exact: searchAgents('bcn_sophia_elya', agents).map(agent => agent.id),
+              name: searchAgents('sophia', agents).map(agent => agent.id),
+              metadata: searchAgents('anthropic active', agents).map(agent => agent.id),
+              cityAndRole: searchAgents('tensor research', agents).map(agent => agent.id),
+              bounded: searchAgents('compiler', agents, 1).map(agent => agent.id),
+              empty: searchAgents('   ', agents).map(agent => agent.id),
+              missing: searchAgents('no-such-agent', agents).map(agent => agent.id),
+            };
+            console.log(JSON.stringify(result));
+            """
+        )
+        completed = subprocess.run(
+            [
+                "node",
+                "--experimental-default-type=module",
+                "--input-type=module",
+                "-e",
+                script,
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        result = json.loads(completed.stdout)
+
+        self.assertEqual(result["exact"], ["bcn_sophia_elya"])
+        self.assertEqual(result["name"], ["bcn_sophia_elya"])
+        self.assertEqual(result["metadata"], ["bcn_doc_clint"])
+        self.assertEqual(result["cityAndRole"], ["bcn_doc_clint"])
+        self.assertEqual(result["bounded"], ["bcn_silent_builder"])
+        self.assertEqual(result["empty"], [])
+        self.assertEqual(result["missing"], [])
+
+    def test_search_ui_is_accessible_and_uses_safe_dom_rendering(self):
+        index = (REPO_ROOT / "site/beacon/index.html").read_text(encoding="utf-8")
+        ui = (REPO_ROOT / "site/beacon/ui.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="agent-search-input"', index)
+        self.assertIn('role="combobox"', index)
+        self.assertIn('id="agent-search-results"', index)
+        self.assertIn("searchResults.replaceChildren()", ui)
+        self.assertIn("name.textContent = agent.name || agent.id", ui)
+        self.assertIn("selectAgent(agent.id)", ui)
+
+
 class TestBeaconAtlasDataIntegrity(unittest.TestCase):
     """Test data integrity and consistency."""
     
@@ -377,6 +454,7 @@ def run_tests():
     # Add test classes
     suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasAPI))
     suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasVisualization))
+    suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasAgentSearch))
     suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasDataIntegrity))
     suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasIntegration))
     

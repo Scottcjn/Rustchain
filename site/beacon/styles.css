@@ -90,6 +90,115 @@ html, body {
   color: var(--green);
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.agent-search {
+  position: relative;
+  width: min(320px, calc(100vw - 32px));
+  margin-top: 10px;
+  pointer-events: auto;
+  font-family: var(--font-mono);
+  text-shadow: none;
+}
+
+.agent-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--green-dim);
+  border-radius: 3px;
+  outline: none;
+  background: rgba(0, 12, 0, 0.92);
+  color: var(--green);
+  caret-color: var(--amber);
+  font: 12px/1.4 var(--font-mono);
+  letter-spacing: 1px;
+  box-shadow: inset 0 0 12px rgba(0, 255, 0, 0.03);
+}
+
+.agent-search-input::placeholder {
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+
+.agent-search-input:focus {
+  border-color: var(--green);
+  box-shadow: 0 0 10px rgba(0, 255, 0, 0.14), inset 0 0 12px rgba(0, 255, 0, 0.05);
+}
+
+.agent-search-results {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: rgba(0, 10, 0, 0.97);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.55), 0 0 12px rgba(0, 255, 0, 0.06);
+}
+
+.agent-search-results[hidden] {
+  display: none;
+}
+
+.agent-search-result {
+  display: flex;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid rgba(0, 255, 0, 0.08);
+  background: transparent;
+  color: var(--green);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  text-align: left;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-search-result:last-child {
+  border-bottom: 0;
+}
+
+.agent-search-result:hover,
+.agent-search-result.active {
+  background: rgba(0, 255, 0, 0.09);
+  color: #8cff8c;
+}
+
+.agent-search-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.agent-search-meta,
+.agent-search-empty {
+  color: var(--text-dim);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.agent-search-empty {
+  padding: 9px 10px;
+  letter-spacing: 1px;
+}
+
 /* --- Controls hint (bottom-left) --- */
 .controls-hint {
   position: fixed;
@@ -752,6 +861,10 @@ html, body {
 
   .hud-title { font-size: 22px; }
   .hud-stats { font-size: 14px; }
+
+  .agent-search {
+    width: min(300px, calc(100vw - 16px));
+  }
 
   .controls-hint { display: none; }
 }

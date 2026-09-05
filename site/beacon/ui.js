@@ -4,7 +4,7 @@
 
 import {
   AGENTS, CITIES, CONTRACTS, CALIBRATIONS,
-  GRADE_COLORS, cityRegion, addContract, getProviderColor, resolveAgentId,
+  GRADE_COLORS, cityRegion, addContract, getProviderColor, resolveAgentId, searchAgents,
 } from './data.js';
 import { lerpCameraTo, resetCamera, setClickHandler, setMissHandler, setHoverHandler } from './scene.js';
 import { getAgentPosition, highlightAgent } from './agents.js';
@@ -20,6 +20,10 @@ let panel, panelContent, panelPath, tooltip;
 let selectedAgent = null;
 let selectedCity = null;
 let hoveredId = null;
+let searchInput = null;
+let searchResults = null;
+let searchMatches = [];
+let activeSearchIndex = -1;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -111,6 +115,7 @@ export function initUI() {
 
   // HUD stats
   updateHUD();
+  initAgentSearch();
 
   // Click handlers
   setClickHandler(onObjectClick);
@@ -135,6 +140,145 @@ export function initUI() {
   // Deep-link support: auto-select agent/city from URL hash
   handleDeepLink();
   window.addEventListener('hashchange', handleDeepLink);
+}
+
+function initAgentSearch() {
+  searchInput = document.getElementById('agent-search-input');
+  searchResults = document.getElementById('agent-search-results');
+  if (!searchInput || !searchResults) return;
+
+  const refreshResults = () => {
+    const query = searchInput.value.trim();
+    searchMatches = searchAgents(query);
+    activeSearchIndex = searchMatches.length > 0 ? 0 : -1;
+    renderAgentSearchResults(query);
+  };
+
+  searchInput.addEventListener('input', refreshResults);
+  searchInput.addEventListener('focus', refreshResults);
+  searchInput.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (searchMatches.length === 0) return;
+      event.preventDefault();
+      const direction = event.key === 'ArrowDown' ? 1 : -1;
+      const nextIndex = (activeSearchIndex + direction + searchMatches.length) % searchMatches.length;
+      setActiveSearchIndex(nextIndex);
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      chooseSearchResult(activeSearchIndex);
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      searchInput.value = '';
+      searchMatches = [];
+      hideAgentSearchResults();
+      searchInput.blur();
+    }
+  });
+
+  document.addEventListener('keydown', event => {
+    const target = event.target;
+    const isTyping = target instanceof HTMLElement
+      && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+    if (event.key === '/' && !isTyping && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      searchInput.focus();
+    }
+  });
+
+  document.addEventListener('pointerdown', event => {
+    const target = event.target;
+    if (!(target instanceof Element) || !target.closest('.agent-search')) {
+      hideAgentSearchResults();
+    }
+  });
+}
+
+function renderAgentSearchResults(query) {
+  searchResults.replaceChildren();
+  searchInput.setAttribute('aria-expanded', query ? 'true' : 'false');
+
+  if (!query) {
+    hideAgentSearchResults();
+    return;
+  }
+
+  searchResults.hidden = false;
+
+  if (searchMatches.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'agent-search-empty';
+    empty.textContent = 'NO MATCHING AGENTS';
+    searchResults.append(empty);
+    return;
+  }
+
+  searchMatches.forEach((agent, index) => {
+    const city = CITIES.find(candidate => candidate.id === agent.city);
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'agent-search-result';
+    option.id = `agent-search-result-${index}`;
+    option.dataset.index = String(index);
+    option.setAttribute('aria-current', index === activeSearchIndex ? 'true' : 'false');
+
+    const name = document.createElement('span');
+    name.className = 'agent-search-name';
+    name.textContent = agent.name || agent.id;
+
+    const meta = document.createElement('span');
+    meta.className = 'agent-search-meta';
+    const status = agent.status ? ` · ${String(agent.status).toUpperCase()}` : '';
+    meta.textContent = `${city?.name || agent.city || 'Unknown city'}${status}`;
+
+    option.append(name, meta);
+    option.addEventListener('pointerenter', () => setActiveSearchIndex(index));
+    option.addEventListener('click', () => chooseSearchResult(index));
+    searchResults.append(option);
+  });
+
+  setActiveSearchIndex(activeSearchIndex, false);
+}
+
+function setActiveSearchIndex(index, scroll = true) {
+  activeSearchIndex = index;
+  const options = [...searchResults.querySelectorAll('.agent-search-result')];
+  options.forEach((option, optionIndex) => {
+    const active = optionIndex === activeSearchIndex;
+    option.classList.toggle('active', active);
+    option.setAttribute('aria-current', active ? 'true' : 'false');
+  });
+
+  const activeOption = options[activeSearchIndex];
+  if (activeOption) {
+    searchInput.setAttribute('aria-activedescendant', activeOption.id);
+    if (scroll) activeOption.scrollIntoView({ block: 'nearest' });
+  } else {
+    searchInput.removeAttribute('aria-activedescendant');
+  }
+}
+
+function chooseSearchResult(index) {
+  const agent = searchMatches[index];
+  if (!agent) return;
+  searchInput.value = agent.name || agent.id;
+  hideAgentSearchResults();
+  searchInput.blur();
+  selectAgent(agent.id);
+}
+
+function hideAgentSearchResults() {
+  if (!searchResults || !searchInput) return;
+  searchResults.hidden = true;
+  searchInput.setAttribute('aria-expanded', 'false');
+  searchInput.removeAttribute('aria-activedescendant');
+  activeSearchIndex = -1;
 }
 
 function updateHUD() {
