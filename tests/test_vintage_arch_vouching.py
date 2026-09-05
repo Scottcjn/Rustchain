@@ -40,7 +40,9 @@ NODE_FILE = os.path.join(NODE_DIR, "rustchain_v2_integrated_v2.2.1_rip200.py")
 def node():
     os.environ.setdefault("RC_ADMIN_KEY", "0" * 32)
     os.environ.setdefault("RC_P2P_SECRET", "c" * 40)
-    os.environ.setdefault("DB_PATH", tempfile.mktemp(suffix=".db"))
+    _db_fd, _db_path = tempfile.mkstemp(suffix=".db")
+    os.close(_db_fd)
+    os.environ.setdefault("DB_PATH", _db_path)
     if NODE_DIR not in sys.path:
         sys.path.insert(0, NODE_DIR)
     spec = importlib.util.spec_from_file_location("rcnode_vouch", NODE_FILE)
