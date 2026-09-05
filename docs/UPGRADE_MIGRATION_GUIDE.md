@@ -65,7 +65,7 @@ clawrtc --version
 clawrtc wallet show > wallet_info.txt
 
 # 记录矿工配置
-cat ~/.rustchain/config.yaml > config.backup
+cat ~/.rustchain/config.json > config.backup
 ```
 
 ### 3. 检查系统要求
@@ -124,7 +124,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # 3. 安装依赖
-pip install -r requirements.txt
+pip install -r requirements-node.txt
 
 # 4. 运行安装脚本
 bash install-miner.sh --wallet YOUR_WALLET
@@ -321,7 +321,7 @@ pip uninstall clawrtc
 python3 -m pip install clawrtc==1.0.0
 
 # 5. 恢复配置
-cp config.backup ~/.rustchain/config.yaml
+cp config.backup ~/.rustchain/config.json
 
 # 6. 重启矿工
 systemctl --user start rustchain-miner  # Linux

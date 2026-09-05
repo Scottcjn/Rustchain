@@ -50,24 +50,27 @@ Wanneer een nieuw knooppunt zich bij het netwerk aansluit, genereert het:
 ## Installatie
 
 ### Linux-miner
+
+> **Let op:** RustChain draait op **Python**, niet op Rust — er is geen
+> `cargo build` en geen gecompileerde binary. (De naam verwijst naar de
+> Rust-programmeertaal, maar de node en miner zijn in Python geschreven.)
+
 ```bash
-# Kloon de repository
+# Officieel installatiescript: maakt een Python-venv aan en start de miner
+curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-miner.sh | bash -s -- --wallet jesusmp
+```
+
+Handmatig (Python):
+```bash
 git clone https://github.com/Scottcjn/Rustchain.git
 cd Rustchain
-
-# Bouw de miner
-cargo build --release
-
-# Start de miner
-./target/release/rustchain-miner --wallet jesusmp
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements-node.txt
+python3 miners/linux/rustchain_linux_miner.py
 ```
 
-### Docker
-```bash
-docker run -d --name rustchain-miner \
-  -e WALLET=jesusmp \
-  rustchain/miner:latest
-```
+Voor het draaien van een volledige node, zie de
+[Node Operator Guide](../NODE_OPERATOR_GUIDE.md).
 
 ## Mining
 

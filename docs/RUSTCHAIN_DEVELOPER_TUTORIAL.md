@@ -242,16 +242,13 @@ pip install requests
 
 #### Step 4: Download Miner
 
+The miner is a **Python script** — there is no compiled binary to download,
+and it is the same file for every OS/architecture.
+
 ```bash
-# Detect your architecture
-ARCH=$(uname -m)
-OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-
-# Download appropriate binary
-curl -sSL "https://github.com/Scottcjn/Rustchain/releases/latest/download/rustchain_miner_${OS}_${ARCH}" \
+# Download the miner script (pure Python — works on any architecture)
+curl -sSL "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linux/rustchain_linux_miner.py" \
   -o rustchain_miner.py
-
-chmod +x rustchain_miner.py
 ```
 
 #### Step 5: Configure Wallet
@@ -905,7 +902,9 @@ tail -f ~/.rustchain/miner.log
 
 ### Running a Full Node
 
-For developers who want to run a full RustChain node:
+For developers who want to run a full RustChain node. The node is a
+Python/Flask app served with `gunicorn` (see the
+[Node Operator Guide](NODE_OPERATOR_GUIDE.md) for the complete walkthrough):
 
 ```bash
 # Clone the repository
@@ -913,14 +912,17 @@ git clone https://github.com/Scottcjn/Rustchain.git
 cd Rustchain
 
 # Install node dependencies
-pip install -r requirements.txt
+pip install -r requirements-node.txt
 
-# Initialize node data directory
-mkdir -p ~/.rustchain-node/data
-cp config/node.example.json ~/.rustchain-node/config.json
+# Configure via environment variables (a sync node needs no fleet secrets)
+cd node
+export RC_NODE_ROLE=sync
+export RC_NODE_ID=sync-1
+export RC_ADMIN_KEY=$(openssl rand -hex 32)
+export RUSTCHAIN_DB_PATH=$PWD/rustchain_v2.db
 
 # Start the node
-python node/integrated_node.py --config ~/.rustchain-node/config.json
+gunicorn -w 4 -b 0.0.0.0:8099 wsgi:app --timeout 120
 ```
 
 See [`DOCKER_DEPLOYMENT.md`](../DOCKER_DEPLOYMENT.md) for containerized deployment.
