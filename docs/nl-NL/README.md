@@ -110,7 +110,7 @@ Dit project is gelicentieerd onder de MIT-licentie.
 ## Contact
 
 - **GitHub**: https://github.com/Scottcjn/Rustchain
-- **Discord**: https://discord.gg/rustchain
+- **Discord**: https://discord.gg/XnRp7M5gBW
 - **Website**: https://rustchain.org
 
 ---

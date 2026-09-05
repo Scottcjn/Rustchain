@@ -532,4 +532,4 @@ See CONTRIBUTING.md for contribution guidelines.
 
 - Documentation: https://github.com/Scottcjn/Rustchain/tree/main/faucet_service
 - Issues: https://github.com/Scottcjn/rustchain-bounties/issues
-- Discord: https://discord.gg/rustchain
+- Discord: https://discord.gg/XnRp7M5gBW
