@@ -88,6 +88,10 @@ DATABASE_LOCKED_ERROR_MESSAGE = "Service unavailable due to database issues"
 UNEXPECTED_DATABASE_ERROR_MESSAGE = "An unexpected database error occurred"
 
 # Constants
+# Runtimes where fail-closed defaults are relaxed. MUST stay identical to
+# _MOCK_SIG_ALLOWED_ENVS in rustchain_v2_integrated_v2.2.1_rip200.py.
+NON_PRODUCTION_RUNTIMES = frozenset({"test", "testing", "dev", "development", "local", "testnet"})
+
 UNIT = 1_000_000  # uRTC per 1 RTC
 DB_PATH = "/root/rustchain/rustchain_v2.db"
 def _db_path_from(db_path):
@@ -201,7 +205,12 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
         # adding ADM grouping there would break the live fleet (each fingerprinted miner
         # is paid per epoch; ADM is an admin-path defense-in-depth measure, not the
         # external-Sybil control).
-        require_adm = os.environ.get("RC_REQUIRE_ADM", "0") == "1"
+        # Production default is ON (fail closed); test/dev runtimes default OFF so
+        # fixtures without the ADM module keep working. RC_REQUIRE_ADM=0/1 always wins.
+        _runtime_env = (os.environ.get("RC_RUNTIME_ENV") or os.environ.get("RUSTCHAIN_ENV") or "production").strip().lower()
+        _adm_default = "0" if _runtime_env in NON_PRODUCTION_RUNTIMES else "1"
+        # Fail closed on anything that is not an explicit "0": "1", "true", "" or a typo all mean REQUIRED.
+        require_adm = os.environ.get("RC_REQUIRE_ADM", _adm_default).strip().lower() not in ("0", "false", "no", "off")
         if require_adm and not (enable_anti_double_mining and ANTI_DOUBLE_MINING_AVAILABLE):
             db.rollback()
             return {

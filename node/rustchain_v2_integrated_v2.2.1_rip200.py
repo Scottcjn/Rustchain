@@ -31,6 +31,32 @@ except ImportError:
     HW_BINDING_V2 = False
     print('[WARN] hardware_binding_v2.py not found - using legacy binding')
 
+
+def enforce_hardware_binding_runtime_guard():
+    """Refuse to run a production node on legacy hardware binding.
+
+    hardware_binding_v2 is the identity layer that stops one physical machine
+    from being re-bound to a second wallet. Falling back to the legacy binder
+    when the module is missing is fine for a dev checkout, but a production
+    node that silently degrades keeps paying rewards under a weaker identity
+    model. Fail closed unless the operator explicitly accepts the legacy path
+    (RC_ALLOW_LEGACY_HW_BINDING=1) or the runtime is a test/dev environment.
+    Mirrors enforce_mock_signature_runtime_guard(); wsgi.py calls both before
+    init_db(). (Suggested by @antoleod, Quest #398 Step 1, 2026-09-05.)
+    """
+    runtime_env = (os.environ.get("RC_RUNTIME_ENV") or os.environ.get("RUSTCHAIN_ENV") or "production").strip().lower()
+    if HW_BINDING_V2:
+        return
+    if runtime_env in _MOCK_SIG_ALLOWED_ENVS:
+        return
+    if os.environ.get("RC_ALLOW_LEGACY_HW_BINDING", "0") == "1":
+        print('[WARN] hardware_binding_v2 unavailable; RC_ALLOW_LEGACY_HW_BINDING=1 set, continuing on legacy binding')
+        return
+    raise RuntimeError(
+        "hardware_binding_v2 is unavailable and this is a production runtime; "
+        "refusing to start on legacy hardware binding (set RC_ALLOW_LEGACY_HW_BINDING=1 to override)"
+    )
+
 # App versioning and uptime tracking
 APP_VERSION = "2.2.1-rip200"
 APP_START_TS = time.time()
