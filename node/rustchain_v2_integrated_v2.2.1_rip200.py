@@ -38,8 +38,7 @@ APP_START_TS = time.time()
 # Rewards system
 try:
     from rewards_implementation_rip200 import (
-        settle_epoch_rip200 as settle_epoch, total_balances, UNIT, PER_EPOCH_URTC,
-        _epoch_eligible_miners
+        settle_epoch_rip200 as settle_epoch, total_balances, UNIT, PER_EPOCH_URTC
     )
     HAVE_REWARDS = True
 except Exception as e:
@@ -1520,22 +1519,29 @@ except Exception as e:
     print(f"[INIT] Hall tables init: {e}")
 
 # Register rewards routes
-if HAVE_REWARDS:
+# RIP-200 rewards routes are defined natively in this file, NOT registered from
+# rewards_implementation_rip200. The module's register_rewards_rip200() defines
+# /rewards/settle, /wallet/balance, /wallet/balances/all and /lottery/eligibility,
+# all four of which already exist here (see 6774, 10718, 10804, 12310) — and the
+# module's versions REQUIRE an admin key on /wallet/balance, /wallet/balances/all
+# and /lottery/eligibility, while the live handlers here are public.
+#
+# Registering the module would have shadowed the public handlers with admin-gated
+# ones (Flask raises no assertion because the function names differ, so the first
+# rule registered simply wins), silently 401-ing every balance lookup made by the
+# block explorer, wallet clients and miner dashboards.
+#
+# Its one route with no counterpart here, /consensus/round_robin_status, is
+# reproduced natively below with its admin gate intact. Do not re-add the
+# module registration.
+
+# RIP-201: Fleet immune system endpoints
+if HAVE_FLEET_IMMUNE:
     try:
-        from rewards_implementation_rip200 import register_rewards
-        register_rewards(app, DB_PATH)
-        print("[REWARDS] Endpoints registered successfully")
+        register_fleet_endpoints(app, DB_PATH)
+        print("[RIP-201] Fleet immune endpoints registered")
     except Exception as e:
-        print(f"[REWARDS] Failed to register: {e}")
-
-
-    # RIP-201: Fleet immune system endpoints
-    if HAVE_FLEET_IMMUNE:
-        try:
-            register_fleet_endpoints(app, DB_PATH)
-            print("[RIP-201] Fleet immune endpoints registered")
-        except Exception as e:
-            print(f"[RIP-201] Failed to register fleet endpoints: {e}")
+        print(f"[RIP-201] Failed to register fleet endpoints: {e}")
 
 # RIP-305: Airdrop V2 endpoints
 if HAVE_AIRDROP:
@@ -10943,6 +10949,40 @@ def metrics():
     return Response(payload, content_type=CONTENT_TYPE_LATEST)
 
 
+@app.route('/consensus/round_robin_status', methods=['GET'])
+def consensus_round_robin_status():
+    """Current round-robin rotation status.
+
+    Ported from rewards_implementation_rip200.register_rewards_rip200() — the only
+    route there without a native counterpart. Admin-gated, as it was: it exposes
+    every attested miner and the consensus rotation.
+    """
+    admin_key = request.headers.get("X-Admin-Key", "")
+    expected_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not expected_key:
+        return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+    if not hmac.compare_digest(admin_key, expected_key):
+        return jsonify({"error": "Unauthorized — admin key required"}), 401
+
+    from rip_200_round_robin_1cpu1vote import (
+        get_attested_miners, get_round_robin_producer,
+        get_chain_age_years, get_time_aged_multiplier,
+    )
+    current = current_slot()
+    attested_miners = get_attested_miners(DB_PATH, int(time.time()))
+    chain_age = get_chain_age_years(current)
+    return jsonify({
+        "current_slot": current,
+        "current_producer": get_round_robin_producer(current, attested_miners),
+        "rotation_size": len(attested_miners),
+        "attested_miners": [
+            {"miner_id": m, "device_arch": a,
+             "multiplier": round(get_time_aged_multiplier(a, chain_age), 3)}
+            for m, a in attested_miners
+        ],
+        "chain_age_years": round(chain_age, 2),
+    })
+
 @app.route('/rewards/settle', methods=['POST'])
 def api_rewards_settle():
     """Settle rewards for a specific epoch (admin/cron callable)"""
@@ -13616,8 +13656,40 @@ def _limit_governance_vote_requests():
     return response
 
 
+# --- must run under the WSGI server too ------------------------------------
+# Everything below `if __name__ == "__main__":` runs ONLY under the Flask dev
+# server. Production is served by gunicorn (gunicorn -w 4 wsgi:app), which
+# IMPORTS this module, so __name__ is never "__main__" and that block never
+# executes. Two things were stranded there: the fail-closed mock-signature
+# runtime check (inert in the only mode production runs in), and the UTXO
+# blueprint registration (why every /utxo/* route 404s in production).
+# Both belong at module scope so they take effect however the app is served.
+enforce_mock_signature_runtime_guard()
+
+if HAVE_UTXO:
+    try:
+        from utxo_endpoints import register_utxo_blueprint
+        _utxo_instance = UtxoDB(DB_PATH)
+        register_utxo_blueprint(
+            app, _utxo_instance, DB_PATH,
+            verify_sig_fn=verify_rtc_signature,
+            addr_from_pk_fn=address_from_pubkey,
+            current_slot_fn=current_slot,
+            dual_write=UTXO_DUAL_WRITE,
+            review_gate_fn=wallet_review_gate_response,
+        )
+    except ImportError as e:
+        # Optional module genuinely absent: run without the UTXO layer.
+        print(f"[UTXO] Endpoints not available: {e}")
+    except Exception as e:
+        # The module is present but wiring it failed. Do NOT swallow this:
+        # a half-registered UTXO layer (or none, silently) is exactly the
+        # false-green shape that hid the /utxo/* 404s in production.
+        print(f"[UTXO] Endpoint registration failed: {e}")
+        raise
+
+
 if __name__ == "__main__":
-    enforce_mock_signature_runtime_guard()
 
     # CRITICAL: SR25519 library is REQUIRED for production
     if not SR25519_AVAILABLE:
@@ -13636,22 +13708,6 @@ if __name__ == "__main__":
     init_db()
 
     # UTXO Transaction Engine (Phase 3)
-    if HAVE_UTXO:
-        try:
-            from utxo_endpoints import register_utxo_blueprint
-            _utxo_instance = UtxoDB(DB_PATH)
-            register_utxo_blueprint(
-                app, _utxo_instance, DB_PATH,
-                verify_sig_fn=verify_rtc_signature,
-                addr_from_pk_fn=address_from_pubkey,
-                current_slot_fn=current_slot,
-                dual_write=UTXO_DUAL_WRITE,
-            )
-        except ImportError as e:
-            print(f"[UTXO] Endpoints not available: {e}")
-        except Exception as e:
-            print(f"[UTXO] Endpoint registration failed: {e}")
-
     # BCOS v2: Register Blockchain Certified Open Source endpoints
     try:
         from bcos_routes import register_bcos_routes
