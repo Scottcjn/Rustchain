@@ -68,15 +68,15 @@ This branch contains finished, original Stage 1 awareness assets. The default br
 **CTA:** Start with one machine and one clip.  
 **Tags:** #VintageComputing #BoTTube #RustChain
 
-## Three finished vertical shorts
+## Three vertical shorts specifications
 
-All videos are original, silent-first, H.264 MP4, 720×1280, and 8–12 seconds long.
+All video specs are planned as original, silent-first, H.264 MP4, 720×1280, and 8–12 seconds long (external deliverables).
 
 | Asset | Duration | Core message | CTA |
 |---|---:|---|---|
-| [`short_01_old_laptop.mp4`](short_01_old_laptop.mp4) | 10s | An old laptop can remain useful | `pip install clawrtc` |
-| [`short_02_upgrade_cycle.mp4`](short_02_upgrade_cycle.mp4) | 12s | Replace-it culture vs physical continuity | Start a dry run today |
-| [`short_03_bottube_create.mp4`](short_03_bottube_create.mp4) | 8s | Make one small original idea | Upload it to BoTTube |
+| `short_01_old_laptop.mp4` | 10s | An old laptop can remain useful | `pip install clawrtc` |
+| `short_02_upgrade_cycle.mp4` | 12s | Replace-it culture vs physical continuity | Start a dry run today |
+| `short_03_bottube_create.mp4` | 8s | Make one small original idea | Upload it to BoTTube |
 
 ## Five finished meme images
 
@@ -100,4 +100,4 @@ Each PNG is 1200×675 with final overlay text and a direct CTA.
 
 ## Verification manifest
 
-See [`manifest.json`](manifest.json) for file dimensions, durations, codecs, byte sizes, and SHA-256 hashes.
+The verification manifest (`manifest.json`) tracks file dimensions, durations, codecs, byte sizes, and SHA-256 hashes when binary video assets are distributed.
