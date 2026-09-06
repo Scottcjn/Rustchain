@@ -13526,6 +13526,22 @@ def wallet_transfer_signed():
     if review_gate is not None:
         return review_gate
 
+    # SECURITY (#398 Step 3 follow-up to #8357): a bcn_ destination must already
+    # resolve to a registered Beacon Atlas identity. Crediting RTC to an
+    # unregistered name creates a balance with no key owner, which is exactly
+    # the pre-funded-id condition #8357 had to guard against at /beacon/join.
+    # Close it at the source too: refuse the transfer instead of minting an
+    # orphan balance. Admin/operator migration paths use /wallet/transfer.
+    if to_address.startswith("bcn_"):
+        _dest = resolve_bcn_wallet(to_address)
+        if not _dest.get("found"):
+            return jsonify({
+                "error": "unregistered_bcn_destination",
+                "message": "Destination bcn_ id is not registered in Beacon Atlas; "
+                           "register it via /beacon/join before receiving RTC.",
+                "to_address": to_address,
+            }), 400
+
     # SECURITY (#6127): Validate signature/public_key types before str() coercion
     _raw_sig = data.get("signature")
     _raw_pubkey = data.get("public_key")
