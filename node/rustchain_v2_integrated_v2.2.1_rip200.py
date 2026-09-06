@@ -10809,6 +10809,160 @@ def api_balances():
     return jsonify({"ok": False, "error": "balances_unavailable"}), 500
 
 
+# ============================================================================
+# PUBLIC WALLET BALANCE EXPORT (bounty #8359, 25 RTC)
+# ============================================================================
+# Unblocks rustchain-bounties#1113 distribution analysis.
+# Replaces the broken /api/miners-only view that only returns active miners.
+# Read-only, paginated, rate-limited, cached per epoch.
+# ============================================================================
+_BALANCE_EXPORT_CACHE = {"rows": None, "epoch": 0, "ts": 0}
+_BALANCE_EXPORT_FOUNDER_WALLETS = frozenset((
+    "founder_community",
+    "founder_dev_fund",
+    "founder_team_bounty",
+    "founder_founders",
+))
+
+
+def _balance_export_kind(wallet_id: str) -> str:
+    """Return the wallet kind label for the balances export."""
+    if wallet_id.startswith("bcn_"):
+        return "bcn"
+    if wallet_id in _BALANCE_EXPORT_FOUNDER_WALLETS:
+        return "native"
+    # hosted_handle wallets use the platform-assigned handle form
+    if wallet_id.startswith("hosted_") or "@" in wallet_id:
+        return "hosted_handle"
+    return "native"
+
+
+@app.route("/api/balances/export", methods=["GET"])
+def api_balances_export():
+    """Read-only paginated export of all wallet balances with metadata.
+
+    Fields per row:
+      - wallet: the miner_id / miner_pk
+      - balance_rtc: human-readable balance in RTC
+      - is_founder: True if wallet is one of the four founder wallets
+      - kind: native | hosted_handle | bcn
+      - last_activity: epoch timestamp of last ledger entry, or 0
+
+    Rate-limited to 10 requests per 60 seconds per client IP.
+    Results are cached per epoch to avoid heavy joins on every request.
+    """
+    client_ip = client_ip_from_request(request)
+    now = int(time.time())
+
+    # -- rate limit ----------------------------------------------------------
+    _key = (client_ip, "/api/balances/export")
+    _bucket = _ADMIN_RATE_LIMIT_BUCKETS.setdefault(_key, [])
+    _cutoff = now - ADMIN_RATE_LIMIT_WINDOW
+    _bucket[:] = [t for t in _bucket if t > _cutoff]
+    if len(_bucket) >= 10:
+        _retry = max(1, ADMIN_RATE_LIMIT_WINDOW - (now - min(_bucket)))
+        resp = jsonify({
+            "ok": False,
+            "error": "rate_limited",
+            "limit": f"{10}/{ADMIN_RATE_LIMIT_WINDOW}s",
+        })
+        resp.headers["Retry-After"] = str(_retry)
+        return resp, 429
+    _bucket.append(now)
+
+    # -- pagination ----------------------------------------------------------
+    try:
+        raw_limit = request.args.get("limit")
+        limit = int(raw_limit) if raw_limit not in (None, "") else 100
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+    try:
+        raw_offset = request.args.get("offset")
+        offset = int(raw_offset) if raw_offset not in (None, "") else 0
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
+    if limit < 1:
+        return jsonify({"ok": False, "error": "limit must be >= 1"}), 400
+    if limit > 100:
+        return jsonify({"ok": False, "error": "limit must be <= 100"}), 400
+    if offset < 0:
+        return jsonify({"ok": False, "error": "offset must be >= 0"}), 400
+
+    # -- cache keyed by current epoch ----------------------------------------
+    global _BALANCE_EXPORT_CACHE
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT epoch FROM epoch_state ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            current_epoch = int(row[0]) if row else 0
+    except Exception:
+        current_epoch = 0
+
+    if (_BALANCE_EXPORT_CACHE["epoch"] == current_epoch
+            and _BALANCE_EXPORT_CACHE["rows"] is not None
+            and (now - _BALANCE_EXPORT_CACHE["ts"]) < 30):
+        all_rows = _BALANCE_EXPORT_CACHE["rows"]
+    else:
+        # Build the full dataset once per epoch.
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            c = conn.cursor()
+
+            cols = {r["name"] for r in c.execute("PRAGMA table_info(balances)")}
+            if "amount_i64" in cols and "miner_id" in cols:
+                rows = c.execute(
+                    "SELECT miner_id, amount_i64 FROM balances ORDER BY amount_i64 DESC"
+                ).fetchall()
+            elif "miner_pk" in cols and "balance_rtc" in cols:
+                rows = c.execute(
+                    "SELECT miner_pk AS miner_id, balance_rtc FROM balances ORDER BY balance_rtc DESC"
+                ).fetchall()
+            else:
+                return jsonify({"ok": False, "error": "balances_unavailable"}), 500
+
+            # Last activity from ledger (best-effort)
+            last_activity: dict[str, int] = {}
+            try:
+                for r in c.execute(
+                    "SELECT miner_id, MAX(ts) AS last FROM ledger GROUP BY miner_id"
+                ).fetchall():
+                    last_activity[str(r["miner_id"])] = int(r["last"] or 0)
+            except Exception:
+                pass  # ledger may not exist or have this shape; last_activity defaults to 0
+
+            all_rows = [
+                {
+                    "wallet": str(r["miner_id"]),
+                    "balance_rtc": (
+                        float(int(r["amount_i64"] or 0) / ACCOUNT_UNIT)
+                        if "amount_i64" in cols
+                        else float(r["balance_rtc"] or 0.0)
+                    ),
+                    "last_activity": last_activity.get(str(r["miner_id"]), 0),
+                }
+                for r in rows
+            ]
+
+        _BALANCE_EXPORT_CACHE = {"rows": all_rows, "epoch": current_epoch, "ts": now}
+
+    total = len(all_rows)
+    page = all_rows[offset: offset + limit]
+    for entry in page:
+        entry["is_founder"] = entry["wallet"] in _BALANCE_EXPORT_FOUNDER_WALLETS
+        entry["kind"] = _balance_export_kind(entry["wallet"])
+
+    return jsonify({
+        "ok": True,
+        "count": len(page),
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "epoch_cached": current_epoch,
+        "balances": page,
+    })
+
+
 @app.route('/admin/oui_deny/list', methods=['GET'])
 def list_oui_deny():
     """List all denied OUIs"""
