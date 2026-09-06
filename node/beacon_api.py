@@ -96,6 +96,18 @@ def _coinbase_addresses_match(left, right):
     return (left or '').strip().casefold() == (right or '').strip().casefold()
 
 
+def _prefunded_balance_i64(db, wallet_id):
+    """RTC (i64 micro-units) already credited to `wallet_id` in the shared
+    balances table, or 0 when the table is absent (standalone Beacon DB)."""
+    try:
+        row = db.execute(
+            "SELECT amount_i64 FROM balances WHERE miner_id = ?", (wallet_id,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return 0
+    return int(row[0] or 0) if row else 0
+
+
 def get_db():
     """Get database connection for current request context."""
     if 'db' not in g:
@@ -654,6 +666,21 @@ def beacon_join():
                 WHERE agent_id = ?
             """, (name, new_status, now, agent_id))
         else:
+            # SECURITY (#398 Step 3, reported privately 2026-08-29): a
+            # noncanonical bcn_ id skips the pubkey->id binding above, so the
+            # first caller to register such a name installs their own key. If
+            # RTC was already credited to that name (legacy payouts, hosted
+            # handles), the signed-transfer path would then treat the squatter's
+            # key as the spending authority for a balance they never owned.
+            # Fail closed: a pre-funded noncanonical id needs operator-assisted
+            # migration, never anonymous first registration.
+            if not _is_canonical_agent_id(agent_id) and _prefunded_balance_i64(db, agent_id) > 0:
+                return jsonify({
+                    'error': 'This bcn_ id already holds RTC but has no registered key; '
+                             'anonymous first registration is refused. Contact the '
+                             'operators for an ownership migration.',
+                    'code': 'PREFUNDED_ID_REQUIRES_MIGRATION',
+                }), 409
             # New agent — insert with pubkey_hex
             new_status = 'active'
             db.execute("""
