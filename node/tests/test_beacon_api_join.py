@@ -116,3 +116,52 @@ def test_beacon_join_reactivates_inactive_agent(tmp_path, monkeypatch):
 
     assert response.get_json()["status"] == "active"
     assert _db_status("idle-agent") == "active"
+
+
+def _fund(agent_id, amount_i64):
+    conn = sqlite3.connect(beacon_api.DB_PATH)
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS balances (miner_id TEXT PRIMARY KEY, amount_i64 INTEGER NOT NULL DEFAULT 0)"
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            (agent_id, amount_i64),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_beacon_join_refuses_first_registration_of_prefunded_noncanonical_id(tmp_path, monkeypatch):
+    """#398 Step 3: RTC credited to an unregistered legacy bcn_ name must not be
+    claimable by whoever registers that name first."""
+    client = _client(tmp_path, monkeypatch)
+    _fund("bcn_legacy_demo", 35_000_000)
+    response = client.post(
+        "/beacon/join",
+        json={"agent_id": "bcn_legacy_demo", "pubkey_hex": "11" * 32},
+    )
+    assert response.status_code == 409
+    assert response.get_json()["code"] == "PREFUNDED_ID_REQUIRES_MIGRATION"
+    assert _db_status("bcn_legacy_demo") is None
+
+
+def test_beacon_join_still_accepts_unfunded_noncanonical_id(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    _fund("bcn_other_name", 5_000_000)  # balances table exists, but not for this id
+    response = client.post(
+        "/beacon/join",
+        json={"agent_id": "bcn_legacy_fresh", "pubkey_hex": "22" * 32},
+    )
+    assert response.status_code in (200, 201)
+    assert _db_status("bcn_legacy_fresh") == "active"
+
+
+def test_beacon_join_without_balances_table_is_unaffected(tmp_path, monkeypatch):
+    client = _client(tmp_path, monkeypatch)
+    response = client.post(
+        "/beacon/join",
+        json={"agent_id": "bcn_legacy_nodb", "pubkey_hex": "33" * 32},
+    )
+    assert response.status_code in (200, 201)
