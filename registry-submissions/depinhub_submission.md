@@ -36,7 +36,7 @@ Hi DePINHub team! I'd like to submit RustChain for your project listing.
 - MIT licensed, open source
 
 **Token**: RTC (RustChain Token)
-- Reference rate: $0.10 USD
+- Reference rate: see [README → Tokenomics](https://github.com/Scottcjn/Rustchain#tokenomics) (holder-count schedule, currently the $0.15 tier; internal reference only, no fiat off-ramp)
 - 31,710+ RTC distributed
 - 248+ contributors
 
