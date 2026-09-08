@@ -76,7 +76,10 @@ validation:
 # Distribution settings
 distribution:
   amount: 0.5
-  mock_mode: true  # Set to false for actual transfers
+  mock_mode: false        # true = record only, transfer nothing (dev only)
+  node_url: "http://127.0.0.1:8198"
+  faucet_wallet: "testnet_faucet"
+  admin_key: null         # prefer the RC_ADMIN_KEY environment variable
 
 # Event claim codes
 event_codes:
@@ -242,7 +245,7 @@ Get faucet status and statistics.
 {
   "status": "operational",
   "network": "testnet",
-  "mock_mode": true,
+  "mock_mode": false,
   "statistics": {
     "total_drips": 150,
     "total_amount": 75.0,
@@ -410,14 +413,31 @@ WantedBy=multi-user.target
 
 ### Mock Mode
 
-By default, the faucet runs in mock mode (no actual token transfers). For production:
+Mock mode records drips and transfers nothing. It is **off by default**
+(issue #8243: it used to default to on, which made an unconfigured faucet
+report success to every caller while paying nobody). Turn it on only for local
+development:
+
+```yaml
+distribution:
+  mock_mode: true   # dev only -- announced with a warning banner at startup
+```
+
+A real (paying) deployment needs the transfer credentials instead:
 
 ```yaml
 distribution:
   mock_mode: false
-  node_rpc: "https://testnet-rpc.rustchain.org"
-  wallet_key: "your-faucet-wallet-key"  # Use environment variable!
+  node_url: "http://127.0.0.1:8198"     # node exposing POST /wallet/transfer
+  faucet_wallet: "testnet_faucet"
 ```
+
+```bash
+export RC_ADMIN_KEY="your-admin-key"    # X-Admin-Key for /wallet/transfer
+```
+
+With `mock_mode: false` and no admin key available, the service now refuses to
+start rather than returning a 500 on each drip.
 
 **Never commit wallet keys to version control!** Use environment variables:
 

@@ -92,7 +92,12 @@ DEFAULT_CONFIG = {
     'distribution': {
         'amount': 0.5,
         'min_balance': 10.0,
-        'mock_mode': True,
+        # Issue #8243: the default used to be True, so a faucet started
+        # without an explicit `mock_mode:` key recorded every drip and paid
+        # nobody while reporting success. Real transfers are now the default;
+        # mock has to be asked for, and asking for it is announced loudly at
+        # startup (see check_distribution_config).
+        'mock_mode': False,
         'node_rpc': None,
         'wallet_key': None
     },
@@ -689,6 +694,71 @@ def _ensure_column(c: sqlite3.Cursor, table: str, column: str, definition: str) 
                 raise
 
 
+class FaucetConfigError(RuntimeError):
+    """Raised at startup when the faucet cannot possibly pay anyone."""
+
+
+def check_distribution_config(
+    config: Dict[str, Any],
+    logger: Optional[logging.Logger] = None,
+    strict: bool = True,
+) -> list:
+    """Audit the distribution config before the server accepts traffic.
+
+    Issue #8243: both faucet failure modes used to be silent. A faucet left in
+    mock mode answered every caller with a success payload and paid nobody,
+    and a faucet in real mode without RC_ADMIN_KEY only surfaced that at the
+    first drip, as a 500 to a user. Both are now stated at startup.
+
+    Args:
+        config: the loaded configuration.
+        logger: logger to announce findings on; a module logger is used if
+            omitted.
+        strict: when True (deployment entry point) a config that cannot pay
+            raises FaucetConfigError instead of starting a faucet that will
+            fail every drip. Mock mode never raises -- it is a legitimate
+            local-development choice -- but it is always announced.
+
+    Returns:
+        The list of human-readable problems found (empty when healthy).
+    """
+    logger = logger or logging.getLogger('rustchain_faucet')
+    dist = config.get('distribution', {}) or {}
+    problems = []
+
+    if dist.get('mock_mode', False):
+        banner = (
+            '=' * 70
+            + '\nFAUCET IS IN MOCK MODE - NO RTC WILL BE SENT.\n'
+            + 'Every drip will be recorded and reported as successful while\n'
+            + 'transferring nothing. Set distribution.mock_mode: false in the\n'
+            + 'config for a faucet that actually pays (issue #8243).\n'
+            + '=' * 70
+        )
+        for line in banner.split('\n'):
+            logger.warning(line)
+        problems.append('distribution.mock_mode is enabled: no RTC will be sent')
+        return problems
+
+    admin_key = os.environ.get('RC_ADMIN_KEY') or dist.get('admin_key', '')
+    if not admin_key:
+        problems.append(
+            'RC_ADMIN_KEY is not set (and distribution.admin_key is empty): '
+            'the node rejects every /wallet/transfer, so every drip would 500'
+        )
+
+    for problem in problems:
+        logger.error('Faucet configuration problem: %s', problem)
+
+    if problems and strict:
+        raise FaucetConfigError(
+            'Refusing to start a faucet that cannot pay: '
+            + '; '.join(problems)
+        )
+
+    return problems
+
+
 # =============================================================================
 # Flask Application
 # =============================================================================
@@ -702,6 +772,14 @@ def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
     
     # Initialize logging
     logger = setup_logging(config)
+
+    # Issue #8243: announce a faucet that cannot pay. This runs here as well
+    # as in main() so that WSGI/gunicorn deployments -- which call create_app()
+    # directly and never reach main() -- get the same warning. Report-only
+    # here (strict=False): refusing to build the app object would break
+    # importers and test harnesses; main() is the deployment entry point and
+    # does refuse to start.
+    check_distribution_config(config, logger, strict=False)
     
     # Initialize database
     db_path = config.get('database', {}).get('path', 'faucet.db')
@@ -803,7 +881,7 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
             }), 429
         
         # In mock mode, just record the request
-        if config.get('distribution', {}).get('mock_mode', True):
+        if config.get('distribution', {}).get('mock_mode', False):
             tx_hash = None
             logger.info(f"Mock drip: {amount} RTC to {wallet}")
         else:
@@ -1108,7 +1186,7 @@ def register_routes(app: Flask, config: Dict, logger: logging.Logger,
         return jsonify({
             'status': 'operational',
             'network': 'testnet',
-            'mock_mode': config.get('distribution', {}).get('mock_mode', True),
+            'mock_mode': config.get('distribution', {}).get('mock_mode', False),
             'statistics': {
                 'total_drips': total_drips,
                 'total_amount': total_amount,
@@ -1292,7 +1370,7 @@ def _perform_faucet_transfer(
     reason: Optional[str] = None,
 ) -> Optional[str]:
     """Perform a faucet transfer or return None in mock mode."""
-    if config.get('distribution', {}).get('mock_mode', True):
+    if config.get('distribution', {}).get('mock_mode', False):
         logger.info(f"Mock event faucet claim: {amount} RTC to {wallet}")
         return None
 
@@ -1398,7 +1476,7 @@ def get_template_vars(config: Dict) -> Dict:
         'rate_limit': config.get('rate_limit', {}).get('max_amount', 0.5),
         'hours': config.get('rate_limit', {}).get('window_seconds', 86400) / 3600,
         'network': 'Testnet',
-        'mock_mode': config.get('distribution', {}).get('mock_mode', True)
+        'mock_mode': config.get('distribution', {}).get('mock_mode', False)
     }
 
 
@@ -1742,14 +1820,21 @@ def main():
     if args.debug:
         config['server']['debug'] = True
     
-    # Create and run app
+    # Create the app first: create_app() installs the log handlers, so the
+    # startup audit below is actually visible on console/log file.
     app = create_app(config)
+
+    logger = logging.getLogger('rustchain_faucet')
+
+    # Issue #8243: audit the deployed config before binding a port. A faucet
+    # that cannot pay must say so here, once and loudly, instead of one
+    # silent drip at a time.
+    check_distribution_config(config, logger, strict=True)
     
     host = config['server']['host']
     port = config['server']['port']
     debug = config['server']['debug']
     
-    logger = logging.getLogger('rustchain_faucet')
     logger.info(f"Starting RustChain Faucet on http://{host}:{port}")
     logger.info(f"Configuration: {args.config if os.path.exists(args.config) else 'default'}")
     

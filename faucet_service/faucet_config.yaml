@@ -73,13 +73,28 @@ distribution:
   # Minimum balance threshold (stop dispensing if below)
   min_balance: 10.0
   
-  # Mock mode (no actual transfers, just recording)
-  mock_mode: true
-  
-  # Node RPC endpoint (for actual transfers)
+  # Mock mode: record drips but transfer nothing.
+  # KEEP THIS false ON ANY DEPLOYED FAUCET. With mock_mode: true the service
+  # answers every caller with a success payload and pays nobody (issue #8243);
+  # the startup audit prints a loud warning banner when it is on.
+  mock_mode: false
+
+  # Node endpoint used for real transfers (POST /wallet/transfer).
+  node_url: "http://127.0.0.1:8198"
+
+  # Faucet wallet the node debits for real transfers.
+  faucet_wallet: "testnet_faucet"
+
+  # Admin key for POST /wallet/transfer. Prefer the RC_ADMIN_KEY environment
+  # variable over writing the secret into this file. With mock_mode: false and
+  # no key available the service refuses to start instead of 500-ing on every
+  # drip request.
+  admin_key: null
+
+  # Node RPC endpoint (legacy field, unused by the transfer path)
   node_rpc: null
-  
-  # Faucet wallet private key (for actual transfers)
+
+  # Faucet wallet private key (legacy field, unused by the transfer path)
   wallet_key: null
 
 # Logging configuration
