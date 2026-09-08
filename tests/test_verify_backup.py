@@ -102,4 +102,4 @@ def test_verify_accepts_balance_rtc_column(tmp_path):
 
     result = verify(str(live), str(bak))
     assert result.ok is True
-    assert any("balances (amount>0): 1" in line for line in result.lines)
+    assert any("positive_balances" in line for line in result.lines)
