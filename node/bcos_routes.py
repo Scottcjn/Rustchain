@@ -11,8 +11,7 @@ Adds /bcos/* routes to the RustChain Flask application:
   GET  /bcos/directory         List all certified repos
 
 Usage in main node file:
-    from bcos_routes import
-import register_bcos_routes
+    from bcos_routes import register_bcos_routes
     register_bcos_routes(app, DB_PATH)
 """
 
