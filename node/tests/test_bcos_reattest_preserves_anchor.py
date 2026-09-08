@@ -90,7 +90,7 @@ def test_reattest_duplicate_cert_id_is_rejected_and_preserves_anchor(tmp_path, m
         "cert_id": "BCOS-anchored",
         "repo": "attacker/evil",
         "commit_sha": "0000000000000000",
-        "tier": "L4",
+        "tier": "L0",  # valid enum value, still different from the original L2
         "trust_score": 100,
         "reviewer": "attacker",
     })

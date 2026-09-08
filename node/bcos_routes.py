@@ -20,6 +20,7 @@ from __future__ import annotations
 import io
 import json
 import hmac
+import html
 import os
 import sqlite3
 import time
@@ -240,7 +241,12 @@ def _generate_badge_svg(tier: str, score: int) -> str:
     else:
         color = colors.get(tier, "#08c")
 
-    label = f"{tier} {score}/100"
+    # SECURITY: tier/score come from stored attestation data and are interpolated
+    # into XML served as image/svg+xml on this origin. Escape every dynamic
+    # value so a crafted tier cannot break out of <text> and inject active SVG
+    # content (stored same-origin script execution). Reported privately
+    # 2026-09-08 under rustchain-bounties#398 Step 3.
+    label = html.escape(f"{tier} {score}/100", quote=True)
     right_width = max(70, len(label) * 7 + 10)
     width = 50 + right_width
     text_x = 50 + right_width // 2
@@ -286,6 +292,9 @@ def bcos_attest():
             repo = _string_report_field(report, "repo")
         commit_sha = _string_report_field(report, "commit_sha")
         tier = _string_report_field(report, "tier", "L1")
+        # SECURITY: tier is rendered into the badge SVG; restrict to the enum.
+        if tier not in ("L0", "L1", "L2"):
+            return jsonify({"error": "Invalid tier: must be one of L0, L1, L2"}), 400
         reviewer = _string_report_field(report, "reviewer")
         signature = _string_report_field(data, "signature") if "signature" in data else _string_report_field(report, "signature")
         signer_pubkey = (
