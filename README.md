@@ -204,7 +204,7 @@ This isn't a roadmap. This is deployed and running:
 
 | Layer | What | Status |
 |-------|------|--------|
-| **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live, 20+ miners |
+| **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live, 20+ miners (see the [live miner API](https://rustchain.org/api/miners)); this is distinct from the smaller count of always-on attestation nodes shown by the explorer |
 | **Currency** | RTC (native) + wRTC (Solana bridge) — agent-native money with micropayment support | Live (native); wRTC swappable, liquidity experimental |
 | **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) — agents find and negotiate with other agents, with a RustChain transport for Ed25519-signed RTC micropayments | Live |
 | **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) — zero-dep local LLM agent that runs on anything | Live |
