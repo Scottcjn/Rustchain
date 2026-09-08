@@ -686,10 +686,25 @@ def lookup_hardware(hw_id: str, family: Optional[str] = None) -> Optional[Hardwa
         if norm_id in db:
             return db[norm_id]
 
-        # Try partial matching for common variants
-        for key, entry in db.items():
-            if norm_id in key or key in norm_id:
-                return entry
+        # Try partial matching for common variants. A substring match only
+        # proves the probe belongs to SOME entry's family — it does not
+        # identify which generation. normalize_id("SPARC-T") == "sparc_t"
+        # has no exact key, but IS a superstring of the generic "sparc" entry
+        # (Sun-4, 1987, 3.0x LEGENDARY) and NOT a substring/superstring of
+        # any other sparc_* key, so a naive "return the matched entry" (or
+        # even "return the cheapest of the LITERAL key matches") still
+        # answers with that single 1987 row — a 2013 SPARC T5 grades as
+        # 1987 silicon. Once we know the family, anchor to the lowest
+        # base_multiplier across every entry in that family (e.g. SPARC's
+        # own ultrasparc_iii/iv rows are 2.5x ANCIENT), not just whichever
+        # key happened to substring-match. Same fail-closed principle as
+        # RIP-309b: an unidentified generation must never grade at the
+        # family's most expensive tier.
+        candidates = [entry for key, entry in db.items() if norm_id in key or key in norm_id]
+        if candidates:
+            matched_families = {entry.family for entry in candidates}
+            family_entries = [e for e in db.values() if e.family in matched_families]
+            return min(family_entries, key=lambda e: e.base_multiplier)
 
     return None
 
