@@ -182,7 +182,7 @@ def _state_root_from_boxes(boxes: list[dict]) -> str:
     rows = sorted(boxes, key=lambda box: box["box_id"])
     if not rows:
         return hashlib.sha256(b"empty").hexdigest()
-    count_bytes = len(rows).to_bytes(8, "little")
+    count_bytes = len(rows).to_bytes(8, "big")  # must match UtxoDB.compute_state_root (big-endian)
     hashes = []
     for row in rows:
         leaf = {
