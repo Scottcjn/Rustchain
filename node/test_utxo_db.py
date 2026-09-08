@@ -1800,6 +1800,63 @@ class TestUtxoDB(unittest.TestCase):
                 self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
                 self.assertEqual(self.db.get_balance('bob'), 0)
 
+    def test_mempool_rejects_nonfinite_json_metadata_without_locking_input(self):
+        """NaN and Infinity are not valid JSON and must not enter the mempool."""
+        cases = [
+            {'tokens_json': '[NaN]'},
+            {'tokens_json': '[Infinity]'},
+            {'registers_json': '{"R4": -Infinity}'},
+        ]
+
+        for idx, metadata in enumerate(cases):
+            with self.subTest(metadata=metadata):
+                address = f'alice_nonfinite_{idx}'
+                self.assertTrue(self.db.apply_transaction({
+                    'tx_type': 'mining_reward',
+                    'inputs': [],
+                    'outputs': [{'address': address, 'value_nrtc': UNIT}],
+                    'fee_nrtc': 0,
+                    'timestamp': 1000 + idx,
+                    '_allow_minting': True,
+                }, block_height=1000 + idx))
+                box = self.db.get_unspent_for_address(address)[0]
+
+                ok = self.db.mempool_add({
+                    'tx_id': f'nonfinite{idx}',
+                    'tx_type': 'transfer',
+                    'inputs': [{'box_id': box['box_id']}],
+                    'outputs': [{
+                        'address': 'bob',
+                        'value_nrtc': UNIT,
+                        **metadata,
+                    }],
+                    'fee_nrtc': 0,
+                })
+
+                self.assertFalse(ok)
+                self.assertFalse(self.db.mempool_check_double_spend(box['box_id']))
+
+    def test_apply_transaction_rejects_nonfinite_json_metadata(self):
+        """Direct application must reject non-standard JSON constants."""
+        self._apply_coinbase('alice_nonfinite_apply', UNIT, block_height=2000)
+        box = self.db.get_unspent_for_address('alice_nonfinite_apply')[0]
+
+        ok = self.db.apply_transaction({
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box['box_id']}],
+            'outputs': [{
+                'address': 'bob',
+                'value_nrtc': UNIT,
+                'tokens_json': '[NaN]',
+                'registers_json': '{"R4": Infinity}',
+            }],
+            'fee_nrtc': 0,
+        }, block_height=2001)
+
+        self.assertFalse(ok)
+        self.assertEqual(self.db.get_balance('alice_nonfinite_apply'), UNIT)
+        self.assertEqual(self.db.get_balance('bob'), 0)
+
     def test_mempool_rejects_oversized_tx_id_without_locking_input(self):
         """Public mempool tx ids must be bounded before persistence."""
         self._apply_coinbase('alice', 100 * UNIT)

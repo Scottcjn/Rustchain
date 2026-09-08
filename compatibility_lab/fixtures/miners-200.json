@@ -1,0 +1,37 @@
+{
+  "fixture_version": 1,
+  "operation_id": "listActiveMiners",
+  "status": 200,
+  "content_type": "application/json",
+  "body": {
+    "miners": [
+      {
+        "miner": "fixture-powerpc-g4",
+        "last_attest": 1783940400,
+        "first_attest": 1783854000,
+        "device_family": "PowerPC",
+        "device_arch": "G4",
+        "hardware_type": "PowerPC G4 (Vintage)",
+        "entropy_score": 0.91,
+        "antiquity_multiplier": 2.5
+      },
+      {
+        "miner": "fixture-unknown",
+        "last_attest": 1783940300,
+        "first_attest": null,
+        "device_family": null,
+        "device_arch": null,
+        "hardware_type": "Unknown/Other",
+        "entropy_score": 0.0,
+        "antiquity_multiplier": 1.0
+      }
+    ],
+    "pagination": {
+      "total": 2,
+      "total_enrolled": 1,
+      "limit": 2,
+      "offset": 0,
+      "count": 2
+    }
+  }
+}

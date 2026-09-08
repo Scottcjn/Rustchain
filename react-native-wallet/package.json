@@ -16,12 +16,12 @@
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.11.0",
     "bs58": "^6.0.0",
-    "expo": "~51.0.28",
+    "expo": "~57.0.20",
     "expo-camera": "~15.0.5",
     "expo-crypto": "~13.0.2",
     "expo-linking": "~55.0.7",
     "expo-local-authentication": "~14.0.1",
-    "expo-router": "~3.5.23",
+    "expo-router": "~57.0.19",
     "expo-secure-store": "~13.0.2",
     "expo-status-bar": "~1.12.1",
     "expo-system-ui": "~55.0.10",
@@ -47,7 +47,7 @@
     "ajv-keywords": "^5.1.0",
     "eslint": "^8.57.0",
     "jest": "^30.3.0",
-    "jest-expo": "~51.0.3",
+    "jest-expo": "~57.0.5",
     "typescript": "~5.3.3"
   },
   "private": true

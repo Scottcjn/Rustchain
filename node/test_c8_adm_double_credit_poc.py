@@ -24,6 +24,10 @@ import tempfile
 import time
 import unittest
 
+# These tests exercise the legacy ADM-off fallback path on purpose. Since 2026-09-05 the
+# production default is RC_REQUIRE_ADM=1 (fail closed), so opt out explicitly here.
+os.environ.setdefault("RC_REQUIRE_ADM", "0")
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # We'll construct the scenario manually since importing the live module

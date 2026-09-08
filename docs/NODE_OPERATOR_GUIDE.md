@@ -1,29 +1,54 @@
 # RustChain Node Operator Guide
 
-> Complete step-by-step guide for running RustChain attestation nodes and miners.
+> Complete step-by-step guide for running a RustChain node.
 
-**Part of the [Documentation Sprint #72](https://github.com/Scottcjn/rustchain-bounties/issues/72)**
+> **RustChain runs on Python / Flask — not Rust.** Despite the name, there is
+> **no `Cargo.toml`, no `cargo build`, and no `rustchain-linux-x86_64` binary**.
+> If you went looking for a release binary and could not find one, that is
+> expected — it does not exist. You run the node with Python and `gunicorn`.
+> (The only Rust in the repo is an unrelated `cross-chain-airdrop/` CLI.)
 
 ---
 
 ## Table of Contents
 
-1. [System Requirements](#1-system-requirements)
-2. [Installation](#2-installation)
-3. [Configuration](#3-configuration)
-4. [Wallet Setup](#4-wallet-setup)
+1. [Node roles: sync vs. settlement](#1-node-roles-sync-vs-settlement)
+2. [System Requirements](#2-system-requirements)
+3. [Installation](#3-installation)
+4. [Configuration](#4-configuration)
 5. [Starting the Node](#5-starting-the-node)
-6. [Starting a Miner](#6-starting-a-miner)
-7. [Monitoring & Health Checks](#7-monitoring--health-checks)
-8. [Troubleshooting](#8-troubleshooting)
-9. [Performance Tuning](#9-performance-tuning)
-10. [Advanced Topics](#10-advanced-topics)
+6. [Monitoring & Health Checks](#6-monitoring--health-checks)
+7. [Troubleshooting](#7-troubleshooting)
+8. [Running as a systemd service](#8-running-as-a-systemd-service)
+9. [Backup & Updating](#9-backup--updating)
 
 ---
 
-## 1. System Requirements
+## 1. Node roles: sync vs. settlement
 
-### Minimum Requirements
+There are two roles. **Read this first** — picking the wrong one is the most
+common way to get stuck.
+
+| Role | What it does | Who it's for | Fleet secrets |
+|------|--------------|--------------|---------------|
+| **Sync node** *(default for new operators)* | Serves the public read API, accepts attestations. Does **not** settle epochs and does **not** join the authenticated P2P mesh. | New / unverified operators | **None** |
+| **Full settlement node** | Everything a sync node does **plus** epoch settlement and authenticated P2P consensus. | Verified operators only | Yes — `RC_P2P_SECRET` and a fleet `RC_ADMIN_KEY`, **issued privately after verification** |
+
+> **New operators start as a sync node.** A settlement node mints rewards and
+> joins consensus, so its credentials (`RC_P2P_SECRET`, a fleet `RC_ADMIN_KEY`)
+> are issued privately and are **never published**. Do not invent or copy these
+> values — a self-generated `RC_P2P_SECRET` can never match the fleet's, and
+> every `/p2p/*` call would answer `401 valid X-P2P-Key required`.
+
+> **Set `RC_NODE_ROLE=sync` for a sync node.** The node's default role is
+> `settlement`, which *refuses to start* without `RC_P2P_SECRET` (this is
+> deliberate: a fleet node that loses its secret must fail loudly rather than
+> silently degrade). An external operator who does not set `RC_NODE_ROLE=sync`
+> will see `[P2P] FATAL: ... requires RC_P2P_SECRET` at startup.
+
+---
+
+## 2. System Requirements
 
 | Component | Minimum | Recommended |
 |-----------|---------|-------------|
@@ -31,651 +56,243 @@
 | **RAM** | 2 GB | 4 GB+ |
 | **Storage** | 10 GB SSD | 50 GB NVMe |
 | **Network** | 10 Mbps | 100 Mbps+ |
-| **OS** | Linux, macOS, Windows | Linux (Ubuntu 20.04+) |
+| **OS** | Linux (Ubuntu 20.04+) | Linux (Ubuntu 22.04+) |
+| **Python** | 3.10+ | 3.11+ |
 
-### Supported Architectures
-- **x86_64** (Linux, macOS, Windows)
-- **ARM64** (Raspberry Pi 4+, Apple Silicon)
-- **PowerPC** (G4, G5) — native vintage mining
-- **SPARC** — native vintage mining
-- **68K** — native vintage mining
-- **15+ total architectures** supported
+### Network port
 
-### Network Ports
+| Port | Purpose |
+|------|---------|
+| 8099 | HTTP API (the app binds here). In production, put nginx in front on 443 → 127.0.0.1:8099. |
 
-| Port | Protocol | Purpose |
-|------|----------|---------|
-| 3000 | HTTPS | REST API & Attestation |
-| 3001 | TCP | P2P peer communication |
-| 80 | HTTP | Optional redirect to HTTPS |
+There is no separate P2P port — the mesh runs over the same 8099 and is
+fleet-only (settlement nodes).
 
 ---
 
-## 2. Installation
-
-### Option A: From Source (Recommended)
+## 3. Installation
 
 ```bash
 # Clone the repository
 git clone https://github.com/Scottcjn/Rustchain.git
 cd Rustchain
 
-# Build
-cargo build --release
-
-# Binary will be at ./target/release/rustchain
+# Create a virtualenv and install the node dependencies
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements-node.txt
 ```
 
-### Option B: Pre-built Binary
-
-```bash
-# Download the latest release
-# For Linux x86_64:
-curl -L https://github.com/Scottcjn/Rustchain/releases/latest/download/rustchain-linux-x86_64 -o rustchain
-chmod +x rustchain
-
-# For macOS (Apple Silicon):
-curl -L https://github.com/Scottcjn/Rustchain/releases/latest/download/rustchain-macos-aarch64 -o rustchain
-chmod +x rustchain
-
-# For Windows (x86_64):
-# Download from GitHub Releases
-```
-
-### Option C: Docker
-
-```bash
-docker pull scottcjn/rustchain:latest
-
-docker run -d \
-  --name rustchain-node \
-  -p 3000:3000 \
-  -p 3001:3001 \
-  -v $(pwd)/data:/data \
-  -v $(pwd)/config:/config \
-  scottcjn/rustchain:latest \
-  --config /config/config.yaml
-```
-
-### Verify Installation
-
-```bash
-./rustchain --version
-# Expected output: rustchain v2.2.1-rip200
-```
+`requirements-node.txt` pins Flask, requests, psutil, PyNaCl, and gunicorn.
+That is the entire toolchain — no Rust, no compiler, no downloaded binary.
 
 ---
 
-## 3. Configuration
+## 4. Configuration
 
-### Configuration File
+The node is configured entirely through **environment variables** (there is no
+`config.yaml`).
 
-Create `config.yaml`:
+| Variable | Sync node | Settlement node | Description |
+|----------|-----------|-----------------|-------------|
+| `RC_NODE_ROLE` | `sync` | `settlement` (default) | `sync` = run without fleet secrets and without the P2P mesh. `settlement` = refuse to start unless `RC_P2P_SECRET` is set. |
+| `RC_NODE_ID` | ✅ a label | ✅ a label | A name for this node, e.g. `sync-yourname-1`. |
+| `RC_ADMIN_KEY` | generate your own | fleet key (issued) | Admin API auth. For a sync node, generate your own: `openssl rand -hex 32`. |
+| `RUSTCHAIN_DB_PATH` | ✅ | ✅ | SQLite DB path (fallback env `DB_PATH`; default `./rustchain_v2.db`). |
+| `RC_P2P_SECRET` | — (omit) | issued privately | Authenticated P2P mesh HMAC (`X-P2P-Key`). Settlement nodes only. |
 
-```yaml
-# Node configuration
-node:
-  # Node type: "attestation" or "miner"
-  type: attestation
-
-  # HTTP API settings
-  api:
-    host: "0.0.0.0"
-    port: 3000
-
-  # P2P network settings
-  p2p:
-    port: 3001
-    # Bootstrap nodes for initial peer discovery
-    bootstrap_nodes:
-      - "https://50.28.86.131"
-
-  # Database path
-  db_path: "./data/rustchain.db"
-
-  # Logging
-  logging:
-    level: "info"  # debug, info, warn, error
-    file: "./data/rustchain.log"
-
-# Attestation settings (only for attestation nodes)
-attestation:
-  # Enable hardware fingerprinting
-  fingerprinting_enabled: true
-
-  # Accepted CPU architectures
-  accepted_architectures:
-    - ppc
-    - sparc
-    - m68k
-    - x86
-    - arm
-    - mips
-    - alpha
-
-# Mining settings (only for miners)
-mining:
-  # Wallet address for receiving rewards
-  wallet_address: "YOUR_WALLET_ADDRESS"
-
-  # Attestation node URL
-  attestation_node_url: "https://50.28.86.131"
-
-  # Work cycle interval (seconds)
-  cycle_interval: 3600
-```
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `RUSTCHAIN_CONFIG` | Path to config file | `./config.yaml` |
-| `RUSTCHAIN_LOG_LEVEL` | Logging level | `info` |
-| `RUSTCHAIN_DB_PATH` | Database path | `./data/rustchain.db` |
-| `RUSTCHAIN_API_HOST` | API bind host | `0.0.0.0` |
-| `RUSTCHAIN_API_PORT` | API port | `3000` |
-| `RUSTCHAIN_ADMIN_KEY` | Admin API key | (required for admin endpoints) |
-
----
-
-## 4. Wallet Setup
-
-### Create a New Wallet
-
-```bash
-./rustchain wallet create
-```
-
-Output:
-```
-Wallet created successfully!
-Address: rust1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-Pubkey:  ed25519:xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-⚠️  IMPORTANT: Save your private key securely. It cannot be recovered.
-```
-
-### Import an Existing Wallet
-
-```bash
-./rustchain wallet import <private-key>
-```
-
-### Check Wallet Balance
-
-```bash
-# Using the CLI
-./rustchain wallet balance
-
-# Using the API
-curl -sk https://50.28.86.131/wallet/balance?address=rust1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-### Wallet Security Best Practices
-- Store private key in a secure location (hardware wallet, encrypted file)
-- Never share your private key
-- Use a separate wallet for mining vs. personal holdings
-- Regularly check balance via API
+Addresses are `RTC` + 40 hex characters (for example
+`RTCa1b2c3d4e5f6789012345678901234567890abcd`). They are **not** `rust1…`.
 
 ---
 
 ## 5. Starting the Node
 
-### Start an Attestation Node
+### Quick test (foreground)
 
 ```bash
-# Using config file
-./rustchain --config config.yaml
-
-# Using environment variables
-RUSTCHAIN_CONFIG=config.yaml ./rustchain
-
-# In background (Linux)
-nohup ./rustchain --config config.yaml > rustchain.log 2>&1 &
+cd Rustchain/node
+export RC_NODE_ROLE=sync
+export RC_NODE_ID=sync-1
+export RC_ADMIN_KEY=$(openssl rand -hex 32)     # your own admin key
+export RUSTCHAIN_DB_PATH=$PWD/rustchain_v2.db
+python3 rustchain_v2_integrated_v2.2.1_rip200.py
 ```
 
-### Verify Node is Running
+### Production (gunicorn)
 
 ```bash
-# Health check
-curl -sk https://localhost:3000/health
-# Expected: {"status":"ok","epoch":1234,...}
-
-# Ready check
-curl -sk https://localhost:3000/ready
-# Expected: {"ready":true}
-
-# Network info
-curl -sk https://localhost:3000/api/network
-# Expected: {"peers":3,"epoch":1234,...}
+cd Rustchain/node
+export RC_NODE_ROLE=sync
+export RC_NODE_ID=sync-1
+export RC_ADMIN_KEY=$(openssl rand -hex 32)
+export RUSTCHAIN_DB_PATH=/opt/rustchain/rustchain_v2.db
+gunicorn -w 4 -b 0.0.0.0:8099 wsgi:app --timeout 120
 ```
 
-### Start as Systemd Service (Linux)
+`node/wsgi.py` is the gunicorn entrypoint — it imports
+`rustchain_v2_integrated_v2.2.1_rip200.py`, runs the mock-signature runtime
+guard, and initializes the database.
 
-Create `/etc/systemd/system/rustchain.service`:
+On a sync node you will see this at startup, which is **correct, not an error**:
+
+```
+[P2P] RC_P2P_SECRET is not set: running as a SYNC node without the
+authenticated P2P mesh (no /p2p mesh endpoints, no gossip). ...
+```
+
+---
+
+## 6. Monitoring & Health Checks
+
+```bash
+# Your node's health
+curl -s http://127.0.0.1:8099/health
+# -> {"ok":true,"version":"2.2.1-rip200", ...}
+
+# Current epoch
+curl -s http://127.0.0.1:8099/epoch
+
+# Active miners (public)
+curl -s http://127.0.0.1:8099/api/miners
+```
+
+To compare against the public fleet:
+
+```bash
+curl -s https://rustchain.org/health
+curl -s https://rustchain.org/api/miners
+```
+
+---
+
+## 7. Troubleshooting
+
+#### `error: could not find Cargo.toml` / no `rustchain-linux-x86_64` binary
+
+**Cause:** You tried to build RustChain as a Rust project. It is a Python/Flask
+app — there is no `Cargo.toml` and no release binary.
+
+**Fix:** Follow [Installation](#3-installation) — `pip install -r
+requirements-node.txt`, then run the node with Python/gunicorn per
+[Starting the Node](#5-starting-the-node).
+
+#### `[P2P] FATAL: ... requires RC_P2P_SECRET` and the process exits at startup
+
+**Cause:** The default role is `settlement`, which requires the fleet
+`RC_P2P_SECRET` you do not have.
+
+**Fix:** Set `RC_NODE_ROLE=sync`. Never invent a placeholder secret.
+
+#### `{"error":"unauthorized","message":"valid X-P2P-Key required"}` (HTTP 401)
+
+**Cause:** You (or your node) called a fleet-only P2P endpoint — `/p2p/state`,
+`/p2p/attestation_state`, `/p2p/peers`, `/p2p/gossip` — without the fleet's
+shared `RC_P2P_SECRET`. The `X-P2P-Key` header must equal the *receiving*
+node's secret; a secret you generated yourself can never match.
+
+**This is expected for a sync node.** There is no key to request for it — the
+mesh is fleet-only. Verify your node with the public endpoints instead
+(`/health`, `/epoch`, `/api/miners`). If you were issued fleet credentials and
+still see this, the secret in your config differs from the fleet's (check for
+whitespace or a stale value). Never paste secrets into chat or issues.
+
+#### "Address already in use" on port 8099
+
+```bash
+lsof -i :8099        # find what's using it
+# stop that process, or change the -b port on the gunicorn command
+```
+
+#### "Database is locked"
+
+**Cause:** Another instance is running against the same `RUSTCHAIN_DB_PATH`.
+
+```bash
+pkill -f rustchain_v2_integrated   # stop stray instances
+# then restart
+```
+
+#### Attestation rejected: "Clock drift too high"
+
+**Cause:** System clock not synchronized.
+
+```bash
+sudo timedatectl set-ntp true
+sudo systemctl restart systemd-timesyncd
+```
+
+---
+
+## 8. Running as a systemd service
+
+`/etc/systemd/system/rustchain.service` (sync node):
 
 ```ini
 [Unit]
-Description=RustChain Attestation Node
-After=network.target
+Description=RustChain Sync Node
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=rustchain
 Group=rustchain
-WorkingDirectory=/opt/rustchain
-ExecStart=/opt/rustchain/rustchain --config /opt/rustchain/config.yaml
-Restart=on-failure
+WorkingDirectory=/opt/rustchain/node
+Environment="RC_NODE_ROLE=sync"
+Environment="RC_NODE_ID=sync-1"
+Environment="RC_ADMIN_KEY=REPLACE_WITH_YOUR_OWN_32_BYTE_HEX"
+Environment="RUSTCHAIN_DB_PATH=/opt/rustchain/rustchain_v2.db"
+# Sync nodes do NOT set RC_P2P_SECRET — that is issued privately to
+# verified settlement-node operators only. Leave RC_NODE_ROLE at sync.
+ExecStart=/usr/local/bin/gunicorn -w 4 -b 0.0.0.0:8099 wsgi:app --timeout 120 \
+  --access-logfile /var/log/rustchain_access.log \
+  --error-logfile /var/log/rustchain_error.log
+Restart=always
 RestartSec=10
-
-# Security
-NoNewPrivileges=true
-ProtectSystem=strict
-ReadWritePaths=/opt/rustchain/data
 
 [Install]
 WantedBy=multi-user.target
 ```
 
 ```bash
-# Reload systemd
 sudo systemctl daemon-reload
-
-# Enable and start
-sudo systemctl enable rustchain
-sudo systemctl start rustchain
-
-# Check status
+sudo systemctl enable --now rustchain
 sudo systemctl status rustchain
-
-# View logs
 sudo journalctl -u rustchain -f
 ```
 
 ---
 
-## 6. Starting a Miner
-
-### Configure the Miner
-
-Edit your `config.yaml`:
-
-```yaml
-node:
-  type: miner
-
-mining:
-  wallet_address: "rust1your_wallet_address"
-  attestation_node_url: "https://50.28.86.131"
-  cycle_interval: 3600
-```
-
-### Start Mining
+## 9. Backup & Updating
 
 ```bash
-./rustchain --config config.yaml
-```
+# Backup the database
+cp "$RUSTCHAIN_DB_PATH" ./backup/rustchain-$(date +%Y%m%d).db
 
-### Console Mining Setup
+# Backup any encrypted wallet keystores
+cp -r ~/.rustchain/*_wallets ./backup/wallets-$(date +%Y%m%d)/ 2>/dev/null || true
 
-For real-time mining output:
-
-```bash
-# Run with verbose logging
-RUSTCHAIN_LOG_LEVEL=debug ./rustchain --config config.yaml
-
-# Or use the mining console
-./rustchain mine --console --config config.yaml
-```
-
-### Verify Mining Status
-
-```bash
-# Check if your miner appears in the active miners list
-curl -sk https://50.28.86.131/api/miners
-```
-
-### Check Mining Earnings
-
-```bash
-# Check wallet balance
-curl -sk "https://50.28.86.131/wallet/balance?address=rust1your_wallet"
-
-# Check epoch settlement
-curl -sk "https://50.28.86.131/api/settlement/1234"
-```
-
----
-
-## 7. Monitoring & Health Checks
-
-### Health Endpoints
-
-| Endpoint | Description | Expected Response |
-|----------|-------------|-------------------|
-| `/health` | Node health status | `{"status":"ok"}` |
-| `/ready` | Ready to serve requests | `{"ready":true}` |
-| `/epoch` | Current epoch info | `{"epoch":1234,...}` |
-| `/api/miners` | Active miners list | `[...]` |
-| `/api/network` | Network status | `{"peers":3,...}` |
-
-### Prometheus Metrics
-
-If your node exposes Prometheus metrics, scrape `/metrics` for:
-- `rustchain_epoch_current` — Current epoch number
-- `rustchain_miners_active` — Number of active miners
-- `rustchain_attestations_total` — Total attestations processed
-- `rustchain_attestations_rejected` — Rejected attestations
-- `rustchain_peers_connected` — Connected peer count
-
-### Simple Monitoring Script
-
-```bash
-#!/bin/bash
-# monitor.sh — Simple RustChain node monitoring
-
-NODE_URL="https://localhost:3000"
-
-# Health check
-HEALTH=$(curl -sk $NODE_URL/health 2>/dev/null)
-if echo "$HEALTH" | grep -q '"status":"ok"'; then
-  echo "✅ Node is healthy"
-else
-  echo "❌ Node health check FAILED"
-  echo "Response: $HEALTH"
-fi
-
-# Peer count
-PEERS=$(curl -sk $NODE_URL/api/network 2>/dev/null)
-echo "Network: $PEERS"
-
-# Epoch
-EPOCH=$(curl -sk $NODE_URL/epoch 2>/dev/null)
-echo "Epoch: $EPOCH"
-
-# Miner count
-MINERS=$(curl -sk $NODE_URL/api/miners 2>/dev/null)
-echo "Active miners: $(echo $MINERS | grep -o '"id"' | wc -l)"
-```
-
----
-
-## 8. Troubleshooting
-
-### Common Issues
-
-#### "Connection refused" on startup
-
-**Cause:** Port 3000 is already in use.
-
-**Fix:**
-```bash
-# Check what's using port 3000
-lsof -i :3000  # Linux/macOS
-netstat -ano | findstr :3000  # Windows
-
-# Kill the process or change the port in config.yaml
-```
-
-#### "Database locked" error
-
-**Cause:** Another instance is running or database file is corrupted.
-
-**Fix:**
-```bash
-# Kill any running instances
-pkill rustchain
-
-# Check for stale lock file
-rm -f ./data/rustchain.db.lock
-
-# Restart
-./rustchain --config config.yaml
-```
-
-#### Attestation rejected: "Clock drift too high"
-
-**Cause:** System clock is not synchronized.
-
-**Fix:**
-```bash
-# Linux: enable NTP
-sudo timedatectl set-ntp true
-sudo systemctl restart systemd-timesyncd
-
-# macOS: enable time sync
-sudo sntp -sS time.apple.com
-
-# Windows: sync time
-w32tm /resync
-```
-
-#### Attestation rejected: "Unknown architecture"
-
-**Cause:** Your CPU architecture is not in the accepted list.
-
-**Fix:**
-- Check `config.yaml` → `attestation.accepted_architectures`
-- Add your architecture to the list
-- Restart the attestation node
-
-#### "No peers connected"
-
-**Cause:** Bootstrap nodes are unreachable or firewall blocking port 3001.
-
-**Fix:**
-```bash
-# Check firewall
-sudo ufw allow 3001/tcp  # Linux
-
-# Verify bootstrap node is reachable
-curl -sk https://50.28.86.131/health
-
-# Check config.yaml bootstrap_nodes list
-```
-
-#### Low mining rewards
-
-**Possible causes:**
-1. Hardware not properly attested
-2. Low antiquity multiplier
-3. Missed work cycles
-
-**Diagnosis:**
-```bash
-# Check attestation status
-curl -sk "https://50.28.86.131/attest/status?miner=YOUR_MINER_ID"
-
-# Check epoch settlement details
-curl -sk "https://50.28.86.131/api/settlement/CURRENT_EPOCH"
-```
-
-### Log Analysis
-
-```bash
-# Search for errors
-grep -i "error" ./data/rustchain.log | tail -20
-
-# Search for rejection reasons
-grep -i "reject" ./data/rustchain.log | tail -20
-
-# Monitor live logs
-tail -f ./data/rustchain.log
-```
-
----
-
-## 9. Performance Tuning
-
-### Database Optimization
-
-```yaml
-# In config.yaml
-database:
-  # Increase cache size (MB)
-  cache_size: 1024
-
-  # Enable WAL mode for better concurrent performance
-  journal_mode: wal
-
-  # Synchronous mode (off = faster, full = safer)
-  synchronous: normal
-```
-
-### Network Tuning
-
-```yaml
-# In config.yaml
-network:
-  # Increase max peer connections
-  max_peers: 50
-
-  # Connection timeout (seconds)
-  connection_timeout: 30
-
-  # Enable keepalive
-  keepalive_interval: 60
-```
-
-### Memory Optimization
-
-For systems with limited RAM:
-
-```yaml
-# In config.yaml
-performance:
-  # Reduce memory cache
-  cache_size: 256  # MB
-
-  # Disable verbose logging
-  logging:
-    level: warn
-```
-
-### Nginx Reverse Proxy (Optional)
-
-For production deployments, put Nginx in front:
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name rustchain.example.com;
-
-    ssl_certificate /etc/ssl/certs/rustchain.crt;
-    ssl_certificate_key /etc/ssl/private/rustchain.key;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # WebSocket support
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-```
-
----
-
-## 10. Advanced Topics
-
-### Multiple Miners on One Machine
-
-```yaml
-# miner-1.yaml
-node:
-  type: miner
-mining:
-  wallet_address: "rust1wallet_1_address"
-  attestation_node_url: "https://50.28.86.131"
-
-# miner-2.yaml
-node:
-  type: miner
-mining:
-  wallet_address: "rust1wallet_2_address"
-  attestation_node_url: "https://50.28.86.131"
-```
-
-```bash
-# Run both miners
-./rustchain --config miner-1.yaml &
-./rustchain --config miner-2.yaml &
-```
-
-### Updating RustChain
-
-```bash
-# From source
+# Update the node
+cd Rustchain
 git pull origin main
-cargo build --release
-
-# Pre-built binary
-curl -L https://github.com/Scottcjn/Rustchain/releases/latest/download/rustchain-linux-x86_64 -o rustchain
-chmod +x rustchain
-
-# Docker
-docker pull scottcjn/rustchain:latest
-docker stop rustchain-node
-docker rm rustchain-node
-# Then re-run the docker run command
+source venv/bin/activate
+pip install -r requirements-node.txt   # in case deps changed
+sudo systemctl restart rustchain
 ```
 
-### Backup & Recovery
+---
 
-```bash
-# Backup database
-cp ./data/rustchain.db ./backup/rustchain-$(date +%Y%m%d).db
+## Related documentation
 
-# Backup wallet keys
-cp ~/.rustchain/wallet.json ./backup/wallet-$(date +%Y%m%d).json
+- `node/README.md` — node roles and the P2P secret, in brief
+- `requirements-node.txt` — the pinned dependency set
 
-# Restore from backup
-cp ./backup/rustchain-20260527.db ./data/rustchain.db
-```
-
-### Payout Preflight Checklist
-
-Before expecting rewards, verify:
-
-- [ ] Wallet address is correctly configured
-- [ ] Attestation submissions are accepted (check `/attest/status`)
-- [ ] Node is connected to peers (check `/api/network`)
-- [ ] Epoch settlement is complete (check `/api/settlement/{epoch}`)
-- [ ] No rejected attestations (check logs)
+> Note: some older sibling docs in this repo may still describe a Rust
+> binary, `config.yaml`, or ports 3000/3001. **This guide and `node/README.md`
+> reflect the running node.** If another doc disagrees, trust these.
 
 ---
 
-## Command Reference
-
-| Command | Description |
-|---------|-------------|
-| `rustchain --config config.yaml` | Start node |
-| `rustchain --version` | Show version |
-| `rustchain wallet create` | Create new wallet |
-| `rustchain wallet balance` | Check balance |
-| `rustchain wallet import <key>` | Import wallet |
-| `rustchain mine --console` | Start mining with console output |
-
----
-
-## Related Documentation
-
-- [Quick Start](QUICKSTART.md) — Get mining in 5 minutes
-- [Installation Walkthrough](INSTALLATION_WALKTHROUGH.md) — Detailed installation guide
-- [Console Mining Setup](CONSOLE_MINING_SETUP.md) — Mining via console
-- [Mastering the Miner](MASTERING_THE_MINER.md) — Advanced mining techniques
-- [DevNet](DEVNET.md) — Development network setup
-- [Architecture Overview](ARCHITECTURE_OVERVIEW.md) — System architecture
-- [API Reference](API_REFERENCE.md) — Complete REST API docs
-- [CLI Reference](CLI.md) — Command-line interface
-- [Build Guide](BUILD.md) — Build from source
-- [Payout Preflight](PAYOUT_PREFLIGHT.md) — Before expecting rewards
-
----
-
-*Last updated: 2026-05-27 | Part of [Documentation Sprint #72](https://github.com/Scottcjn/rustchain-bounties/issues/72)*
+*Node runs Python/Flask via `gunicorn wsgi:app` on port 8099. Version tag
+`2.2.1-rip200`.*

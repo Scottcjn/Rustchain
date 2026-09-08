@@ -74,12 +74,12 @@ Here's what no one else in DePIN has figured out:
 
 **Your brand-new Threadripper will be vintage hardware someday.** Your M4 MacBook will be a museum piece. That RTX 5090 will be a curiosity. Time is undefeated.
 
-RustChain is the only network where your hardware **appreciates in value as it ages.** Start mining today at 1.0x. In ten years, when that CPU is a relic and you're still running it? Your multiplier grows. In twenty years? It's legendary.
+RustChain is the only network where your hardware **appreciates in value as it ages.** Start mining today at 0.8x. In ten years, when that CPU is a relic and you're still running it? Your multiplier grows. In twenty years? It's legendary.
 
 Every other blockchain punishes old hardware. Proof-of-Work demands the newest ASICs. Proof-of-Stake demands the biggest wallet. RustChain demands **patience and preservation.**
 
 ```
-2026:  Your Ryzen 9 mines at 1.0x         ░░░░░░░░░░
+2026:  Your Ryzen 9 mines at 0.8x         ░░░░░░░░░░
 2031:  Same machine, now "retro" at 1.3x   ░░░░░░░░░░░░░
 2036:  Vintage tier unlocked at 1.8x        ░░░░░░░░░░░░░░░░░░
 2041:  Ancient tier — 2.2x and climbing     ░░░░░░░░░░░░░░░░░░░░░░
@@ -131,7 +131,7 @@ Proof-of-Antiquity rewards hardware for *surviving*, not for being fast. Older m
 | PowerPC G4 (2003) | **2.5x** | ANCIENT | Still running, still earning |
 | RISC-V (2014) | **1.4x** | EXOTIC | Open ISA, the future |
 | Apple Silicon M1 (2020) | **1.2x** | MODERN | Efficient, welcome |
-| Modern x86_64 | **1.0x** | MODERN | Baseline — *for now* |
+| Modern x86_64 | **0.8x** | MODERN | Below par on purpose — *for now* |
 | Modern ARM NAS/SBC | **0.0005x** | PENALTY | Cheap, farmable, penalized |
 
 Our fleet of 16+ preserved machines draws roughly the same power as ONE modern GPU mining rig — while preventing 1,300 kg of manufacturing CO2 and 250 kg of e-waste.
@@ -204,7 +204,7 @@ This isn't a roadmap. This is deployed and running:
 
 | Layer | What | Status |
 |-------|------|--------|
-| **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live, 20+ miners |
+| **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live, 20+ miners (see the [live miner API](https://rustchain.org/api/miners)); this is distinct from the smaller count of always-on attestation nodes shown by the explorer |
 | **Currency** | RTC (native) + wRTC (Solana bridge) — agent-native money with micropayment support | Live (native); wRTC swappable, liquidity experimental |
 | **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) — agents find and negotiate with other agents, with a RustChain transport for Ed25519-signed RTC micropayments | Live |
 | **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) — zero-dep local LLM agent that runs on anything | Live |
@@ -346,6 +346,7 @@ Developers can build and run RustChain locally from a fresh checkout:
 1. Install prerequisites and run Python/Rust checks with the [Build Guide](docs/BUILD.md).
 2. Start a single-node local devnet with [Local Devnet](docs/DEVNET.md).
 3. Create a development wallet and simulate a transfer with the [CLI Wallet Walkthrough](docs/CLI.md).
+4. Validate read-only API compatibility with the [Compatibility Lab](compatibility_lab/README.md).
 
 These guides keep local state in `.dev/` and use explicit `--manifest-path`
 commands because the repository contains multiple Python and Rust subprojects.
@@ -430,7 +431,7 @@ Emission is a fixed 1.5 RTC per epoch and does not halve. It continues at that r
 
 ### Reference rate climbs as holder count grows
 
-The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates. The live rate is always at [`/api/tokenomics`](https://rustchain.org/api/tokenomics).
+The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates. There is currently no registered live API for that internal reference rate; the table and linked policy issue below are the published source. For machine-readable chain emission values, [`GET /epoch`](docs/READ_ONLY_API_CONTRACT.md#get-epoch) returns the confirmed epoch pot, epoch size, enrollment count, and fixed total supply. This distinction resolves the broken endpoint claim reported in [#7910](https://github.com/Scottcjn/Rustchain/issues/7910).
 
 | Holder count | Reference rate | Bounty rate scale |
 |--------------|----------------|-------------------|

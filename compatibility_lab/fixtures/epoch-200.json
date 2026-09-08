@@ -1,0 +1,14 @@
+{
+  "fixture_version": 1,
+  "operation_id": "getEpoch",
+  "status": 200,
+  "content_type": "application/json",
+  "body": {
+    "epoch": 1550,
+    "slot": 223200,
+    "epoch_pot": 1.5,
+    "enrolled_miners": 8,
+    "blocks_per_epoch": 144,
+    "total_supply_rtc": 8388608
+  }
+}

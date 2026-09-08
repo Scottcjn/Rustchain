@@ -3,14 +3,18 @@
 // ============================================================
 
 import {
-  AGENTS, CITIES, CONTRACTS, CALIBRATIONS,
-  GRADE_COLORS, cityRegion, addContract, getProviderColor, resolveAgentId,
+  AGENTS, CITIES, CONTRACTS, CALIBRATIONS, GRADE_COLORS,
+  cityRegion, addContract, getProviderColor, resolveAgentId, searchAgents, REGIONS,
 } from './data.js';
 import { lerpCameraTo, resetCamera, setClickHandler, setMissHandler, setHoverHandler } from './scene.js';
 import { getAgentPosition, highlightAgent } from './agents.js';
 import { getCityCenter } from './cities.js';
+import { buildCityTeleportGroups, resolveTeleportCity } from './city-teleport.mjs';
 import { highlightAgentConnections, addContractLine } from './connections.js';
 import { initChat, setCurrentAgent, getChatHTML, bindChatEvents } from './chat.js';
+import { buildContractHistory, formatContractTimestamp } from './contract-history.mjs';
+import { playClickTone, playHoverTone } from './sound.js';
+import { buildAgentLeaderboard } from './leaderboard.mjs';
 
 const BEACON_API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   ? 'http://localhost:8071'
@@ -20,6 +24,10 @@ let panel, panelContent, panelPath, tooltip;
 let selectedAgent = null;
 let selectedCity = null;
 let hoveredId = null;
+let searchInput = null;
+let searchResults = null;
+let searchMatches = [];
+let activeSearchIndex = -1;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -29,6 +37,9 @@ function escapeHtml(value) {
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 }
+let hoveredObjectKey = null;
+let leaderboardRoot = null;
+let leaderboardMode = 'beats';
 
 function safeNumber(value, fallback = 0, min = 0, max = Number.MAX_SAFE_INTEGER) {
   const number = Number(value);
@@ -89,6 +100,7 @@ async function loadReputation() {
         });
       }
       reputationTs = Date.now();
+      renderAgentLeaderboard();
     }
   } catch (e) {
     console.warn('[rep] Failed to load reputation:', e.message);
@@ -107,10 +119,16 @@ export function initUI() {
   tooltip = document.querySelector('.tooltip');
 
   // Close button
-  document.querySelector('.panel-dot').addEventListener('click', closePanel);
+  document.querySelector('.panel-dot').addEventListener('click', () => {
+    playClickTone('close');
+    closePanel();
+  });
 
   // HUD stats
   updateHUD();
+  initAgentSearch();
+  initCityTeleport();
+  initAgentLeaderboard();
 
   // Click handlers
   setClickHandler(onObjectClick);
@@ -137,6 +155,173 @@ export function initUI() {
   window.addEventListener('hashchange', handleDeepLink);
 }
 
+function initAgentSearch() {
+  searchInput = document.getElementById('agent-search-input');
+  searchResults = document.getElementById('agent-search-results');
+  if (!searchInput || !searchResults) return;
+
+  const refreshResults = () => {
+    const query = searchInput.value.trim();
+    searchMatches = searchAgents(query);
+    activeSearchIndex = searchMatches.length > 0 ? 0 : -1;
+    renderAgentSearchResults(query);
+  };
+
+  searchInput.addEventListener('input', refreshResults);
+  searchInput.addEventListener('focus', refreshResults);
+  searchInput.addEventListener('keydown', event => {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      if (searchMatches.length === 0) return;
+      event.preventDefault();
+      const direction = event.key === 'ArrowDown' ? 1 : -1;
+      const nextIndex = (activeSearchIndex + direction + searchMatches.length) % searchMatches.length;
+      setActiveSearchIndex(nextIndex);
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      chooseSearchResult(activeSearchIndex);
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      searchInput.value = '';
+      searchMatches = [];
+      hideAgentSearchResults();
+      searchInput.blur();
+    }
+  });
+
+  document.addEventListener('keydown', event => {
+    const target = event.target;
+    const isTyping = target instanceof HTMLElement
+      && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+    if (event.key === '/' && !isTyping && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      searchInput.focus();
+    }
+  });
+
+  document.addEventListener('pointerdown', event => {
+    const target = event.target;
+    if (!(target instanceof Element) || !target.closest('.agent-search')) {
+      hideAgentSearchResults();
+    }
+  });
+}
+
+function renderAgentSearchResults(query) {
+  searchResults.replaceChildren();
+  searchInput.setAttribute('aria-expanded', query ? 'true' : 'false');
+
+  if (!query) {
+    hideAgentSearchResults();
+    return;
+  }
+
+  searchResults.hidden = false;
+
+  if (searchMatches.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'agent-search-empty';
+    empty.textContent = 'NO MATCHING AGENTS';
+    searchResults.append(empty);
+    return;
+  }
+
+  searchMatches.forEach((agent, index) => {
+    const city = CITIES.find(candidate => candidate.id === agent.city);
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.className = 'agent-search-result';
+    option.id = `agent-search-result-${index}`;
+    option.dataset.index = String(index);
+    option.setAttribute('aria-current', index === activeSearchIndex ? 'true' : 'false');
+
+    const name = document.createElement('span');
+    name.className = 'agent-search-name';
+    name.textContent = agent.name || agent.id;
+
+    const meta = document.createElement('span');
+    meta.className = 'agent-search-meta';
+    const status = agent.status ? ` · ${String(agent.status).toUpperCase()}` : '';
+    meta.textContent = `${city?.name || agent.city || 'Unknown city'}${status}`;
+
+    option.append(name, meta);
+    option.addEventListener('pointerenter', () => setActiveSearchIndex(index));
+    option.addEventListener('click', () => chooseSearchResult(index));
+    searchResults.append(option);
+  });
+
+  setActiveSearchIndex(activeSearchIndex, false);
+}
+
+function setActiveSearchIndex(index, scroll = true) {
+  activeSearchIndex = index;
+  const options = [...searchResults.querySelectorAll('.agent-search-result')];
+  options.forEach((option, optionIndex) => {
+    const active = optionIndex === activeSearchIndex;
+    option.classList.toggle('active', active);
+    option.setAttribute('aria-current', active ? 'true' : 'false');
+  });
+
+  const activeOption = options[activeSearchIndex];
+  if (activeOption) {
+    searchInput.setAttribute('aria-activedescendant', activeOption.id);
+    if (scroll) activeOption.scrollIntoView({ block: 'nearest' });
+  } else {
+    searchInput.removeAttribute('aria-activedescendant');
+  }
+}
+
+function chooseSearchResult(index) {
+  const agent = searchMatches[index];
+  if (!agent) return;
+  searchInput.value = agent.name || agent.id;
+  hideAgentSearchResults();
+  searchInput.blur();
+  selectAgent(agent.id);
+}
+
+function hideAgentSearchResults() {
+  if (!searchResults || !searchInput) return;
+  searchResults.hidden = true;
+  searchInput.setAttribute('aria-expanded', 'false');
+  searchInput.removeAttribute('aria-activedescendant');
+  activeSearchIndex = -1;
+function initCityTeleport() {
+  const select = document.getElementById('hud-city-teleport');
+  if (!select) return;
+
+  const placeholder = document.createElement('option');
+  placeholder.value = '';
+  placeholder.textContent = '[CITY TELEPORT]';
+  select.replaceChildren(placeholder);
+
+  for (const group of buildCityTeleportGroups(CITIES, REGIONS)) {
+    const optionGroup = document.createElement('optgroup');
+    optionGroup.label = group.name.toUpperCase();
+
+    for (const city of group.cities) {
+      const option = document.createElement('option');
+      option.value = city.id;
+      option.textContent = city.name;
+      optionGroup.append(option);
+    }
+
+    select.append(optionGroup);
+  }
+
+  select.addEventListener('change', () => {
+    const city = resolveTeleportCity(CITIES, select.value);
+    select.value = '';
+    if (city) selectCity(city.id);
+  });
+}
+
 function updateHUD() {
   const el = document.querySelector('.hud-stats');
   if (el) {
@@ -155,6 +340,94 @@ function updateHUD() {
   }
 }
 
+function initAgentLeaderboard() {
+  leaderboardRoot = document.querySelector('.agent-leaderboard');
+  renderAgentLeaderboard();
+}
+
+function renderAgentLeaderboard() {
+  if (!leaderboardRoot) return;
+
+  const header = document.createElement('div');
+  header.className = 'leaderboard-header';
+
+  const title = document.createElement('h2');
+  title.className = 'leaderboard-title';
+  title.textContent = '[TOP AGENTS]';
+  header.appendChild(title);
+
+  const controls = document.createElement('div');
+  controls.className = 'leaderboard-controls';
+  for (const mode of ['beats', 'contracts']) {
+    const modeButton = document.createElement('button');
+    modeButton.type = 'button';
+    modeButton.className = 'leaderboard-mode';
+    modeButton.textContent = mode === 'beats' ? 'BEATS' : 'CONTRACTS';
+    modeButton.setAttribute('aria-pressed', String(leaderboardMode === mode));
+    modeButton.addEventListener('click', () => {
+      leaderboardMode = mode;
+      renderAgentLeaderboard();
+    });
+    controls.appendChild(modeButton);
+  }
+  header.appendChild(controls);
+
+  const entries = buildAgentLeaderboard(
+    AGENTS,
+    CONTRACTS,
+    reputationCache,
+    leaderboardMode,
+    10,
+  );
+  const list = document.createElement('ol');
+  list.className = 'leaderboard-list';
+
+  if (entries.length === 0) {
+    const empty = document.createElement('li');
+    empty.className = 'leaderboard-empty';
+    empty.textContent = 'No heartbeat or contract activity yet.';
+    list.appendChild(empty);
+  }
+
+  entries.forEach((entry, index) => {
+    const item = document.createElement('li');
+    item.className = 'leaderboard-item';
+
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'leaderboard-row';
+    row.setAttribute(
+      'aria-label',
+      `${index + 1}. ${entry.name}; ${entry.beats} heartbeats; ${entry.contracts} contracts`,
+    );
+    row.addEventListener('click', () => selectAgent(entry.id));
+
+    const rank = document.createElement('span');
+    rank.className = 'leaderboard-rank';
+    rank.textContent = String(index + 1).padStart(2, '0');
+
+    const rowName = document.createElement('span');
+    rowName.className = 'leaderboard-name';
+    rowName.textContent = entry.name;
+
+    const beats = document.createElement('span');
+    beats.className = 'leaderboard-metric';
+    beats.title = 'Heartbeats';
+    beats.textContent = `${entry.beats} B`;
+
+    const contracts = document.createElement('span');
+    contracts.className = 'leaderboard-metric';
+    contracts.title = 'Contracts';
+    contracts.textContent = `${entry.contracts} C`;
+
+    row.append(rank, rowName, beats, contracts);
+    item.appendChild(row);
+    list.appendChild(item);
+  });
+
+  leaderboardRoot.replaceChildren(header, list);
+}
+
 function setPanelPath(path) {
   const prompt = document.createElement('span');
   prompt.className = 'prompt';
@@ -165,6 +438,8 @@ function setPanelPath(path) {
 // --- Click handling ---
 function onObjectClick(mesh) {
   const data = mesh.userData;
+
+  if (data.type === 'agent' || data.type === 'city') playClickTone(data.type);
 
   if (data.type === 'agent') {
     selectAgent(data.agentId);
@@ -179,6 +454,7 @@ function onObjectHover(hit, event) {
       highlightAgent(hoveredId, false);
       hoveredId = null;
     }
+    hoveredObjectKey = null;
     tooltip.classList.remove('visible');
     document.body.style.cursor = 'default';
     return;
@@ -186,6 +462,14 @@ function onObjectHover(hit, event) {
 
   const data = hit.object.userData;
   document.body.style.cursor = 'pointer';
+
+  const hoverKey = data.type === 'agent'
+    ? `agent:${data.agentId}`
+    : data.type === 'city' ? `city:${data.cityId}` : null;
+  if (hoverKey && hoverKey !== hoveredObjectKey) {
+    hoveredObjectKey = hoverKey;
+    playHoverTone();
+  }
 
   if (data.type === 'agent' && data.agentId !== hoveredId) {
     if (hoveredId) highlightAgent(hoveredId, false);
@@ -322,21 +606,37 @@ function selectAgent(agentId) {
     }
   }
 
-  // Contracts
-  const agentContracts = CONTRACTS.filter(c => c.from === agentId || c.to === agentId);
+  // Contract history
+  const agentContracts = buildContractHistory(CONTRACTS, agentId);
+  html += `<div class="t-section">-- CONTRACT HISTORY (${agentContracts.length}) --</div>`;
   if (agentContracts.length > 0) {
-    html += `<div class="t-section">-- CONTRACTS --</div>`;
+    html += `<div class="contract-timeline" role="list">`;
     for (const c of agentContracts) {
       const other = c.from === agentId
         ? AGENTS.find(a => a.id === c.to)
         : AGENTS.find(a => a.id === c.from);
-      const dir = c.from === agentId ? '->' : '<-';
-      html += `<div class="contract-row ${escapeHtml(c.type)}">`;
-      html += `<span class="contract-type" style="background:${CONTRACT_STYLES_CSS[c.type]}">[${escapeHtml(c.type.toUpperCase().replace('_', ' '))}]</span>`;
-      html += `<span>${dir} ${escapeHtml(other ? other.name : '?')}  ${escapeHtml(c.amount)} ${escapeHtml(c.currency)}</span>`;
+      const direction = c.direction === 'outgoing' ? '->' : '<-';
+      const directionLabel = c.direction === 'outgoing' ? 'OUTGOING' : 'INCOMING';
+      const typeBackground = CONTRACT_STYLES_CSS[c.type] || 'rgba(100,136,100,0.15)';
+      html += `<div class="contract-timeline-item" role="listitem">`;
+      html += `<span class="contract-timeline-marker" aria-hidden="true"></span>`;
+      html += `<time class="contract-timeline-time"${c.createdAtIso ? ` datetime="${escapeHtml(c.createdAtIso)}"` : ''}>${escapeHtml(formatContractTimestamp(c.created_at))}</time>`;
+      html += `<div class="contract-timeline-main">`;
+      html += `<span class="contract-type" style="background:${typeBackground}">[${escapeHtml(c.type.toUpperCase().replaceAll('_', ' '))}]</span>`;
+      html += `<span class="contract-direction direction-${escapeHtml(c.direction)}">${direction} ${escapeHtml(other ? other.name : '?')}</span>`;
       html += `<span class="contract-state state-${escapeHtml(c.state)}">${escapeHtml(c.state)}</span>`;
       html += `</div>`;
+      html += `<div class="contract-timeline-details">`;
+      html += `<span>${escapeHtml(directionLabel)}</span>`;
+      html += `<span>${escapeHtml(c.amount)} ${escapeHtml(c.currency)}</span>`;
+      html += `<span>TERM ${escapeHtml(c.term || '?')}</span>`;
+      html += `<span>ID ${escapeHtml(c.id)}</span>`;
+      html += `</div>`;
+      html += `</div>`;
     }
+    html += `</div>`;
+  } else {
+    html += `<div class="contract-history-empty">No contracts recorded for this agent.</div>`;
   }
 
   // Source badges
@@ -643,6 +943,7 @@ async function submitContract() {
     // Success - add to data, create 3D line, update HUD
     const normalized = addContract(data);
     addContractLine(normalized);
+    renderAgentLeaderboard();
     updateHUD();
 
     successEl.textContent = `CONTRACT ${data.id} TRANSMITTED. State: ${data.state}`;

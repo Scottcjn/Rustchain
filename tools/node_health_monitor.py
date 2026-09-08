@@ -40,6 +40,12 @@ SLOW_THRESHOLD_MS = 1000   # response times above this are "yellow"
 STATUS_ENDPOINTS = ("/epoch", "/status", "/health")
 REQUEST_TIMEOUT   = 5      # seconds per HTTP request
 
+# Steady state is a lag of 1: the current epoch is in progress and the previous
+# one is settled. 3 tolerates one late settlement plus clock skew without
+# crying wolf, while still catching a real stall on its second day rather than
+# its eighty-fourth.
+SETTLEMENT_LAG_THRESHOLD = 3
+
 # ── Known attestation nodes ───────────────────────────────────────────────────
 DEFAULT_NODES = [
     "http://50.28.86.131:8088",
@@ -56,6 +62,11 @@ class NodeStatus:
     epoch: Optional[int]
     miners: Optional[int]
     error: Optional[str]
+    # Epochs since this node last settled one. The epoch number advances off
+    # wall-clock whether or not anybody is being paid, so `epoch` alone stayed
+    # perfectly healthy through the 84-epoch settlement outage of 2026-03-03 to
+    # 2026-05-27. None means the node does not report it (older build).
+    settlement_lag_epochs: Optional[int] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -69,6 +80,11 @@ class NetworkHealth:
     consensus_ok: bool
     split_brain: bool
     alerts: List[str]
+    # True when any online node has not settled an epoch in a while. Kept
+    # separate from consensus_ok/split_brain because nodes can agree perfectly
+    # on the epoch number and still be paying nobody — which is exactly what
+    # happened for 84 consecutive epochs in 2026.
+    settlement_stalled: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -158,14 +174,29 @@ class NodeHealthMonitor:
                         error="/status carried no epoch (not a RustChain node?)",
                     )
 
+                lag = data.get("settlement_lag_epochs")
+                try:
+                    lag = int(lag) if lag is not None else None
+                except (TypeError, ValueError):
+                    lag = None
+
                 status = "slow" if elapsed_ms > SLOW_THRESHOLD_MS else "online"
+                # A settlement stall does not make the node offline — it is
+                # answering, and miners must keep enrolling so the stalled
+                # epochs stay reconstructible. Report it, do not hide it in
+                # the status word.
+                err = None
+                if lag is not None and lag >= SETTLEMENT_LAG_THRESHOLD:
+                    err = (f"settlement stalled: {lag} epochs since last settled "
+                           f"(miners are enrolling and being paid nothing)")
                 return NodeStatus(
                     url=url,
                     status=status,
                     response_time_ms=round(elapsed_ms, 1),
                     epoch=epoch,
                     miners=miners,
-                    error=None,
+                    error=err,
+                    settlement_lag_epochs=lag,
                 )
 
         except urllib.error.HTTPError as exc:
@@ -250,6 +281,17 @@ class NodeHealthMonitor:
         if nodes_online == 0:
             alerts.append("ALL NODES OFFLINE — network unreachable")
 
+        stalled = [s for s in online
+                   if s.settlement_lag_epochs is not None
+                   and s.settlement_lag_epochs >= SETTLEMENT_LAG_THRESHOLD]
+        if stalled:
+            detail = ", ".join(f"{s.url} ({s.settlement_lag_epochs} epochs)"
+                               for s in stalled)
+            alerts.append(
+                f"SETTLEMENT STALLED — no epoch settled recently: {detail}. "
+                f"Miners are still enrolling and earning nothing."
+            )
+
         return NetworkHealth(
             nodes_online=nodes_online,
             total_nodes=len(statuses),
@@ -257,6 +299,7 @@ class NodeHealthMonitor:
             consensus_ok=consensus_ok,
             split_brain=split_brain,
             alerts=alerts,
+            settlement_stalled=bool(stalled),
         )
 
     def detect_split_brain(self, statuses: Optional[List[NodeStatus]] = None) -> bool:

@@ -12,8 +12,11 @@ services:
       - RUSTCHAIN_DB=/rustchain/data/rustchain_v2.db
       - DOWNLOAD_DIR=/rustchain/downloads
       - PYTHONUNBUFFERED=1
-      # P2P HMAC secret — MUST be set in .env or docker-compose.override.yml
-      - RC_P2P_SECRET=${RC_P2P_SECRET:?RC_P2P_SECRET is required — generate with: openssl rand -hex 32}
+      # Node role: 'sync' (external operator, default here) needs no fleet secret;
+      # 'settlement' (fleet nodes) requires the privately issued RC_P2P_SECRET.
+      - RC_NODE_ROLE=${RC_NODE_ROLE:-sync}
+      # Fleet P2P HMAC secret — only for RC_NODE_ROLE=settlement; leave unset otherwise.
+      - RC_P2P_SECRET=${RC_P2P_SECRET:-}
     volumes:
       # Persistent storage for SQLite database
       - rustchain-data:/rustchain/data

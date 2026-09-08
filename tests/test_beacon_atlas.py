@@ -3,14 +3,19 @@
 Test suite for Beacon Atlas 3D Agent World - Bounty #1524
 Tests backend API endpoints, data integrity, and visualization logic.
 """
+import re
 import unittest
 import json
 import time
 import sys
 import os
+import pathlib
+import subprocess
+import textwrap
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 class TestBeaconAtlasAPI(unittest.TestCase):
@@ -141,7 +146,81 @@ class TestBeaconAtlasAPI(unittest.TestCase):
 
 class TestBeaconAtlasVisualization(unittest.TestCase):
     """Test 3D visualization logic and data structures."""
-    
+
+    def test_avatar_url_normalization(self):
+        """Avatar textures accept bounded HTTPS URLs and reject unsafe schemes."""
+        data_module = (
+            pathlib.Path(__file__).resolve().parents[1] / "site" / "beacon" / "data.js"
+        ).as_uri()
+        script = f"""
+          import {{
+            avatarTextureUrl, normalizeAvatarUrl, normalizeBottubeAgents,
+          }} from {json.dumps(data_module)};
+          const longUrl = `https://cdn.example/${{'x'.repeat(2050)}}`;
+          console.log(JSON.stringify({{
+            absolute: normalizeAvatarUrl(' https://cdn.example/avatar.png '),
+            relative: normalizeAvatarUrl('/avatars/agent.png'),
+            http: normalizeAvatarUrl('http://cdn.example/avatar.png'),
+            data: normalizeAvatarUrl('data:image/png;base64,AAAA'),
+            javascript: normalizeAvatarUrl('javascript:alert(1)'),
+            credentials: normalizeAvatarUrl('https://user:pass@cdn.example/avatar.png'),
+            blank: normalizeAvatarUrl('   '),
+            oversized: normalizeAvatarUrl(longUrl),
+            proxy: avatarTextureUrl('https://bottube.ai/avatar/sophia-elya.svg'),
+            proxyQuery: avatarTextureUrl('https://bottube.ai/avatar/sophia.svg?v=1'),
+            external: avatarTextureUrl('https://cdn.example/avatar.png'),
+            arrayEnvelope: normalizeBottubeAgents({{ agents: [{{ agent_name: 'a' }}] }}),
+            legacyArray: normalizeBottubeAgents([{{ agent_name: 'b' }}]),
+            malformedEnvelope: normalizeBottubeAgents({{ agents: {{}} }}),
+          }}));
+        """
+        result = subprocess.run(
+            ["node", "--input-type=module", "--eval", script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        normalized = json.loads(result.stdout)
+
+        self.assertEqual(normalized["absolute"], "https://cdn.example/avatar.png")
+        self.assertEqual(
+            normalized["relative"], "https://rustchain.org/avatars/agent.png"
+        )
+        for rejected in (
+            "http", "data", "javascript", "credentials", "blank", "oversized"
+        ):
+            self.assertEqual(normalized[rejected], "", rejected)
+        self.assertEqual(
+            normalized["proxy"], "/beacon/api/avatar/sophia-elya.svg"
+        )
+        self.assertEqual(normalized["proxyQuery"], "")
+        self.assertEqual(normalized["external"], "https://cdn.example/avatar.png")
+        self.assertEqual(normalized["arrayEnvelope"], [{"agent_name": "a"}])
+        self.assertEqual(normalized["legacyArray"], [{"agent_name": "b"}])
+        self.assertEqual(normalized["malformedEnvelope"], [])
+
+    def test_avatar_sprite_renderer_contract(self):
+        """Avatar sprites stay interactive and preserve a geometry fallback."""
+        source = (
+            pathlib.Path(__file__).resolve().parents[1]
+            / "site"
+            / "beacon"
+            / "agents.js"
+        ).read_text(encoding="utf-8")
+
+        required_fragments = (
+            "avatarTextureUrl(agent.avatar)",
+            "new THREE.TextureLoader()",
+            "avatarTextureLoader.setCrossOrigin('anonymous')",
+            "new THREE.SpriteMaterial({",
+            "sprite.visible = false",
+            "registerClickable(avatar)",
+            "registerHoverable(avatar)",
+            "material.map = null",
+        )
+        for fragment in required_fragments:
+            self.assertIn(fragment, source)
+
     def test_bounty_position_calculation(self):
         """Test 3D positioning of bounty beacons."""
         import math
@@ -229,6 +308,163 @@ class TestBeaconAtlasVisualization(unittest.TestCase):
             opacity = state_opacities[state]
             self.assertGreaterEqual(opacity, 0.0, "Opacity must be >= 0")
             self.assertLessEqual(opacity, 1.0, "Opacity must be <= 1")
+
+
+class TestBeaconAtlasAgentSearch(unittest.TestCase):
+    """Test the browser-independent agent search/filter behavior."""
+
+    def test_searches_identity_metadata_and_city_with_stable_ranking(self):
+        script = textwrap.dedent(
+            """
+            import { searchAgents } from './site/beacon/data.js';
+
+            const agents = [
+              {
+                id: 'bcn_sophia_elya', name: 'Sophia Elya', role: 'Inference Orchestrator',
+                city: 'compiler_heights', provider: 'elyan', status: 'active',
+                capabilities: ['coding', 'automation'], sources: ['beacon'],
+              },
+              {
+                id: 'bcn_doc_clint', name: 'Doc Clint Otis', role: 'Research Physician',
+                city: 'tensor_valley', provider: 'anthropic', status: 'active',
+                capabilities: ['research', 'documentation'], sources: ['beacon', 'bottube'],
+              },
+              {
+                id: 'bcn_silent_builder', name: 'Builder Zero', role: 'Code Agent',
+                city: 'compiler_heights', provider: 'openai', status: 'silent',
+                capabilities: ['coding'], sources: ['beacon'],
+              },
+            ];
+
+            const result = {
+              exact: searchAgents('bcn_sophia_elya', agents).map(agent => agent.id),
+              name: searchAgents('sophia', agents).map(agent => agent.id),
+              metadata: searchAgents('anthropic active', agents).map(agent => agent.id),
+              cityAndRole: searchAgents('tensor research', agents).map(agent => agent.id),
+              bounded: searchAgents('compiler', agents, 1).map(agent => agent.id),
+              empty: searchAgents('   ', agents).map(agent => agent.id),
+              missing: searchAgents('no-such-agent', agents).map(agent => agent.id),
+            };
+            console.log(JSON.stringify(result));
+            """
+        )
+        completed = subprocess.run(
+            [
+                "node",
+                "--experimental-default-type=module",
+                "--input-type=module",
+                "-e",
+                script,
+            ],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        result = json.loads(completed.stdout)
+
+        self.assertEqual(result["exact"], ["bcn_sophia_elya"])
+        self.assertEqual(result["name"], ["bcn_sophia_elya"])
+        self.assertEqual(result["metadata"], ["bcn_doc_clint"])
+        self.assertEqual(result["cityAndRole"], ["bcn_doc_clint"])
+        self.assertEqual(result["bounded"], ["bcn_silent_builder"])
+        self.assertEqual(result["empty"], [])
+        self.assertEqual(result["missing"], [])
+
+    def test_search_ui_is_accessible_and_uses_safe_dom_rendering(self):
+        index = (REPO_ROOT / "site/beacon/index.html").read_text(encoding="utf-8")
+        ui = (REPO_ROOT / "site/beacon/ui.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="agent-search-input"', index)
+        self.assertIn('role="combobox"', index)
+        self.assertIn('id="agent-search-results"', index)
+        self.assertIn("searchResults.replaceChildren()", ui)
+        self.assertIn("name.textContent = agent.name || agent.id", ui)
+        self.assertIn("selectAgent(agent.id)", ui)
+
+
+class TestBeaconAtlasPerformanceMode(unittest.TestCase):
+    """Test the actual frontend LOD policy without requiring a WebGL browser."""
+
+    @classmethod
+    def setUpClass(cls):
+        root = pathlib.Path(__file__).resolve().parents[1]
+        cls.agents_source = (root / "site" / "beacon" / "agents.js").read_text()
+        cls.scene_source = (root / "site" / "beacon" / "scene.js").read_text()
+
+    def run_agents_probe(self, expression):
+        source = re.sub(
+            r"^import[\s\S]*?;\s*$",
+            "",
+            self.agents_source,
+            flags=re.MULTILINE,
+        )
+        source = re.sub(r"\bexport\s+", "", source)
+        result = subprocess.run(
+            ["node", "--input-type=module", "--eval", source + "\n" + expression],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return json.loads(result.stdout)
+
+    def test_lod_boundaries_and_population_gate(self):
+        result = self.run_agents_probe("""
+          console.log(JSON.stringify({
+            levels: [0, 19600, 19601, 102400, 102401].map(selectAgentLod),
+            enabled: [99, 100, 125].map(shouldUseAgentPerformanceMode),
+          }));
+        """)
+        self.assertEqual(
+            result["levels"],
+            ["high", "high", "medium", "medium", "low"],
+        )
+        self.assertEqual(result["enabled"], [False, True, True])
+
+    def test_lod_transition_reuses_geometry_and_culls_detail_effects(self):
+        result = self.run_agents_probe("""
+          const mesh = {
+            core: { geometry: 'initial' },
+            glow: { visible: true },
+            light: { visible: true },
+            label: { visible: true },
+            group: { userData: {} },
+            lodGeometries: { high: 'HIGH', medium: 'MEDIUM', low: 'LOW' },
+          };
+          const first = applyAgentLod(mesh, 'low');
+          const snapshot = {
+            geometry: mesh.core.geometry,
+            glow: mesh.glow.visible,
+            light: mesh.light.visible,
+            label: mesh.label.visible,
+            level: mesh.group.userData.lod,
+          };
+          const duplicate = applyAgentLod(mesh, 'low');
+          const restored = applyAgentLod(mesh, 'high');
+          console.log(JSON.stringify({ first, snapshot, duplicate, restored }));
+        """)
+        self.assertTrue(result["first"])
+        self.assertEqual(
+            result["snapshot"],
+            {
+                "geometry": "LOW",
+                "glow": False,
+                "light": False,
+                "label": False,
+                "level": "low",
+            },
+        )
+        self.assertFalse(result["duplicate"])
+        self.assertTrue(result["restored"])
+
+    def test_performance_mode_is_integrated_into_render_loop(self):
+        self.assertIn("camera.position.distanceToSquared", self.agents_source)
+        self.assertIn("LOD_UPDATE_INTERVAL_SECONDS", self.agents_source)
+        self.assertIn("mesh.group.userData.lod === 'low'", self.agents_source)
+        self.assertIn("setAgentPerformanceMode(performanceMode)", self.agents_source)
+        self.assertIn("PERFORMANCE_PIXEL_RATIO_CAP = 1.25", self.scene_source)
+        self.assertIn("renderer.setPixelRatio", self.scene_source)
+
 
 
 class TestBeaconAtlasDataIntegrity(unittest.TestCase):
@@ -369,6 +605,120 @@ class TestBeaconAtlasIntegration(unittest.TestCase):
             self.assertLess(prob, 1.0)
 
 
+class TestBeaconAtlasSoundDesign(unittest.TestCase):
+    """Test the user-gesture-safe Beacon Atlas sound layer."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.beacon_dir = pathlib.Path(__file__).resolve().parents[1] / "site" / "beacon"
+        cls.sound_source = (cls.beacon_dir / "sound.js").read_text(encoding="utf-8")
+
+    def test_sound_controls_are_wired_into_the_live_atlas(self):
+        index_source = (self.beacon_dir / "index.html").read_text(encoding="utf-8")
+        ui_source = (self.beacon_dir / "ui.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="hud-sound"', index_source)
+        self.assertIn('aria-pressed="false"', index_source)
+        self.assertIn("initSoundControls(document.getElementById('hud-sound'))", index_source)
+        self.assertIn("playHoverTone()", ui_source)
+        self.assertIn("playClickTone(data.type)", ui_source)
+        self.assertIn("MAX_TRANSIENTS", self.sound_source)
+        self.assertIn("pagehide", self.sound_source)
+
+    def test_audio_context_is_deferred_until_activation_and_cleaned_up(self):
+        executable_source = re.sub(r"^export\s+", "", self.sound_source, flags=re.MULTILINE)
+        probe = textwrap.dedent(r"""
+            let contextsCreated = 0;
+            let contextsClosed = 0;
+            const listeners = {};
+            const pendingEnded = [];
+
+            function audioParam() {
+              return {
+                value: 0,
+                setValueAtTime(value) { this.value = value; },
+                linearRampToValueAtTime(value) { this.value = value; },
+                exponentialRampToValueAtTime(value) { this.value = value; },
+                cancelScheduledValues() {},
+              };
+            }
+
+            class MockNode {
+              constructor() {
+                this.frequency = audioParam();
+                this.Q = audioParam();
+                this.gain = audioParam();
+                this.ended = null;
+              }
+              connect() { return this; }
+              disconnect() {}
+              start() {}
+              stop() { if (this.ended) pendingEnded.push(this.ended); }
+              addEventListener(name, handler) {
+                if (name === 'ended') this.ended = handler;
+              }
+            }
+
+            class MockAudioContext {
+              constructor() {
+                contextsCreated += 1;
+                this.currentTime = 0;
+                this.destination = new MockNode();
+                this.state = 'suspended';
+              }
+              createGain() { return new MockNode(); }
+              createBiquadFilter() { return new MockNode(); }
+              createOscillator() { return new MockNode(); }
+              async resume() { this.state = 'running'; }
+              async suspend() { this.state = 'suspended'; }
+              async close() { this.state = 'closed'; contextsClosed += 1; }
+            }
+
+            globalThis.AudioContext = MockAudioContext;
+            globalThis.window = { addEventListener() {} };
+            globalThis.document = { addEventListener() {} };
+            const control = {
+              textContent: '',
+              disabled: false,
+              attributes: {},
+              classList: { toggle() {} },
+              setAttribute(name, value) { this.attributes[name] = value; },
+              addEventListener(name, handler) { listeners[name] = handler; },
+            };
+
+            if (contextsCreated !== 0) throw new Error('AudioContext was created before a user gesture');
+            initSoundControls(control);
+            if (contextsCreated !== 0) throw new Error('initialization created an AudioContext');
+            if (control.attributes['aria-pressed'] !== 'false') throw new Error('control did not start muted');
+
+            await listeners.click();
+            if (contextsCreated !== 1) throw new Error('activation did not create exactly one AudioContext');
+            if (control.attributes['aria-pressed'] !== 'true') throw new Error('control did not report enabled state');
+            pendingEnded.splice(0).forEach(handler => handler());
+
+            const toneResults = Array.from({ length: 7 }, () => playClickTone('agent'));
+            if (toneResults.filter(Boolean).length !== 6 || toneResults[6] !== false) {
+              throw new Error('transient sound concurrency was not bounded');
+            }
+
+            await listeners.click();
+            if (contextsCreated !== 1) throw new Error('mute created a second AudioContext');
+            if (control.attributes['aria-pressed'] !== 'false') throw new Error('control did not report muted state');
+            disposeSound();
+            await Promise.resolve();
+            if (contextsClosed !== 1) throw new Error('AudioContext was not closed during cleanup');
+        """)
+
+        result = subprocess.run(
+            ["node", "--input-type=module", "-"],
+            input=f"{executable_source}\n{probe}",
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
 def run_tests():
     """Run all test suites."""
     loader = unittest.TestLoader()
@@ -377,8 +727,10 @@ def run_tests():
     # Add test classes
     suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasAPI))
     suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasVisualization))
+    suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasAgentSearch))
     suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasDataIntegrity))
     suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasIntegration))
+    suite.addTests(loader.loadTestsFromTestCase(TestBeaconAtlasSoundDesign))
     
     # Run tests
     runner = unittest.TextTestRunner(verbosity=2)

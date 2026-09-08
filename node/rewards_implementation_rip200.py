@@ -88,8 +88,36 @@ DATABASE_LOCKED_ERROR_MESSAGE = "Service unavailable due to database issues"
 UNEXPECTED_DATABASE_ERROR_MESSAGE = "An unexpected database error occurred"
 
 # Constants
+# Runtimes where fail-closed defaults are relaxed. MUST stay identical to
+# _MOCK_SIG_ALLOWED_ENVS in rustchain_v2_integrated_v2.2.1_rip200.py.
+NON_PRODUCTION_RUNTIMES = frozenset({"test", "testing", "dev", "development", "local", "testnet"})
+
 UNIT = 1_000_000  # uRTC per 1 RTC
 DB_PATH = "/root/rustchain/rustchain_v2.db"
+def _db_path_from(db_path):
+    """Filesystem path of the database the caller is ACTUALLY using.
+
+    settle_epoch_rip200() accepts either a path string or a live sqlite3
+    Connection. When handed a Connection, substituting the module-level
+    DB_PATH constant points the reward calculation at a DIFFERENT database
+    than the one the caller holds open. That is only harmless when the
+    process happens to run with cwd=/root/rustchain, which is true on the
+    production unit and false for tests, staging, and any relocated deploy —
+    rewards would then be computed from one database and written to another.
+
+    Ask the connection where it lives instead. Falls back to DB_PATH only if
+    the connection cannot answer, preserving the previous behaviour rather
+    than raising.
+    """
+    if isinstance(db_path, str):
+        return db_path
+    try:
+        for _seq, name, filename in db_path.execute("PRAGMA database_list"):
+            if name == "main" and filename:
+                return filename
+    except Exception:
+        pass
+    return DB_PATH
 PER_EPOCH_URTC = int(1.5 * UNIT)  # 1,500,000 uRTC
 BLOCK_TIME = 600
 GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
@@ -177,7 +205,12 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
         # adding ADM grouping there would break the live fleet (each fingerprinted miner
         # is paid per epoch; ADM is an admin-path defense-in-depth measure, not the
         # external-Sybil control).
-        require_adm = os.environ.get("RC_REQUIRE_ADM", "0") == "1"
+        # Production default is ON (fail closed); test/dev runtimes default OFF so
+        # fixtures without the ADM module keep working. RC_REQUIRE_ADM=0/1 always wins.
+        _runtime_env = (os.environ.get("RC_RUNTIME_ENV") or os.environ.get("RUSTCHAIN_ENV") or "production").strip().lower()
+        _adm_default = "0" if _runtime_env in NON_PRODUCTION_RUNTIMES else "1"
+        # Fail closed on anything that is not an explicit "0": "1", "true", "" or a typo all mean REQUIRED.
+        require_adm = os.environ.get("RC_REQUIRE_ADM", _adm_default).strip().lower() not in ("0", "false", "no", "off")
         if require_adm and not (enable_anti_double_mining and ANTI_DOUBLE_MINING_AVAILABLE):
             db.rollback()
             return {
@@ -194,7 +227,7 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
                 # the race window where a concurrent caller could open a separate
                 # connection and also pass the already_settled check.
                 result = settle_epoch_with_anti_double_mining(
-                    db_path if isinstance(db_path, str) else DB_PATH,
+                    _db_path_from(db_path),
                     epoch,
                     PER_EPOCH_URTC,
                     current,
@@ -234,7 +267,7 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
 
         # Standard RIP-200 rewards (no anti-double-mining)
         rewards = calculate_epoch_rewards_time_aged(
-            db_path if isinstance(db_path, str) else DB_PATH,
+            _db_path_from(db_path),
             epoch,
             PER_EPOCH_URTC,
             current,

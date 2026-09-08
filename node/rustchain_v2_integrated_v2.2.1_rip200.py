@@ -31,6 +31,32 @@ except ImportError:
     HW_BINDING_V2 = False
     print('[WARN] hardware_binding_v2.py not found - using legacy binding')
 
+
+def enforce_hardware_binding_runtime_guard():
+    """Refuse to run a production node on legacy hardware binding.
+
+    hardware_binding_v2 is the identity layer that stops one physical machine
+    from being re-bound to a second wallet. Falling back to the legacy binder
+    when the module is missing is fine for a dev checkout, but a production
+    node that silently degrades keeps paying rewards under a weaker identity
+    model. Fail closed unless the operator explicitly accepts the legacy path
+    (RC_ALLOW_LEGACY_HW_BINDING=1) or the runtime is a test/dev environment.
+    Mirrors enforce_mock_signature_runtime_guard(); wsgi.py calls both before
+    init_db(). (Suggested by @antoleod, Quest #398 Step 1, 2026-09-05.)
+    """
+    runtime_env = (os.environ.get("RC_RUNTIME_ENV") or os.environ.get("RUSTCHAIN_ENV") or "production").strip().lower()
+    if HW_BINDING_V2:
+        return
+    if runtime_env in _MOCK_SIG_ALLOWED_ENVS:
+        return
+    if os.environ.get("RC_ALLOW_LEGACY_HW_BINDING", "0") == "1":
+        print('[WARN] hardware_binding_v2 unavailable; RC_ALLOW_LEGACY_HW_BINDING=1 set, continuing on legacy binding')
+        return
+    raise RuntimeError(
+        "hardware_binding_v2 is unavailable and this is a production runtime; "
+        "refusing to start on legacy hardware binding (set RC_ALLOW_LEGACY_HW_BINDING=1 to override)"
+    )
+
 # App versioning and uptime tracking
 APP_VERSION = "2.2.1-rip200"
 APP_START_TS = time.time()
@@ -38,8 +64,7 @@ APP_START_TS = time.time()
 # Rewards system
 try:
     from rewards_implementation_rip200 import (
-        settle_epoch_rip200 as settle_epoch, total_balances, UNIT, PER_EPOCH_URTC,
-        _epoch_eligible_miners
+        settle_epoch_rip200 as settle_epoch, total_balances, UNIT, PER_EPOCH_URTC
     )
     HAVE_REWARDS = True
 except Exception as e:
@@ -1520,27 +1545,37 @@ except Exception as e:
     print(f"[INIT] Hall tables init: {e}")
 
 # Register rewards routes
-if HAVE_REWARDS:
+# RIP-200 rewards routes are defined natively in this file, NOT registered from
+# rewards_implementation_rip200. The module's register_rewards_rip200() defines
+# /rewards/settle, /wallet/balance, /wallet/balances/all and /lottery/eligibility,
+# all four of which already exist here (see 6774, 10718, 10804, 12310) — and the
+# module's versions REQUIRE an admin key on /wallet/balance, /wallet/balances/all
+# and /lottery/eligibility, while the live handlers here are public.
+#
+# Registering the module would have shadowed the public handlers with admin-gated
+# ones (Flask raises no assertion because the function names differ, so the first
+# rule registered simply wins), silently 401-ing every balance lookup made by the
+# block explorer, wallet clients and miner dashboards.
+#
+# Its one route with no counterpart here, /consensus/round_robin_status, is
+# reproduced natively below with its admin gate intact. Do not re-add the
+# module registration.
+
+# RIP-201: Fleet immune system endpoints
+if HAVE_FLEET_IMMUNE:
     try:
-        from rewards_implementation_rip200 import register_rewards
-        register_rewards(app, DB_PATH)
-        print("[REWARDS] Endpoints registered successfully")
+        register_fleet_endpoints(app, DB_PATH)
+        print("[RIP-201] Fleet immune endpoints registered")
     except Exception as e:
-        print(f"[REWARDS] Failed to register: {e}")
-
-
-    # RIP-201: Fleet immune system endpoints
-    if HAVE_FLEET_IMMUNE:
-        try:
-            register_fleet_endpoints(app, DB_PATH)
-            print("[RIP-201] Fleet immune endpoints registered")
-        except Exception as e:
-            print(f"[RIP-201] Failed to register fleet endpoints: {e}")
+        print(f"[RIP-201] Failed to register fleet endpoints: {e}")
 
 # RIP-305: Airdrop V2 endpoints
 if HAVE_AIRDROP:
     try:
-        airdrop_instance = AirdropV2()
+        # A5: without db_path AirdropV2 falls back to a per-process :memory:
+        # SQLite DB (one per gunicorn worker, wiped on every restart), so the
+        # one-claim-per-user rule never persisted. Share the node's DB file.
+        airdrop_instance = AirdropV2(db_path=DB_PATH)
         init_airdrop_routes(app, airdrop_instance, DB_PATH)
         print("[RIP-305] Airdrop V2 endpoints registered")
     except Exception as e:
@@ -2273,6 +2308,18 @@ WELCOME_BONUS_SOURCE = "founder_community"  # Fund that pays welcome bonuses
 STREAK_BONUS_PER_DAY = 0.02      # Additional multiplier per consecutive day (caps at 30 days = +0.6x)
 STREAK_MAX_DAYS = 30             # Max streak bonus cap
 STREAK_GRACE_HOURS = 26          # Hours before streak resets (gives timezone flexibility)
+
+# Console arch strings the Pico bridge is allowed to attest for (RIP-304).
+# Deliberately WIDER than the HARDWARE_WEIGHTS["console"] keys: an Apple II
+# reports the bare CPU ("6502"), not a console model, and falls to the console
+# default tier. Keeping one list means the vouching check and the fingerprint
+# relaxation cannot drift apart and quietly cap honest retro hardware.
+CONSOLE_ARCHES = {
+    "nes_6502", "snes_65c816", "n64_mips", "gba_arm7",
+    "genesis_68000", "sms_z80", "saturn_sh2",
+    "gameboy_z80", "gameboy_color_z80", "ps1_mips",
+    "6502", "65c816", "z80", "sh2",
+}
 
 POWERPC_ARCHES = {"g3", "g4", "g5", "power8", "power9", "powerpc", "power macintosh"}
 
@@ -3324,6 +3371,129 @@ def _classify_validated_x86_brand(cpu_brand: str):
     return None
 
 
+# === RIP-201: server-side vouching for claimed reward tiers ===
+#
+# derive_verified_device() used to end by handing the miner's own
+# device_family/device_arch straight back. Both reward tables are keyed off
+# whatever it returns. HARDWARE_WEIGHTS on the enrolment path, and
+# ANTIQUITY_MULTIPLIERS (via get_time_aged_multiplier on the stored
+# miner_attest_recent.device_arch) on the settlement path, so a claim that
+# reached the tail collected its tier for free. family="ARM"/arch="arm2" paid
+# 4.0 and family="console"/arch="nes_6502" paid 2.8 against an honest modern
+# x86_64 at 0.8, on plain bare-metal, with no corroborating evidence at all.
+#
+# The rule below is deliberately not an enumeration of good arch strings,
+# because that list rots the moment somebody adds a tier. It is: if the claim
+# would pay MORE than the modern rate and no detection branch above vouched
+# for it, cap it at the modern rate. Being unable to prove you are vintage
+# costs you the bonus, never your participation. An unvouched miner keeps
+# attesting, keeps enrolling and keeps earning, just at 0.8 like any other
+# modern box.
+UNVOUCHED_DEVICE = {"device_family": "x86_64", "device_arch": "modern"}
+
+# The neutral rate both reward tables agree on for a modern machine.
+# HARDWARE_WEIGHTS["x86_64"]["modern"] == 0.8 and
+# get_time_aged_multiplier("modern") == 0.8.
+_NEUTRAL_DEVICE_WEIGHT = 0.8
+
+
+def _console_bridge_evidence(device: dict, fingerprint: dict) -> bool:
+    """True when the payload carries the RIP-304 Pico bridge shape.
+
+    A real console miner cannot run a Python agent on the console itself; it
+    attests through a Pi Pico wired to the controller port, and
+    miners/pico_bridge/pico_bridge_miner.py always stamps bridge_type on both
+    the device and the fingerprint and always emits a ctrl_port_timing check
+    (see check_pico_bridge_attestation in node/fingerprint_checks.py). Asking
+    for that shape is asking for what the honest client already sends.
+
+    This does not make the console tier unforgeable. A determined spoofer can
+    synthesise the bridge fields too, and check_pico_bridge_attestation still
+    has to do the real work of judging cv/samples and ROM timing. It does stop
+    the two-string version, where an ordinary x86 box types "console" and
+    "nes_6502" into its payload and walks off with 2.8.
+    """
+    if not isinstance(device, dict):
+        device = {}
+    if str(device.get("bridge_type") or "").strip().lower() == "pico_serial":
+        return True
+    if isinstance(fingerprint, dict):
+        if str(fingerprint.get("bridge_type") or "").strip().lower() == "pico_serial":
+            return True
+        entry = _fingerprint_checks_map(fingerprint).get("ctrl_port_timing")
+        if isinstance(entry, dict) and entry.get("data"):
+            return True
+        if entry is True:
+            return True
+    return False
+
+
+def _claim_pays_above_neutral(family: str, arch: str) -> bool:
+    """Would honouring this family/arch pay more than a modern machine?
+
+    Checks both reward tables, because they disagree and both are live.
+    HARDWARE_WEIGHTS decides the enrolment weight snapshot; ANTIQUITY_MULTIPLIERS
+    decides the settlement multiplier when calculate_epoch_rewards_time_aged
+    falls back to miner_attest_recent. x86 arch="486" is 2.0 in the first and
+    2.9 in the second, so consulting only one of them would miss half the money.
+    """
+    bucket = HARDWARE_WEIGHTS.get(family, {})
+    if isinstance(bucket, dict):
+        weight = bucket.get(arch)
+        if weight is None:
+            weight = bucket.get("default")
+        if weight is not None and float(weight) > _NEUTRAL_DEVICE_WEIGHT:
+            return True
+    try:
+        from rip_200_round_robin_1cpu1vote import get_time_aged_multiplier
+        if float(get_time_aged_multiplier(arch, 0.0)) > _NEUTRAL_DEVICE_WEIGHT:
+            return True
+    except Exception:
+        # If the antiquity table cannot be consulted, fall back to the
+        # HARDWARE_WEIGHTS answer above rather than failing the attestation.
+        pass
+    return False
+
+
+def _vouch_claimed_device(family: str, arch: str, device: dict, fingerprint: dict) -> dict:
+    """Decide whether the server is willing to stand behind a claimed tier.
+
+    Only reached from the tail of derive_verified_device, i.e. only for claims
+    that no detection branch above recognised. Everything the server derived
+    itself has already returned by this point and never gets here.
+    """
+    family_lower = str(family or "").strip().lower()
+    arch_lower = str(arch or "").strip().lower().replace("-", "_").replace(" ", "_")
+
+    # x86 keeps the path it already has: _detect_x86_vintage above, plus the
+    # _derive_enroll_weight_device clamp added by #8022. Left alone on purpose
+    # so this change stays complementary to PR #8087 instead of colliding with
+    # it in the same function. See the PR body for the gap that leaves.
+    if family_lower in ("x86", "x86_64", "windows", ""):
+        return {"device_family": family, "device_arch": arch}
+
+    # Console: honour the retro tier only with the Pico bridge shape behind it.
+    if family_lower == "console":
+        if arch_lower in CONSOLE_ARCHES and _console_bridge_evidence(device, fingerprint):
+            return {"device_family": "console", "device_arch": arch_lower}
+        print(f"[VOUCH] REJECT console claim {arch!r}: no pico bridge evidence -> x86_64/modern")
+        return dict(UNVOUCHED_DEVICE)
+
+    # ARM reaching the tail means _detect_arm_evidence found nothing ARM about
+    # this machine while the payload insists it is ARM. Honest vintage ARM goes
+    # through the vintage_arm_arches branch above and never lands here.
+    if family_lower == "arm":
+        print(f"[VOUCH] REJECT ARM claim {arch!r}: no ARM evidence in payload -> x86_64/modern")
+        return dict(UNVOUCHED_DEVICE)
+
+    if _claim_pays_above_neutral(family, arch_lower):
+        print(f"[VOUCH] REJECT unvouched tier {family}/{arch} -> x86_64/modern")
+        return dict(UNVOUCHED_DEVICE)
+
+    # Pays neutral or less. Nothing to steal, so keep the miner's own label.
+    return {"device_family": family, "device_arch": arch}
+
+
 def _derive_enroll_weight_device(
     verified_device: dict, fingerprint: dict, fingerprint_passed: bool = True,
     measurement_report_verified: bool = False,
@@ -3606,8 +3776,11 @@ def derive_verified_device(device: dict, fingerprint: dict, fingerprint_passed: 
         if x86_vintage:
             return x86_vintage
 
-    # Non-PowerPC, non-ARM, non-exotic — return claimed values
-    return {"device_family": family, "device_arch": arch}
+    # Nothing above recognised this device, so family/arch are still the
+    # miner's own words. Vouch for the claim or cap it at the modern rate;
+    # see _vouch_claimed_device. Returning the claim verbatim here is what
+    # handed out ARM/arm2 at 4.0 and console/nes_6502 at 2.8 for free.
+    return _vouch_claimed_device(family, arch, device, fingerprint)
 
 # RIP-0146b: Enrollment enforcement config
 ENROLL_REQUIRE_TICKET = os.getenv("ENROLL_REQUIRE_TICKET", "1") == "1"
@@ -3876,26 +4049,51 @@ def _ledger_reward_row(c, ledger_cols, epoch, miner_id, amount_i64, reason):
     return True
 
 
+def _welcome_bonus_source_balance_i64(conn: sqlite3.Connection) -> Optional[int]:
+    """Current balance of the fund that pays welcome bonuses, or None if absent."""
+    row = conn.execute(
+        "SELECT amount_i64 FROM balances WHERE miner_id = ?", (WELCOME_BONUS_SOURCE,)
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return int(row[0])
+
+
 def _check_welcome_bonus(miner: str):
-    """Award welcome bonus on first-ever attestation. Funded from founder_community."""
+    """Award welcome bonus on first-ever attestation. Funded from founder_community.
+
+    Callers must only invoke this for attestations that PASSED the hardware
+    fingerprint (see the /attest/submit call site). The payer itself refuses to
+    drive WELCOME_BONUS_SOURCE negative and takes the write lock up front so two
+    concurrent first attests cannot both pass the already-paid check.
+    """
     try:
         with closing(sqlite3.connect(DB_PATH)) as conn:
+            conn.execute("BEGIN IMMEDIATE")
             # Check if this miner has ever attested before
             history_count = conn.execute(
                 "SELECT COUNT(*) FROM miner_attest_history WHERE miner = ?", (miner,)
             ).fetchone()[0]
-            
+
             if history_count <= 1:  # First attestation (just recorded)
                 ledger_cols = _table_columns(conn, "ledger")
                 balance_cols = _table_columns(conn, "balances")
                 # Check if welcome bonus already paid
                 already_paid = _welcome_bonus_already_paid(conn, miner, ledger_cols)
-                
+
                 if not already_paid:
                     bonus_i64 = int(WELCOME_BONUS_RTC * 1_000_000)
+                    source_balance = _welcome_bonus_source_balance_i64(conn)
+                    if source_balance is None or source_balance < bonus_i64:
+                        print(f"[WELCOME] SKIPPED for {miner}: {WELCOME_BONUS_SOURCE} "
+                              f"balance {source_balance} < {bonus_i64} uRTC")
+                        conn.rollback()
+                        return
                     _write_welcome_bonus(conn, miner, bonus_i64, ledger_cols, balance_cols)
                     conn.commit()
                     print(f"[WELCOME] {miner} received {WELCOME_BONUS_RTC} RTC welcome bonus!")
+                    return
+            conn.rollback()
     except Exception as e:
         print(f"[WELCOME] Error for {miner}: {e}")
 
@@ -4019,7 +4217,7 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
                 device_arch = excluded.device_arch,
                 source_ip = excluded.source_ip,
                 fingerprint_passed = MAX(miner_attest_recent.fingerprint_passed, excluded.fingerprint_passed),
-                signing_pubkey = excluded.signing_pubkey,
+                signing_pubkey = COALESCE(excluded.signing_pubkey, miner_attest_recent.signing_pubkey),
                 fingerprint_checks_json = excluded.fingerprint_checks_json
         """, (miner, now, verified_device["device_family"], verified_device["device_arch"], entropy_score, new_fp, source_ip, signing_pubkey, fingerprint_checks_json))
         _ = append_fingerprint_snapshot(conn, miner, fingerprint if isinstance(fingerprint, dict) else {}, now)
@@ -4661,7 +4859,16 @@ def validate_fingerprint_data(
     is_vintage = claimed_arch_lower in vintage_relaxed_archs or (
         claimed_arch_lower in {"386", "486"}
     )
-    is_console = claimed_arch_lower in console_archs
+    # The console relaxation drops clock_drift from the required set, so keying
+    # it off the claimed arch string alone meant one word in the request body
+    # skipped a required hardware check: the same payload with no clock_drift
+    # at all returned missing_required_check:clock_drift as "modern" and valid
+    # as "nes_6502". Require the RIP-304 bridge shape the honest Pico client
+    # actually sends before relaxing anything.
+    is_console = (
+        claimed_arch_lower in console_archs
+        and _console_bridge_evidence(claimed_device, fingerprint)
+    )
 
     # RIP-304: Console miners use Pico bridge fingerprinting (ctrl_port_timing
     # replaces clock_drift; anti_emulation still required via timing CV)
@@ -5194,6 +5401,35 @@ def current_slot():
     """Get current slot number"""
     return (int(time.time()) - GENESIS_TIMESTAMP) // BLOCK_TIME
 
+def _record_unsettled_epoch(cursor, conn, epoch, reason):
+    """Leave a trace when an epoch is processed but pays nobody.
+
+    Both no-payout paths below used to `return` silently, writing nothing.
+    That is how epochs 91-174 came to have no `epoch_state` row *at all* -
+    not `settled = 0`, absent - and why an 84-day settlement outage
+    (2026-03-03 to 2026-05-27) was invisible to every dashboard while 183
+    miners kept enrolling for nothing.  An epoch that pays nobody is a fact
+    worth recording, not a no-op.
+
+    Writing `settled = 0` is safe: the authoritative replay guard inserts the
+    same row and then atomically claims `0 -> 1`, so a pre-existing unsettled
+    row does not block a later real settlement, and nothing was credited here
+    to be credited twice.
+    """
+    try:
+        cursor.execute(
+            "INSERT INTO epoch_state (epoch, settled) VALUES (?, 0) "
+            "ON CONFLICT(epoch) DO NOTHING",
+            (epoch,)
+        )
+        conn.commit()
+    except Exception as exc:
+        # Never let bookkeeping abort settlement, but do not swallow it either.
+        print(f"[SETTLE] epoch {epoch}: could not record unsettled state: {exc}")
+    print(f"[SETTLE] Epoch {epoch} paid nobody (reason={reason}). "
+          f"Recorded as unsettled; settlement_lag_epochs will report this.")
+
+
 def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
     """Finalize epoch and distribute rewards with security hardening"""
     from contextlib import closing
@@ -5219,6 +5455,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         miners = [(pk, normalize_epoch_weight_units(weight)) for pk, weight in raw_miners]
 
         if not miners:
+            _record_unsettled_epoch(c, conn, epoch, "no_enrolled_miners")
             return
 
         # Calculate total weight
@@ -5227,6 +5464,7 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         # DIVISION BY ZERO PROTECTION
         if total_weight == 0:
             print(f"[SECURITY] Total weight is 0 for epoch {epoch}, skipping reward distribution")
+            _record_unsettled_epoch(c, conn, epoch, "total_weight_zero")
             return
 
         # PRECISION: Use Decimal for exact financial calculations
@@ -6425,8 +6663,11 @@ def _submit_attestation_impl():
     if macs:
         record_macs(miner, macs)
 
-    # Check for welcome bonus (first attestation)
-    _check_welcome_bonus(miner)
+    # Check for welcome bonus (first attestation). Only a miner that PASSED the
+    # hardware fingerprint earns it: a VM/emulator/missing-fingerprint attest is
+    # still recorded (zero reward weight) but must not drain founder_community.
+    if fingerprint_passed:
+        _check_welcome_bonus(miner)
 
     # AUTO-ENROLL: Automatically enroll miner in current epoch on successful attestation
     # This eliminates the need for miners to make a separate POST /epoch/enroll call
@@ -6585,6 +6826,12 @@ def get_epoch():
             "SELECT COUNT(*) FROM epoch_enroll WHERE epoch = ?",
             (epoch,)
         ).fetchone()[0]
+        # Reuse this connection - `enrolled_miners` alone cannot distinguish a
+        # healthy chain from one that has been enrolling miners and paying
+        # none of them for 84 days, which is what happened in 2026.
+        settlement_lag, last_settled = _settlement_lag_epochs(
+            conn=c, now_epoch=epoch
+        )
 
     return jsonify({
         "epoch": epoch,
@@ -6592,7 +6839,9 @@ def get_epoch():
         "epoch_pot": PER_EPOCH_RTC,
         "enrolled_miners": enrolled,
         "blocks_per_epoch": EPOCH_SLOTS,
-        "total_supply_rtc": TOTAL_SUPPLY_RTC
+        "total_supply_rtc": TOTAL_SUPPLY_RTC,
+        "settlement_lag_epochs": settlement_lag,
+        "last_settled_epoch": last_settled
     })
 
 @app.route('/epoch/proposer-duty-calendar', methods=['GET'])
@@ -10807,6 +11056,47 @@ def _tip_age_slots():
     except Exception:
         return None
 
+def _settlement_lag_epochs(conn=None, now_epoch=None):
+    """Epochs elapsed since the newest *settled* epoch.
+
+    `conn` / `now_epoch` let a caller that already has a connection and the
+    current epoch reuse them (`/epoch` is a hot path), without duplicating the
+    bounding rule below - which is the part that is easy to get wrong.
+
+    Block production and epoch settlement are independent subsystems, and
+    nothing was watching the second one.  Epochs 91-174 (2026-03-03 to
+    2026-05-27) were never settled: `settle_epoch` returned early on an empty
+    miner set without writing an `epoch_state` row or logging, so 84
+    consecutive epochs left no trace at all.  Blocks kept being produced
+    throughout, so `tip_age_slots` stayed at 0 and `/health` reported
+    `ok: true` for the entire 84 days.  183 miners enrolled and were paid
+    nothing.  This is the signal that would have caught it on day one.
+
+    Returns `(lag_epochs, last_settled_epoch)`; either may be None when the
+    state is genuinely unknown (nothing settled on record, or the query
+    failed).  Never raises - health reporting must not take the node down.
+    """
+    # Bound by the current epoch on purpose.  `epoch_state` still carries rows
+    # from the pre-2025-12 numbering scheme (values in the 20000s, plus a stray
+    # 424 settled in Dec 2025).  An unbounded MAX() picks one of those, yields
+    # a *negative* lag, and reports perfect health during exactly the stall
+    # this exists to detect.
+    _SQL = "SELECT MAX(epoch) FROM epoch_state WHERE settled = 1 AND epoch <= ?"
+    try:
+        if now_epoch is None:
+            now_epoch = slot_to_epoch(current_slot())
+        if conn is not None:
+            row = conn.execute(_SQL, (now_epoch,)).fetchone()
+        else:
+            with sqlite3.connect(DB_PATH, timeout=3) as db:
+                row = db.execute(_SQL, (now_epoch,)).fetchone()
+        last_settled = row[0] if row else None
+        if last_settled is None:
+            return None, None
+        return max(0, now_epoch - int(last_settled)), int(last_settled)
+    except Exception:
+        return None, None
+
 # ============= READINESS AGGREGATOR (RIP-0143) =============
 
 # Global metrics snapshot for lightweight readiness checks
@@ -10881,6 +11171,12 @@ def api_health():
     ok_db = _db_rw_ok()
     age_h = _backup_age_hours()
     tip_age = _tip_age_slots()
+    settlement_lag, last_settled = _settlement_lag_epochs()
+    # Settlement lag is reported but deliberately does NOT flip `ok`.  A 503
+    # pulls the node out of load-balancer rotation, which would stop miners
+    # enrolling - the opposite of what a settlement stall needs.  Enrollment
+    # data is what makes a stalled epoch recoverable later.  Expose the number
+    # and let alerting act on it.
     ok = ok_db and (age_h is None or age_h < 36)
     return jsonify({
         "ok": bool(ok),
@@ -10888,7 +11184,9 @@ def api_health():
         "uptime_s": int(time.time() - APP_START_TS),
         "db_rw": bool(ok_db),
         "backup_age_hours": age_h,
-        "tip_age_slots": tip_age
+        "tip_age_slots": tip_age,
+        "settlement_lag_epochs": settlement_lag,
+        "last_settled_epoch": last_settled
     }), (200 if ok else 503)
 
 @app.route('/ready', methods=['GET'])
@@ -10911,6 +11209,40 @@ def metrics():
     payload += _attestation_pool_prometheus_text().encode("utf-8")
     return Response(payload, content_type=CONTENT_TYPE_LATEST)
 
+
+@app.route('/consensus/round_robin_status', methods=['GET'])
+def consensus_round_robin_status():
+    """Current round-robin rotation status.
+
+    Ported from rewards_implementation_rip200.register_rewards_rip200() — the only
+    route there without a native counterpart. Admin-gated, as it was: it exposes
+    every attested miner and the consensus rotation.
+    """
+    admin_key = request.headers.get("X-Admin-Key", "")
+    expected_key = os.environ.get("RC_ADMIN_KEY", "")
+    if not expected_key:
+        return jsonify({"error": "RC_ADMIN_KEY not configured — endpoint disabled"}), 503
+    if not hmac.compare_digest(admin_key, expected_key):
+        return jsonify({"error": "Unauthorized — admin key required"}), 401
+
+    from rip_200_round_robin_1cpu1vote import (
+        get_attested_miners, get_round_robin_producer,
+        get_chain_age_years, get_time_aged_multiplier,
+    )
+    current = current_slot()
+    attested_miners = get_attested_miners(DB_PATH, int(time.time()))
+    chain_age = get_chain_age_years(current)
+    return jsonify({
+        "current_slot": current,
+        "current_producer": get_round_robin_producer(current, attested_miners),
+        "rotation_size": len(attested_miners),
+        "attested_miners": [
+            {"miner_id": m, "device_arch": a,
+             "multiplier": round(get_time_aged_multiplier(a, chain_age), 3)}
+            for m, a in attested_miners
+        ],
+        "chain_age_years": round(chain_age, 2),
+    })
 
 @app.route('/rewards/settle', methods=['POST'])
 def api_rewards_settle():
@@ -12608,8 +12940,15 @@ try:
             print(f"[ERROR] p2p request failed: {e!r}")
             return jsonify({"ok": False, "error": "internal_error"}), 400
 
-    # Start background sync unless an integration test explicitly disables it.
-    if os.environ.get("RUSTCHAIN_DISABLE_P2P_AUTO_START") != "1":
+    # Start background sync unless an integration test explicitly disables it,
+    # or no shared RC_P2P_KEY is configured. Sync/external nodes have no fleet
+    # key: without it every gunicorn worker mints its own random HMAC key and
+    # each outbound sync request 401s every 30s (security audit 2026-09-02, A14).
+    if os.environ.get("RUSTCHAIN_DISABLE_P2P_AUTO_START") == "1":
+        pass
+    elif not os.environ.get("RC_P2P_KEY"):
+        print("[P2P] RC_P2P_KEY not set: legacy block sync not started (fleet-only); public API unaffected")
+    else:
         block_sync.start()
 
     print("[P2P] [OK] Endpoints registered successfully")
@@ -13187,6 +13526,22 @@ def wallet_transfer_signed():
     if review_gate is not None:
         return review_gate
 
+    # SECURITY (#398 Step 3 follow-up to #8357): a bcn_ destination must already
+    # resolve to a registered Beacon Atlas identity. Crediting RTC to an
+    # unregistered name creates a balance with no key owner, which is exactly
+    # the pre-funded-id condition #8357 had to guard against at /beacon/join.
+    # Close it at the source too: refuse the transfer instead of minting an
+    # orphan balance. Admin/operator migration paths use /wallet/transfer.
+    if to_address.startswith("bcn_"):
+        _dest = resolve_bcn_wallet(to_address)
+        if not _dest.get("found"):
+            return jsonify({
+                "error": "unregistered_bcn_destination",
+                "message": "Destination bcn_ id is not registered in Beacon Atlas; "
+                           "register it via /beacon/join before receiving RTC.",
+                "to_address": to_address,
+            }), 400
+
     # SECURITY (#6127): Validate signature/public_key types before str() coercion
     _raw_sig = data.get("signature")
     _raw_pubkey = data.get("public_key")
@@ -13578,8 +13933,40 @@ def _limit_governance_vote_requests():
     return response
 
 
+# --- must run under the WSGI server too ------------------------------------
+# Everything below `if __name__ == "__main__":` runs ONLY under the Flask dev
+# server. Production is served by gunicorn (gunicorn -w 4 wsgi:app), which
+# IMPORTS this module, so __name__ is never "__main__" and that block never
+# executes. Two things were stranded there: the fail-closed mock-signature
+# runtime check (inert in the only mode production runs in), and the UTXO
+# blueprint registration (why every /utxo/* route 404s in production).
+# Both belong at module scope so they take effect however the app is served.
+enforce_mock_signature_runtime_guard()
+
+if HAVE_UTXO:
+    try:
+        from utxo_endpoints import register_utxo_blueprint
+        _utxo_instance = UtxoDB(DB_PATH)
+        register_utxo_blueprint(
+            app, _utxo_instance, DB_PATH,
+            verify_sig_fn=verify_rtc_signature,
+            addr_from_pk_fn=address_from_pubkey,
+            current_slot_fn=current_slot,
+            dual_write=UTXO_DUAL_WRITE,
+            review_gate_fn=wallet_review_gate_response,
+        )
+    except ImportError as e:
+        # Optional module genuinely absent: run without the UTXO layer.
+        print(f"[UTXO] Endpoints not available: {e}")
+    except Exception as e:
+        # The module is present but wiring it failed. Do NOT swallow this:
+        # a half-registered UTXO layer (or none, silently) is exactly the
+        # false-green shape that hid the /utxo/* 404s in production.
+        print(f"[UTXO] Endpoint registration failed: {e}")
+        raise
+
+
 if __name__ == "__main__":
-    enforce_mock_signature_runtime_guard()
 
     # CRITICAL: SR25519 library is REQUIRED for production
     if not SR25519_AVAILABLE:
@@ -13598,22 +13985,6 @@ if __name__ == "__main__":
     init_db()
 
     # UTXO Transaction Engine (Phase 3)
-    if HAVE_UTXO:
-        try:
-            from utxo_endpoints import register_utxo_blueprint
-            _utxo_instance = UtxoDB(DB_PATH)
-            register_utxo_blueprint(
-                app, _utxo_instance, DB_PATH,
-                verify_sig_fn=verify_rtc_signature,
-                addr_from_pk_fn=address_from_pubkey,
-                current_slot_fn=current_slot,
-                dual_write=UTXO_DUAL_WRITE,
-            )
-        except ImportError as e:
-            print(f"[UTXO] Endpoints not available: {e}")
-        except Exception as e:
-            print(f"[UTXO] Endpoint registration failed: {e}")
-
     # BCOS v2: Register Blockchain Certified Open Source endpoints
     try:
         from bcos_routes import register_bcos_routes

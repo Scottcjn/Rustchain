@@ -5,6 +5,10 @@ import threading
 import time
 import unittest
 
+# These tests exercise the legacy ADM-off fallback path on purpose. Since 2026-09-05 the
+# production default is RC_REQUIRE_ADM=1 (fail closed), so opt out explicitly here.
+os.environ.setdefault("RC_REQUIRE_ADM", "0")
+
 
 class TestRewardsSettleRace(unittest.TestCase):
     def _init_db(self, path: str) -> None:

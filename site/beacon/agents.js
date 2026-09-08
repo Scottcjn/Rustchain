@@ -5,14 +5,56 @@
 import * as THREE from 'three';
 import {
   AGENTS, GRADE_COLORS, agentCity, cityPosition, seededRandom,
-  getProviderColor,
+  getProviderColor, avatarTextureUrl,
 } from './data.js';
 import {
-  getScene, registerClickable, registerHoverable, onAnimate,
+  getScene, getCamera, registerClickable, registerHoverable, onAnimate,
+  setAgentPerformanceMode,
 } from './scene.js';
 
 const agentMeshes = new Map(); // agentId -> { core, glow, group }
 const agentPositions = new Map(); // agentId -> Vector3
+const PERFORMANCE_AGENT_THRESHOLD = 100;
+const LOD_NEAR_DISTANCE_SQ = 140 * 140;
+const LOD_MEDIUM_DISTANCE_SQ = 320 * 320;
+const LOD_UPDATE_INTERVAL_SECONDS = 0.25;
+
+let sharedAgentGeometries = null;
+
+export function shouldUseAgentPerformanceMode(agentCount) {
+  return Number.isFinite(agentCount) && agentCount >= PERFORMANCE_AGENT_THRESHOLD;
+}
+
+export function selectAgentLod(distanceSquared) {
+  if (distanceSquared <= LOD_NEAR_DISTANCE_SQ) return 'high';
+  if (distanceSquared <= LOD_MEDIUM_DISTANCE_SQ) return 'medium';
+  return 'low';
+}
+
+export function applyAgentLod(mesh, level) {
+  if (!mesh || !mesh.lodGeometries || !mesh.lodGeometries[level]) return false;
+  if (mesh.group.userData.lod === level) return false;
+
+  mesh.core.geometry = mesh.lodGeometries[level];
+  const showDetailEffects = level === 'high';
+  mesh.glow.visible = showDetailEffects;
+  mesh.light.visible = showDetailEffects;
+  mesh.label.visible = showDetailEffects;
+  if (mesh.avatar) mesh.avatar.visible = showDetailEffects;
+  mesh.group.userData.lod = level;
+  return true;
+}
+let avatarTextureLoader = null;
+
+function getAvatarTextureLoader() {
+  // Lazy: keeps module top-level side-effect free (the LOD tests eval this file
+  // with imports stripped) and avoids constructing a loader nobody uses.
+  if (!avatarTextureLoader) {
+    avatarTextureLoader = new THREE.TextureLoader();
+    avatarTextureLoader.setCrossOrigin('anonymous');
+  }
+  return avatarTextureLoader;
+}
 
 export function getAgentPosition(agentId) {
   return agentPositions.get(agentId);
@@ -24,6 +66,10 @@ export function getAgentMesh(agentId) {
 
 export function buildAgents() {
   const scene = getScene();
+  const camera = getCamera();
+  const performanceMode = shouldUseAgentPerformanceMode(AGENTS.length);
+  const geometries = getSharedAgentGeometries();
+  setAgentPerformanceMode(performanceMode);
 
   // Track per-city agent index for offset placement
   const cityCounts = {};
@@ -58,27 +104,31 @@ export function buildAgents() {
       ? (getProviderColor(agent.provider) || '#ffffff')
       : (GRADE_COLORS[agent.grade] || '#33ff33');
     const color = new THREE.Color(colorHex);
+    const lodGeometries = isRelay ? geometries.relay : geometries.native;
 
     // Core geometry: Octahedron (diamond) for relay, Sphere for native
-    const coreGeo = isRelay
-      ? new THREE.OctahedronGeometry(1.8, 0)
-      : new THREE.SphereGeometry(1.5, 16, 12);
     const coreMat = new THREE.MeshBasicMaterial({
       color,
       transparent: true,
       opacity: 0.9,
       wireframe: isRelay,  // Wireframe gives relay agents a "holographic bridge" look
     });
-    const core = new THREE.Mesh(coreGeo, coreMat);
+    const core = new THREE.Mesh(lodGeometries.high, coreMat);
     core.userData = { type: 'agent', agentId: agent.id };
     group.add(core);
     registerClickable(core);
     registerHoverable(core);
 
+    // Public profile images are optional. The core remains the visual and
+    // interaction fallback until a validated HTTPS texture loads successfully.
+    const avatar = makeAgentAvatar(agent);
+    if (avatar) {
+      group.add(avatar);
+      registerClickable(avatar);
+      registerHoverable(avatar);
+    }
+
     // Outer glow — slightly larger for relay to emphasize presence
-    const glowGeo = isRelay
-      ? new THREE.OctahedronGeometry(3.0, 1)
-      : new THREE.SphereGeometry(2.5, 16, 12);
     const glowMat = new THREE.MeshBasicMaterial({
       color,
       transparent: true,
@@ -86,7 +136,7 @@ export function buildAgents() {
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    const glow = new THREE.Mesh(glowGeo, glowMat);
+    const glow = new THREE.Mesh(lodGeometries.glow, glowMat);
     group.add(glow);
 
     // Point light for local illumination
@@ -102,12 +152,35 @@ export function buildAgents() {
     group.add(label);
 
     scene.add(group);
-    agentMeshes.set(agent.id, { core, glow, group, light, relay: isRelay });
+    const mesh = {
+      core, glow, group, light, label, avatar, relay: isRelay, lodGeometries,
+    };
+    agentMeshes.set(agent.id, mesh);
+
+    if (performanceMode) {
+      applyAgentLod(mesh, selectAgentLod(camera.position.distanceToSquared(pos)));
+    } else {
+      group.userData.lod = 'high';
+    }
   }
 
   // Bob + spin animation
-  onAnimate((elapsed) => {
+  let lodElapsed = 0;
+  onAnimate((elapsed, dt) => {
+    lodElapsed += dt;
+    const refreshLod = performanceMode && lodElapsed >= LOD_UPDATE_INTERVAL_SECONDS;
+    if (refreshLod) lodElapsed = 0;
+
     for (const [agentId, mesh] of agentMeshes) {
+      if (refreshLod) {
+        const distanceSquared = camera.position.distanceToSquared(mesh.group.position);
+        applyAgentLod(mesh, selectAgentLod(distanceSquared));
+      }
+
+      // Far agents stay selectable and rendered with low-poly cores, but do not
+      // spend CPU time on per-frame bob, glow, or rotation updates.
+      if (performanceMode && mesh.group.userData.lod === 'low') continue;
+
       const baseY = mesh.group.userData.baseY;
       const phase = hashCode(agentId) * 0.001;
       mesh.group.position.y = baseY + Math.sin(elapsed * 1.2 + phase) * 1.5;
@@ -126,12 +199,33 @@ export function buildAgents() {
   });
 }
 
+function getSharedAgentGeometries() {
+  if (sharedAgentGeometries) return sharedAgentGeometries;
+
+  sharedAgentGeometries = {
+    native: {
+      high: new THREE.SphereGeometry(1.5, 16, 12),
+      medium: new THREE.SphereGeometry(1.5, 8, 6),
+      low: new THREE.OctahedronGeometry(1.5, 0),
+      glow: new THREE.SphereGeometry(2.5, 16, 12),
+    },
+    relay: {
+      high: new THREE.OctahedronGeometry(1.8, 1),
+      medium: new THREE.OctahedronGeometry(1.8, 0),
+      low: new THREE.TetrahedronGeometry(1.8, 0),
+      glow: new THREE.OctahedronGeometry(3.0, 1),
+    },
+  };
+  return sharedAgentGeometries;
+}
+
 export function highlightAgent(agentId, on) {
   const mesh = agentMeshes.get(agentId);
   if (!mesh) return;
   mesh.glow.material.opacity = on ? 0.35 : (mesh.relay ? 0.08 : 0.12);
   mesh.core.material.opacity = on ? 1.0 : 0.9;
   mesh.light.intensity = on ? 0.8 : (mesh.relay ? 0.4 : 0.3);
+  if (mesh.avatar?.visible) mesh.avatar.material.opacity = on ? 1.0 : 0.94;
 }
 
 function countAgentsInCity(cityId) {
@@ -144,6 +238,44 @@ function hashCode(str) {
     h = ((h << 5) - h + str.charCodeAt(i)) | 0;
   }
   return Math.abs(h);
+}
+
+function makeAgentAvatar(agent) {
+  const avatarUrl = avatarTextureUrl(agent.avatar);
+  if (!avatarUrl) return null;
+
+  const material = new THREE.SpriteMaterial({
+    transparent: true,
+    opacity: 0.94,
+    depthTest: false,
+    depthWrite: false,
+    alphaTest: 0.08,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.position.set(0, 0, 0);
+  sprite.scale.set(3.2, 3.2, 1);
+  sprite.renderOrder = 3;
+  sprite.visible = false;
+  sprite.userData = { type: 'agent', agentId: agent.id, avatar: true };
+
+  getAvatarTextureLoader().load(
+    avatarUrl,
+    (texture) => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.minFilter = THREE.LinearFilter;
+      material.map = texture;
+      material.needsUpdate = true;
+      sprite.visible = true;
+    },
+    undefined,
+    () => {
+      material.map = null;
+      material.needsUpdate = true;
+      sprite.visible = false;
+    },
+  );
+
+  return sprite;
 }
 
 function makeAgentLabel(text, color, isRelay = false) {

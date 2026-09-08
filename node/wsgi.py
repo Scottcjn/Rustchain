@@ -23,6 +23,7 @@ spec = importlib.util.spec_from_file_location(
 rustchain_main = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rustchain_main)
 rustchain_main.enforce_mock_signature_runtime_guard()
+rustchain_main.enforce_hardware_binding_runtime_guard()
 
 # Get the Flask app
 app = rustchain_main.app
