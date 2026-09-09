@@ -119,6 +119,11 @@ def _db_path_from(db_path):
         pass
     return DB_PATH
 PER_EPOCH_URTC = int(1.5 * UNIT)  # 1,500,000 uRTC
+# RIP-0004 supply cap (ENFORCED, not just declared). Emission is clamped so total
+# balances can never exceed the fixed 8,388,608 RTC supply. At 1.5 RTC/epoch this
+# clamp is inert for ~14,000 years -- it makes the immutable-supply claim a code-
+# enforced invariant. total_balances() is the path-agnostic source and fails open.
+TOTAL_SUPPLY_URTC = 8_388_608 * UNIT
 BLOCK_TIME = 600
 GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
 
@@ -195,6 +200,16 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
         # Calculate current slot for age calculation
         current = current_slot()
 
+        # RIP-0004: clamp this epoch's mining budget to remaining supply headroom
+        # so total emission can never exceed TOTAL_SUPPLY_URTC (inert ~14,000y).
+        _epoch_budget = min(PER_EPOCH_URTC, max(0, TOTAL_SUPPLY_URTC - total_balances(db)))
+        if _epoch_budget <= 0:
+            _cap_ts = int(time.time())
+            if db.execute("UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ?", (_cap_ts, epoch)).rowcount == 0:
+                db.execute("INSERT INTO epoch_state (epoch, settled, settled_ts) VALUES (?, 1, ?)", (epoch, _cap_ts))
+            db.commit()
+            return {"ok": True, "epoch": epoch, "distributed_rtc": 0, "distributed_urtc": 0, "miners": [], "note": "supply_cap_reached"}
+
         # T3.3: opt-in fail-closed anti-double-mining. RC_REQUIRE_ADM makes ADM
         # MANDATORY for this (admin/operator) settlement path — if ADM is unavailable or
         # fails, do NOT silently settle with the standard non-grouping path (which drops
@@ -229,7 +244,7 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
                 result = settle_epoch_with_anti_double_mining(
                     _db_path_from(db_path),
                     epoch,
-                    PER_EPOCH_URTC,
+                    _epoch_budget,
                     current,
                     existing_conn=db,
                 )
@@ -269,7 +284,7 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
         rewards = calculate_epoch_rewards_time_aged(
             _db_path_from(db_path),
             epoch,
-            PER_EPOCH_URTC,
+            _epoch_budget,
             current,
             b""  # prev_block_hash fallback for standard path
         )
@@ -339,8 +354,8 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
         return {
             "ok": True,
             "epoch": epoch,
-            "distributed_rtc": PER_EPOCH_URTC / UNIT,
-            "distributed_urtc": PER_EPOCH_URTC,
+            "distributed_rtc": _epoch_budget / UNIT,
+            "distributed_urtc": _epoch_budget,
             "miners": miners_data,
             "chain_age_years": round(get_chain_age_years(current), 2)
         }

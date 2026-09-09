@@ -5469,6 +5469,15 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         # PRECISION: Use Decimal for exact financial calculations
         total_reward = Decimal(str(per_block_rtc)) * Decimal(EPOCH_SLOTS)
 
+        # RIP-0004 supply cap: clamp emission to remaining supply headroom so total
+        # balances can never exceed TOTAL_SUPPLY_URTC (inert ~14,000y; fails open).
+        _headroom_urtc = max(0, TOTAL_SUPPLY_URTC - total_balances(c))
+        _budget_urtc = min(int(total_reward * UNIT), _headroom_urtc)
+        if _budget_urtc <= 0:
+            _record_unsettled_epoch(c, conn, epoch, "supply_cap_reached")
+            return
+        total_reward = Decimal(_budget_urtc) / Decimal(UNIT)
+
         # Filter out miners with 0 weight (VM/emulator detected)
         valid_miners = [(pk, w) for pk, w in miners if w > 0]
         zero_weight_miners = [pk for pk, w in miners if w == 0]
