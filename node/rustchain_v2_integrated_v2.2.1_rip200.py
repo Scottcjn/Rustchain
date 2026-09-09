@@ -280,7 +280,6 @@ _ADMIN_RATE_LIMIT_PATHS = {
     "/wallet/ledger",
     "/wallet/link-coinbase",
     "/wallet/transfer",
-    "/wallet/transfer_OLD_DISABLED",
     "/withdraw/register",
 }
 
@@ -5469,6 +5468,15 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
 
         # PRECISION: Use Decimal for exact financial calculations
         total_reward = Decimal(str(per_block_rtc)) * Decimal(EPOCH_SLOTS)
+
+        # RIP-0004 supply cap: clamp emission to remaining supply headroom so total
+        # balances can never exceed TOTAL_SUPPLY_URTC (inert ~14,000y; fails open).
+        _headroom_urtc = max(0, TOTAL_SUPPLY_URTC - total_balances(c))
+        _budget_urtc = min(int(total_reward * UNIT), _headroom_urtc)
+        if _budget_urtc <= 0:
+            _record_unsettled_epoch(c, conn, epoch, "supply_cap_reached")
+            return
+        total_reward = Decimal(_budget_urtc) / Decimal(UNIT)
 
         # Filter out miners with 0 weight (VM/emulator detected)
         valid_miners = [(pk, w) for pk, w in miners if w > 0]
@@ -12304,8 +12312,17 @@ def void_pending():
         c.execute("""
             UPDATE pending_ledger 
             SET status = 'voided', voided_by = ?, voided_reason = ?
-            WHERE id = ?
+            WHERE id = ? AND status = 'pending'
         """, (voided_by, reason, pid))
+        # TOCTOU guard: only void if STILL pending. If confirm_pending claimed
+        # this row between the SELECT above and here, rowcount is 0 -> do not
+        # report a false "voided" success for funds that actually moved.
+        if c.rowcount != 1:
+            conn.rollback()
+            return jsonify({
+                "error": "Cannot void - transfer is no longer pending (raced with confirm)",
+                "code": "VOID_RACE",
+            }), 409
         
         conn.commit()
         
@@ -12720,67 +12737,6 @@ def check_integrity():
     })
 
 
-# OLD FUNCTION DISABLED - Kept for reference
-@app.route('/wallet/transfer_OLD_DISABLED', methods=['POST'])
-def wallet_transfer_OLD():
-    # SECURITY FIX: Require admin key for internal transfers
-    admin_key_env = os.environ.get("RC_ADMIN_KEY", "")
-    if not admin_key_env:
-        return jsonify({"error": "RC_ADMIN_KEY not configured on server", "code": "ADMIN_KEY_UNSET"}), 503
-    admin_key = request.headers.get("X-Admin-Key", "")
-    if not hmac.compare_digest(admin_key, admin_key_env):
-        return jsonify({"error": "Unauthorized - admin key required", "hint": "Use /wallet/transfer/signed for user transfers"}), 401
-    """Transfer RTC between miner wallets"""
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid JSON body"}), 400
-
-    # Extract client IP (handle nginx proxy)
-    client_ip = get_client_ip()
-    from_miner = data.get('from_miner')
-    to_miner = data.get('to_miner')
-    amount_rtc = float(data.get('amount_rtc', 0))
-
-    if not all([from_miner, to_miner]):
-        return jsonify({"error": "Missing from_miner or to_miner"}), 400
-
-    if amount_rtc <= 0:
-        return jsonify({"error": "Amount must be positive"}), 400
-
-    amount_i64 = int(amount_rtc * 1000000)
-
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        c = conn.cursor()
-        row = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()
-        sender_balance = row[0] if row else 0
-
-        if sender_balance < amount_i64:
-            return jsonify({
-                "error": "Insufficient balance",
-                "balance_rtc": sender_balance / 1000000,
-                "requested_rtc": amount_rtc
-            }), 400
-
-        c.execute("INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)", (to_miner,))
-        c.execute("UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?", (amount_i64, from_miner))
-        c.execute("UPDATE balances SET amount_i64 = amount_i64 + ?, balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?", (amount_i64, amount_i64, to_miner))
-
-        sender_new = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (from_miner,)).fetchone()[0]
-        recipient_new = c.execute("SELECT amount_i64 FROM balances WHERE miner_id = ?", (to_miner,)).fetchone()[0]
-
-        conn.commit()
-
-        return jsonify({
-            "ok": True,
-            "from_miner": from_miner,
-            "to_miner": to_miner,
-            "amount_rtc": amount_rtc,
-            "sender_balance_rtc": sender_new / 1000000,
-            "recipient_balance_rtc": recipient_new / 1000000
-        })
-    finally:
-        conn.close()
 @app.route('/wallet/ledger', methods=['GET'])
 def api_wallet_ledger():
     """Get transaction ledger (optionally filtered by miner)"""
