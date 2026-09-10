@@ -300,7 +300,7 @@ class LocalMiner:
         print("="*70)
         print(f"Node: {self.node_url}")
         print(f"Wallet: {self.wallet}")
-        print(f"Serial: {self.serial}")
+        print(f"Serial present: {'yes' if self.serial else 'no'}")
         platform_warning = _linux_miner_platform_warning(platform.system())
         if platform_warning:
             print(f"[WARN] {platform_warning}")
