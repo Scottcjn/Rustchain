@@ -85,6 +85,22 @@ def test_local_miner_can_use_ephemeral_keypair_without_persisting(monkeypatch):
     assert calls == {"ephemeral": 1, "persisted": 0}
 
 
+def test_local_miner_keeps_serial_internal_without_printing_it(monkeypatch, capsys):
+    miner = load_miner_module()
+    raw_serial = "C02-PRIVATE-HARDWARE-SERIAL"
+
+    monkeypatch.setattr(miner, "CRYPTO_AVAILABLE", False)
+    monkeypatch.setattr(miner, "FINGERPRINT_AVAILABLE", False)
+    monkeypatch.setattr(miner, "get_hardware_serial", lambda: raw_serial)
+
+    instance = miner.LocalMiner(wallet="RTC-test-wallet", persist_key=False)
+    output = capsys.readouterr().out
+
+    assert instance.serial == raw_serial
+    assert raw_serial not in output
+    assert "Serial present: yes" in output
+
+
 def test_default_wallet_is_controlled_by_signing_key(monkeypatch):
     miner = load_miner_module()
     public_key = "11" * 32
