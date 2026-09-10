@@ -339,7 +339,7 @@ class RustChainClient:
             tags.append(label.get("name", ""))
 
         # Try to extract reward from title (e.g. "Bounty: MCP Server (500 RTC)")
-        title_match = re.search(r"(\d+)\s*RTC", title, re.IGNORECASE)
+        title_match = re.search(r"(\d+(?:\.\d+)?)\s*RTC", title, re.IGNORECASE)
         if title_match and reward_rtc == 0:
             reward_rtc = float(title_match.group(1))
 
