@@ -237,6 +237,21 @@ class TestGitHubBountyParsing:
         assert b.reward_rtc == 50.0
         assert b.difficulty == "easy"
 
+    def test_parse_decimal_rtc_reward_in_title(self):
+        issue = {
+            "number": 16863,
+            "title": "[MICRO-BOUNTY: 0.1 RTC] Share your contributor motivation",
+            "html_url": "https://github.com/Scottcjn/rustchain-bounties/issues/16863",
+            "state": "open",
+            "labels": [{"name": "bounty"}, {"name": "micro"}],
+            "body": "",
+        }
+
+        b = self._parse(issue)
+
+        assert b is not None
+        assert b.reward_rtc == 0.1
+
     def test_parse_pr_is_skipped(self):
         issue = {
             "number": 99,
