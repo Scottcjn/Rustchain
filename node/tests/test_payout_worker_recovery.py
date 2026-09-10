@@ -195,7 +195,11 @@ def test_reconcile_broadcast_withdrawals_preserves_unknown_tx_hash(tmp_path):
     assert error_msg == "manual reconciliation required"
 
 
-def test_process_withdrawal_claims_pending_row_once_before_debit(tmp_path, monkeypatch):
+def test_process_withdrawal_claims_pending_row_exactly_once_without_debiting(tmp_path, monkeypatch):
+    # The RTC balance is debited (amount + fee) at REQUEST time by the node against
+    # the `balances` ledger. The worker must NOT debit again here — the old worker
+    # debited a phantom `accounts` table (a latent double-debit). This test proves
+    # the exactly-once CLAIM still holds AND that the worker leaves balances alone.
     db_path = tmp_path / "payout.db"
     with sqlite3.connect(db_path) as conn:
         _create_schema(conn)
@@ -240,6 +244,6 @@ def test_process_withdrawal_claims_pending_row_once_before_debit(tmp_path, monke
         ).fetchone()
 
     assert broadcasts == ["wd-1"]
-    assert balance == 89.0
+    assert balance == 100.0  # worker does NOT debit — request-time debit is authoritative
     assert status == "completed"
     assert tx_hash == "tx-1"

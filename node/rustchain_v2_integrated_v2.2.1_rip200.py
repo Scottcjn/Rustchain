@@ -8503,6 +8503,20 @@ def request_withdrawal():
     if not all([miner_pk, destination, signature, nonce]):
         return jsonify({"error": "Missing required fields"}), 400
 
+    # SECURITY (nonce replay): the signed message below stringifies the nonce
+    # (f"...:{nonce}"), while the replay-dedup key is stored in withdrawal_nonces
+    # as TEXT. Those two representations must never diverge, or ONE signature can
+    # satisfy TWO distinct dedup keys and be replayed. Concretely JSON `true`
+    # (Python bool) and the string "True" both render to "True" in the signed
+    # message, but sqlite stores the bool as INTEGER 1 -> TEXT "1" and the string
+    # as "True" -> two rows, one replay. Reject booleans outright and canonicalize
+    # the nonce to exactly its signed string form so the dedup key IS the signed
+    # form. int/str nonces are accepted (backward compatible); str(nonce) is a
+    # no-op on the signed bytes because the f-string already stringifies.
+    if isinstance(nonce, bool) or not isinstance(nonce, (str, int)):
+        return jsonify({"error": "nonce must be a string or integer"}), 400
+    nonce = str(nonce)
+
     # SECURITY: a wallet under review / blocked (wallet_review_holds or the
     # legacy blocked_wallets table) must not be able to move funds out. The
     # same gate already guards /attest/submit, but the fund-EXIT paths never
@@ -8547,6 +8561,31 @@ def request_withdrawal():
             def rollback_json(payload, status):
                 c.rollback()
                 return jsonify(payload), status
+
+            # SECURITY (#3 review-hold TOCTOU): re-check the hold INSIDE the write
+            # transaction, on the reserved write connection, closing the race window
+            # between the pre-BEGIN gate (line ~8513) and the debit below. A flag
+            # applied during that window would otherwise let one last withdrawal
+            # through. The wallet_review_holds / blocked_wallets tables were already
+            # ensured by that pre-check, so this is a plain indexed read (NO DDL — a
+            # CREATE inside BEGIN IMMEDIATE would break the transaction) and uses `c`
+            # itself, so there is no separate-connection lock contention.
+            held = c.execute(
+                "SELECT 1 FROM wallet_review_holds WHERE wallet = ? "
+                "AND status IN ('needs_review','held','escalated','blocked') LIMIT 1",
+                (miner_pk,),
+            ).fetchone()
+            if not held:
+                held = c.execute(
+                    "SELECT 1 FROM blocked_wallets WHERE wallet = ? LIMIT 1",
+                    (miner_pk,),
+                ).fetchone()
+            if held:
+                withdrawal_failed.inc()
+                return rollback_json({
+                    "error": "wallet_under_review",
+                    "message": "This wallet is under review; withdrawal blocked.",
+                }, 409)
 
             # CRITICAL: Check nonce reuse FIRST (replay protection)
             nonce_row = c.execute(
@@ -8690,12 +8729,18 @@ def request_withdrawal():
         balance_gauge.labels(miner_pk=miner_pk).set(remaining_balance)
         withdrawal_queue_size.inc()
 
+    # Fee model (#5): the fee is charged ON TOP of the amount — the wallet is
+    # debited amount + fee (see total_needed_i64 above) and the destination
+    # receives `amount`. The old response reported net_amount = amount - fee,
+    # which contradicted the debit (fee-inclusive vs fee-on-top). Report what is
+    # actually true: total_debited = amount + fee, received = amount.
     return jsonify({
         "withdrawal_id": withdrawal_id,
         "status": "pending",
         "amount": amount,
         "fee": WITHDRAWAL_FEE,
-        "net_amount": amount - WITHDRAWAL_FEE
+        "total_debited": amount + WITHDRAWAL_FEE,
+        "net_amount": amount
     })
 
 
