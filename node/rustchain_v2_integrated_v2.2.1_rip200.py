@@ -2582,7 +2582,12 @@ def _fingerprint_check_passed(check_entry) -> bool:
     if isinstance(check_entry, bool):
         return check_entry
     if isinstance(check_entry, dict):
-        return bool(check_entry.get("passed", True))
+        # SECURITY (anti-VM): require an EXPLICIT boolean True. The old
+        # bool(check_entry.get("passed", True)) let an empty {} default to pass and a
+        # truthy string ("false") pass -- so a VM could forge a perfect score by
+        # submitting {name: {} for name in active_checks}. A missing / non-True
+        # "passed" now fails. (Legit clients always send an explicit bool.)
+        return check_entry.get("passed") is True
     return False
 
 
