@@ -300,7 +300,8 @@ class LocalMiner:
         print("="*70)
         print(f"Node: {self.node_url}")
         print(f"Wallet: {self.wallet}")
-        print(f"Serial: {self.serial}")
+        serial_display = f"***{self.serial[-4:]}" if self.serial and len(self.serial) >= 4 else "***(hidden)"
+        print(f"Serial: {serial_display}")
         platform_warning = _linux_miner_platform_warning(platform.system())
         if platform_warning:
             print(f"[WARN] {platform_warning}")
