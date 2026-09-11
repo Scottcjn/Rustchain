@@ -73,7 +73,7 @@ def seed_coinbase(utxo_db, address, value_nrtc, height=1):
 def payload(nonce=1733420000000, amount_rtc=10.0):
     return {
         "from_address": "RTC_test_aabbccdd",
-        "to_address": "bob",
+        "to_address": "RTC" + "b" * 40,
         "amount_rtc": amount_rtc,
         "public_key": "aabbccdd" * 8,
         "signature": "sig" * 22,
@@ -105,7 +105,7 @@ def test_utxo_transfer_rejects_duplicate_nonce():
         assert body["code"] == "REPLAY_DETECTED"
         assert "Nonce already used" in body["error"]
 
-        assert utxo_db.get_balance("bob") == 10 * UNIT
+        assert utxo_db.get_balance(("RTC" + "b" * 40)) == 10 * UNIT
 
         assert nonce_count(db_path) == 1
     finally:
@@ -130,6 +130,6 @@ def test_utxo_transfer_failed_attempt_does_not_burn_nonce():
         assert accepted.get_json()["ok"] is True
 
         assert nonce_count(db_path) == 1
-        assert utxo_db.get_balance("bob") == 10 * UNIT
+        assert utxo_db.get_balance(("RTC" + "b" * 40)) == 10 * UNIT
     finally:
         os.unlink(db_path)

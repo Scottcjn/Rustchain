@@ -36,6 +36,7 @@ from utxo_db import UtxoDB, UNIT
 from utxo_endpoints import register_utxo_blueprint
 
 ALICE = "RTC_test_aabbccdd"
+RECIPIENT = "RTC" + "c" * 40  # canonical recipient; format-checked since #2819
 PUBKEY = "aabbccdd" * 8
 GENESIS_HEIGHT = 0
 
@@ -111,7 +112,7 @@ def rig():
     return app.test_client(), utxo_db, db_path
 
 
-def _transfer(client, to_address=ALICE, amount_rtc=99.0, nonce=1733420000000):
+def _transfer(client, to_address=RECIPIENT, amount_rtc=99.0, nonce=1733420000000):
     return client.post("/utxo/transfer", json={
         "from_address": ALICE,
         "to_address": to_address,
@@ -180,7 +181,7 @@ def test_independently_earned_boxes_are_unaffected(rig):
 
     resp = client.post("/utxo/transfer", json={
         "from_address": mock_addr_from_pk("deadbeef" * 8),
-        "to_address": ALICE,
+        "to_address": RECIPIENT,
         "amount_rtc": 10.0,
         "public_key": "deadbeef" * 8,
         "signature": "bb" * 64,
@@ -227,7 +228,7 @@ def test_non_mirror_box_spends_when_same_wallet_also_has_small_mirror(rig):
 
     resp = _transfer(
         client,
-        to_address="RTC_test_receiver",
+        to_address="RTC" + "d" * 40,
         amount_rtc=10.0,
         nonce=1733420000002,
     )
@@ -235,6 +236,6 @@ def test_non_mirror_box_spends_when_same_wallet_also_has_small_mirror(rig):
     assert resp.status_code == 200, resp.get_json()
     data = resp.get_json()
     assert data["inputs_consumed"] == 1
-    assert data["to_address"] == "RTC_test_receiver"
-    assert utxo_db.get_balance("RTC_test_receiver") == 10 * UNIT
+    assert data["to_address"] == "RTC" + "d" * 40
+    assert utxo_db.get_balance("RTC" + "d" * 40) == 10 * UNIT
     assert _unspent_mirror_value(db_path, ALICE) == 1 * UNIT

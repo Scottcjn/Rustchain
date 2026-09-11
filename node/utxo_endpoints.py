@@ -580,16 +580,6 @@ def utxo_transfer():
     to_address, error_response = _transfer_string_field(data, 'to_address')
     if error_response:
         return error_response
-    # SECURITY (#2819, reported by @antoleod): the sender is bound to its public
-    # key below, but the recipient was accepted as any non-empty string. A typo
-    # or hostile value such as "not-a-wallet" became a persisted box owner that
-    # no wallet key can ever spend, permanently locking the RTC. Require the
-    # canonical RTC + 40 hex form before signature checks or state mutation.
-    if not _CANONICAL_RTC_ADDRESS_RE.fullmatch(to_address):
-        return jsonify({
-            'error': 'invalid_to_address_format',
-            'message': 'to_address must be a canonical RustChain address: RTC followed by 40 hex characters',
-        }), 400
     public_key, error_response = _transfer_string_field(data, 'public_key')
     if error_response:
         return error_response
@@ -619,6 +609,17 @@ def utxo_transfer():
             'error': 'Missing required fields',
             'required': ['from_address', 'to_address', 'public_key',
                          'signature', 'nonce']
+        }), 400
+
+    # SECURITY (#2819, reported by @antoleod): the sender is bound to its public
+    # key below, but the recipient was accepted as any non-empty string. A typo
+    # or hostile value such as "not-a-wallet" became a persisted box owner that
+    # no wallet key can ever spend, permanently locking the RTC. Require the
+    # canonical RTC + 40 hex form before signature checks or state mutation.
+    if not _CANONICAL_RTC_ADDRESS_RE.fullmatch(to_address):
+        return jsonify({
+            'error': 'invalid_to_address_format',
+            'message': 'to_address must be a canonical RustChain address: RTC followed by 40 hex characters',
         }), 400
 
     if amount_rtc <= 0:
