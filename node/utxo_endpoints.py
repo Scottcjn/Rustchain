@@ -792,6 +792,22 @@ def utxo_transfer():
     conn = sqlite3.connect(_db_path)
     conn.row_factory = sqlite3.Row
     try:
+        if _dual_write:
+            # Ensure the mirror-provenance discriminator exists BEFORE the write
+            # transaction (DDL outside BEGIN IMMEDIATE). Schema matches the node's
+            # _ensure_and_backfill_account_mirror so both maintainers agree.
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS account_mirror_boxes (
+                       box_id TEXT PRIMARY KEY,
+                       account_wallet TEXT NOT NULL,
+                       value_nrtc INTEGER NOT NULL,
+                       created_epoch INTEGER NOT NULL
+                   )"""
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_mirror_wallet "
+                "ON account_mirror_boxes(account_wallet)"
+            )
         conn.execute("BEGIN IMMEDIATE")
 
         if not _reserve_transfer_nonce(conn, from_address, nonce):
@@ -881,6 +897,59 @@ def utxo_transfer():
                 (now, slot, to_address, amount_i64,
                  f"utxo_transfer_in:{from_address[:20]}:{memo[:30]}")
             )
+
+            # SECURITY(danaher-j / #2819 receiver residual): the UTXO output boxes
+            # this transfer just created (receiver at index 0, change at index 1)
+            # hold value that is ALSO reflected in the account model by the writes
+            # above (receiver credited, sender debited-with-change-retained). Under
+            # the dual-write model `balances` is the primary ledger and mirror boxes
+            # are its UTXO shadow, so every such output MUST be registered as
+            # account-mirror provenance. Otherwise the box is spendable via the UTXO
+            # path AND the account value is spendable via the account path = the same
+            # value spent twice. Registering them makes the unconditional mirror-input
+            # exclusion (above) block the UTXO path, forcing the value through the
+            # account path (which consumes the mirror on settle). apply_transaction
+            # exposes tx['tx_id']; the outputs of this tx are exactly the new boxes.
+            tx_id = tx.get('tx_id')
+            if tx_id:
+                for b in conn.execute(
+                    "SELECT box_id, owner_address, value_nrtc FROM utxo_boxes "
+                    "WHERE transaction_id = ?",
+                    (tx_id,),
+                ).fetchall():
+                    conn.execute(
+                        "INSERT OR REPLACE INTO account_mirror_boxes "
+                        "(box_id, account_wallet, value_nrtc, created_epoch) "
+                        "VALUES (?,?,?,?)",
+                        (b['box_id'], b['owner_address'], b['value_nrtc'], slot),
+                    )
+
+            # Consensus invariant (#2819): a wallet's unspent mirror value must never
+            # exceed its account balance — mirror > balance IS the double-spend
+            # condition. Compare in nRTC (mirror value_nrtc vs balance amount_i64 *
+            # NRTC_PER_ACCOUNT, since account units are micro-RTC and boxes are
+            # nano-RTC). Fail closed (rollback) rather than commit money twice.
+            nrtc_per_account = UNIT // ACCOUNT_UNIT
+            for _w in (from_address, to_address):
+                mirror_nrtc = conn.execute(
+                    "SELECT COALESCE(SUM(b.value_nrtc), 0) FROM utxo_boxes b "
+                    "JOIN account_mirror_boxes m ON m.box_id = b.box_id "
+                    "WHERE m.account_wallet = ? AND b.spent_at IS NULL",
+                    (_w,),
+                ).fetchone()[0]
+                brow = conn.execute(
+                    "SELECT amount_i64 FROM balances WHERE miner_id = ?", (_w,)
+                ).fetchone()
+                bal_nrtc = (brow[0] if brow else 0) * nrtc_per_account
+                if int(mirror_nrtc) > bal_nrtc:
+                    conn.rollback()
+                    return jsonify({
+                        'error': 'dual-write mirror exceeds account balance (double-spend guard)',
+                        'code': 'MIRROR_EXCEEDS_BALANCE',
+                        'wallet': _w,
+                        'mirror_nrtc': int(mirror_nrtc),
+                        'account_balance_nrtc': bal_nrtc,
+                    }), 409
 
         conn.commit()
     except Exception:

@@ -979,6 +979,13 @@ class UtxoDB:
                 tx_identity, sort_keys=True, separators=(',', ':')
             ).encode()
             tx_id_hex = hashlib.sha256(tx_seed).hexdigest()
+            # Expose the authoritative tx_id to the caller so it can locate the
+            # output boxes this transaction created (e.g. the dual-write path must
+            # register receiver/change outputs as account-mirror provenance —
+            # danaher-j #2819 receiver residual). Set on the caller's dict; the
+            # caller only reads it after a successful apply and discards on abort.
+            if isinstance(tx, dict):
+                tx['tx_id'] = tx_id_hex
 
             # -- assign box_ids to outputs -----------------------------------
             output_records = []
