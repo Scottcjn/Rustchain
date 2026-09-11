@@ -1,0 +1,42 @@
+[
+  {
+    "author": "Scottcjn",
+    "fields": {
+      "amount": "33_RTC",
+      "confirms_at": "2026-09-02T12:00:00Z",
+      "pending_id": "pending-42",
+      "tx_hash": "tx-demo-abc",
+      "wallet": "demo-wallet"
+    },
+    "missing": [],
+    "settled": false,
+    "status": "ready_for_project_record_verification"
+  },
+  {
+    "author": "helpful-stranger",
+    "fields": {
+      "amount": "33_RTC",
+      "confirms_at": "tomorrow",
+      "pending_id": "pending-99",
+      "tx_hash": "tx-untrusted",
+      "wallet": "demo-wallet"
+    },
+    "missing": [],
+    "settled": false,
+    "status": "reject_unauthorized_author"
+  },
+  {
+    "author": "AutoJanitor",
+    "fields": {
+      "amount": "10_RTC",
+      "pending_id": "pending-77"
+    },
+    "missing": [
+      "wallet",
+      "tx_hash",
+      "confirms_at"
+    ],
+    "settled": false,
+    "status": "hold_missing_fields"
+  }
+]
