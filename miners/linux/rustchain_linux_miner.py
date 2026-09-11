@@ -823,7 +823,7 @@ class LocalMiner:
             resp = self._get(
                 "/wallet/balance",
                 "checking wallet balance",
-                params={"miner_id": self._miner_id()},
+                params={"miner_id": self.wallet},
                 timeout=10,
                 verify=TLS_VERIFY,
             )
