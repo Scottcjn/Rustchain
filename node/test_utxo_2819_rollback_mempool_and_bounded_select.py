@@ -40,6 +40,10 @@ class TestRollbackEvictsMempoolClaims(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmpdir, "rollback_mempool.db")
+        # rollback_genesis() is a destructive state mutation and now requires
+        # an admin key (bounty #2819). Configure a test key for this suite.
+        self.admin_key = "test-rollback-admin-key-2819"
+        os.environ["RC_ADMIN_KEY"] = self.admin_key
         conn = sqlite3.connect(self.db_path)
         conn.execute(
             """CREATE TABLE IF NOT EXISTS balances (
@@ -56,6 +60,7 @@ class TestRollbackEvictsMempoolClaims(unittest.TestCase):
         self.db = UtxoDB(self.db_path)
 
     def tearDown(self):
+        os.environ.pop("RC_ADMIN_KEY", None)
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
     def _genesis_box_id(self):
@@ -83,7 +88,7 @@ class TestRollbackEvictsMempoolClaims(unittest.TestCase):
             "precondition: the box is claimed while the tx is pending",
         )
 
-        rollback_genesis(self.db_path)
+        rollback_genesis(self.db_path, admin_key=self.admin_key)
 
         self.assertFalse(
             self.db.mempool_check_double_spend(box_id),
@@ -142,8 +147,9 @@ class TestRollbackEvictsMempoolClaims(unittest.TestCase):
         )
 
         # Non-genesis UTXO state exists, so rollback is expected to refuse.
+        # Auth is satisfied first; the refusal is the non-genesis guard.
         with self.assertRaises(RuntimeError):
-            rollback_genesis(self.db_path)
+            rollback_genesis(self.db_path, admin_key=self.admin_key)
 
         # And having refused, it must not have evicted anything.
         self.assertTrue(self.db.mempool_check_double_spend(genesis_box))
