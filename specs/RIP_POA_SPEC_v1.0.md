@@ -609,12 +609,16 @@ The antiquity multiplier determines a miner's share of per-epoch rewards. Higher
 
 ### 5.2 Time-Aged Decay Formula
 
-Vintage hardware bonuses decay linearly over the lifetime of the blockchain, converging all architectures toward equal weight over approximately 16.67 years.
+Vintage hardware bonuses decay linearly over the lifetime of the blockchain, converging all architectures toward equal weight over approximately 6.67 years.
 
 **Formula:**
 
 ```
-aged_multiplier = 1.0 + max(0, (base_multiplier - 1.0) * (1 - DECAY_RATE * chain_age_years))
+# Sub-1.0 base multipliers are anti-farm penalties, not decayable bonuses.
+if base_multiplier < 1.0:
+    aged_multiplier = base_multiplier
+else:
+    aged_multiplier = 1.0 + max(0, (base_multiplier - 1.0) * (1 - DECAY_RATE * chain_age_years))
 ```
 
 **Constants:**
@@ -627,9 +631,10 @@ aged_multiplier = 1.0 + max(0, (base_multiplier - 1.0) * (1 - DECAY_RATE * chain
 **Behavior:**
 
 - **Year 0:** Full multiplier. G4 = 2.5x, G5 = 2.0x, VAX = 3.5x.
-- **Year ~6.67:** All vintage bonuses halved. G4 = 1.75x, G5 = 1.5x.
-- **Year ~16.67:** All vintage bonuses fully decayed. Every architecture earns equally.
-- **Modern hardware (base <= 1.0):** Never decays. Returns 1.0 always.
+- **Year ~3.33:** All vintage bonuses halved. G4 = 1.75x, G5 = 1.5x.
+- **Year ~6.67:** All vintage bonuses fully decayed. Every architecture earns equally.
+- **Baseline hardware (base == 1.0):** Never decays. Returns 1.0 always.
+- **Penalized hardware (base < 1.0):** Never decays and is never inflated to 1.0. Returns its base multiplier as-is, so the anti-farm penalty (e.g. Modern ARM = 0.0005) is preserved for the life of the chain.
 
 **Chain age calculation:**
 
@@ -646,8 +651,8 @@ def get_chain_age_years(current_slot: int) -> float:
 | 0 | 2.500x | 3.13x |
 | 1 | 2.275x | 2.84x |
 | 5 | 1.375x | 1.72x |
+| 6.67 | 1.000x | 1.00x (floor reached) |
 | 10 | 1.000x | 1.00x (equal) |
-| 16.67 | 1.000x | 1.00x (floor) |
 
 ---
 

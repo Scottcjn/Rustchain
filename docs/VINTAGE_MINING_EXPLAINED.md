@@ -157,12 +157,12 @@ Antiquity multipliers are not permanent. They decay slowly over the life of the 
 ### The Formula
 
 ```
-effective_multiplier = 1.0 + (base_multiplier - 1.0) * (1 - 0.15 * chain_age_years)
+effective_multiplier = 1.0 + max(0, (base_multiplier - 1.0) * (1 - 0.15 * chain_age_years))
 ```
 
 ### Decay Examples
 
-| Device | Base | Year 0 | Year 1 | Year 5 | Year 10 | Year 16.67 |
+| Device | Base | Year 0 | Year 1 | Year 5 | Year 6.67 | Year 10 |
 |--------|------|--------|--------|--------|---------|------------|
 | G4 | 2.5x | 2.50x | 2.275x | 1.375x | 1.0x | 1.0x |
 | G5 | 2.0x | 2.00x | 1.85x | 1.25x | 1.0x | 1.0x |
@@ -170,7 +170,7 @@ effective_multiplier = 1.0 + (base_multiplier - 1.0) * (1 - 0.15 * chain_age_yea
 | SPARC | 2.9x | 2.90x | 2.615x | 1.475x | 1.0x | 1.0x |
 | ARM2 | 4.0x | 4.00x | 3.55x | 1.75x | 1.0x | 1.0x |
 
-After approximately 16.67 years, all vintage bonuses decay to zero and every architecture earns equally. By then, today's "modern" hardware will itself be vintage, and the cycle continues.
+After approximately 6.67 years, all vintage bonuses decay to zero and every architecture earns equally. By then, today's "modern" hardware will itself be vintage, and the cycle continues.
 
 The chain launched in December 2025. As of March 2026, chain age is approximately 0.3 years. Current multipliers are still very close to their base values.
 

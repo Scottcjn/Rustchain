@@ -468,7 +468,7 @@ ANTIQUITY_MULTIPLIERS = {
 }
 
 # Time decay parameters
-DECAY_RATE_PER_YEAR = 0.15  # 15% decay per year (vintage bonus → 0 after ~16.67 years)
+DECAY_RATE_PER_YEAR = 0.15  # 15% decay per year (vintage bonus → 0 after ~6.67 years)
 
 
 def get_chain_age_years(current_slot: int) -> float:
@@ -483,8 +483,8 @@ def get_time_aged_multiplier(device_arch: str, chain_age_years: float) -> float:
 
     Vintage hardware bonus decays linearly over time:
     - Year 0: Full multiplier (e.g., G4 = 2.5x)
-    - Year 10: Equal to modern (1.0x)
-    - Year 16.67: Vintage bonus fully decayed (0 additional reward)
+    - Year 3.33: Vintage bonus halved (e.g., G4 = 1.75x)
+    - Year 6.67: Vintage bonus fully decayed (0 additional reward)
 
     Modern hardware always stays at 1.0x (becomes optimal over time)
     """
