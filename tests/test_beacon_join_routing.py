@@ -107,6 +107,29 @@ class TestBeaconJoinRouting(unittest.TestCase):
         self.assertEqual(data['status'], 'active')
         self.assertIn('timestamp', data)
 
+    def test_api_join_alias_registers_and_upserts_agent(self):
+        """POST /api/join supports the Atlas service's legacy route."""
+        payload = {
+            'agent_id': 'bcn_api_join_alias',
+            'pubkey_hex': '0x' + '12' * 32,
+            'name': 'Original Name',
+        }
+
+        response = self.client.post('/api/join', json=payload)
+        self.assertEqual(response.status_code, 200)
+
+        payload['name'] = 'Updated Name'
+        response = self.client.post('/api/join', json=payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['name'], 'Updated Name')
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            rows = conn.execute(
+                "SELECT name FROM relay_agents WHERE agent_id = ?",
+                (payload['agent_id'],),
+            ).fetchall()
+        self.assertEqual(rows, [('Updated Name',)])
+
     def test_join_upsert_duplicate_agent(self):
         """POST /beacon/join upserts mutable fields for duplicate agent_id.
 
