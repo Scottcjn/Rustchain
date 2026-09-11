@@ -13515,6 +13515,35 @@ def wallet_transfer_signed():
             "got_chain_id": chain_id,
         }), 400
 
+    # SECURITY (cross-network replay): when chain_id is provided it is bound into
+    # the signed message (see _wallet_transfer_signed_messages) and matched above.
+    # But it was OPTIONAL: a client that OMITS chain_id signs a chain-less message
+    # with NO network binding, so the SAME signature is valid on every RustChain
+    # network (testnet <-> mainnet, forks). With cross-network key reuse (the norm),
+    # a low-value transfer signed on one network replays on another to move real
+    # funds. Require chain binding by default; the destination is in the signed
+    # message so this is the last gap. RC_ALLOW_CHAINLESS_SIGNED_TRANSFER=1 is an
+    # explicit, logged transition escape hatch for operators mid client-migration
+    # (clients that do not yet include chain_id) — flip it back off once clients
+    # sign with chain_id.
+    _allow_chainless = os.environ.get("RC_ALLOW_CHAINLESS_SIGNED_TRANSFER", "0") == "1"
+    if not chain_id:
+        if not _allow_chainless:
+            return jsonify({
+                "error": "chain_id required",
+                "code": "CHAIN_ID_REQUIRED",
+                "message": "Signed transfers must bind the active chain_id to prevent "
+                           "cross-network replay. Include chain_id in the signed "
+                           "transaction and request.",
+                "expected_chain_id": CHAIN_ID,
+            }), 400
+        logging.warning(
+            "signed transfer accepted WITHOUT chain_id binding (from=%s nonce=%s) — "
+            "RC_ALLOW_CHAINLESS_SIGNED_TRANSFER is set; this is cross-network "
+            "replayable. Migrate clients to include chain_id and disable the flag.",
+            from_address, nonce_int,
+        )
+
     # Verify public key matches from_address
     # Support bcn_ beacon addresses: resolve pubkey from Beacon Atlas
     if is_bcn_address(from_address):
