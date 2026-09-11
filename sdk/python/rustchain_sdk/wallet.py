@@ -329,12 +329,8 @@ class RustChainWallet:
         # Derive public key (always real Ed25519; raises if cryptography missing)
         pubkey = cls._derive_public_key(private_key)
 
-        # Hash public key to get address
-        addr_hash = _sha256d(b"address" + pubkey)
-        addr_bytes = addr_hash[:20]
-
-        # Format as RTC + hex
-        return cls.ADDRESS_PREFIX + addr_bytes.hex()
+        # Hash public key to get address: RTC + SHA256(pubkey).hexdigest()[:40]
+        return cls.ADDRESS_PREFIX + hashlib.sha256(pubkey).hexdigest()[:40]
 
     @classmethod
     def from_seed_phrase(cls, words: List[str]) -> "RustChainWallet":
