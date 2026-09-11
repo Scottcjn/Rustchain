@@ -82,7 +82,7 @@ class TestUtxoSignatureDomain(unittest.TestCase):
     def _payload(self, nonce=123):
         return {
             'from_address': 'RTC_test_aabbccdd',
-            'to_address': 'RTC_test_eeffgghh',
+            'to_address': ('RTC' + 'e' * 40),
             'amount_rtc': 10.0,
             'public_key': 'aabbccdd' * 8,
             'signature': 'sig' * 22,
@@ -98,7 +98,7 @@ class TestUtxoSignatureDomain(unittest.TestCase):
             signed = json.loads(message.decode())
             return (
                 signed.get('from') == sender
-                and signed.get('to') == 'RTC_test_eeffgghh'
+                and signed.get('to') == ('RTC' + 'e' * 40)
                 and signed.get('amount') == 10.0
                 and signed.get('memo') == ''
                 and signed.get('nonce') == 123
@@ -117,7 +117,7 @@ class TestUtxoSignatureDomain(unittest.TestCase):
 
     def test_utxo_domain_signature_still_authorizes_transfer(self):
         sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
         self._seed_coinbase(sender, 100 * UNIT)
 
         def utxo_domain_verifier(pubkey_hex, message, sig_hex):
@@ -207,7 +207,7 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
     def test_dual_write_10_rtc_equals_10_million_uRTC(self):
         """Transferring 10 RTC should write 10_000_000 uRTC, not 10_000_000_000."""
         sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
         self._seed_coinbase(sender, 100 * UNIT)
 
         # Seed shadow balance so dual-write can proceed (security guard requires it)
@@ -246,7 +246,7 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
     def test_dual_write_debit_matches_credit(self):
         """Sender debit and recipient credit must use the same unit."""
         sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
         self._seed_coinbase(sender, 100 * UNIT)
 
         # Pre-seed sender in balances table with sufficient shadow balance
@@ -278,7 +278,7 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
     def test_dual_write_fractional_rtc(self):
         """Transferring 0.001 RTC should write 1000 uRTC, not 1_000_000."""
         sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
         self._seed_coinbase(sender, 10 * UNIT)
 
         # Seed shadow balance so dual-write can proceed
@@ -321,7 +321,7 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         ceiling.
         """
         sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
         self._seed_coinbase(sender, 20_000 * UNIT)
 
         # Seed shadow balance so dual-write can proceed
@@ -368,7 +368,7 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
         """After a dual-write, /utxo/integrity should report models_agree=true
         when UTXO and account totals match (after unit conversion)."""
         sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
         self._seed_coinbase(sender, 100 * UNIT)
 
         # Seed shadow balance so dual-write can proceed
@@ -424,7 +424,7 @@ class TestDualWriteUnitCorrectness(unittest.TestCase):
     def test_ledger_entries_use_correct_unit(self):
         """Ledger delta_i64 should match ACCOUNT_UNIT, not 1000x larger."""
         sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
         self._seed_coinbase(sender, 100 * UNIT)
 
         # Seed shadow balance so dual-write can proceed
@@ -517,7 +517,7 @@ class TestDualWriteDisabled(unittest.TestCase):
     def test_no_account_write_when_dual_write_false(self):
         """When dual_write=False, balances table should remain untouched."""
         sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
         self._seed_coinbase(sender, 100 * UNIT)
 
         self.client.post('/utxo/transfer', json={

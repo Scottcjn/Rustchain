@@ -17,6 +17,7 @@ Endpoints:
 """
 
 import json
+import re
 import sqlite3
 import time
 from decimal import Decimal, InvalidOperation
@@ -42,6 +43,9 @@ _BOXES_MAX_LIMIT = 500
 # would raise OverflowError at parameter binding (a 500) instead of a clean 400.
 _INT64_MAX = (1 << 63) - 1
 _NONCE_MAX_DIGITS = len(str(_INT64_MAX))
+
+_CANONICAL_RTC_ADDRESS_RE = re.compile(r"RTC[0-9a-fA-F]{40}")
+
 
 
 def _parse_rtc_amount(raw) -> Decimal:
@@ -605,6 +609,17 @@ def utxo_transfer():
             'error': 'Missing required fields',
             'required': ['from_address', 'to_address', 'public_key',
                          'signature', 'nonce']
+        }), 400
+
+    # SECURITY (#2819, reported by @antoleod): the sender is bound to its public
+    # key below, but the recipient was accepted as any non-empty string. A typo
+    # or hostile value such as "not-a-wallet" became a persisted box owner that
+    # no wallet key can ever spend, permanently locking the RTC. Require the
+    # canonical RTC + 40 hex form before signature checks or state mutation.
+    if not _CANONICAL_RTC_ADDRESS_RE.fullmatch(to_address):
+        return jsonify({
+            'error': 'invalid_to_address_format',
+            'message': 'to_address must be a canonical RustChain address: RTC followed by 40 hex characters',
         }), 400
 
     if amount_rtc <= 0:

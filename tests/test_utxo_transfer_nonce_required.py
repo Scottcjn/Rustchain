@@ -74,7 +74,7 @@ def seed_coinbase(utxo_db, address, value_nrtc, height=1):
 def payload(nonce=1733420000000, amount_rtc=10.0):
     return {
         "from_address": "RTC_test_aabbccdd",
-        "to_address": "bob",
+        "to_address": "RTC" + "b" * 40,
         "amount_rtc": amount_rtc,
         "public_key": "aabbccdd" * 8,
         "signature": "sig" * 22,
