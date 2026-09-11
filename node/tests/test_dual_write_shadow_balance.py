@@ -109,7 +109,7 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
         """If sender shadow balance < transfer amount, dual-write must be
         skipped (not drive amount_i64 negative)."""
         sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
 
         # Seed UTXO with 100 RTC
         self._seed_coinbase(sender, 100 * UNIT)
@@ -148,7 +148,7 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
         """If sender has no row in balances at all, dual-write must be
         skipped (shadow_balance = 0 < amount)."""
         sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
 
         self._seed_coinbase(sender, 100 * UNIT)
 
@@ -177,7 +177,7 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
     def test_dual_write_succeeds_when_shadow_sufficient(self):
         """Normal dual-write path still works when shadow balance is enough."""
         sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
 
         self._seed_coinbase(sender, 100 * UNIT)
 
@@ -211,7 +211,7 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
     def test_dual_write_exact_balance_goes_to_zero(self):
         """Transferring exactly the shadow balance should succeed (goes to 0)."""
         sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
 
         self._seed_coinbase(sender, 100 * UNIT)
 
@@ -241,7 +241,7 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
         """When dual-write is skipped due to insufficient shadow balance,
         no ledger entries should be created."""
         sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
 
         self._seed_coinbase(sender, 100 * UNIT)
 
@@ -326,7 +326,7 @@ class TestDualWriteShadowBalanceGuardDisabled(unittest.TestCase):
         """UTXO transfer succeeds regardless of shadow balance when
         dual_write=False."""
         sender = 'RTC_test_aabbccdd'
-        recipient = 'RTC_test_eeffgghh'
+        recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
         self._seed_coinbase(sender, 100 * UNIT)
 
         r = self.client.post('/utxo/transfer', json={
@@ -348,3 +348,48 @@ class TestDualWriteShadowBalanceGuardDisabled(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestTransferRecipientFormat(unittest.TestCase):
+    """#2819 (reported by @antoleod): a non-canonical to_address must be rejected
+    before signature verification or any state mutation, or the RTC lands in a
+    box no wallet key can ever spend."""
+
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp.close()
+        self.db_path = self.tmp.name
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("CREATE TABLE IF NOT EXISTS balances (miner_id TEXT PRIMARY KEY, amount_i64 INTEGER DEFAULT 0, balance_rtc REAL DEFAULT 0)")
+        conn.execute("CREATE TABLE IF NOT EXISTS ledger (ts INTEGER, epoch INTEGER, miner_id TEXT, delta_i64 INTEGER, reason TEXT)")
+        conn.commit(); conn.close()
+        self.utxo_db = UtxoDB(self.db_path); self.utxo_db.init_tables()
+        self.app = Flask(__name__); self.app.config['TESTING'] = True
+        register_utxo_blueprint(self.app, self.utxo_db, self.db_path,
+                                verify_sig_fn=mock_verify_sig, addr_from_pk_fn=mock_addr_from_pk,
+                                current_slot_fn=mock_current_slot, dual_write=False)
+        self.client = self.app.test_client()
+
+    def tearDown(self):
+        try: os.unlink(self.db_path)
+        except OSError: pass
+
+    def _post(self, to_address):
+        pk = 'aa' * 32
+        return self.client.post('/utxo/transfer', json={
+            'from_address': mock_addr_from_pk(pk), 'to_address': to_address,
+            'amount_rtc': '0.1', 'fee_rtc': '0', 'nonce': 1,
+            'public_key': pk, 'signature': 'bb' * 64,
+        })
+
+    def test_rejects_arbitrary_string_recipient(self):
+        for bad in ('not-a-wallet', 'RTC' + 'g' * 40, 'RTC' + 'a' * 39, 'rtc' + 'a' * 40, 'bcn_something'):
+            resp = self._post(bad)
+            self.assertEqual(resp.status_code, 400, bad)
+            self.assertEqual(resp.get_json()['error'], 'invalid_to_address_format', bad)
+        self.assertEqual(self.utxo_db.get_balance('not-a-wallet') if hasattr(self.utxo_db, 'get_balance') else 0, 0)
+
+    def test_canonical_recipient_passes_format_check(self):
+        resp = self._post('RTC' + 'c' * 40)
+        # Anything but the format error: the request proceeds to the normal path.
+        self.assertNotEqual((resp.get_json() or {}).get('error'), 'invalid_to_address_format')
