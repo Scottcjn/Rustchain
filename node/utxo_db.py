@@ -248,6 +248,21 @@ CREATE TABLE IF NOT EXISTS utxo_mempool_inputs (
     tx_id TEXT NOT NULL,
     FOREIGN KEY (tx_id) REFERENCES utxo_mempool(tx_id)
 );
+
+-- account_mirror_boxes is the cross-model double-spend discriminator (bounty 2819).
+-- It records which UTXO boxes back account-model value and for whom, so the account
+-- and UTXO models cannot both spend the same value. Making it canonical schema (it
+-- was created lazily elsewhere) guarantees it exists for every dual-write writer,
+-- transfer AND epoch reward settlement, with no CREATE TABLE inside an open
+-- transaction that SQLite would implicit-commit. Keep this comment free of the
+-- semicolon character because _execute_schema splits SCHEMA_SQL on that character.
+CREATE TABLE IF NOT EXISTS account_mirror_boxes (
+    box_id TEXT PRIMARY KEY,
+    account_wallet TEXT NOT NULL,
+    value_nrtc INTEGER NOT NULL,
+    created_epoch INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mirror_wallet ON account_mirror_boxes(account_wallet);
 """
 
 
