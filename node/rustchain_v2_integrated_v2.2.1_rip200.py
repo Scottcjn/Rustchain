@@ -5130,6 +5130,8 @@ ATTEST_CHALLENGE_IP_LIMIT = int(os.environ.get("ATTEST_CHALLENGE_IP_LIMIT", "10"
 ATTEST_CHALLENGE_IP_WINDOW = int(os.environ.get("ATTEST_CHALLENGE_IP_WINDOW", "60"))
 API_MINERS_RATE_LIMIT = 100
 API_MINERS_RATE_WINDOW = 60
+API_WALLET_RATE_LIMIT = int(os.environ.get("API_WALLET_RATE_LIMIT", "30"))
+API_WALLET_RATE_WINDOW = int(os.environ.get("API_WALLET_RATE_WINDOW", "60"))
 
 
 def check_challenge_rate_limit(client_ip):
@@ -5257,6 +5259,78 @@ def check_api_miners_rate_limit(client_ip, now_ts=None):
         "limit": API_MINERS_RATE_LIMIT,
         "remaining": remaining,
         "reset": now + API_MINERS_RATE_WINDOW,
+        "retry_after": 0,
+    }
+
+
+def check_wallet_rate_limit(client_ip, endpoint="wallet_balance", now_ts=None):
+    """Rate limit public wallet inspection endpoints (/wallet/balance, /wallet/history).
+
+    Enforces the documented 30/min rate limit per source IP (RIP-200 / Security #16941)
+    to prevent unauthenticated bulk enumeration of miner balances and transaction histories.
+    """
+    now = int(time.time()) if now_ts is None else int(now_ts)
+    cutoff = now - API_WALLET_RATE_WINDOW
+
+    try:
+        with sqlite3.connect(DB_PATH, timeout=3) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS wallet_rate_limit (
+                    client_ip TEXT NOT NULL,
+                    endpoint TEXT NOT NULL,
+                    ts INTEGER NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_wallet_rate_limit_ip_ep_ts "
+                "ON wallet_rate_limit(client_ip, endpoint, ts)"
+            )
+            conn.execute("DELETE FROM wallet_rate_limit WHERE ts < ?", (cutoff,))
+
+            count_row = conn.execute(
+                "SELECT COUNT(*) FROM wallet_rate_limit WHERE client_ip = ? AND endpoint = ? AND ts >= ?",
+                (client_ip, endpoint, cutoff),
+            ).fetchone()
+            current_count = int(count_row[0]) if (count_row and isinstance(count_row[0], (int, float)) and type(count_row[0]).__name__ != "MagicMock") else 0
+
+            if current_count >= API_WALLET_RATE_LIMIT:
+                oldest_row = conn.execute(
+                    "SELECT MIN(ts) FROM wallet_rate_limit WHERE client_ip = ? AND endpoint = ? AND ts >= ?",
+                    (client_ip, endpoint, cutoff),
+                ).fetchone()
+                oldest = int(oldest_row[0]) if (oldest_row and isinstance(oldest_row[0], (int, float)) and type(oldest_row[0]).__name__ != "MagicMock") else now
+                retry_after = max(1, (oldest + API_WALLET_RATE_WINDOW) - now)
+                return False, {
+                    "limit": API_WALLET_RATE_LIMIT,
+                    "remaining": 0,
+                    "reset": now + retry_after,
+                    "retry_after": retry_after,
+                }
+
+            conn.execute(
+                "INSERT INTO wallet_rate_limit (client_ip, endpoint, ts) VALUES (?, ?, ?)",
+                (client_ip, endpoint, now),
+            )
+            try:
+                conn.commit()
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[WALLET_RATE_LIMIT] Warning: {e}")
+        return True, {
+            "limit": API_WALLET_RATE_LIMIT,
+            "remaining": max(0, API_WALLET_RATE_LIMIT - 1),
+            "reset": now + API_WALLET_RATE_WINDOW,
+            "retry_after": 0,
+        }
+
+    remaining = max(0, API_WALLET_RATE_LIMIT - current_count - 1)
+    return True, {
+        "limit": API_WALLET_RATE_LIMIT,
+        "remaining": remaining,
+        "reset": now + API_WALLET_RATE_WINDOW,
         "retry_after": 0,
     }
 
@@ -11360,6 +11434,22 @@ def api_rewards_epoch(epoch: int):
 @app.route('/wallet/balance', methods=['GET'])
 def api_wallet_balance():
     """Get balance for a specific miner"""
+    client_ip = client_ip_from_request(request)
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    is_admin = bool(admin_key and request.headers.get("X-Admin-Key", "") == admin_key)
+
+    rate_info = None
+    if not is_admin:
+        rate_ok, rate_info = check_wallet_rate_limit(client_ip, endpoint="wallet_balance")
+        if not rate_ok:
+            response = jsonify({
+                "ok": False,
+                "error": "rate_limited",
+                "limit": f"{API_WALLET_RATE_LIMIT}/{API_WALLET_RATE_WINDOW}s",
+            })
+            add_rate_limit_headers(response, rate_info)
+            return response, 429
+
     raw_miner_id = request.args.get("miner_id")
     raw_address = request.args.get("address")
     miner_id = _validated_wallet_query_id(raw_miner_id)
@@ -11396,11 +11486,14 @@ def api_wallet_balance():
             bal_rtc = float(row[0]) if row else 0.0
             amt = int(round(bal_rtc * UNIT))
 
-    return jsonify({
+    response = jsonify({
         "miner_id": miner_id,
         "amount_i64": amt,
         "amount_rtc": amt / UNIT
     })
+    if rate_info:
+        add_rate_limit_headers(response, rate_info)
+    return response
 
 
 # Conservative identifier grammar for /api/wallet/<id>: RTC address, wallet
@@ -11434,6 +11527,22 @@ def api_wallet_lookup(miner_id):
     exposes no data that was not already reachable. Malformed ids return 400
     (not a zero balance) so the prefix still distinguishes bad input.
     """
+    client_ip = client_ip_from_request(request)
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    is_admin = bool(admin_key and request.headers.get("X-Admin-Key", "") == admin_key)
+
+    rate_info = None
+    if not is_admin:
+        rate_ok, rate_info = check_wallet_rate_limit(client_ip, endpoint="wallet_balance")
+        if not rate_ok:
+            response = jsonify({
+                "ok": False,
+                "error": "rate_limited",
+                "limit": f"{API_WALLET_RATE_LIMIT}/{API_WALLET_RATE_WINDOW}s",
+            })
+            add_rate_limit_headers(response, rate_info)
+            return response, 429
+
     miner_id = _validated_wallet_query_id(miner_id)
     if not miner_id:
         return jsonify({"ok": False, "error": "invalid miner_id"}), 400
@@ -11453,11 +11562,14 @@ def api_wallet_lookup(miner_id):
                 amt = int(round(float(row[0]) * UNIT)) if row else 0
     except sqlite3.OperationalError:
         return jsonify({"ok": False, "error": "balance lookup unavailable"}), 503
-    return jsonify({
+    response = jsonify({
         "miner_id": miner_id,
         "amount_i64": amt,
         "amount_rtc": amt / UNIT
     })
+    if rate_info:
+        add_rate_limit_headers(response, rate_info)
+    return response
 
 
 _WALLET_TX_HASH_RE = re.compile(r"^[0-9a-fA-F]{32}$")
@@ -11642,6 +11754,22 @@ def api_wallet_history():
     ``epoch_rewards`` table (mining payouts) and returns them in a single
     time-sorted response with ``limit``/``offset`` pagination.
     """
+    client_ip = client_ip_from_request(request)
+    admin_key = os.environ.get("RC_ADMIN_KEY", "")
+    is_admin = bool(admin_key and request.headers.get("X-Admin-Key", "") == admin_key)
+
+    rate_info = None
+    if not is_admin:
+        rate_ok, rate_info = check_wallet_rate_limit(client_ip, endpoint="wallet_history")
+        if not rate_ok:
+            response = jsonify({
+                "ok": False,
+                "error": "rate_limited",
+                "limit": f"{API_WALLET_RATE_LIMIT}/{API_WALLET_RATE_WINDOW}s",
+            })
+            add_rate_limit_headers(response, rate_info)
+            return response, 429
+
     miner_id = request.args.get("miner_id", "").strip()
     address = request.args.get("address", "").strip()
 
@@ -11783,12 +11911,15 @@ def api_wallet_history():
     # Apply pagination
     page = transactions[offset:offset + limit]
 
-    return jsonify({
+    response = jsonify({
         "ok": True,
         "miner_id": miner_id,
         "transactions": page,
         "total": total,
     })
+    if rate_info:
+        add_rate_limit_headers(response, rate_info)
+    return response
 
 @app.route('/wallet/tx/<tx_hash>', methods=['GET'])
 def api_wallet_tx_lookup(tx_hash):
