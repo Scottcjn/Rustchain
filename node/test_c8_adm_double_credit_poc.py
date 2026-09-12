@@ -103,9 +103,11 @@ class TestEpochSettlementDoubleCredit(unittest.TestCase):
         )
 
         # ADM crashes AFTER writes (before telemetry/metadata lines)
-        # We simulate this by raising - the caller catches and falls through
+        # Settle handler (settle_epoch_rip200:L260) catches exception and rolls back:
+        conn.rollback()
+        conn.execute("BEGIN IMMEDIATE")
 
-        # Phase 2: Standard rewards fallback (same connection, no rollback)
+        # Phase 2: Standard rewards fallback (new transaction after rollback)
         conn.execute(
             "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?) "
             "ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = amount_i64 + ?",
