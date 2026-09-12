@@ -237,6 +237,21 @@ class TestGitHubBountyParsing:
         assert b.reward_rtc == 50.0
         assert b.difficulty == "easy"
 
+    def test_parse_decimal_rtc_reward_in_title(self):
+        issue = {
+            "number": 16863,
+            "title": "[MICRO-BOUNTY: 0.1 RTC] Share your contributor motivation",
+            "html_url": "https://github.com/Scottcjn/rustchain-bounties/issues/16863",
+            "state": "open",
+            "labels": [{"name": "bounty"}, {"name": "micro"}],
+            "body": "",
+        }
+
+        b = self._parse(issue)
+
+        assert b is not None
+        assert b.reward_rtc == 0.1
+
     def test_parse_pr_is_skipped(self):
         issue = {
             "number": 99,
@@ -247,11 +262,8 @@ class TestGitHubBountyParsing:
             "body": "",
             "pull_request": {"merged_at": None},
         }
-        # The client filters these out before calling _parse_github_issue,
-        # but the parser itself doesn't skip — the caller does.
         b = self._parse(issue)
-        assert b is not None  # parser doesn't check pull_request
-        assert b.issue_number == 99
+        assert b is None
 
     def test_parse_no_reward(self):
         issue = {
@@ -263,6 +275,4 @@ class TestGitHubBountyParsing:
             "body": "Just a discussion thread.",
         }
         b = self._parse(issue)
-        assert b is not None
-        assert b.reward_rtc == 0.0
-        assert b.difficulty is None
+        assert b is None
