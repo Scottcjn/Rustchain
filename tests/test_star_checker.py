@@ -153,6 +153,57 @@ def test_count_user_stars_uses_supplied_repos_without_fetching_owner_repos(monke
     assert star_checker.count_user_stars("targetuser", "owner", "secret", repos=["alpha", "beta"]) == 1
 
 
+def test_validate_star_review_comment_accepts_ftc_compliant_comment():
+    body = (
+        "I reviewed the Proof of Antiquity docs at "
+        "https://github.com/Scottcjn/Rustchain/blob/main/docs/MECHANISM_SPEC_AND_FALSIFICATION_MATRIX.md. "
+        "The vintage-hardware reward model is a clever way to keep mining accessible to retro collectors. "
+        "I received RTC compensation for this review."
+    )
+
+    valid, errors = star_checker.validate_star_review_comment(body)
+
+    assert valid is True
+    assert errors == []
+
+
+def test_validate_star_review_comment_rejects_missing_disclosure():
+    body = (
+        "I reviewed https://github.com/Scottcjn/Rustchain/blob/main/README.md. "
+        "The project ties real hardware scarcity to consensus in a way I have not seen elsewhere."
+    )
+
+    valid, errors = star_checker.validate_star_review_comment(body)
+
+    assert valid is False
+    assert any("FTC disclosure" in error for error in errors)
+
+
+def test_validate_star_review_comment_rejects_missing_link():
+    body = (
+        "I read the README and liked the Proof of Antiquity design. "
+        "It rewards collectors instead of only the newest GPUs. "
+        "I received RTC compensation for this review."
+    )
+
+    valid, errors = star_checker.validate_star_review_comment(body)
+
+    assert valid is False
+    assert any("review link" in error for error in errors)
+
+
+def test_validate_star_review_comment_rejects_single_sentence():
+    body = (
+        "Great project at https://github.com/Scottcjn/Rustchain. "
+        "I received RTC compensation for this review."
+    )
+
+    valid, errors = star_checker.validate_star_review_comment(body)
+
+    assert valid is False
+    assert any("substantive sentences" in error for error in errors)
+
+
 def test_check_wallet_exists_uses_public_wallet_balance_endpoint(monkeypatch, tmp_path):
     cert = tmp_path / ".rustchain" / "node_cert.pem"
     cert.parent.mkdir()
