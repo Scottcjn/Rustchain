@@ -220,7 +220,9 @@ func (c *Client) calculateBackoff(attempt int) time.Duration {
 // doRequestOnce performs a single HTTP request attempt.
 func (c *Client) doRequestOnce(ctx context.Context, method, path string, body interface{}, result interface{}) error {
 	// Build URL
-	reqURL, err := c.baseURL.Parse(path)
+	baseURL := *c.baseURL
+	baseURL.Path = strings.TrimRight(baseURL.Path, "/") + "/"
+	reqURL, err := baseURL.Parse(strings.TrimLeft(path, "/"))
 	if err != nil {
 		return &ClientError{Message: "failed to parse URL", Cause: err}
 	}
