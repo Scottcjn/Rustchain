@@ -159,7 +159,7 @@ Console multipliers follow the standard RIP-200 time-aging formula:
 aged_multiplier = 1.0 + (base - 1.0) * (1 - 0.15 * chain_age_years)
 ```
 
-Full decay to 1.0x after ~16.67 years of chain operation.
+Full decay to 1.0x after ~6.67 years of chain operation.
 
 ## 3. Console-Specific Fingerprinting
 

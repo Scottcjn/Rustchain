@@ -215,8 +215,8 @@ def get_time_aged_multiplier(device_arch: str, chain_age_years: float, device_in
 
     Vintage hardware bonus decays linearly over blockchain lifetime:
     - Year 0: Full multiplier
-    - Year 10: Significantly reduced
-    - Year 16.67: Vintage bonus fully decayed to modern baseline
+    - Year 3.33: Vintage bonus halved
+    - Year 6.67: Vintage bonus fully decayed to modern baseline
 
     Modern x86 with loyalty bonus does NOT decay (reward for commitment).
     Pass db_path + miner_id so the modern-x86 loyalty bonus can be looked up;
