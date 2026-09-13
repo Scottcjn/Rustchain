@@ -9197,8 +9197,31 @@ _PROPOSALS_DEFAULT_LIMIT = 50
 
 @app.route('/governance/proposals', methods=['GET'])
 def governance_proposals():
-    limit = min(max(request.args.get('limit', _PROPOSALS_DEFAULT_LIMIT, type=int), 1), _PROPOSALS_MAX_LIMIT)
-    offset = max(request.args.get('offset', 0, type=int), 0)
+    raw_limit = request.args.get('limit')
+    if raw_limit is not None and raw_limit != '':
+        try:
+            limit_val = int(raw_limit)
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+        if limit_val < 1:
+            return jsonify({"ok": False, "error": "limit must be >= 1"}), 400
+        limit = min(limit_val, _PROPOSALS_MAX_LIMIT)
+    else:
+        limit = _PROPOSALS_DEFAULT_LIMIT
+
+    raw_offset = request.args.get('offset')
+    if raw_offset is not None and raw_offset != '':
+        try:
+            offset_val = int(raw_offset)
+        except (ValueError, TypeError):
+            return jsonify({"ok": False, "error": "offset must be an integer"}), 400
+        if offset_val < 0:
+            return jsonify({"ok": False, "error": "offset must be >= 0"}), 400
+        if offset_val > 9223372036854775807:
+            return jsonify({"ok": False, "error": "offset out of range"}), 400
+        offset = offset_val
+    else:
+        offset = 0
 
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
