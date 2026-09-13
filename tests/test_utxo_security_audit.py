@@ -25,6 +25,10 @@ import unittest
 # Allow importing from node/
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'node'))
 
+# rollback_genesis() is a destructive state mutation and now requires an
+# admin key (bounty #2819). Configure a test key for this suite.
+os.environ["RC_ADMIN_KEY"] = "test-rollback-admin-key-2819"
+
 from utxo_db import (
     UtxoDB, coin_select, compute_box_id, address_to_proposition,
     proposition_to_address, UNIT, DUST_THRESHOLD, MAX_COINBASE_OUTPUT_NRTC,
@@ -600,7 +604,7 @@ class TestGenesisMigrationSafety(unittest.TestCase):
             self.assertEqual(db.get_balance('bob'), 50 * UNIT)
 
             # Rollback
-            deleted = rollback_genesis(tmp.name)
+            deleted = rollback_genesis(tmp.name, admin_key="test-rollback-admin-key-2819")
             self.assertEqual(deleted, 2)
             self.assertEqual(db.get_balance('alice'), 0)
             self.assertEqual(db.get_balance('bob'), 0)
@@ -641,6 +645,86 @@ class TestGenesisMigrationSafety(unittest.TestCase):
 
         finally:
             os.unlink(tmp.name)
+
+
+class TestRollbackAuthorization(unittest.TestCase):
+    """Bounty #2819: rollback_genesis() was an unauthenticated destructive
+    state mutation. It must require an admin key and fail closed."""
+
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix='.db', delete=False)
+        self.tmp.close()
+        self.db = UtxoDB(self.tmp.name)
+        self.db.init_tables()
+        # Pre-create a genesis box so rollback has something to delete.
+        from utxo_genesis_migration import (
+            compute_genesis_tx_id, GENESIS_HEIGHT,
+        )
+        import json
+        conn = self.db._conn()
+        now = int(time.time())
+        tx_id = compute_genesis_tx_id('auth_wallet')
+        prop = address_to_proposition('auth_wallet')
+        box_id = compute_box_id(10 * UNIT, prop, GENESIS_HEIGHT, tx_id, 0)
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            """INSERT INTO utxo_boxes
+               (box_id, value_nrtc, proposition, owner_address,
+                creation_height, transaction_id, output_index,
+                tokens_json, registers_json, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (box_id, 10 * UNIT, prop, 'auth_wallet', GENESIS_HEIGHT,
+             tx_id, 0, '[]', json.dumps({'R4': 'genesis'}), now),
+        )
+        conn.execute(
+            """INSERT INTO utxo_transactions
+               (tx_id, tx_type, inputs_json, outputs_json,
+                data_inputs_json, fee_nrtc, timestamp,
+                block_height, status)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (tx_id, 'genesis', '[]',
+             json.dumps([{'box_id': box_id, 'value_nrtc': 10 * UNIT,
+                          'owner': 'auth_wallet'}]),
+             '[]', 0, now, GENESIS_HEIGHT, 'confirmed'),
+        )
+        conn.execute("COMMIT")
+        conn.close()
+        self.box_id = box_id
+
+    def tearDown(self):
+        os.unlink(self.tmp.name)
+
+    def test_rollback_refuses_when_no_key_configured(self):
+        """Fail closed: an unset RC_ADMIN_KEY must refuse rollback."""
+        from utxo_genesis_migration import rollback_genesis
+        old = os.environ.pop('RC_ADMIN_KEY', None)
+        try:
+            with self.assertRaisesRegex(RuntimeError, "not configured"):
+                rollback_genesis(self.tmp.name, admin_key=None)
+        finally:
+            if old is not None:
+                os.environ['RC_ADMIN_KEY'] = old
+
+    def test_rollback_refuses_wrong_key(self):
+        """A wrong admin key must be rejected (constant-time compare)."""
+        from utxo_genesis_migration import rollback_genesis
+        with self.assertRaisesRegex(RuntimeError, "unauthorized"):
+            rollback_genesis(self.tmp.name, admin_key="wrong-key")
+
+    def test_rollback_refuses_missing_key_arg(self):
+        """An explicit None key must be rejected even when one is configured."""
+        from utxo_genesis_migration import rollback_genesis
+        with self.assertRaisesRegex(RuntimeError, "admin_key is required"):
+            rollback_genesis(self.tmp.name, admin_key=None)
+
+    def test_rollback_succeeds_with_correct_key(self):
+        """The happy path still works once authorized."""
+        from utxo_genesis_migration import rollback_genesis
+        deleted = rollback_genesis(
+            self.tmp.name, admin_key="test-rollback-admin-key-2819"
+        )
+        self.assertEqual(deleted, 1)
+        self.assertIsNone(self.db.get_box(self.box_id))
 
 
 if __name__ == '__main__':
