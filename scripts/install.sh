@@ -57,6 +57,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
     MINER_FILENAME="rustchain_mac_miner_v2.5.py"
     MINER_URL="${REPO_RAW}/miners/macos/${MINER_FILENAME}"
     FINGERPRINT_URL="${REPO_RAW}/miners/macos/fingerprint_checks.py"
+    MINER_CRYPTO_URL="${REPO_RAW}/miners/macos/miner_crypto.py"
 else
     MINER_FILENAME="rustchain_linux_miner.py"
     MINER_URL="${REPO_RAW}/miners/linux/rustchain_linux_miner.py"
@@ -602,7 +603,15 @@ CFGEOF
 
     # --- Generate miner ID ---
     local miner_id
-    miner_id=$(echo -n "${wallet}-${arch}-$(hostname)" | sha256sum 2>/dev/null | cut -c1-16 || echo "${wallet}")
+    if command -v sha256sum &>/dev/null; then
+        miner_id=$(printf '%s-%s-%s' "$wallet" "$arch" "$(hostname)" | sha256sum | cut -c1-16)
+    elif command -v shasum &>/dev/null; then
+        miner_id=$(printf '%s-%s-%s' "$wallet" "$arch" "$(hostname)" | shasum -a 256 | cut -c1-16)
+    elif command -v python3 &>/dev/null; then
+        miner_id=$(python3 -c 'import sys, hashlib; print(hashlib.sha256(f"{sys.argv[1]}-{sys.argv[2]}-{sys.argv[3]}".encode()).hexdigest()[:16])' "$wallet" "$arch" "$(hostname)" 2>/dev/null || echo "$wallet")
+    else
+        miner_id="${wallet}"
+    fi
 
     # --- Create service ---
     echo ""
