@@ -747,20 +747,18 @@ def utxo_transfer():
     # slice of a wallet, so loading every unspent box let a third party inflate
     # the cost of this call by sending dust to the sender's address.
     utxos = _utxo_db.get_coin_select_candidates(from_address)
-    all_candidate_total_nrtc = sum(u['value_nrtc'] for u in utxos)
-    # SECURITY(danaher-j / #2819 residual): exclude account-mirror boxes from
-    # UTXO coin selection in BOTH dual-write states. Under UTXO_DUAL_WRITE=1 the
-    # /utxo/transfer path mints receiver+change outputs with NO
-    # account_mirror_boxes provenance; a later rollback to dual_write=0 then
-    # leaves that migrated value spendable through BOTH the UTXO and account
-    # models (double spend). Migrated funds must always move via the account
-    # path, so the mirror-box exclusion cannot be gated on dual-write.
+    # SECURITY(danaher-j / #2819 residual, #8395): account-mirror boxes are
+    # excluded inside get_coin_select_candidates() before candidate bounding.
+    # We keep _spendable_utxo_candidates() as defense-in-depth and compute
+    # total spendable candidates post-filter so mirror boxes cannot cause a
+    # false 409 ACCOUNT_MIRROR_BOX_NOT_SPENDABLE.
     mirror_candidate_ids = []
     conn = sqlite3.connect(_db_path)
     try:
         utxos, mirror_candidate_ids = _spendable_utxo_candidates(conn, utxos)
     finally:
         conn.close()
+    all_candidate_total_nrtc = sum(u['value_nrtc'] for u in utxos)
     selected, change_nrtc = coin_select(utxos, target_nrtc)
 
     if not selected:

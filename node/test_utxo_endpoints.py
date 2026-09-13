@@ -802,6 +802,96 @@ class TestUtxoEndpoints(unittest.TestCase):
                 self.assertNotIn(recipient, balances)
                 self.assertEqual(ledger_count, 0)
 
+    def test_coin_select_candidates_exclude_mirror_boxes_before_bounding(self):
+        """Fix #8395 regression test:
+        1 mirror box (1,000,000 nRTC) + 20 independent boxes (100,000...99,981) + 21 small boxes (1,000...1,020).
+        Transfer target: 1,999,810 nRTC.
+        Mirror box must be filtered out at candidate SQL level so the 20 independent boxes
+        fill the bounded dearest slice and successfully fund the transfer without false 409.
+        """
+        sender = 'RTC_test_aabbccdd'
+        recipient = ('RTC' + 'c' * 40)
+
+        # 1 mirror box
+        mirror_box = {
+            'box_id': 'mirror_box_1',
+            'value_nrtc': 1_000_000,
+            'owner_address': sender,
+            'proposition': address_to_proposition(sender),
+            'creation_height': 1,
+            'transaction_id': 'tx_mirror',
+            'output_index': 0,
+        }
+        self.utxo_db.add_box(mirror_box)
+
+        # Create account_mirror_boxes table and record mirror box
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS account_mirror_boxes (
+                    box_id TEXT PRIMARY KEY, account_wallet TEXT NOT NULL,
+                    value_nrtc INTEGER NOT NULL, created_epoch INTEGER NOT NULL)"""
+            )
+            conn.execute(
+                "INSERT INTO account_mirror_boxes (box_id, account_wallet, value_nrtc, created_epoch) "
+                "VALUES (?, ?, ?, 0)",
+                ('mirror_box_1', sender, 1_000_000),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        # 20 independent boxes of 100,000 ... 99,981 (sum = 1,999,810)
+        for i, val in enumerate(range(100_000, 99_980, -1)):
+            self.utxo_db.add_box({
+                'box_id': f'indep_box_{i}',
+                'value_nrtc': val,
+                'owner_address': sender,
+                'proposition': address_to_proposition(sender),
+                'creation_height': 1,
+                'transaction_id': f'tx_indep_{i}',
+                'output_index': 0,
+            })
+
+        # 21 small boxes of 1,000 ... 1,020
+        for i, val in enumerate(range(1_000, 1_021)):
+            self.utxo_db.add_box({
+                'box_id': f'small_box_{i}',
+                'value_nrtc': val,
+                'owner_address': sender,
+                'proposition': address_to_proposition(sender),
+                'creation_height': 1,
+                'transaction_id': f'tx_small_{i}',
+                'output_index': 0,
+            })
+
+        # Verify candidate selection directly: mirror must NOT be present
+        candidates = self.utxo_db.get_coin_select_candidates(sender)
+        candidate_ids = {c['box_id'] for c in candidates}
+        self.assertNotIn('mirror_box_1', candidate_ids)
+
+        # Perform transfer requesting exactly 1,999,810 nRTC
+        target_rtc = 1_999_810 / Decimal(UNIT)
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': recipient,
+            'amount_rtc': str(target_rtc),
+            'fee_rtc': 0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000) + 12345,
+        })
+        self.assertEqual(r.status_code, 200, r.get_json())
+        data = r.get_json()
+        self.assertEqual(data['inputs_consumed'], 20)
+
+        # Verify mirror box is untouched
+        with sqlite3.connect(self.db_path) as c:
+            spent = c.execute(
+                "SELECT spent_at FROM utxo_boxes WHERE box_id = 'mirror_box_1'"
+            ).fetchone()[0]
+            self.assertIsNone(spent, "Mirror box must remain unspent")
+
 
 class TestUtxoDualWrite(unittest.TestCase):
 

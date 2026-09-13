@@ -500,6 +500,21 @@ class UtxoDB:
         self.mempool_clear_expired()
         conn = self._conn()
         try:
+            # FIX(#8395): Exclude account-mirror boxes before bounding cheapest
+            # and dearest candidates. When a mirror box occupies a slice slot it
+            # hides the next eligible box outside the slice, causing coin_select
+            # to fail on a wallet with sufficient spendable boxes.
+            has_mirror_table = bool(
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_mirror_boxes'"
+                ).fetchone()
+            )
+            if has_mirror_table:
+                base += """ AND NOT EXISTS (
+                        SELECT 1 FROM account_mirror_boxes amb
+                        WHERE amb.box_id = utxo_boxes.box_id
+                    )"""
+
             # Smallest-first needs one extra row: it is the row that proves the
             # selection would have exceeded the cap, sending coin_select() down
             # its largest-first path.
