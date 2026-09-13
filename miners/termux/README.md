@@ -2,6 +2,17 @@
 
 ## Verify before trust
 
+The installer resolves `RUSTCHAIN_REF` **once** through the GitHub commits API, records the resulting immutable 40-hex commit, and downloads the Linux miner helpers, Termux wrapper, and `checksums.sha256` from that exact commit. This prevents a moving `main` (or other mutable ref) from mixing payloads and a manifest from different repository states.
+
+For an independent trust anchor, set a commit SHA you verified out of band before installing:
+
+```bash
+RUSTCHAIN_EXPECTED_COMMIT=<40-hex-commit> ./miners/termux/install.sh --wallet YOUR_WALLET
+```
+
+If the selected ref resolves to any other commit, installation fails before downloading miner files. Without `RUSTCHAIN_EXPECTED_COMMIT`, the checksum manifest proves consistency with the resolved repository commit; it is **not** an independent trust boundary if that repository/ref itself is compromised.
+
+
 Do not start a persistent miner first. The three commands below have deliberately different safety levels.
 
 ```bash
