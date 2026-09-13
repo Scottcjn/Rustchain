@@ -221,7 +221,7 @@ What to expect:
 
 ### Option 2: earn bounties
 
-RustChain pays RTC for code contributions.
+RustChain pays RTC for code contributions. Social-media bounties are not code contributions and are not addressed by repository code changes.
 
 Typical payout flow:
 
