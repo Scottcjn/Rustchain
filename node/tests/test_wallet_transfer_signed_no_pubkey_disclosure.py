@@ -108,6 +108,11 @@ class TestWalletTransferSignedNoPubkeyDisclosure(unittest.TestCase):
         cls._tmp.cleanup()
 
     def _post(self, body):
+        # Signed transfers now require chain_id binding (cross-network replay fix).
+        # These tests exercise the DOWNSTREAM pubkey-mismatch non-disclosure path,
+        # so bind the active chain_id to get past the chain gate to their subject.
+        if "chain_id" not in body:
+            body = {**body, "chain_id": self.mod.CHAIN_ID}
         return self.client.post(
             "/wallet/transfer/signed",
             json=body,
