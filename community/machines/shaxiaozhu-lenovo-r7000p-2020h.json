@@ -1,0 +1,21 @@
+{
+  "machine_name": "ShaXiaozhu Lenovo Legion R7000P 2020H",
+  "model": "Lenovo Legion R7000P 2020H",
+  "model_identifier": "82GR",
+  "year_manufactured": 2020,
+  "architecture": "x86_64 (AMD Ryzen 7 4800H)",
+  "cpu_cores": "8 cores, 16 threads",
+  "memory_gb": 32,
+  "power_draw_watts": 65,
+  "usage": [
+    "AI coding agent execution",
+    "GitHub bounty automation",
+    "local software development",
+    "RustChain miner dry-run testing"
+  ],
+  "description": "Repurposed Lenovo Legion R7000P 2020H Windows laptop with an AMD Ryzen 7 4800H CPU, 32 GB memory, and NVIDIA GeForce RTX 2060 graphics. It remains in active use for local software development, Codex-assisted work, GitHub bounty automation, and RustChain miner dry-run validation instead of being replaced. The 65 W value is a transparent approximate mixed development-load estimate rather than a wall-meter measurement.",
+  "wallet_name": "ShaXiaozhu",
+  "wallet_address": "RTC8e7638640f177fd8ed27e969d7a7feee2f48a11f",
+  "contributor": "ShaXiaozhu",
+  "added_date": "2026-09-14"
+}
