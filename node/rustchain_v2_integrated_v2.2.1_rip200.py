@@ -5718,13 +5718,34 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                         "outputs": outputs,
                         "_allow_minting": True
                     }
+                    batch_height = epoch * EPOCH_SLOTS + batch_index
                     utxo_ok = UtxoDB(DB_PATH).apply_transaction(
-                        utxo_tx, epoch * EPOCH_SLOTS + batch_index, conn=conn
+                        utxo_tx, batch_height, conn=conn
                     )
                     if not utxo_ok:
                         raise RuntimeError(
                             "UTXO reward settlement failed for "
                             f"batch {batch_index + 1}/{len(reward_batches)}"
+                        )
+                    # SECURITY(danaher-j / #2819 same class as the /utxo/transfer
+                    # receiver residual): this batch credited each miner's ACCOUNT
+                    # balance (above) AND just minted a UTXO reward box for them.
+                    # Register those boxes as account-mirror provenance, or the same
+                    # reward is spendable via BOTH models (UTXO box + account balance)
+                    # = double spend. apply_transaction enforces one mining_reward per
+                    # block_height, so every box at batch_height is exactly this
+                    # batch's reward outputs. Pure INSERTs (table is canonical schema
+                    # now, so no DDL inside this settlement transaction).
+                    for _bid, _owner, _val in c.execute(
+                        "SELECT box_id, owner_address, value_nrtc FROM utxo_boxes "
+                        "WHERE creation_height = ?",
+                        (batch_height,),
+                    ).fetchall():
+                        c.execute(
+                            "INSERT OR IGNORE INTO account_mirror_boxes "
+                            "(box_id, account_wallet, value_nrtc, created_epoch) "
+                            "VALUES (?,?,?,?)",
+                            (_bid, _owner, _val, epoch),
                         )
                 if skipped_utxo_dust_nrtc:
                     print(
