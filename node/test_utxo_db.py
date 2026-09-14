@@ -2165,6 +2165,42 @@ class TestUtxoDB(unittest.TestCase):
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
         self.assertEqual(self.db.get_balance('bob'), 0)
 
+    def test_mempool_rejects_duplicate_inputs(self):
+        """Mempool must cleanly reject transactions with duplicate input box_ids."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+        box_id = boxes[0]['box_id']
+
+        tx = {
+            'tx_id': 'dupe' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box_id}, {'box_id': box_id}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        # Verify no inputs or transactions were orphaned into mempool tables
+        self.assertFalse(self.db.mempool_check_double_spend(box_id))
+        self.assertEqual(len(self.db.mempool_get_block_candidates()), 0)
+
+    def test_mempool_rejects_invalid_timestamp_with_rollback(self):
+        """Mempool must rollback when rejecting an invalid negative timestamp."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'time' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': -1,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        self.assertFalse(self.db.mempool_check_double_spend(boxes[0]['box_id']))
+
 
 class TestCoinSelect(unittest.TestCase):
 
