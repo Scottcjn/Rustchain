@@ -26,3 +26,25 @@ def test_rustchain_org_nginx_proxies_ready_and_api_nodes():
     assert api_nodes_locations == 2
     assert config.count("proxy_pass http://127.0.0.1:8099/ready;") == 2
     assert config.count("proxy_pass http://127.0.0.1:8099/api/nodes;") == 2
+
+
+def test_rustchain_org_nginx_beacon_join_routed_to_atlas_in_all_server_blocks():
+    """Bounty #2127: POST /beacon/join must reach the Atlas API on 8071."""
+    config = (ROOT / "site" / "nginx-rustchain-org.conf").read_text(encoding="utf-8")
+
+    join_locations = config.count("location = /beacon/join {")
+
+    assert join_locations == 2
+    assert config.count("proxy_pass http://127.0.0.1:8071/beacon/join;") == join_locations
+    assert config.count('add_header Access-Control-Allow-Methods "POST, OPTIONS" always;') >= join_locations
+
+
+def test_rustchain_org_nginx_beacon_atlas_routed_to_atlas_in_all_server_blocks():
+    """Bounty #2127: GET /beacon/atlas must reach the Atlas API on 8071."""
+    config = (ROOT / "site" / "nginx-rustchain-org.conf").read_text(encoding="utf-8")
+
+    atlas_locations = config.count("location = /beacon/atlas {")
+
+    assert atlas_locations == 2
+    assert config.count("proxy_pass http://127.0.0.1:8071/beacon/atlas;") == atlas_locations
+    assert config.count('add_header Access-Control-Allow-Methods "GET, OPTIONS" always;') >= atlas_locations
