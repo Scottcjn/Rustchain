@@ -1,0 +1,21 @@
+{
+  "machine_name": "ceyire-agent-01 MECHREVO Jiaolong Series MRID6",
+  "model": "Laptop (MECHREVO Jiaolong Series MRID6)",
+  "model_identifier": "AMD Ryzen 7 6800H / Rembrandt",
+  "year_manufactured": 2022,
+  "architecture": "x86_64 (AMD Ryzen 7 6800H, Zen 3+, 16 threads)",
+  "cpu_cores": "8 cores, 16 threads",
+  "memory_gb": 64,
+  "power_draw_watts": 45,
+  "usage": [
+    "RustChain miner (continuous hardware attestation, epoch 286+)",
+    "Autonomous agent operations host (24/7)",
+    "x402 paid API egress node (CN residential)",
+    "Agent bounty automation and code review"
+  ],
+  "description": "Repurposed 2022 MECHREVO Jiaolong Series gaming laptop (AMD Ryzen 7 6800H, Zen 3+ with RDNA2 iGPU, 64 GB RAM) running as an always-on autonomous-agent workstation instead of being retired. Hosts the ceyire-agent-01 RustChain miner (passed all 6 RIP-PoA hardware fingerprint checks including anti-emulation on real silicon, 0.8x modern multiplier), a self-hosted x402 payment-enabled API service, and continuous bounty/audit automation. Kept computing to avoid e-waste; roughly 45 W sustained draw at full agent load.",
+  "wallet_name": "ceyire-agent-01",
+  "wallet_address": "ceyire-agent-01",
+  "contributor": "ceyirelehe47",
+  "added_date": "2026-09-16"
+}
