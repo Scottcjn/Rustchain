@@ -250,7 +250,10 @@ def get_hardware_serial(system=None):
 class LocalMiner:
     def __init__(self, wallet=None, wart_address=None, wart_pool=None,
                  bzminer_path=None, manage_bzminer=False, verbose=False, show_payload=False,
-                 persist_key=True):
+                 persist_key=True, skip_network_probes=False, offline=False, probe_node=None):
+        self.skip_network_probes = skip_network_probes or offline
+        self.offline = offline
+        self.probe_node = probe_node
         self.node_url = NODE_URL
         self.hw_info = {}
         self.enrolled = False
@@ -340,7 +343,10 @@ class LocalMiner:
         """Run 6 hardware fingerprint checks for RIP-PoA"""
         print("\n[FINGERPRINT] Running 6 hardware fingerprint checks...")
         try:
-            passed, results = validate_all_checks()
+            try:
+                passed, results = validate_all_checks(skip_network_probes=self.skip_network_probes)
+            except TypeError:
+                passed, results = validate_all_checks()
             self.fingerprint_passed = passed
             self.fingerprint_data = {"checks": results, "all_passed": passed}
             if passed:
@@ -874,28 +880,33 @@ class LocalMiner:
             print("[DRY-RUN] Fingerprint checks available: no")
 
         # Optional health probe (read-only)
-        try:
-            url = f"{self.node_url}/health"
+        should_probe = (self.probe_node is True) or (self.probe_node is None and not self.offline)
+        if should_probe:
+            try:
+                url = f"{self.node_url}/health"
+                if self.verbose:
+                    print(f"[DRY-RUN] GET {url}")
+                    print(f"[DRY-RUN] Headers: {{'User-Agent': 'RustChain-Miner/2.2.1'}}")
+                r = self._get("/health", "running dry-run health probe", timeout=8, verify=TLS_VERIFY)
+                if r is None:
+                    return True
+                print(f"[DRY-RUN] Health probe: HTTP {r.status_code}")
+                if self.verbose:
+                    print(f"[DRY-RUN] Response headers: {dict(r.headers)}")
+                if r.ok:
+                    data = r.json()
+                    print(f"[DRY-RUN] Node version: {data.get('version', 'n/a')}")
+                    if self.show_payload:
+                        import json
+                        print(f"[DRY-RUN] Response body: {json.dumps(data, indent=2)}")
+            except Exception as e:
+                print(f"[DRY-RUN] Health probe failed: {e}")
+                if self.verbose:
+                    import traceback
+                    traceback.print_exc()
+        else:
             if self.verbose:
-                print(f"[DRY-RUN] GET {url}")
-                print(f"[DRY-RUN] Headers: {{'User-Agent': 'RustChain-Miner/2.2.1'}}")
-            r = self._get("/health", "running dry-run health probe", timeout=8, verify=TLS_VERIFY)
-            if r is None:
-                return True
-            print(f"[DRY-RUN] Health probe: HTTP {r.status_code}")
-            if self.verbose:
-                print(f"[DRY-RUN] Response headers: {dict(r.headers)}")
-            if r.ok:
-                data = r.json()
-                print(f"[DRY-RUN] Node version: {data.get('version', 'n/a')}")
-                if self.show_payload:
-                    import json
-                    print(f"[DRY-RUN] Response body: {json.dumps(data, indent=2)}")
-        except Exception as e:
-            print(f"[DRY-RUN] Health probe failed: {e}")
-            if self.verbose:
-                import traceback
-                traceback.print_exc()
+                print("[DRY-RUN] Node health probe skipped (offline/skip-network-probes mode)")
 
         print("[DRY-RUN] Next real steps would be: attest -> enroll -> mine loop")
         return True
@@ -960,6 +971,16 @@ def main(argv=None):
         action="store_true",
         help="Run preflight checks only; print hardware fingerprint info; do not start mining",
     )
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Run completely offline without making outbound network or cloud metadata requests",
+    )
+    parser.add_argument(
+        "--skip-network-probes",
+        action="store_true",
+        help="Skip network-backed cloud metadata and node probes during local preflight",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output showing API endpoints, headers, and response details")
     parser.add_argument("--show-payload", action="store_true", help="Show request payload in dry-run mode")
     args = parser.parse_args(argv)
@@ -973,6 +994,8 @@ def main(argv=None):
         verbose=args.verbose,
         show_payload=args.show_payload,
         persist_key=not args.dry_run,
+        skip_network_probes=args.skip_network_probes,
+        offline=args.offline,
     )
     if args.dry_run:
         result = miner.dry_run()
