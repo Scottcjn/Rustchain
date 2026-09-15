@@ -57,7 +57,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
     MINER_FILENAME="rustchain_mac_miner_v2.5.py"
     MINER_URL="${REPO_RAW}/miners/macos/${MINER_FILENAME}"
     FINGERPRINT_URL="${REPO_RAW}/miners/macos/fingerprint_checks.py"
-    MINER_CRYPTO_URL="${REPO_RAW}/miners/macos/miner_crypto.py"
+    MINER_CRYPTO_URL="${REPO_RAW}/miners/linux/miner_crypto.py"
 else
     MINER_FILENAME="rustchain_linux_miner.py"
     MINER_URL="${REPO_RAW}/miners/linux/rustchain_linux_miner.py"
