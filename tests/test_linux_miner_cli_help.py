@@ -19,3 +19,5 @@ def test_linux_miner_help_documents_dry_run():
     assert "--dry-run" in help_text
     assert "print hardware fingerprint info" in help_text
     assert "do not start mining" in help_text
+    assert "--offline" in help_text
+    assert "--skip-network-probes" in help_text

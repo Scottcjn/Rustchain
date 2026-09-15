@@ -334,7 +334,7 @@ def check_instruction_jitter(samples: int = 100) -> Tuple[bool, Dict]:
     return valid, data
 
 
-def check_anti_emulation() -> Tuple[bool, Dict]:
+def check_anti_emulation(skip_network_probes: bool = False) -> Tuple[bool, Dict]:
     """Check 6: Anti-Emulation Behavioral Checks
 
     Detects traditional hypervisors AND cloud provider VMs:
@@ -461,36 +461,37 @@ def check_anti_emulation() -> Tuple[bool, Dict]:
 
     # --- Cloud metadata endpoint check ---
     # AWS, GCP, Azure, DigitalOcean all use 169.254.169.254
-    try:
-        import urllib.request
-        req = urllib.request.Request(
-            "http://169.254.169.254/",
-            headers={"Metadata": "true"}
-        )
-        resp = urllib.request.urlopen(req, timeout=1)
-        cloud_body = resp.read(512).decode("utf-8", errors="replace").lower()
-        cloud_provider = "unknown_cloud"
-        if "latest" in cloud_body or "meta-data" in cloud_body:
-            cloud_provider = "aws_or_gcp"
-        if "azure" in cloud_body or "microsoft" in cloud_body:
-            cloud_provider = "azure"
-        vm_indicators.append("cloud_metadata:{}".format(cloud_provider))
-    except:
-        pass
+    if not skip_network_probes:
+        try:
+            import urllib.request
+            req = urllib.request.Request(
+                "http://169.254.169.254/",
+                headers={"Metadata": "true"}
+            )
+            resp = urllib.request.urlopen(req, timeout=1)
+            cloud_body = resp.read(512).decode("utf-8", errors="replace").lower()
+            cloud_provider = "unknown_cloud"
+            if "latest" in cloud_body or "meta-data" in cloud_body:
+                cloud_provider = "aws_or_gcp"
+            if "azure" in cloud_body or "microsoft" in cloud_body:
+                cloud_provider = "azure"
+            vm_indicators.append("cloud_metadata:{}".format(cloud_provider))
+        except:
+            pass
 
-    # --- AWS IMDSv2 check (token-based, t3/t4 Nitro instances) ---
-    try:
-        import urllib.request
-        token_req = urllib.request.Request(
-            "http://169.254.169.254/latest/api/token",
-            headers={"X-aws-ec2-metadata-token-ttl-seconds": "5"},
-            method="PUT"
-        )
-        token_resp = urllib.request.urlopen(token_req, timeout=1)
-        if token_resp.status == 200:
-            vm_indicators.append("cloud_metadata:aws_imdsv2")
-    except:
-        pass
+        # --- AWS IMDSv2 check (token-based, t3/t4 Nitro instances) ---
+        try:
+            import urllib.request
+            token_req = urllib.request.Request(
+                "http://169.254.169.254/latest/api/token",
+                headers={"X-aws-ec2-metadata-token-ttl-seconds": "5"},
+                method="PUT"
+            )
+            token_resp = urllib.request.urlopen(token_req, timeout=1)
+            if token_resp.status == 200:
+                vm_indicators.append("cloud_metadata:aws_imdsv2")
+        except:
+            pass
 
     # --- systemd-detect-virt (Linux only) ---
     if not IS_WINDOWS:
@@ -602,10 +603,16 @@ def check_rom_fingerprint() -> Tuple[bool, Dict]:
     return True, data
 
 
-def validate_all_checks(include_rom_check: bool = True) -> Tuple[bool, Dict]:
+def validate_all_checks(include_rom_check: bool = True, skip_network_probes: bool = False) -> Tuple[bool, Dict]:
     """Run all 7 fingerprint checks. ALL MUST PASS for RTC approval."""
     results = {}
     all_passed = True
+
+    anti_emulation_runner = (
+        (lambda: check_anti_emulation(skip_network_probes=skip_network_probes))
+        if skip_network_probes
+        else check_anti_emulation
+    )
 
     checks = [
         ("clock_drift", "Clock-Skew & Oscillator Drift", check_clock_drift),
@@ -613,7 +620,7 @@ def validate_all_checks(include_rom_check: bool = True) -> Tuple[bool, Dict]:
         ("simd_identity", "SIMD Unit Identity", check_simd_identity),
         ("thermal_drift", "Thermal Drift Entropy", check_thermal_drift),
         ("instruction_jitter", "Instruction Path Jitter", check_instruction_jitter),
-        ("anti_emulation", "Anti-Emulation Checks", check_anti_emulation),
+        ("anti_emulation", "Anti-Emulation Checks", anti_emulation_runner),
     ]
 
     # Add ROM check for retro platforms
