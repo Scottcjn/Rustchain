@@ -5,19 +5,53 @@ on:
     paths:
       - '**.md'
       - 'docs/**'
+      - '.github/workflows/lychee.yml'
   schedule:
     - cron: '0 4 * * 1'
   workflow_dispatch:
 
 jobs:
-  linkcheck:
+  linkcheck-relative:
+    name: Relative link check (fails CI on breakage)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check relative links
+      - name: Check relative links in README + docs (fail on breakage)
         uses: lycheeverse/lychee-action@v2
         with:
-          fail: false   # report broken links in the job summary but do not block CI (whole-repo doc check)
+          fail: true    # block CI on broken relative links in README.md + docs/ (resolves bounty #16248)
+          args: >
+            --verbose
+            --no-progress
+            --include-fragments
+            --offline
+            --exclude-all-private
+            --exclude "https?://(twitter|x)\.com"
+            --exclude "https://github.com/Scottcjn/Rustchain/actions"
+            --exclude "https?://(www\.)?(linkedin|facebook|instagram|tiktok)"
+            --exclude "https?://(127\.0\.0\.1|localhost)(:\d+)?"
+            --exclude "https?://50\.28\.86\.131(:\d+)?"
+            --exclude "https://rustchain.org/faq"
+            --exclude "https?://img\.shields\.io"
+            --exclude "https?://(www\.)?raydium\.io"
+            --exclude "https?://openreview\.net"
+            --exclude "https?://dexscreener\.com"
+            --max-retries 3
+            --retry-wait-time 5
+            --timeout 20
+            -- './README.md' './docs/**/*.md'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  linkcheck-external:
+    name: External link check (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check all links (advisory, does not block)
+        uses: lycheeverse/lychee-action@v2
+        with:
+          fail: false
           args: >
             --verbose
             --no-progress
@@ -39,6 +73,3 @@ jobs:
             -- './**/*.md' './**/*.html'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Fail on broken relative links
-        if: failure()
-        run: exit 1
