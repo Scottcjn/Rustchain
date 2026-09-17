@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Green Tracker | Machines Preserved from E-Waste | RustChain</title>
+  <meta name="description" content="Tracks every machine preserved from e-waste through RustChain Proof-of-Antiquity mining.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=VT323&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --green: #33ff33;
+      --green-dim: #1a8c1a;
+      --green-glow: rgba(51, 255, 51, 0.25);
+      --amber: #ffb000;
+      --bg: #060906;
+      --card-bg: #0c120c;
+      --border: #1a331a;
+      --text-muted: #668866;
+      --font-mono: 'IBM Plex Mono', monospace;
+      --font-display: 'VT323', monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--green);
+      font-family: var(--font-mono);
+      line-height: 1.6;
+      padding: 2rem 1.5rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    header {
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .brand {
+      font-family: var(--font-display);
+      font-size: 2.5rem;
+      color: var(--amber);
+      letter-spacing: 2px;
+      text-shadow: 0 0 10px rgba(255, 176, 0, 0.4);
+    }
+    .punchline {
+      background: rgba(26, 51, 26, 0.4);
+      border-left: 4px solid var(--green);
+      padding: 1rem 1.5rem;
+      margin-bottom: 2.5rem;
+      font-size: 1rem;
+      color: #c0ecc0;
+    }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 3rem;
+    }
+    .metric-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      padding: 1.5rem;
+      text-align: center;
+      box-shadow: 0 4px 20px var(--green-glow);
+    }
+    .metric-value {
+      font-size: 2.2rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.25rem;
+    }
+    .metric-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 3rem;
+      font-size: 0.9rem;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.85rem 1rem;
+      text-align: left;
+    }
+    th {
+      background: #0f1c0f;
+      color: var(--amber);
+      text-transform: uppercase;
+      font-size: 0.8rem;
+      letter-spacing: 1px;
+    }
+    tr:nth-child(even) { background: #080e08; }
+    tr:hover { background: #112211; }
+    .status-badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      background: rgba(51, 255, 51, 0.15);
+      border: 1px solid var(--green);
+      color: var(--green);
+    }
+    footer {
+      border-top: 1px solid var(--border);
+      padding-top: 2rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <div class="brand">RUSTCHAIN GREEN TRACKER</div>
+      <div style="color: var(--text-muted); font-size: 0.9rem;">
+        E-Waste Preservation & Hardware Carbon Offsets
+      </div>
+    </div>
+    <div style="font-size: 0.85rem; color: var(--amber);">
+      ● FLEET PROTOCOL: ACTIVE
+    </div>
+  </header>
+
+  <div class="punchline">
+    <strong>The Core Axiom:</strong> The greenest computation is the one that already exists. A machine that is already built has zero new manufacturing footprint. Our preserved fleet draws roughly the same power as one modern GPU mining rig while preventing over 1,300 kg of manufacturing CO₂ and hundreds of kilograms of toxic e-waste.
+  </div>
+
+  <section class="metrics">
+    <div class="metric-card">
+      <div class="metric-value" id="total-machines">7</div>
+      <div class="metric-label">Machines Preserved</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value" id="ewaste-saved">72.1 kg</div>
+      <div class="metric-label">E-Waste Prevented</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value" id="co2-saved">520.0 kg</div>
+      <div class="metric-label">Manufacturing CO₂ Saved</div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-value" id="total-rtc">36.4 RTC</div>
+      <div class="metric-label">Total RTC Mined</div>
+    </div>
+  </section>
+
+  <h2 style="margin-bottom: 1rem; color: #fff; font-size: 1.3rem;">Preserved Hardware Roster</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Machine ID</th>
+        <th>Hardware Model</th>
+        <th>Architecture</th>
+        <th>Year</th>
+        <th>Condition</th>
+        <th>Location</th>
+        <th>E-Waste Prevented</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody id="roster-body">
+      <tr>
+        <td><code>mac-g5-001</code></td>
+        <td>Power Mac G5</td>
+        <td>PowerPC G5</td>
+        <td>2004</td>
+        <td>Good</td>
+        <td>Berlin, DE</td>
+        <td>12.0 kg</td>
+        <td><span class="status-badge">Mining</span></td>
+      </tr>
+      <tr>
+        <td><code>mac-g4-002</code></td>
+        <td>Power Mac G4 MDD</td>
+        <td>PowerPC G4</td>
+        <td>2002</td>
+        <td>Fair</td>
+        <td>Austin, TX</td>
+        <td>8.0 kg</td>
+        <td><span class="status-badge">Mining</span></td>
+      </tr>
+      <tr>
+        <td><code>power8-003</code></td>
+        <td>IBM POWER8 Server</td>
+        <td>POWER8</td>
+        <td>2014</td>
+        <td>Excellent</td>
+        <td>London, UK</td>
+        <td>25.0 kg</td>
+        <td><span class="status-badge">Mining</span></td>
+      </tr>
+      <tr>
+        <td><code>rpi-004</code></td>
+        <td>Raspberry Pi 3B+</td>
+        <td>ARM (RPi)</td>
+        <td>2018</td>
+        <td>Excellent</td>
+        <td>Tokyo, JP</td>
+        <td>0.1 kg</td>
+        <td><span class="status-badge">Mining</span></td>
+      </tr>
+      <tr>
+        <td><code>sparc-005</code></td>
+        <td>Sun UltraSPARC III</td>
+        <td>SPARC</td>
+        <td>2001</td>
+        <td>Fair</td>
+        <td>Paris, FR</td>
+        <td>10.0 kg</td>
+        <td><span class="status-badge">Mining</span></td>
+      </tr>
+      <tr>
+        <td><code>alpha-006</code></td>
+        <td>DEC AlphaStation</td>
+        <td>Alpha</td>
+        <td>1999</td>
+        <td>Poor</td>
+        <td>Sydney, AU</td>
+        <td>12.0 kg</td>
+        <td><span class="status-badge">Mining</span></td>
+      </tr>
+      <tr>
+        <td><code>shadow-007</code></td>
+        <td>AMD Ryzen 5 7600X Workstation</td>
+        <td>x86_64</td>
+        <td>2022</td>
+        <td>Excellent</td>
+        <td>Bangalore, IN</td>
+        <td>5.0 kg</td>
+        <td><span class="status-badge">Active Node</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <footer>
+    <p>RustChain Proof of Antiquity Network. Hardware Preservation Initiative.</p>
+  </footer>
+</body>
+</html>

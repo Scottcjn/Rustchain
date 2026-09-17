@@ -18,6 +18,7 @@ def main():
         ("rpi-004",     "Raspberry Pi 3B+",   "RPi",    2018, "Excellent", "Tokyo, JP"),
         ("sparc-005",   "Sun UltraSPARC III", "SPARC",  2001, "Fair",      "Paris, FR"),
         ("alpha-006",   "DEC AlphaStation",   "Alpha",  1999, "Poor",      "Sydney, AU"),
+        ("shadow-007",  "AMD Ryzen 5 7600X Workstation", "x86_64", 2022, "Excellent", "Bangalore, IN"),
     ]
 
     print("=== RustChain Green Tracker Demo ===\n")
@@ -40,6 +41,8 @@ def main():
         ("rpi-004",     1001, 0.30,  5.0),
         ("sparc-005",   1001, 3.20, 350.0),
         ("alpha-006",   1001, 2.10, 300.0),
+        ("shadow-007",  1001, 4.50,  65.0),
+        ("shadow-007",  1002, 4.60,  65.0),
     ]
     for mid, epoch, rtc, watts in sessions:
         tracker.record_mining_session(mid, epoch, rtc, watts)
