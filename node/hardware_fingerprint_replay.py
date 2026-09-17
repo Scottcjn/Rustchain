@@ -102,6 +102,21 @@ def init_replay_defense_schema():
             )
         ''')
         
+        # Table 5: Snapshot history per miner for temporal consistency analysis (Issue #19)
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS miner_fingerprint_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                miner_id TEXT NOT NULL,
+                wallet_address TEXT NOT NULL,
+                snapshot_json TEXT NOT NULL,
+                clock_cv REAL,
+                cache_l2_l1 REAL,
+                thermal_ratio REAL,
+                jitter_fp_int REAL,
+                recorded_at INTEGER NOT NULL
+            )
+        ''')
+        
         # Create indexes for performance
         conn.execute('CREATE INDEX IF NOT EXISTS idx_fp_submissions_hash ON fingerprint_submissions(fingerprint_hash)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_fp_submissions_nonce ON fingerprint_submissions(nonce)')
@@ -109,6 +124,7 @@ def init_replay_defense_schema():
         conn.execute('CREATE INDEX IF NOT EXISTS idx_fp_submissions_wallet ON fingerprint_submissions(wallet_address)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_entropy_collisions_hash ON entropy_collisions(entropy_profile_hash)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_fp_history_miner ON fingerprint_history(miner_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_mfp_history_miner ON miner_fingerprint_history(miner_id)')
         
         conn.commit()
     
@@ -665,6 +681,227 @@ def get_replay_defense_report(
             'replay_window_seconds': REPLAY_WINDOW_SECONDS,
             'max_submissions_per_hour': MAX_FINGERPRINT_SUBMISSIONS_PER_HOUR
         }
+
+
+# =====================================================================
+# Temporal Validation & Entropy Drift Detection (Issue #19 / Bounty 40 RTC)
+# =====================================================================
+
+MAX_TEMPORAL_HISTORY = 10
+
+# Expected variance / drift bands for real physical silicon
+# If variance == 0 across >= 5 snapshots -> FROZEN (deterministic VM/emulator)
+# If coefficient of variation of ratios exceeds NOISE_CV_THRESHOLD -> NOISY (randomized spoofing)
+FROZEN_VARIANCE_TOLERANCE = 1e-9
+NOISE_CV_THRESHOLD = 0.65
+
+
+def extract_snapshot_metrics(fingerprint: Dict) -> Dict[str, float]:
+    """Extract dimensionless, load-normalized metrics for temporal tracking."""
+    metrics = {
+        'clock_cv': 0.0,
+        'cache_l2_l1': 0.0,
+        'thermal_ratio': 0.0,
+        'jitter_fp_int': 0.0,
+    }
+    if not isinstance(fingerprint, dict):
+        return metrics
+
+    checks = fingerprint.get('checks', {})
+    if not isinstance(checks, dict):
+        return metrics
+
+    # Clock drift CV
+    clock_data = checks.get('clock_drift', {}).get('data', {})
+    if isinstance(clock_data, dict):
+        metrics['clock_cv'] = float(clock_data.get('cv', 0.0) or 0.0)
+
+    # Cache ratio
+    cache_data = checks.get('cache_timing', {}).get('data', {})
+    if isinstance(cache_data, dict):
+        metrics['cache_l2_l1'] = float(cache_data.get('l2_l1_ratio', 0.0) or 0.0)
+
+    # Thermal ratio
+    thermal_data = checks.get('thermal_drift', {}).get('data', {})
+    if isinstance(thermal_data, dict):
+        metrics['thermal_ratio'] = float(thermal_data.get('drift_ratio', 0.0) or 0.0)
+
+    # Jitter ratio
+    jitter_data = checks.get('instruction_jitter', {}).get('data', {})
+    if isinstance(jitter_data, dict):
+        int_avg = jitter_data.get('int_avg_ns', 0) or 0
+        if int_avg:
+            metrics['jitter_fp_int'] = float(round(jitter_data.get('fp_avg_ns', 0) / int_avg, 4))
+
+    return metrics
+
+
+def store_fingerprint_snapshot(
+    miner_id: str,
+    wallet_address: str,
+    fingerprint: Dict,
+    recorded_at: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    Store a fingerprint snapshot in miner_fingerprint_history, pruning to last 10 records.
+    """
+    now = recorded_at if recorded_at is not None else int(time.time())
+    metrics = extract_snapshot_metrics(fingerprint)
+    snapshot_json = json.dumps(metrics, sort_keys=True)
+
+    with sqlite3.connect(get_db_path()) as conn:
+        c = conn.cursor()
+        c.execute('''
+            INSERT INTO miner_fingerprint_history
+            (miner_id, wallet_address, snapshot_json, clock_cv, cache_l2_l1, thermal_ratio, jitter_fp_int, recorded_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            miner_id,
+            wallet_address,
+            snapshot_json,
+            metrics['clock_cv'],
+            metrics['cache_l2_l1'],
+            metrics['thermal_ratio'],
+            metrics['jitter_fp_int'],
+            now
+        ))
+
+        # Prune to keep only the last MAX_TEMPORAL_HISTORY snapshots per miner
+        c.execute('''
+            DELETE FROM miner_fingerprint_history
+            WHERE miner_id = ? AND id NOT IN (
+                SELECT id FROM miner_fingerprint_history
+                WHERE miner_id = ?
+                ORDER BY recorded_at DESC, id DESC
+                LIMIT ?
+            )
+        ''', (miner_id, miner_id, MAX_TEMPORAL_HISTORY))
+        conn.commit()
+
+    return {
+        'miner_id': miner_id,
+        'metrics': metrics,
+        'recorded_at': now
+    }
+
+
+def _calc_stats(values: List[float]) -> Tuple[float, float, float]:
+    """Returns (mean, variance, cv) for a float series."""
+    n = len(values)
+    if n == 0:
+        return 0.0, 0.0, 0.0
+    mean = sum(values) / n
+    if n < 2:
+        return mean, 0.0, 0.0
+    var = sum((x - mean) ** 2 for x in values) / (n - 1)
+    std = var ** 0.5
+    cv = (std / mean) if mean > 1e-12 else 0.0
+    return mean, var, cv
+
+
+def validate_temporal_consistency(
+    miner_id: str,
+    min_snapshots: int = 5
+) -> Dict[str, Any]:
+    """
+    Evaluate the temporal consistency of a miner's entropy history.
+    
+    Returns:
+        Dict with:
+          - 'status': 'PASS' | 'FROZEN' | 'NOISY' | 'INSUFFICIENT_HISTORY'
+          - 'anomaly_detected': bool
+          - 'flagged_for_review': bool
+          - 'score': float (0.0 to 1.0, where 1.0 is healthy natural physical drift)
+          - 'details': detailed variance/CV stats per tracked metric
+    """
+    with sqlite3.connect(get_db_path()) as conn:
+        c = conn.cursor()
+        c.execute('''
+            SELECT clock_cv, cache_l2_l1, thermal_ratio, jitter_fp_int, recorded_at
+            FROM miner_fingerprint_history
+            WHERE miner_id = ?
+            ORDER BY recorded_at ASC, id ASC
+            LIMIT ?
+        ''', (miner_id, MAX_TEMPORAL_HISTORY))
+        rows = c.fetchall()
+
+    if len(rows) < min_snapshots:
+        return {
+            'status': 'INSUFFICIENT_HISTORY',
+            'snapshots_count': len(rows),
+            'min_required': min_snapshots,
+            'anomaly_detected': False,
+            'flagged_for_review': False,
+            'score': 1.0,
+            'details': {}
+        }
+
+    clocks = [r[0] for r in rows if r[0] is not None]
+    caches = [r[1] for r in rows if r[1] is not None]
+    thermals = [r[2] for r in rows if r[2] is not None]
+    jitters = [r[3] for r in rows if r[3] is not None]
+
+    clock_mean, clock_var, clock_cv = _calc_stats(clocks)
+    cache_mean, cache_var, cache_cv = _calc_stats(caches)
+    thermal_mean, thermal_var, thermal_cv = _calc_stats(thermals)
+    jitter_mean, jitter_var, jitter_cv = _calc_stats(jitters)
+
+    details = {
+        'snapshots': len(rows),
+        'clock_cv_stats': {'mean': round(clock_mean, 6), 'variance': round(clock_var, 8), 'cv': round(clock_cv, 4)},
+        'cache_l2_l1_stats': {'mean': round(cache_mean, 4), 'variance': round(cache_var, 8), 'cv': round(cache_cv, 4)},
+        'thermal_ratio_stats': {'mean': round(thermal_mean, 4), 'variance': round(thermal_var, 8), 'cv': round(thermal_cv, 4)},
+        'jitter_ratio_stats': {'mean': round(jitter_mean, 4), 'variance': round(jitter_var, 8), 'cv': round(jitter_cv, 4)},
+    }
+
+    # 1. Detection of "frozen" profiles (zero variance across all entropy channels)
+    if (clock_var < FROZEN_VARIANCE_TOLERANCE and
+        cache_var < FROZEN_VARIANCE_TOLERANCE and
+        thermal_var < FROZEN_VARIANCE_TOLERANCE and
+        jitter_var < FROZEN_VARIANCE_TOLERANCE):
+        return {
+            'status': 'FROZEN',
+            'snapshots_count': len(rows),
+            'anomaly_detected': True,
+            'flagged_for_review': True,
+            'score': 0.0,
+            'reason': 'zero_variance_deterministic_emulation',
+            'details': details
+        }
+
+    # 2. Detection of "noisy" profiles (excessive variation / randomizer spoofing)
+    high_noise_metrics = []
+    if clock_cv > NOISE_CV_THRESHOLD:
+        high_noise_metrics.append('clock_cv')
+    if cache_cv > NOISE_CV_THRESHOLD:
+        high_noise_metrics.append('cache_l2_l1')
+    if thermal_cv > NOISE_CV_THRESHOLD:
+        high_noise_metrics.append('thermal_ratio')
+    if jitter_cv > NOISE_CV_THRESHOLD:
+        high_noise_metrics.append('jitter_fp_int')
+
+    if len(high_noise_metrics) >= 2:
+        return {
+            'status': 'NOISY',
+            'snapshots_count': len(rows),
+            'anomaly_detected': True,
+            'flagged_for_review': True,
+            'score': 0.2,
+            'reason': f'excessive_entropy_variance_spoofing: {high_noise_metrics}',
+            'details': details
+        }
+
+    # Healthy real physical silicon: expected gentle drift
+    drift_score = round(max(0.8, 1.0 - (clock_cv + cache_cv + thermal_cv) * 0.1), 3)
+    return {
+        'status': 'PASS',
+        'snapshots_count': len(rows),
+        'anomaly_detected': False,
+        'flagged_for_review': False,
+        'score': drift_score,
+        'reason': 'natural_physical_silicon_drift',
+        'details': details
+    }
 
 
 # Initialize on import
