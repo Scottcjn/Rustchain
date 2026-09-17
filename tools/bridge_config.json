@@ -1,0 +1,25 @@
+{
+  "bridge_name": "RustChain-BoTTube-Bridge",
+  "version": "1.0.0",
+  "reward_rates": {
+    "verified_upload_rtc": 1.5,
+    "view_milestone_100_rtc": 0.5,
+    "view_milestone_1000_rtc": 5.0,
+    "creator_sub_milestone_rtc": 10.0
+  },
+  "tipping_rules": {
+    "min_tip_rtc": 0.001,
+    "platform_fee_percent": 0.0
+  },
+  "anti_abuse": {
+    "min_video_duration_seconds": 8.0,
+    "require_cryptographic_provenance": true,
+    "max_creator_hourly_payout_rtc": 5.0,
+    "max_creator_daily_payout_rtc": 25.0,
+    "ip_entropy_filter": true
+  },
+  "rpc_endpoints": {
+    "bottube_api": "https://bottube.ai/api",
+    "rustchain_node": "https://rustchain.org"
+  }
+}
