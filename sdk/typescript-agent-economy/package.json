@@ -1,0 +1,25 @@
+{
+  "name": "@rustchain/agent-economy-sdk",
+  "version": "1.0.0",
+  "description": "TypeScript SDK for RustChain RIP-302 Agent Economy (Trustless Agent-to-Agent Jobs & Escrow)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node dist/tests/test_agent_economy.js"
+  },
+  "keywords": [
+    "rustchain",
+    "agent-economy",
+    "rip-302",
+    "ai-agents",
+    "depin",
+    "escrow"
+  ],
+  "author": "Cid-oe",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/node": "^20.11.0"
+  }
+}
