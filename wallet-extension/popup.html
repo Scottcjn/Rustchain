@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>RustChain Wallet</title>
+  <style>
+    body {
+      width: 360px;
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0d1117;
+      color: #c9d1d9;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #30363d;
+      padding-bottom: 8px;
+      margin-bottom: 16px;
+    }
+    .header h1 {
+      font-size: 16px;
+      margin: 0;
+      color: #58a6ff;
+    }
+    .balance-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .balance-val {
+      font-size: 24px;
+      font-weight: bold;
+      color: #f0f6fc;
+    }
+    .wallet-address {
+      font-family: monospace;
+      font-size: 11px;
+      color: #8b949e;
+      word-break: break-all;
+      margin-top: 8px;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    button {
+      flex: 1;
+      padding: 10px;
+      background: #238636;
+      color: #ffffff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    button.secondary {
+      background: #21262d;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+    }
+    .form-group {
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      font-size: 12px;
+      color: #8b949e;
+      margin-bottom: 4px;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #f0f6fc;
+      font-size: 13px;
+    }
+    .status-msg {
+      font-size: 12px;
+      text-align: center;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🦀 RustChain Wallet</h1>
+    <span id="network-badge" style="font-size: 10px; background: #1f6feb; padding: 2px 6px; border-radius: 12px; color: white;">Mainnet</span>
+  </div>
+
+  <div class="balance-card">
+    <div style="font-size: 12px; color: #8b949e;">Total Balance</div>
+    <div class="balance-val" id="balance-display">0.00 RTC</div>
+    <div class="wallet-address" id="wallet-display">RTC8b1fb717791b0a7b72649342b5c7c7bd822786af</div>
+  </div>
+
+  <div class="actions">
+    <button id="send-tab-btn">Send RTC</button>
+    <button id="refresh-btn" class="secondary">Refresh</button>
+  </div>
+
+  <div id="send-view" style="display: none;">
+    <div class="form-group">
+      <label>Recipient Address</label>
+      <input type="text" id="recipient-input" placeholder="RTC...">
+    </div>
+    <div class="form-group">
+      <label>Amount (RTC)</label>
+      <input type="number" id="amount-input" step="0.000001" placeholder="0.0">
+    </div>
+    <div class="form-group">
+      <label>Memo (optional)</label>
+      <input type="text" id="memo-input" placeholder="Transfer notes">
+    </div>
+    <button id="submit-transfer-btn">Confirm Transfer</button>
+    <div class="status-msg" id="status-display"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

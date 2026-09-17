@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "RustChain Wallet (RTC)",
+  "version": "1.0.0",
+  "description": "Secure, non-custodial browser wallet for RustChain Proof-of-Antiquity network (Ed25519 + AES-256-GCM)",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "RustChain Wallet"
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://50.28.86.131/*",
+    "https://rustchain.org/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src https://50.28.86.131 https://rustchain.org;"
+  }
+}
