@@ -636,6 +636,7 @@ def utxo_transfer():
             amount_i64_for_dual_write = _decimal_to_account_i64(
                 amount_rtc, 'amount_rtc'
             )
+            _decimal_to_account_i64(fee_rtc, 'fee_rtc')
     except ValueError as e:
         return jsonify({'error': f'Invalid amount: {e}'}), 400
 

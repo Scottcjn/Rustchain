@@ -1065,6 +1065,29 @@ class TestUtxoDualWrite(unittest.TestCase):
             100 * utxo_endpoints.ACCOUNT_UNIT,
         )
 
+    def test_dual_write_rejects_sub_micro_fee(self):
+        """dual_write cannot safely mirror nanoRTC fee values below 1 microRTC."""
+        sender = 'RTC_test_aabbccdd'
+        self._seed_sender(sender, rtc_amount=100)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': ('RTC' + 'b' * 40),
+            'amount_rtc': 10.0,
+            'fee_rtc': '0.00000001',
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('dual-write', r.get_json()['error'])
+        self.assertEqual(self.utxo_db.get_balance(('RTC' + 'b' * 40)), 0)
+        self.assertEqual(
+            self._account_balance(sender),
+            100 * utxo_endpoints.ACCOUNT_UNIT,
+        )
+
     def test_dual_write_shadow_insufficient_rolls_back_utxo_state(self):
         """A shadow-balance failure must not leave a committed UTXO transfer.
 
