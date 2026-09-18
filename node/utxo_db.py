@@ -1341,6 +1341,8 @@ class UtxoDB:
             now = int(time.time())
             timestamp = tx.get('timestamp', now)
             if not _is_nonnegative_int64(timestamp):
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
 
             # Public mempool admission must never accept minting transactions.
@@ -1368,6 +1370,10 @@ class UtxoDB:
                     conn.execute("ROLLBACK")
                 return False
             input_box_ids = [i['box_id'] for i in inputs]
+            if len(input_box_ids) != len(set(input_box_ids)):
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
             if set(input_box_ids) & set(data_inputs):
                 if manage_tx:
                     conn.execute("ROLLBACK")
