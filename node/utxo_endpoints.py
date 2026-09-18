@@ -44,7 +44,11 @@ _BOXES_MAX_LIMIT = 500
 _INT64_MAX = (1 << 63) - 1
 _NONCE_MAX_DIGITS = len(str(_INT64_MAX))
 
-_CANONICAL_RTC_ADDRESS_RE = re.compile(r"RTC[0-9a-fA-F]{40}")
+# Canonical = exactly what address derivation produces: "RTC" + the first 40
+# chars of sha256(pubkey).hexdigest(), which is always lower-case. Accepting
+# upper/mixed-case hex let a transfer create a box owned by a string that no
+# key derives to, so the recipient could never spend it (#2819, Ondrej Nad).
+_CANONICAL_RTC_ADDRESS_RE = re.compile(r"RTC[0-9a-f]{40}")
 
 
 
@@ -650,7 +654,7 @@ def utxo_transfer():
     if not _CANONICAL_RTC_ADDRESS_RE.fullmatch(to_address):
         return jsonify({
             'error': 'invalid_to_address_format',
-            'message': 'to_address must be a canonical RustChain address: RTC followed by 40 hex characters',
+            'message': 'to_address must be a canonical RustChain address: RTC followed by 40 lower-case hex characters',
         }), 400
 
     if amount_rtc <= 0:
