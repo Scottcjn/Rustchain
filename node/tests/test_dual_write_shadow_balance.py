@@ -389,6 +389,19 @@ class TestTransferRecipientFormat(unittest.TestCase):
             self.assertEqual(resp.get_json()['error'], 'invalid_to_address_format', bad)
         self.assertEqual(self.utxo_db.get_balance('not-a-wallet') if hasattr(self.utxo_db, 'get_balance') else 0, 0)
 
+    def test_rejects_non_canonical_case_recipient(self):
+        """#2819 (Ondrej Nad): derivation yields lower-case hex, and ownership is
+        matched case-sensitively, so an upper/mixed-case recipient would create a
+        box no key can ever spend. It must be rejected before any state change."""
+        canonical = 'RTC' + 'abcdef0123' * 4
+        for bad in ('RTC' + 'Abcdef0123' * 4, 'RTC' + 'ABCDEF0123' * 4,
+                    canonical[:-1] + 'F'):
+            resp = self._post(bad)
+            self.assertEqual(resp.status_code, 400, bad)
+            self.assertEqual(resp.get_json()['error'], 'invalid_to_address_format', bad)
+        resp = self._post(canonical)
+        self.assertNotEqual((resp.get_json() or {}).get('error'), 'invalid_to_address_format')
+
     def test_canonical_recipient_passes_format_check(self):
         resp = self._post('RTC' + 'c' * 40)
         # Anything but the format error: the request proceeds to the normal path.

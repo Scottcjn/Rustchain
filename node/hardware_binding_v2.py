@@ -171,13 +171,17 @@ def compare_entropy_profiles(stored: Dict, current: Dict) -> Tuple[bool, float, 
     else:
         return True, similarity, 'entropy_ok'
 
-def check_entropy_collision(entropy_profile: Dict, exclude_serial: str = None) -> Optional[str]:
+def check_entropy_collision(entropy_profile: Dict, exclude_serial: str = None,
+                            conn: Optional[sqlite3.Connection] = None) -> Optional[str]:
     """
     Check if this entropy profile matches any OTHER serial.
     This detects serial spoofing (same hardware, different serial).
     
     Requires at least MIN_COMPARABLE_FIELDS non-zero comparable fields for collision checks.
     Sparse profiles are considered low-quality and are ignored for collision matching.
+
+    Pass ``conn`` to run the scan inside the caller's write transaction.
+    bind_hardware_v2 does this so the scan and the INSERT are atomic.
     """
     # Count non-zero fields in current profile
     nonzero_fields = _count_nonzero_fields(entropy_profile)
@@ -186,32 +190,35 @@ def check_entropy_collision(entropy_profile: Dict, exclude_serial: str = None) -
         # Not enough entropy data to detect collisions reliably
         return None
     
-    with sqlite3.connect(DB_PATH) as conn:
-        c = conn.cursor()
-        c.execute('SELECT serial_hash, entropy_profile FROM hardware_bindings_v2')
+    if conn is None:
+        with sqlite3.connect(DB_PATH) as own_conn:
+            return check_entropy_collision(entropy_profile, exclude_serial, conn=own_conn)
+
+    c = conn.cursor()
+    c.execute('SELECT serial_hash, entropy_profile FROM hardware_bindings_v2')
+    
+    for row in c.fetchall():
+        serial_hash, stored_json = row
+        if serial_hash == exclude_serial:
+            continue
         
-        for row in c.fetchall():
-            serial_hash, stored_json = row
-            if serial_hash == exclude_serial:
+        if stored_json:
+            stored = json.loads(stored_json)
+            # Also require stored profile to have enough data
+            stored_nonzero = _count_nonzero_fields(stored)
+            if stored_nonzero < MIN_COMPARABLE_FIELDS:
                 continue
             
-            if stored_json:
-                stored = json.loads(stored_json)
-                # Also require stored profile to have enough data
-                stored_nonzero = _count_nonzero_fields(stored)
-                if stored_nonzero < MIN_COMPARABLE_FIELDS:
-                    continue
-                
-                comparable_nonzero = _count_comparable_nonzero_fields(stored, entropy_profile)
-                if comparable_nonzero < MIN_COMPARABLE_FIELDS:
-                    # Sparse overlap is too weak for collision decisions.
-                    continue
+            comparable_nonzero = _count_comparable_nonzero_fields(stored, entropy_profile)
+            if comparable_nonzero < MIN_COMPARABLE_FIELDS:
+                # Sparse overlap is too weak for collision decisions.
+                continue
 
-                is_similar, score, _ = compare_entropy_profiles(stored, entropy_profile)
-                
-                # Require stronger confidence on sufficiently rich, comparable profiles.
-                if is_similar and score > 0.97:
-                    return serial_hash  # Collision detected!
+            is_similar, score, _ = compare_entropy_profiles(stored, entropy_profile)
+            
+            # Require stronger confidence on sufficiently rich, comparable profiles.
+            if is_similar and score > 0.97:
+                return serial_hash  # Collision detected!
     
     return None
 
@@ -233,7 +240,14 @@ def bind_hardware_v2(
     macs_str = ','.join(sorted(macs)) if macs else ''
     now = int(time.time())
     
-    with sqlite3.connect(DB_PATH) as conn:
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        # SECURITY (#71, Ondrej Nad): take the write lock BEFORE reading, and run
+        # the collision scan on this same connection. Previously the scan used a
+        # separate connection outside any transaction, so two concurrent
+        # first-time registrations of the same physical machine under different
+        # serials could both see "no collision" and both INSERT (distinct
+        # serial_hash keys), bypassing the cross-serial spoof guard.
+        conn.execute('BEGIN IMMEDIATE')
         c = conn.cursor()
         
         # Check existing binding
@@ -253,7 +267,7 @@ def bind_hardware_v2(
                 }
 
             # NEW HARDWARE - Check for entropy collision first
-            collision = check_entropy_collision(entropy_profile)
+            collision = check_entropy_collision(entropy_profile, conn=conn)
             if collision:
                 return False, 'entropy_collision', {
                     'error': 'This hardware entropy matches an existing registration',
