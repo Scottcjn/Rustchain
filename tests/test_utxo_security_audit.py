@@ -27,7 +27,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'node'))
 
 # rollback_genesis() is a destructive state mutation and now requires an
 # admin key (bounty #2819). Configure a test key for this suite.
-os.environ["RC_ADMIN_KEY"] = "test-rollback-admin-key-2819"
+# Use the suite-wide key from tests/conftest.py instead of overwriting it.
+# Overwriting at import time (as #8393 did, with a 28-char value) leaked into
+# every later module: the node sys.exit(1)s on a key < 32 chars, which killed
+# collection of the whole CI "test" job, and tests sending conftest's key got
+# 401s. setdefault only fills it in when this file is run on its own.
+_ROLLBACK_ADMIN_KEY = os.environ.setdefault("RC_ADMIN_KEY", "0" * 32)
 
 from utxo_db import (
     UtxoDB, coin_select, compute_box_id, address_to_proposition,
@@ -604,7 +609,7 @@ class TestGenesisMigrationSafety(unittest.TestCase):
             self.assertEqual(db.get_balance('bob'), 50 * UNIT)
 
             # Rollback
-            deleted = rollback_genesis(tmp.name, admin_key="test-rollback-admin-key-2819")
+            deleted = rollback_genesis(tmp.name, admin_key=_ROLLBACK_ADMIN_KEY)
             self.assertEqual(deleted, 2)
             self.assertEqual(db.get_balance('alice'), 0)
             self.assertEqual(db.get_balance('bob'), 0)
@@ -721,7 +726,7 @@ class TestRollbackAuthorization(unittest.TestCase):
         """The happy path still works once authorized."""
         from utxo_genesis_migration import rollback_genesis
         deleted = rollback_genesis(
-            self.tmp.name, admin_key="test-rollback-admin-key-2819"
+            self.tmp.name, admin_key=_ROLLBACK_ADMIN_KEY
         )
         self.assertEqual(deleted, 1)
         self.assertIsNone(self.db.get_box(self.box_id))
