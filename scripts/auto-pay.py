@@ -182,8 +182,12 @@ def acquire_payment_lock(repo: str, pr_number: str, payment_key: str) -> bool:
     if resp.status_code == 422:
         message = github_error_message(resp).lower()
         if "already exists" in message or "reference already exists" in message:
-            print(f"Payment already in progress (lock ref exists: {ref}). Skipping.")
-            return False
+            print(
+                f"::error::Auto-pay lock ref already exists: {ref}. "
+                "Refusing a silent-success skip; this may be a concurrent run "
+                "or an orphaned lock that requires recovery."
+            )
+            raise RuntimeError(f"auto-pay lock ref already exists: {ref}")
         print(f"::error::GitHub rejected auto-pay lock ref creation: {github_error_message(resp)}")
         resp.raise_for_status()
     resp.raise_for_status()
