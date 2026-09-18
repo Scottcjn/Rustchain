@@ -65,6 +65,14 @@ try:
 except Exception as _tok_err:
     print(f"[tokenomics] route registration failed: {_tok_err}")
 
+# /catalog — RTC service catalog (non-custodial listings + order receipts).
+# Registered here so it runs under gunicorn. Fail-safe like tokenomics.
+try:
+    from service_catalog import register_service_catalog
+    register_service_catalog(app, DB_PATH)
+except Exception as _cat_err:
+    print(f"[catalog] route registration failed: {_cat_err}")
+
 # Expose the app for gunicorn
 application = app
 
