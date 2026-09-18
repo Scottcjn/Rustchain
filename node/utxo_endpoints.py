@@ -232,6 +232,37 @@ def _spendable_utxo_candidates(conn: sqlite3.Connection, candidates: list) -> tu
     return [box for box in candidates if box.get('box_id') not in mirrored], sorted(mirrored)
 
 
+_MIRROR_BOX_IDS_IN_RESPONSE = 50
+
+
+def _unspent_account_mirror_boxes(conn: sqlite3.Connection, owner: str) -> tuple:
+    """(box_ids, total_nrtc) of the owner's unspent account-mirror boxes.
+
+    Wallet-wide (not the bounded coin-select candidate list), so it can tell
+    "short because funds are mirror-locked" apart from "short, period".
+    """
+    if not conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_mirror_boxes'"
+    ).fetchone():
+        return [], 0
+    join = """FROM utxo_boxes AS b
+              JOIN account_mirror_boxes AS m ON m.box_id = b.box_id
+              WHERE b.owner_address = ? AND b.spent_at IS NULL"""
+    # Total is aggregated in SQL so it is wallet-wide however many boxes exist;
+    # only the ids echoed back in the 409 body are capped.
+    total = conn.execute(
+        f"SELECT COALESCE(SUM(b.value_nrtc), 0) {join}", (owner,)
+    ).fetchone()[0]
+    box_ids = [
+        row[0]
+        for row in conn.execute(
+            f"SELECT b.box_id {join} ORDER BY b.box_id LIMIT ?",
+            (owner, _MIRROR_BOX_IDS_IN_RESPONSE),
+        )
+    ]
+    return box_ids, total
+
+
 def _account_mirror_blocked_response(box_ids: list):
     return jsonify({
         'error': 'Box mirrors an account balance; move it via the account '
@@ -765,10 +796,24 @@ def utxo_transfer():
         if mirror_candidate_ids and all_candidate_total_nrtc >= target_nrtc:
             return _account_mirror_blocked_response(mirror_candidate_ids)
         utxo_balance = _utxo_db.get_balance(from_address)
+        # Mirror boxes are filtered out before candidate bounding (#8395), so
+        # the branch above no longer sees them. Decide from wallet totals: if
+        # the spendable (non-mirror) funds fall short but the mirror-locked
+        # ones would cover it, say so (409) instead of a misleading
+        # "Insufficient UTXO balance" that reports a balance >= the request.
+        conn = sqlite3.connect(_db_path)
+        try:
+            mirror_ids, mirror_total_nrtc = _unspent_account_mirror_boxes(conn, from_address)
+        finally:
+            conn.close()
+        spendable_nrtc = utxo_balance - mirror_total_nrtc
+        if mirror_ids and spendable_nrtc < target_nrtc <= utxo_balance:
+            return _account_mirror_blocked_response(mirror_ids)
         return jsonify({
             'error': 'Insufficient UTXO balance',
             'balance_nrtc': utxo_balance,
             'balance_rtc': utxo_balance / UNIT,
+            'spendable_nrtc': spendable_nrtc,
             'requested_nrtc': target_nrtc,
             'requested_rtc': target_nrtc / UNIT,
         }), 400
