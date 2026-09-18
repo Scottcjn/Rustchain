@@ -239,3 +239,15 @@ def test_non_mirror_box_spends_when_same_wallet_also_has_small_mirror(rig):
     assert data["to_address"] == "RTC" + "d" * 40
     assert utxo_db.get_balance("RTC" + "d" * 40) == 10 * UNIT
     assert _unspent_mirror_value(db_path, ALICE) == 1 * UNIT
+
+
+def test_request_beyond_whole_wallet_is_plain_insufficient_not_mirror_409(rig):
+    """The 409 is only for 'short because funds are mirror-locked'. Asking for
+    more than the whole wallet (mirror boxes included) is ordinary
+    insufficiency, and must not be mislabeled as a mirror block."""
+    client, _, _ = rig
+    resp = _transfer(client, amount_rtc=MIRROR_NRTC / UNIT + 1000.0)
+    assert resp.status_code == 400, resp.get_json()
+    body = resp.get_json()
+    assert body["error"] == "Insufficient UTXO balance"
+    assert body["spendable_nrtc"] == 0
