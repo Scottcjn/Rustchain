@@ -87,3 +87,34 @@ def test_miner_main_cli_offline_flag(monkeypatch):
     code = main(["--dry-run", "--offline", "--wallet", "RTCclitestwallet"])
     assert code == 0
     assert len(outbound_attempts) == 0
+
+def test_offline_flags_rejected_in_real_mining():
+    """Verify LocalMiner and CLI strictly reject --offline or --skip-network-probes when not in --dry-run mode."""
+    with pytest.raises(ValueError, match="Security violation.*permitted ONLY with --dry-run"):
+        LocalMiner(wallet="RTCtestwallet123", persist_key=True, offline=True)
+
+    with pytest.raises(ValueError, match="Security violation.*permitted ONLY with --dry-run"):
+        LocalMiner(wallet="RTCtestwallet123", persist_key=True, skip_network_probes=True)
+
+    # CLI level rejection
+    with pytest.raises(SystemExit):
+        main(["--offline", "--wallet", "RTCclitestwallet"])
+
+    with pytest.raises(SystemExit):
+        main(["--skip-network-probes", "--wallet", "RTCclitestwallet"])
+
+def test_real_mining_mode_runs_metadata_probes(monkeypatch):
+    """Verify that in normal mining mode, check_anti_emulation always queries the link-local metadata endpoint."""
+    probed_urls = []
+
+    def mock_urlopen(req, *args, **kwargs):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        probed_urls.append(url)
+        raise urllib.error.URLError("Connection refused")
+
+    monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen)
+
+    # Real mining calls validate_all_checks without skip_network_probes
+    validate_all_checks(include_rom_check=False, skip_network_probes=False)
+    assert any("169.254.169.254" in u for u in probed_urls), "Expected cloud metadata endpoint probe in real mining"
+

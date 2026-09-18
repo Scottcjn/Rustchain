@@ -251,6 +251,11 @@ class LocalMiner:
     def __init__(self, wallet=None, wart_address=None, wart_pool=None,
                  bzminer_path=None, manage_bzminer=False, verbose=False, show_payload=False,
                  persist_key=True, offline=False, skip_network_probes=False):
+        if (offline or skip_network_probes) and persist_key:
+            raise ValueError(
+                "Security violation: --offline and --skip-network-probes are permitted ONLY with --dry-run. "
+                "Real mining mode requires live anti-emulation network probes to prevent cloud VM evasion."
+            )
         self.offline = offline
         self.skip_network_probes = skip_network_probes or offline
         self.node_url = NODE_URL
@@ -978,6 +983,8 @@ def main(argv=None):
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output showing API endpoints, headers, and response details")
     parser.add_argument("--show-payload", action="store_true", help="Show request payload in dry-run mode")
     args = parser.parse_args(argv)
+    if (args.offline or args.skip_network_probes) and not args.dry_run:
+        parser.error("--offline and --skip-network-probes can only be used together with --dry-run")
 
     miner = LocalMiner(
         wallet=args.wallet,
