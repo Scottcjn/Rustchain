@@ -205,3 +205,52 @@ class ListQueryWorksOnBothSchemasTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class ProductionReadPathTest(unittest.TestCase):
+    """On the production schema rc_slot is frozen (tied on every row) and the tx
+    column is tx_id. /anchor/status must show the NEWEST anchor, and proof/interval
+    lookups must not KeyError on the legacy column names."""
+
+    class _FakeErgo:
+        def __init__(self):
+            self.asked = []
+
+        def get_transaction(self, tx_id):
+            self.asked.append(tx_id)
+            return {"id": tx_id}
+
+    def _service(self, db):
+        return MOD.AnchorService(db_path=db.tmp.name, ergo_client=self._FakeErgo())
+
+    def _rows(self):
+        return [{"commitment": f"c{i}", "miner_count": 10, "rc_slot": 2941199,
+                 "tx_id": f"tx{i}", "status": "confirmed", "created_at": 1_700_000_000 + i}
+                for i in range(1, 6)]
+
+    def test_last_anchor_is_newest_when_heights_tie(self):
+        db = _DB(PRODUCTION_SCHEMA, self._rows())
+        try:
+            last = self._service(db).get_last_anchor()
+            self.assertEqual(last["tx_id"], "tx5")
+        finally:
+            db.close()
+
+    def test_anchor_proof_uses_legacy_tx_id_column(self):
+        db = _DB(PRODUCTION_SCHEMA, self._rows())
+        try:
+            svc = self._service(db)
+            proof = svc.get_anchor_proof(2941199)
+            self.assertEqual(proof["tx_id"], "tx5")
+            self.assertEqual(svc.ergo.asked, ["tx5"])
+            self.assertEqual(proof["ergo_transaction"], {"id": "tx5"})
+        finally:
+            db.close()
+
+    def test_should_anchor_reads_legacy_height_column(self):
+        db = _DB(PRODUCTION_SCHEMA, self._rows())
+        try:
+            svc = self._service(db)
+            self.assertIsInstance(svc.should_anchor(2941199 + 10_000), bool)
+        finally:
+            db.close()
