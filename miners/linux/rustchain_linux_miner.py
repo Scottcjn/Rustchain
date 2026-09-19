@@ -250,7 +250,8 @@ def get_hardware_serial(system=None):
 class LocalMiner:
     def __init__(self, wallet=None, wart_address=None, wart_pool=None,
                  bzminer_path=None, manage_bzminer=False, verbose=False, show_payload=False,
-                 persist_key=True):
+                 persist_key=True, dry_run=False):
+        self.is_dry_run = dry_run
         self.node_url = NODE_URL
         self.hw_info = {}
         self.enrolled = False
@@ -307,7 +308,7 @@ class LocalMiner:
         print("="*70)
 
         # Run initial fingerprint check
-        if FINGERPRINT_AVAILABLE:
+        if FINGERPRINT_AVAILABLE and not self.is_dry_run:
             self._run_fingerprint_checks()
 
     def _get(self, path, action, **kwargs):
@@ -866,36 +867,18 @@ class LocalMiner:
         print(f"[DRY-RUN] Serial present: {'yes' if self.hw_info.get('serial') else 'no'}")
 
         if FINGERPRINT_AVAILABLE:
-            if not self.fingerprint_data:
-                self._run_fingerprint_checks()
             print(f"[DRY-RUN] Fingerprint checks available: yes")
-            print(f"[DRY-RUN] Fingerprint pass status: {self.fingerprint_passed}")
+            print(f"[DRY-RUN] Fingerprint pass status: skipped (network activity suppressed)")
         else:
             print("[DRY-RUN] Fingerprint checks available: no")
 
         # Optional health probe (read-only)
-        try:
-            url = f"{self.node_url}/health"
-            if self.verbose:
-                print(f"[DRY-RUN] GET {url}")
-                print(f"[DRY-RUN] Headers: {{'User-Agent': 'RustChain-Miner/2.2.1'}}")
-            r = self._get("/health", "running dry-run health probe", timeout=8, verify=TLS_VERIFY)
-            if r is None:
-                return True
-            print(f"[DRY-RUN] Health probe: HTTP {r.status_code}")
-            if self.verbose:
-                print(f"[DRY-RUN] Response headers: {dict(r.headers)}")
-            if r.ok:
-                data = r.json()
-                print(f"[DRY-RUN] Node version: {data.get('version', 'n/a')}")
-                if self.show_payload:
-                    import json
-                    print(f"[DRY-RUN] Response body: {json.dumps(data, indent=2)}")
-        except Exception as e:
-            print(f"[DRY-RUN] Health probe failed: {e}")
-            if self.verbose:
-                import traceback
-                traceback.print_exc()
+        if self.verbose:
+            print("[DRY-RUN] GET /health (skipped)")
+            print(f"[DRY-RUN] Headers: {{'User-Agent': 'RustChain-Miner/2.2.1'}}")
+        
+        # Suppress HTTP network activity completely during dry-run
+        print("[DRY-RUN] Health probe: skipped (network activity suppressed)")
 
         print("[DRY-RUN] Next real steps would be: attest -> enroll -> mine loop")
         return True
@@ -973,6 +956,7 @@ def main(argv=None):
         verbose=args.verbose,
         show_payload=args.show_payload,
         persist_key=not args.dry_run,
+        dry_run=args.dry_run,
     )
     if args.dry_run:
         result = miner.dry_run()
