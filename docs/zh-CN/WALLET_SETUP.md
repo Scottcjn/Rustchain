@@ -55,10 +55,16 @@ curl -sL https://rustchain.org/install.sh | bash
 - `victus-x86-scott`
 - `RTC14f06ee294f327f5685d3de5e1ed501cffab33e7`
 
-在 Linux 上，安装程序将矿机配置保存在这里：
+根据你使用的安装程序，配置文件的保存位置会有所不同。
 
+如果你使用的是标准系统级安装程序 (`install.sh` 或 `install-miner.sh`)，它保存在这里：
 ```bash
 cat /opt/rustchain-miner/config.json
+```
+
+如果你使用的是用户级 Python 向导 (`setup.sh`)，它保存在这里：
+```bash
+cat ~/.rustchain/config.json
 ```
 
 你应该能看到一个 `wallet_id` 字段。
@@ -358,7 +364,7 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 
 备份什么内容取决于你是如何创建钱包的：
 
-- 矿机安装：保存打印出的钱包 ID 并复制 `/opt/rustchain-miner/config.json`
+- 矿机安装：保存打印出的钱包 ID 并复制 `/opt/rustchain-miner/config.json`（或 `~/.rustchain/config.json`，如果使用向导）
 - 安全版 GUI：备份 24 个单词的 seed phrase 和 `~/.rustchain/wallets/*.json`
 - 编程式钱包：备份 seed phrase 以及你创建的任何加密密钥库
 
@@ -393,7 +399,8 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 
 通常在以下位置：
 
-- 矿机安装：`/opt/rustchain-miner/config.json`
+- 矿机安装 (系统级)：`/opt/rustchain-miner/config.json`
+- 矿机安装 (Python 向导)：`~/.rustchain/config.json`
 - 运行中的 Linux 矿机：有时也在 `/tmp/local_miner_wallet.txt`
 - 安全版 GUI 和 CLI 密钥库：`~/.rustchain/wallets/`
 - 编程式钱包：你保存它的任何位置
@@ -403,7 +410,7 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 按以下顺序尝试：
 
 ```bash
-cat /opt/rustchain-miner/config.json
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
 ls ~/.rustchain/wallets
 curl -sk https://rustchain.org/api/miners
 ```

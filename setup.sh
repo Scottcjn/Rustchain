@@ -208,6 +208,11 @@ download_files() {
 setup_wallet() {
   heading "Wallet Setup"
 
+  if [ -f "/opt/rustchain-miner/config.json" ]; then
+    echo -e "  \033[1;33mWARNING: /opt/rustchain-miner/config.json already exists from the system-wide installer.\033[0m"
+    echo -e "  \033[1;33mThis user-level installer uses ~/.rustchain. Please ensure you do not accidentally run two conflicting miners.\033[0m"
+  fi
+
   if [ -f "$INSTALL_DIR/config.json" ]; then
     EXISTING_WALLET=$(python3 -c "import json; d=json.load(open('$INSTALL_DIR/config.json')); print(d.get('wallet_name',''))" 2>/dev/null || echo "")
     if [ -n "$EXISTING_WALLET" ]; then

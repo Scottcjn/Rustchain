@@ -581,6 +581,10 @@ main() {
 
     # --- Create config ---
     info "Creating configuration..."
+    if [ -f "$HOME/.rustchain/config.json" ]; then
+        warn "$HOME/.rustchain/config.json already exists from the user-level installer."
+        warn "This system-wide installer uses $INSTALL_DIR. Please ensure you do not accidentally run two conflicting miners."
+    fi
     local default_wallet
     default_wallet="miner-$(hostname | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')-$(date +%s | tail -c 5)"
 
