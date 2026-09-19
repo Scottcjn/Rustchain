@@ -27,6 +27,9 @@ beacon_api = Blueprint('beacon_api', __name__)
 
 DB_PATH = 'rustchain_v2.db'
 BEACON_AUTH_WINDOW_SECONDS = 300
+# Signed timestamps may run slightly ahead of server time (clock skew), but not
+# far: a far-future timestamp would outlive its nonce record and be replayable.
+BEACON_AUTH_MAX_FUTURE_SECONDS = 30
 BOTTUBE_AVATAR_BASE_URL = 'https://bottube.ai/avatar/'
 BOTTUBE_AVATAR_MAX_BYTES = 1024 * 1024
 BOTTUBE_AVATAR_FILENAME = re.compile(
@@ -297,7 +300,8 @@ def _authenticate_contract_agent(db, allowed_agents, body_bytes):
         return None, (jsonify({'error': 'Invalid X-Agent-Timestamp'}), 400)
 
     now = int(time.time())
-    if abs(now - timestamp) > BEACON_AUTH_WINDOW_SECONDS:
+    if (timestamp < now - BEACON_AUTH_WINDOW_SECONDS
+            or timestamp > now + BEACON_AUTH_MAX_FUTURE_SECONDS):
         return None, (jsonify({'error': 'Stale Beacon signature timestamp'}), 401)
 
     if not isinstance(nonce, str) or not nonce.strip() or len(nonce) > 128:
@@ -317,9 +321,11 @@ def _authenticate_contract_agent(db, allowed_agents, body_bytes):
     cutoff = now - BEACON_AUTH_WINDOW_SECONDS
     db.execute("DELETE FROM beacon_agent_nonces WHERE created_at < ?", (cutoff,))
     try:
+        # Keep the nonce until its signature can no longer pass the timestamp
+        # check: record the later of now and the signed timestamp.
         db.execute(
             "INSERT INTO beacon_agent_nonces (agent_id, nonce, created_at) VALUES (?, ?, ?)",
-            (agent_id, nonce, now)
+            (agent_id, nonce, max(now, timestamp))
         )
         db.commit()
     except sqlite3.IntegrityError:
