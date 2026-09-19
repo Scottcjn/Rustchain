@@ -248,6 +248,21 @@ CREATE TABLE IF NOT EXISTS utxo_mempool_inputs (
     tx_id TEXT NOT NULL,
     FOREIGN KEY (tx_id) REFERENCES utxo_mempool(tx_id)
 );
+
+-- account_mirror_boxes is the cross-model double-spend discriminator (bounty 2819).
+-- It records which UTXO boxes back account-model value and for whom, so the account
+-- and UTXO models cannot both spend the same value. Making it canonical schema (it
+-- was created lazily elsewhere) guarantees it exists for every dual-write writer,
+-- transfer AND epoch reward settlement, with no CREATE TABLE inside an open
+-- transaction that SQLite would implicit-commit. Keep this comment free of the
+-- semicolon character because _execute_schema splits SCHEMA_SQL on that character.
+CREATE TABLE IF NOT EXISTS account_mirror_boxes (
+    box_id TEXT PRIMARY KEY,
+    account_wallet TEXT NOT NULL,
+    value_nrtc INTEGER NOT NULL,
+    created_epoch INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mirror_wallet ON account_mirror_boxes(account_wallet);
 """
 
 
@@ -994,6 +1009,13 @@ class UtxoDB:
                 tx_identity, sort_keys=True, separators=(',', ':')
             ).encode()
             tx_id_hex = hashlib.sha256(tx_seed).hexdigest()
+            # Expose the authoritative tx_id to the caller so it can locate the
+            # output boxes this transaction created (e.g. the dual-write path must
+            # register receiver/change outputs as account-mirror provenance —
+            # danaher-j #2819 receiver residual). Set on the caller's dict; the
+            # caller only reads it after a successful apply and discards on abort.
+            if isinstance(tx, dict):
+                tx['tx_id'] = tx_id_hex
 
             # -- assign box_ids to outputs -----------------------------------
             output_records = []

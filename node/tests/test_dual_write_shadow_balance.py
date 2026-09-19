@@ -213,7 +213,11 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
         sender = 'RTC_test_aabbccdd'
         recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
 
-        self._seed_coinbase(sender, 100 * UNIT)
+        # Consistent dual-write state: the sender's UTXO value equals its account
+        # balance. (With 100 RTC of UTXO against a 10 RTC account, the 90 RTC
+        # change output is registered as an account mirror and the
+        # MIRROR_EXCEEDS_BALANCE guard correctly fails closed.)
+        self._seed_coinbase(sender, 10 * UNIT)
 
         conn = sqlite3.connect(self.db_path)
         conn.execute(
