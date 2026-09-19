@@ -834,12 +834,12 @@ def utxo_transfer():
     effective_fee_nrtc = fee_nrtc + absorbed_fee_nrtc
 
     if _dual_write:
-        try:
-            effective_fee_i64_for_dual_write = _nrtc_to_account_i64(
-                effective_fee_nrtc, 'effective_fee_nrtc'
-            )
-        except ValueError as e:
-            return jsonify({'error': f'Invalid amount: {e}'}), 400
+        # Dual-write account model mirrors balances at microRTC precision (6 dp).
+        # The user's explicit fee_rtc was already verified upfront to have <= 6 dp.
+        # Any absorbed dust fee (< DUST_THRESHOLD) from UTXO coin selection may
+        # contain sub-microRTC (nanoRTC) remainder. Truncate the shadow fee to
+        # whole microRTC units so valid transfers are not rejected (#2819).
+        effective_fee_i64_for_dual_write = effective_fee_nrtc // (UNIT // ACCOUNT_UNIT)
 
     # Build and apply UTXO transaction
     block_height = _current_slot_fn()
