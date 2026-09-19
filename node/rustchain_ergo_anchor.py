@@ -369,7 +369,14 @@ class AnchorService:
             return current_height >= self.interval_blocks
 
         # Legacy/prod schema stores the height as rc_slot (see _ANCHOR_COLUMN_ALIASES).
-        last_height = last.get("rustchain_height", last.get("rc_slot", 0)) or 0
+        # No `or 0` default: an unreadable height must not silently look like
+        # "last anchored at height 0" (which would read as "anchor is overdue").
+        last_height = last.get("rustchain_height")
+        if last_height is None:
+            last_height = last.get("rc_slot")
+        if last_height is None:
+            logger.warning("last anchor row has no height column; treating as due")
+            return True
         blocks_since = current_height - last_height
         return blocks_since >= self.interval_blocks
 
