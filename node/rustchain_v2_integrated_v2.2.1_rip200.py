@@ -1452,6 +1452,9 @@ TOTAL_SUPPLY_RTC = 8_388_608  # Exactly 2**23 — pure binary, immutable
 TOTAL_SUPPLY_URTC = int(TOTAL_SUPPLY_RTC * 1_000_000)  # 8,388,608,000,000 uRTC
 ACCOUNT_UNIT = 1_000_000  # balances.amount_i64 uses micro-RTC.
 UTXO_UNIT = 100_000_000   # UTXO values use nano-RTC.
+# finalize_epoch derives UTXO reward values as amount_i64 * (UTXO_UNIT // ACCOUNT_UNIT);
+# that is exact only while the ratio is an integer.
+assert UTXO_UNIT % ACCOUNT_UNIT == 0, "UTXO_UNIT must be an integer multiple of ACCOUNT_UNIT"
 # UNIT is the micro-RTC account unit. Several balance/ledger endpoints reference
 # bare `UNIT`; it was historically imported from rewards_implementation_rip200,
 # but that import is best-effort (HAVE_REWARDS) and is skipped when the rewards
@@ -5621,7 +5624,12 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 # Use Decimal arithmetic to avoid float precision loss
                 amount_decimal = Decimal(0) if Decimal(total_weight) == 0 else total_reward * Decimal(weight) / Decimal(total_weight)
                 amount_i64 = int(amount_decimal * Decimal(ACCOUNT_UNIT))
-                amount_nrtc = int(amount_decimal * Decimal(UTXO_UNIT))
+                # Derive the UTXO value FROM the truncated account credit, never by
+                # truncating amount_decimal a second time at 8 decimals: that made
+                # the minted box up to 99 nRTC larger than the account credit per
+                # miner per epoch, so the two models disagreed after every
+                # settlement with fractional shares (#2819, favoritegrandson-tech).
+                amount_nrtc = amount_i64 * (UTXO_UNIT // ACCOUNT_UNIT)
 
                 # OVERFLOW PROTECTION: Ensure stored reward units fit in signed 64-bit int
                 if amount_i64 >= 2**63 or amount_nrtc >= 2**63:
@@ -5682,7 +5690,10 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                             "(reward still credited)", pk, epoch, _led_err,
                         )
 
-                if UTXO_DUAL_WRITE:
+                # Mirror only what the account model actually credited: a miner with
+                # no balance row gets no account credit (no-phantom invariant above),
+                # so minting them a UTXO box would create value in one model only.
+                if UTXO_DUAL_WRITE and updated == 1:
                     if amount_nrtc >= UTXO_DUST_THRESHOLD:
                         utxo_reward_outputs.append({
                             "address": pk,
@@ -5718,13 +5729,41 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                         "outputs": outputs,
                         "_allow_minting": True
                     }
+                    batch_height = epoch * EPOCH_SLOTS + batch_index
                     utxo_ok = UtxoDB(DB_PATH).apply_transaction(
-                        utxo_tx, epoch * EPOCH_SLOTS + batch_index, conn=conn
+                        utxo_tx, batch_height, conn=conn
                     )
                     if not utxo_ok:
                         raise RuntimeError(
                             "UTXO reward settlement failed for "
                             f"batch {batch_index + 1}/{len(reward_batches)}"
+                        )
+                    # SECURITY(danaher-j / #2819 same class as the /utxo/transfer
+                    # receiver residual): this batch credited each miner's ACCOUNT
+                    # balance (above) AND just minted a UTXO reward box for them.
+                    # Register those boxes as account-mirror provenance, or the same
+                    # reward is spendable via BOTH models (UTXO box + account balance)
+                    # = double spend. Select ONLY this batch's mint outputs: join on
+                    # the mining_reward tx at batch_height. apply_transaction allows
+                    # one mining_reward per height, but ordinary /utxo/transfer boxes
+                    # use current_slot() heights in the same number space, so a
+                    # height-only match could tag a user's own box as a mirror and
+                    # lock it (409). Materialized first (bounded by UTXO_MAX_OUTPUTS)
+                    # because the INSERTs below reuse cursor `c`. Pure INSERTs (table
+                    # is canonical schema now, so no DDL in this settlement txn).
+                    _reward_boxes = list(c.execute(
+                        "SELECT b.box_id, b.owner_address, b.value_nrtc "
+                        "FROM utxo_boxes AS b "
+                        "JOIN utxo_transactions AS t ON t.tx_id = b.transaction_id "
+                        "WHERE b.creation_height = ? AND t.tx_type = 'mining_reward'",
+                        (batch_height,),
+                    ))
+                    for _bid, _owner, _val in _reward_boxes:
+                        c.execute(
+                            "INSERT OR IGNORE INTO account_mirror_boxes "
+                            "(box_id, account_wallet, value_nrtc, created_epoch) "
+                            "VALUES (?,?,?,?)",
+                            (_bid, _owner, _val, epoch),
                         )
                 if skipped_utxo_dust_nrtc:
                     print(
