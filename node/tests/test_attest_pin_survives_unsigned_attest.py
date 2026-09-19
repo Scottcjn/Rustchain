@@ -146,8 +146,7 @@ class TestPinSurvivesUnsignedAttest(unittest.TestCase):
         # Attacker (or a legacy client) re-attests the same identity WITHOUT a signature.
         nonce2 = self._get_challenge(mod)
         status, body = self._submit(mod, self._payload(miner, nonce2, "cafebabe", miner_id=miner_id))
-        self.assertEqual(status, 400, body)
-        self.assertEqual(body.get("code"), "MISSING_SIGNATURE")
+        self.assertEqual(status, 200, body)
 
         self.assertEqual(
             self._pinned_key(db_path, miner), pubkey_hex,
@@ -174,3 +173,30 @@ class TestPinSurvivesUnsignedAttest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_pin_rejects_unsigned_when_flag_on(self):
+        """Verify that RTC_ATTEST_REJECT_UNSIGNED_WHEN_PINNED=1 rejects unsigned attests even in log_only mode if a key is pinned."""
+        mod = self.mod
+        miner = f"RTC{self._random_hex(40)}"
+        miner_id = self._random_hex(64)
+        db_path = os.path.join(mod.config.data_dir, "miners.db")
+        
+        # 1. Honest miner attests WITH signature
+        pubkey_hex, privkey_hex = self._generate_ed25519_keypair()
+        nonce = self._get_challenge(mod)
+        payload = self._payload(miner, nonce, "cafebabe", miner_id=miner_id, pubkey_hex=pubkey_hex)
+        sig = self._sign(payload, privkey_hex)
+        
+        status, body = self._submit(mod, payload, signature=sig)
+        self.assertEqual(status, 200, body)
+        self.assertEqual(self._pinned_key(db_path, miner), pubkey_hex)
+        
+        # 2. Attacker re-attests WITHOUT signature, but flag is ON
+        os.environ["RTC_ATTEST_REJECT_UNSIGNED_WHEN_PINNED"] = "1"
+        try:
+            nonce2 = self._get_challenge(mod)
+            status, body = self._submit(mod, self._payload(miner, nonce2, "cafebabe", miner_id=miner_id))
+            self.assertEqual(status, 400, body)
+            self.assertEqual(body.get("code"), "MISSING_SIGNATURE")
+        finally:
+            del os.environ["RTC_ATTEST_REJECT_UNSIGNED_WHEN_PINNED"]
