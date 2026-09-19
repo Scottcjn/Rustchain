@@ -57,11 +57,14 @@ SETTLEMENT_PUBKEY_HEX = _os.environ.get("RC_SETTLEMENT_PUBKEY", "").strip()
 # The cutoff is set just above the newest pre-fix in-flight job (created_at
 # 1782951948 on node 1, 2026-07-02). Override with RC_SETTLEMENT_ENFORCE_FROM to
 # re-baseline during a later migration.
+_enforce_from = _os.environ.get("RC_SETTLEMENT_ENFORCE_FROM", "1782960000")
 try:
-    SETTLEMENT_ENFORCEMENT_CUTOFF_TS = int(
-        _os.environ.get("RC_SETTLEMENT_ENFORCE_FROM", "1782960000"))
+    SETTLEMENT_ENFORCEMENT_CUTOFF_TS = int(_enforce_from)
 except ValueError:
-    SETTLEMENT_ENFORCEMENT_CUTOFF_TS = 1782960000
+    # A mistyped security setting must not be silently replaced by a default.
+    raise ValueError(
+        f"RC_SETTLEMENT_ENFORCE_FROM must be an integer unix timestamp, got {_enforce_from!r}"
+    ) from None
 
 
 def _settlement_enforced(job):
