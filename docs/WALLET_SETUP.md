@@ -55,13 +55,19 @@ Example wallet IDs:
 - `victus-x86-scott`
 - `RTC14f06ee294f327f5685d3de5e1ed501cffab33e7`
 
-On Linux, the installer saves the miner config here:
+Depending on which installer you used, the config file is saved in a different location.
 
+If you used the standard system-wide installer (`install.sh` or `install-miner.sh`), it is saved here:
 ```bash
 cat /opt/rustchain-miner/config.json
 ```
 
-You should see a `wallet_id` field.
+If you used the user-level Python wizard (`setup.sh`), it is saved here:
+```bash
+cat ~/.rustchain/config.json
+```
+
+You should see a `wallet_id` (or `wallet_name`) field.
 
 Example:
 
@@ -358,7 +364,7 @@ If someone knows only your public wallet name, they still cannot send your funds
 
 What to back up depends on how you created it:
 
-- Miner install: save the printed wallet ID and copy `/opt/rustchain-miner/config.json`
+- Miner install: save the printed wallet ID and copy `/opt/rustchain-miner/config.json` (or `~/.rustchain/config.json` if using the wizard)
 - Secure GUI: back up the 24-word seed phrase and `~/.rustchain/wallets/*.json`
 - Programmatic wallet: back up the seed phrase and any encrypted keystore you create
 
@@ -393,7 +399,8 @@ You must never post your seed phrase or private key.
 
 Usually here:
 
-- Miner install: `/opt/rustchain-miner/config.json`
+- Miner install (system-wide): `/opt/rustchain-miner/config.json`
+- Miner install (Python wizard): `~/.rustchain/config.json`
 - Running Linux miner: sometimes also `/tmp/local_miner_wallet.txt`
 - Secure GUI and CLI keystores: `~/.rustchain/wallets/`
 - Programmatic wallet: wherever you saved it
@@ -403,7 +410,7 @@ Usually here:
 Try these in order:
 
 ```bash
-cat /opt/rustchain-miner/config.json
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
 ls ~/.rustchain/wallets
 curl -sk https://rustchain.org/api/miners
 ```
