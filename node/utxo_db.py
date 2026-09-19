@@ -864,6 +864,15 @@ class UtxoDB:
         if own:
             conn = self._conn()
 
+        # Reads below use row['col']. A caller-supplied connection may not have
+        # row_factory set (settle_epoch_rip200 opens a plain connection), which
+        # would raise "tuple indices must be integers". Set it for the duration
+        # and restore afterwards; sqlite3.Row still supports positional access,
+        # so the caller's own queries are unaffected either way.
+        _prev_row_factory = conn.row_factory
+        if _prev_row_factory is not sqlite3.Row:
+            conn.row_factory = sqlite3.Row
+
         manage_tx = own or not conn.in_transaction
 
         try:
@@ -1130,6 +1139,7 @@ class UtxoDB:
                 pass
             raise
         finally:
+            conn.row_factory = _prev_row_factory
             if own:
                 conn.close()
 
