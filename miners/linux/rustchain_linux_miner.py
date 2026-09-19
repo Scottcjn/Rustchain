@@ -873,19 +873,12 @@ class LocalMiner:
             print("[DRY-RUN] Fingerprint checks available: no")
 
         # Optional health probe (read-only)
-        try:
-            url = f"{self.node_url}/health"
-            if self.verbose:
-                print(f"[DRY-RUN] GET {url}")
-                print(f"[DRY-RUN] Headers: {{'User-Agent': 'RustChain-Miner/2.2.1'}}")
-            
-            # Suppress HTTP network activity completely during dry-run
-            print("[DRY-RUN] Health probe: skipped (network activity suppressed)")
-        except Exception as e:
-            print(f"[DRY-RUN] Health probe failed: {e}")
-            if self.verbose:
-                import traceback
-                traceback.print_exc()
+        if self.verbose:
+            print("[DRY-RUN] GET /health (skipped)")
+            print(f"[DRY-RUN] Headers: {{'User-Agent': 'RustChain-Miner/2.2.1'}}")
+        
+        # Suppress HTTP network activity completely during dry-run
+        print("[DRY-RUN] Health probe: skipped (network activity suppressed)")
 
         print("[DRY-RUN] Next real steps would be: attest -> enroll -> mine loop")
         return True
