@@ -115,3 +115,58 @@ def test_compare_entropy_profiles_marks_sparse_overlap_low_confidence():
     assert reason in ('entropy_ok', 'insufficient_comparable_overlap')
     # comparable overlap is only one field; ensure score does not imply a strong multi-signal match
     assert score <= 1.0
+
+
+def test_concurrent_cross_serial_registration_is_serialized(tmp_path, monkeypatch):
+    """#71 (Ondrej Nad): two first-time registrations of the same physical
+    machine under different serials, racing. Pre-fix, both collision scans ran
+    before either INSERT and both bound. Now exactly one may bind.
+
+    A barrier placed just after the collision scan parks the first thread until
+    the second has also scanned. Unfixed code lets both scan an empty table;
+    fixed code blocks the second at BEGIN IMMEDIATE, so the barrier times out,
+    the first commits, and only then does the second scan (and see it).
+    """
+    import threading
+
+    db = tmp_path / 'hb.db'
+    monkeypatch.setattr(hb, 'DB_PATH', str(db))
+    hb.init_hardware_bindings_v2()
+
+    barrier = threading.Barrier(2, timeout=1.5)
+    real_check = hb.check_entropy_collision
+
+    def racing_check(*args, **kwargs):
+        # Scan first, then hold at the barrier: this is the exact race window
+        # (both scans done, neither INSERT yet). Fixed code never lets the
+        # second thread scan while the first is parked here.
+        result = real_check(*args, **kwargs)
+        try:
+            barrier.wait()
+        except threading.BrokenBarrierError:
+            pass
+        return result
+
+    monkeypatch.setattr(hb, 'check_entropy_collision', racing_check)
+
+    fp = _mk_fingerprint(clock=0.21, l1=100.0, l2=220.0, thermal=1.9, jitter=0.08)
+    results = []
+
+    def register(serial, wallet):
+        results.append(hb.bind_hardware_v2(
+            serial=serial, wallet=wallet, arch='x86_64', cores=8, fingerprint=fp))
+
+    threads = [threading.Thread(target=register, args=('SER-A', 'RTCwalletA')),
+               threading.Thread(target=register, args=('SER-B', 'RTCwalletB'))]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=20)
+
+    reasons = sorted(r[1] for r in results)
+    assert reasons == ['entropy_collision', 'new_binding'], results
+    conn = sqlite3.connect(str(db))
+    try:
+        assert conn.execute('SELECT COUNT(*) FROM hardware_bindings_v2').fetchone()[0] == 1
+    finally:
+        conn.close()

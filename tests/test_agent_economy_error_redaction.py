@@ -6,6 +6,7 @@ import pytest
 from flask import Flask
 
 import rip302_agent_economy
+from tests.rip302_auth_helpers import rip302_authorized  # noqa: F401  (autouse: operator-authorised client)
 
 
 SECRET_ERROR = "no such table: balances at /srv/rustchain/private.db with super-secret"
