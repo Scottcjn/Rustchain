@@ -4824,16 +4824,6 @@ def validate_fingerprint_data(
         if _veto:
             return False, f"capability_claim_contradicted:{_veto}"
 
-    # FIX #305: Reject empty fingerprint payloads (e.g. fingerprint={} or checks={})
-    if not checks:
-        # A standalone micro with no checks map may still attest on at least
-        # two device-native measurements. Fewer than two is not evidence.
-        if _is_limited_claim:
-            _native = _micro_native_evidence_count(fingerprint)
-            if _native >= 2:
-                return True, f"micro_native_evidence:{_native}"
-            return False, "micro_insufficient_native_evidence"
-        return False, "empty_fingerprint_checks"
 
     # FIX #305: Require at least anti_emulation and clock_drift evidence
     # FIX 2026-02-28: PowerPC/legacy miners may not support clock_drift
@@ -4873,6 +4863,17 @@ def validate_fingerprint_data(
         claimed_arch_lower in console_archs
         and _console_bridge_evidence(claimed_device, fingerprint)
     )
+
+    # FIX #305: Reject empty fingerprint payloads (e.g. fingerprint={} or checks={})
+    if not checks:
+        # A standalone micro with no checks map may still attest on at least
+        # two device-native measurements. Fewer than two is not evidence.
+        if _is_limited_claim or is_vintage or is_console:
+            _native = _micro_native_evidence_count(fingerprint)
+            if _native >= 2:
+                return True, f"micro_native_evidence:{_native}"
+            return False, "micro_insufficient_native_evidence"
+        return False, "empty_fingerprint_checks"
 
     # RIP-304: Console miners use Pico bridge fingerprinting (ctrl_port_timing
     # replaces clock_drift; anti_emulation still required via timing CV)
