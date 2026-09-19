@@ -493,8 +493,14 @@ def utxo_box(box_id):
 @utxo_bp.route('/state_root')
 def utxo_state_root():
     """Current Merkle state root of the UTXO set."""
-    root = _utxo_db.compute_state_root()
-    count = _utxo_db.count_unspent()
+    # One connection: the root and the count it is reported beside must describe
+    # the same UTXO set (#2819, robin1121).
+    conn = sqlite3.connect(_db_path)
+    try:
+        root = _utxo_db.compute_state_root(conn=conn)
+        count = _utxo_db.count_unspent(conn=conn)
+    finally:
+        conn.close()
     return jsonify({
         'state_root': root,
         'unspent_count': count,
@@ -508,21 +514,30 @@ def utxo_integrity():
     # Get account model total and convert to nanoRTC (8 decimals).
     # balances.amount_i64 is stored at 6 decimals (ACCOUNT_UNIT),
     # so multiply by UNIT/ACCOUNT_UNIT (=100) to get nanoRTC.
+    # SECURITY(#2819, robin1121): the account total, the UTXO totals and the
+    # state root must all come from ONE snapshot. Reading the account model on a
+    # separate connection let a concurrent settlement land between the reads, so
+    # models_agree compared two different database states.
     account_total = 0
+    conn = None
     try:
         conn = sqlite3.connect(_db_path)
+        conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT COALESCE(SUM(amount_i64), 0) FROM balances"
         ).fetchone()
         account_total = row[0] if row else 0
-        conn.close()
         # Convert from 6-decimal uRTC to 8-decimal nanoRTC for comparison
         account_total_nrtc = account_total * (UNIT // ACCOUNT_UNIT)
     except Exception:
         account_total = None
         account_total_nrtc = None
 
-    result = _utxo_db.integrity_check(expected_total=account_total_nrtc)
+    try:
+        result = _utxo_db.integrity_check(expected_total=account_total_nrtc, conn=conn)
+    finally:
+        if conn is not None:
+            conn.close()
     if account_total is not None:
         result['account_total_i64'] = account_total
         result['account_total_nrtc'] = account_total_nrtc
@@ -566,7 +581,7 @@ def utxo_stats():
             'spent_boxes': spent['n'],
             'total_transactions': txs['n'],
             'mempool_size': mempool['n'],
-            'state_root': _utxo_db.compute_state_root(),
+            'state_root': _utxo_db.compute_state_root(conn=conn),
         })
     finally:
         conn.close()
