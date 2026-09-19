@@ -40,7 +40,7 @@ from flask import Blueprint, jsonify, request
 
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover - signatures then fail closed
     Ed25519PublicKey = None
 
 UNIT = 1_000_000  # uRTC per RTC, matches ledger amount_i64
@@ -262,7 +262,7 @@ def _payment_status(conn, order):
             """,
             (order["provider"], order["provider"],
              "signed_transfer:" + _payment_memo(order["id"]), order["price_i64"]),
-        ).fetchall()
+        ).fetchall()  # fetchall-ok: bounded-by-schema (exact memo for one order)
     except sqlite3.OperationalError:
         return {"state": "unknown"}
     if not rows:
@@ -494,7 +494,7 @@ def create_catalog_blueprint(db_path, pubkey_resolver):
             rows = conn.execute(
                 f"SELECT * FROM catalog_listings WHERE {' AND '.join(clauses)} "
                 "ORDER BY created_at DESC, id LIMIT ? OFFSET ?",
-                (*params, limit, offset)).fetchall()
+                (*params, limit, offset)).fetchall()  # fetchall-ok: already-paginated (LIMIT <= MAX_PAGE)
         return jsonify({"listings": [_listing_json(r) for r in rows],
                         "limit": limit, "offset": offset, "terms": TERMS})
 
@@ -632,7 +632,7 @@ def create_catalog_blueprint(db_path, pubkey_resolver):
             rows = conn.execute(
                 f"SELECT * FROM catalog_orders WHERE {' AND '.join(clauses)} "
                 "ORDER BY updated_at DESC, id LIMIT ? OFFSET ?",
-                (*params, limit, offset)).fetchall()
+                (*params, limit, offset)).fetchall()  # fetchall-ok: already-paginated (LIMIT <= MAX_PAGE)
             return jsonify({"orders": [_order_json(conn, r) for r in rows],
                             "limit": limit, "offset": offset})
         return handle(run)
