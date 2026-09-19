@@ -265,13 +265,23 @@ class LocalMiner:
         self.keypair = {}
         self.public_key = ""
         if CRYPTO_AVAILABLE:
-            if persist_key:
-                self.keypair = get_or_create_keypair()
-            else:
-                self.keypair = generate_keypair()
-                if verbose:
-                    print("[CRYPTO] Using ephemeral keypair for dry-run; not saving miner_key.json")
-            self.public_key = self.keypair.get("public_key", "")
+            try:
+                if persist_key:
+                    self.keypair = get_or_create_keypair()
+                else:
+                    self.keypair = generate_keypair()
+                    if verbose:
+                        print("[CRYPTO] Using ephemeral keypair for dry-run; not saving miner_key.json")
+                self.public_key = self.keypair.get("public_key", "")
+            except Exception as e:
+                if not persist_key:
+                    if verbose:
+                        print(f"[WARN] Ed25519 crypto unavailable ({e}); falling back to legacy unsigned mode for dry-run")
+                    self.keypair = {}
+                    self.public_key = ""
+                else:
+                    print(f"[ERROR] Ed25519 crypto failed during real execution: {e}")
+                    raise
         self.wallet = wallet or (
             address_from_pubkey(self.public_key)
             if self.public_key and address_from_pubkey
