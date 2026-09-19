@@ -67,7 +67,7 @@ If you used the user-level Python wizard (`setup.sh`), it is saved here:
 cat ~/.rustchain/config.json
 ```
 
-You should see a `wallet_id` field.
+You should see a `wallet_id` (or `wallet_name`) field.
 
 Example:
 

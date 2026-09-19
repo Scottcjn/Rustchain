@@ -67,7 +67,7 @@ cat /opt/rustchain-miner/config.json
 cat ~/.rustchain/config.json
 ```
 
-你应该能看到一个 `wallet_id` 字段。
+你应该能看到一个 `wallet_id` (或 `wallet_name`) 字段。
 
 示例：
 
