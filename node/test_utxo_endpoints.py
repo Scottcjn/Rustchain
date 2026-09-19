@@ -66,7 +66,10 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.client = self.app.test_client()
 
     def tearDown(self):
-        os.unlink(self.db_path)
+        try:
+            os.unlink(self.db_path)
+        except OSError:
+            pass
 
     def _seed_coinbase(self, address, value_nrtc, height=1):
         return self.utxo_db.apply_transaction({
@@ -886,11 +889,14 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(data['inputs_consumed'], 20)
 
         # Verify mirror box is untouched
-        with sqlite3.connect(self.db_path) as c:
-            spent = c.execute(
+        conn = sqlite3.connect(self.db_path)
+        try:
+            spent = conn.execute(
                 "SELECT spent_at FROM utxo_boxes WHERE box_id = 'mirror_box_1'"
             ).fetchone()[0]
             self.assertIsNone(spent, "Mirror box must remain unspent")
+        finally:
+            conn.close()
 
 
 class TestUtxoDualWrite(unittest.TestCase):
@@ -1013,6 +1019,84 @@ class TestUtxoDualWrite(unittest.TestCase):
         sender = 'RTC_test_aabbccdd'
         recipient = ('RTC' + 'b' * 40)
         absorbed_fee_nrtc = 500
+        self._seed_sender_nrtc(sender, 10 * UNIT + absorbed_fee_nrtc)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': recipient,
+            'amount_rtc': 10.0,
+            'fee_rtc': 0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+        data = r.get_json()
+
+        self.assertEqual(r.status_code, 200, data)
+        self.assertEqual(data['requested_fee_nrtc'], 0)
+        self.assertEqual(data['absorbed_fee_nrtc'], absorbed_fee_nrtc)
+        self.assertEqual(data['fee_nrtc'], absorbed_fee_nrtc)
+        self.assertEqual(self.utxo_db.get_balance(sender), 0)
+        self.assertEqual(self.utxo_db.get_balance(recipient), 10 * UNIT)
+        self.assertEqual(self._account_balance(sender), 0)
+        self.assertEqual(
+            self._account_balance(recipient),
+            10 * utxo_endpoints.ACCOUNT_UNIT,
+        )
+
+        integrity = self.client.get('/utxo/integrity').get_json()
+        self.assertTrue(integrity['ok'], integrity)
+        self.assertTrue(integrity['models_agree'], integrity)
+
+    def test_dual_write_allows_sub_micro_absorbed_dust_fee(self):
+        """dual_write must not reject valid transfers when absorbed dust fee has sub-micro precision (#2819).
+
+        Coin selection absorbs change < DUST_THRESHOLD into the effective fee.
+        UTXO boxes (e.g. from mining rewards or genesis migration) can carry
+        8-decimal precision. When dust remainder is not an exact multiple of 100 nRTC
+        (e.g. 45 nRTC), _nrtc_to_account_i64 previously threw ValueError and returned
+        HTTP 400 'effective_fee_nrtc cannot be mirrored by dual-write account model',
+        blocking legitimate transfers from spending boxes with sub-micro dust.
+        """
+        sender = 'RTC_test_aabbccdd'
+        recipient = ('RTC' + 'b' * 40)
+        # 45 nRTC (< DUST_THRESHOLD) is not divisible by 100 (scale to microRTC)
+        absorbed_fee_nrtc = 45
+        self._seed_sender_nrtc(sender, 10 * UNIT + absorbed_fee_nrtc)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': recipient,
+            'amount_rtc': 10.0,
+            'fee_rtc': 0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+        data = r.get_json()
+
+        self.assertEqual(r.status_code, 200, data)
+        self.assertEqual(data['requested_fee_nrtc'], 0)
+        self.assertEqual(data['absorbed_fee_nrtc'], absorbed_fee_nrtc)
+        self.assertEqual(data['fee_nrtc'], absorbed_fee_nrtc)
+        self.assertEqual(self.utxo_db.get_balance(sender), 0)
+        self.assertEqual(self.utxo_db.get_balance(recipient), 10 * UNIT)
+        self.assertEqual(self._account_balance(sender), 0)
+        self.assertEqual(
+            self._account_balance(recipient),
+            10 * utxo_endpoints.ACCOUNT_UNIT,
+        )
+
+        integrity = self.client.get('/utxo/integrity').get_json()
+        self.assertTrue(integrity['ok'], integrity)
+        self.assertTrue(integrity['models_agree'], integrity)
+
+    def test_dual_write_allows_sub_micro_absorbed_dust_fee_with_multiple_micros(self):
+        """dual_write handles absorbed fees with mixed microRTC and nanoRTC remainder (#2819)."""
+        sender = 'RTC_test_aabbccdd'
+        recipient = ('RTC' + 'b' * 40)
+        # 345 nRTC = 3 microRTC + 45 nanoRTC remainder
+        absorbed_fee_nrtc = 345
         self._seed_sender_nrtc(sender, 10 * UNIT + absorbed_fee_nrtc)
 
         r = self.client.post('/utxo/transfer', json={
