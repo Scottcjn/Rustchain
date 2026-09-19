@@ -13394,6 +13394,10 @@ def _debit_wallet_atomic(c: sqlite3.Cursor, wallet_id: str, amount_i64: int, bal
 BEACON_ATLAS_DB = "/root/beacon/beacon_atlas.db"
 
 
+# Statuses an administrator uses to bar a Beacon agent (same set as beacon_api).
+BEACON_BARRED_STATUSES = frozenset({"banned", "suspended", "revoked"})
+
+
 def resolve_bcn_wallet(bcn_id: str) -> dict:
     """
     Resolve a bcn_ beacon ID to its registered public key and metadata.
@@ -13422,7 +13426,9 @@ def resolve_bcn_wallet(bcn_id: str) -> dict:
         if not row:
             return {"found": False, "error": "beacon_id_not_registered"}
         
-        if row["status"] != "active":
+        # Barred means an administrator blocked the agent. "alive" and "degraded"
+        # come from ordinary Beacon heartbeats and must not stop payments.
+        if (row["status"] or "active") in BEACON_BARRED_STATUSES:
             return {"found": False, "error": f"beacon_agent_status:{row['status']}"}
         
         pubkey_hex = row["pubkey_hex"]

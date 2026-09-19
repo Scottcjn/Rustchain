@@ -288,6 +288,13 @@ def test_atlas_resolver_requires_active_and_matching_id(tmp_path):
     resolve = sc._atlas_pubkey_resolver(atlas)
     assert resolve(good.id) == good.pubkey_hex
     assert resolve(bad.id) is None
+    # Heartbeats set "alive"/"degraded"; those stay usable, like the payment path.
+    for status in ("alive", "degraded", "banned", "revoked"):
+        a = Agent()
+        with sqlite3.connect(atlas) as conn:
+            conn.execute("INSERT INTO relay_agents VALUES (?, ?, ?)", (a.id, a.pubkey_hex, status))
+        expected = None if status in ("banned", "revoked") else a.pubkey_hex
+        assert resolve(a.id) == expected, status
     assert resolve("bcn_000000000000") is None
     assert not sc._id_matches_pubkey(good.id, bad.pubkey_hex)
 
