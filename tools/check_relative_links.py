@@ -34,7 +34,10 @@ def check_file(file_path: str, repo_root: str) -> list:
             continue
 
         # Check path relative to current markdown file
-        target_path = os.path.normpath(os.path.join(file_dir, target))
+        if target.startswith("/"):
+            target_path = os.path.normpath(os.path.join(repo_root, target.lstrip("/")))
+        else:
+            target_path = os.path.normpath(os.path.join(file_dir, target))
         if not os.path.exists(target_path):
             rel_file = os.path.relpath(file_path, repo_root)
             broken.append((rel_file, text, link, target))
