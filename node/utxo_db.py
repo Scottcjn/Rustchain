@@ -581,16 +581,21 @@ class UtxoDB:
         finally:
             conn.close()
 
-    def count_unspent(self) -> int:
+    def count_unspent(self, conn: Optional[sqlite3.Connection] = None) -> int:
         """Total number of unspent boxes."""
-        conn = self._conn()
+        own = conn is None
+        if own:
+            conn = self._conn()
         try:
-            row = conn.execute(
+            cur = conn.cursor()
+            cur.row_factory = sqlite3.Row
+            row = cur.execute(
                 "SELECT COUNT(*) AS n FROM utxo_boxes WHERE spent_at IS NULL"
             ).fetchone()
             return row['n']
         finally:
-            conn.close()
+            if own:
+                conn.close()
 
     def _normalize_data_inputs(self, data_inputs: list) -> Optional[List[str]]:
         """Return validated read-only UTXO box IDs, or None on invalid input."""
@@ -1131,7 +1136,7 @@ class UtxoDB:
 
     # -- state root ----------------------------------------------------------
 
-    def compute_state_root(self) -> str:
+    def compute_state_root(self, conn: Optional[sqlite3.Connection] = None) -> str:
         """
         Merkle root of all unspent box contents (hex).
 
@@ -1147,9 +1152,13 @@ class UtxoDB:
         The leaf count is also mixed into each leaf hash so the tree
         is bound to a specific UTXO-set cardinality.
         """
-        conn = self._conn()
+        own = conn is None
+        if own:
+            conn = self._conn()
         try:
-            rows = conn.execute(
+            cur = conn.cursor()
+            cur.row_factory = sqlite3.Row  # caller conns may not set row_factory
+            rows = cur.execute(
                 """SELECT box_id, value_nrtc, proposition, owner_address,
                           creation_height, transaction_id, output_index,
                           tokens_json, registers_json
@@ -1195,27 +1204,42 @@ class UtxoDB:
 
             return hashes[0].hex()
         finally:
-            conn.close()
+            if own:
+                conn.close()
 
     # -- integrity -----------------------------------------------------------
 
-    def integrity_check(self, expected_total: Optional[int] = None) -> dict:
+    def integrity_check(self, expected_total: Optional[int] = None,
+                        conn: Optional[sqlite3.Connection] = None) -> dict:
         """
         Verify UTXO set integrity.
 
         Returns dict with ok, total_unspent_nrtc, total_unspent_boxes,
         state_root, and optional comparison with expected_total.
         """
-        conn = self._conn()
+        # SECURITY(#2819, robin1121): totals and the state root must come from ONE
+        # snapshot. compute_state_root() used to open its own connection, so a
+        # concurrent write between the two reads produced a root that did not
+        # match the totals reported beside it (and a models_agree verdict drawn
+        # across two different database states).
+        own = conn is None
+        if own:
+            conn = self._conn()
+            # Pin a read snapshot: without an open transaction each SELECT sees
+            # the latest commit, so a settlement landing between the totals and
+            # the root read would still split the report across two states.
+            conn.execute("BEGIN")
         try:
-            row = conn.execute(
+            cur = conn.cursor()
+            cur.row_factory = sqlite3.Row
+            row = cur.execute(
                 """SELECT COALESCE(SUM(value_nrtc), 0) AS total,
                           COUNT(*) AS cnt
                    FROM utxo_boxes WHERE spent_at IS NULL"""
             ).fetchone()
             total = row['total']
             cnt = row['cnt']
-            root = self.compute_state_root()
+            root = self.compute_state_root(conn=conn)
 
             result = {
                 'ok': True,
@@ -1245,7 +1269,11 @@ class UtxoDB:
 
             return result
         finally:
-            conn.close()
+            if own:
+                try:
+                    conn.rollback()  # read-only: release the snapshot
+                finally:
+                    conn.close()
 
     @staticmethod
     def _check_mirror_provenance(conn: sqlite3.Connection, result: dict) -> None:
