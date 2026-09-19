@@ -146,7 +146,8 @@ class TestPinSurvivesUnsignedAttest(unittest.TestCase):
         # Attacker (or a legacy client) re-attests the same identity WITHOUT a signature.
         nonce2 = self._get_challenge(mod)
         status, body = self._submit(mod, self._payload(miner, nonce2, "cafebabe", miner_id=miner_id))
-        self.assertEqual(status, 200, body)
+        self.assertEqual(status, 400, body)
+        self.assertEqual(body.get("code"), "MISSING_SIGNATURE")
 
         self.assertEqual(
             self._pinned_key(db_path, miner), pubkey_hex,

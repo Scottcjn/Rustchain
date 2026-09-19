@@ -6201,12 +6201,19 @@ def _submit_attestation_impl():
     if not has_signature:
         if allowlisted:
             pass  # operator-permitted structural-no-signature hardware
+        elif stored_signing_pubkey:
+            # FIX #8016: Once a wallet has a key, unsigned attestations are ALWAYS refused, regardless of phase.
+            print(f"[ATTEST/ENFORCE:{enforce_mode}] REJECT unsigned: "
+                  f"miner={str(miner)[:32]} (a signing key is already on file for this miner)")
+            return jsonify({
+                "ok": False,
+                "error": "missing_signature",
+                "message": "Ed25519 signature required \u2014 a signing key is already on file for this miner",
+                "code": "MISSING_SIGNATURE",
+            }), 400
         elif enforce_mode == "log_only":
-            if stored_signing_pubkey:
-                print(f"[ATTEST/ENFORCE:log_only] UNSIGNED but key on file — would "
-                      f"reject in enforce_new+: miner={str(miner)[:32]}")
-            elif not is_grandfathered:
-                print(f"[ATTEST/ENFORCE:log_only] UNSIGNED new identity — would "
+            if not is_grandfathered:
+                print(f"[ATTEST/ENFORCE:log_only] UNSIGNED new identity \u2014 would "
                       f"reject in enforce_new+: miner={str(miner)[:32]}")
         else:
             # enforce_new / enforce_all
