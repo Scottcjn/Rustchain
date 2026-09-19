@@ -56,6 +56,8 @@ CATEGORIES = (
     "docs", "translation", "testing", "other",
 )
 LISTING_STATUSES = ("active", "paused", "retired")
+# Administrator-barred Beacon statuses; "alive"/"degraded" come from heartbeats.
+BARRED_STATUSES = frozenset({"banned", "suspended", "revoked"})
 
 MIN_PRICE_I64 = 1                 # 0.000001 RTC
 MAX_PRICE_I64 = 100_000 * UNIT    # sanity ceiling per unit of work
@@ -326,8 +328,8 @@ def _payment_instructions(row):
 def _atlas_pubkey_resolver(atlas_db_path):
     """Return the Atlas pubkey for an active agent, else None.
 
-    Mirrors resolve_bcn_wallet: suspended or revoked agents are treated as
-    unregistered (the transfer endpoint would refuse to pay them anyway).
+    Mirrors resolve_bcn_wallet: barred agents (banned, suspended, revoked) are
+    treated as unregistered. Heartbeat statuses such as "alive" are fine.
     """
     def resolve(agent_id):
         try:
@@ -338,7 +340,7 @@ def _atlas_pubkey_resolver(atlas_db_path):
                 ).fetchone()
         except sqlite3.Error:
             return None
-        if not row or (row[1] or "active") != "active":
+        if not row or (row[1] or "active") in BARRED_STATUSES:
             return None
         return row[0]
     return resolve
