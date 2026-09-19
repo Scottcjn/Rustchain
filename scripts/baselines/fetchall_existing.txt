@@ -42,7 +42,6 @@ node/coalition.py:).fetchall()
 node/coalition.py:).fetchall()
 node/coalition.py:).fetchall()
 node/coalition.py:).fetchall()
-node/ergo_miner_anchor.py:miners = [dict(row) for row in cur.fetchall()]
 node/governance.py:).fetchall()
 node/governance.py:).fetchall()
 node/governance.py:).fetchall()
