@@ -35,6 +35,10 @@ from utxo_endpoints import (
 )
 
 
+# Canonical recipient: /utxo/transfer format-checks to_address (lower-case RTC + 40 hex)
+# since #8396/#8465, so a bare name like 'bob' is now rejected with 400.
+RECIPIENT = 'RTC' + 'b' * 40
+
 def _mock_verify_sig(pubkey_hex, message, sig_hex):
     return True
 
@@ -102,7 +106,7 @@ class TestDualWriteReceiverProvenance(unittest.TestCase):
         })
 
     def test_receiver_output_is_registered_as_mirror(self):
-        sender, recipient = 'RTC_test_aabbccdd', 'bob'
+        sender, recipient = 'RTC_test_aabbccdd', RECIPIENT
         self._seed(sender, 100)
 
         r = self._transfer(sender, recipient, 10.0, 700001)
@@ -140,7 +144,7 @@ class TestDualWriteReceiverProvenance(unittest.TestCase):
         UTXO output box is now mirror-tagged, so UTXO coin-selection excludes it
         entirely — the receiver cannot re-spend it through /utxo/transfer, which
         is exactly what closes the double-spend."""
-        sender, recipient = 'RTC_test_aabbccdd', 'bob'
+        sender, recipient = 'RTC_test_aabbccdd', RECIPIENT
         self._seed(sender, 100)
         self.assertEqual(self._transfer(sender, recipient, 10.0, 700001).status_code, 200)
 
@@ -159,7 +163,7 @@ class TestDualWriteReceiverProvenance(unittest.TestCase):
             conn.close()
 
     def test_invariant_holds_after_transfer(self):
-        sender, recipient = 'RTC_test_aabbccdd', 'bob'
+        sender, recipient = 'RTC_test_aabbccdd', RECIPIENT
         self._seed(sender, 100)
         self.assertEqual(self._transfer(sender, recipient, 10.0, 700001).status_code, 200)
 

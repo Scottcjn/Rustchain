@@ -979,7 +979,7 @@ def utxo_transfer():
                     "SELECT box_id, owner_address, value_nrtc FROM utxo_boxes "
                     "WHERE transaction_id = ?",
                     (tx_id,),
-                ).fetchall():
+                ).fetchall():  # fetchall-ok: bounded-by-schema (outputs of one transfer tx)
                     conn.execute(
                         "INSERT OR REPLACE INTO account_mirror_boxes "
                         "(box_id, account_wallet, value_nrtc, created_epoch) "
