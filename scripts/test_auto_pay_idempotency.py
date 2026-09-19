@@ -277,7 +277,8 @@ def test_atomic_lock_ref_blocks_two_runs_from_same_initial_comment_set():
         # stopped only by the atomic Git ref create, which mirrors the real
         # concurrent workflow race that comment pre-seeding did not exercise.
         auto_pay.main()
-        auto_pay.main()
+        with pytest.raises(RuntimeError, match="auto-pay lock ref already exists"):
+            auto_pay.main()
 
     assert len(created_refs) == 1
     assert len(transfer_calls) == 1
