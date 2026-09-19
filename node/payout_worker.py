@@ -20,6 +20,7 @@ BATCH_SIZE = 10
 POLL_INTERVAL = 30  # seconds
 MAX_RETRIES = 3
 MOCK_MODE = os.environ.get("RUSTCHAIN_MOCK_MODE", "0") == "1"  # Default: production (False)
+ACCOUNT_UNIT = 1_000_000  # balances.amount_i64 is micro-RTC — must match the node.
 
 
 class ProductionWithdrawalNotConfigured(RuntimeError):
@@ -58,6 +59,55 @@ class PayoutWorker:
                 })
 
             return withdrawals
+
+    @staticmethod
+    def _micro(rtc) -> int:
+        """RTC (float) -> micro-RTC (int), matching the node's int(round(x*UNIT))."""
+        return int(round(float(rtc) * ACCOUNT_UNIT))
+
+    @staticmethod
+    def _balance_columns(conn) -> set:
+        return {row[1] for row in conn.execute("PRAGMA table_info(balances)").fetchall()}
+
+    def _credit_balance_micro(self, conn, wallet_id: str, delta_i64: int) -> None:
+        """Credit ``delta_i64`` micro-RTC to the canonical `balances` ledger, schema-
+        tolerant — mirrors the node's _ensure_wallet_balance_row + _apply_wallet_balance_delta
+        so the worker's refund lands in the SAME ledger the node debited at request time
+        (the old code used a non-existent `accounts` table). Must run inside the caller's
+        BEGIN IMMEDIATE transaction.
+        """
+        cols = self._balance_columns(conn)
+        if {"miner_id", "amount_i64"}.issubset(cols):
+            if "balance_rtc" in cols:
+                conn.execute(
+                    "INSERT OR IGNORE INTO balances (miner_id, amount_i64, balance_rtc) VALUES (?, 0, 0)",
+                    (wallet_id,),
+                )
+                conn.execute(
+                    "UPDATE balances SET amount_i64 = amount_i64 + ?, "
+                    "balance_rtc = (amount_i64 + ?) / 1000000.0 WHERE miner_id = ?",
+                    (delta_i64, delta_i64, wallet_id),
+                )
+            else:
+                conn.execute(
+                    "INSERT OR IGNORE INTO balances (miner_id, amount_i64) VALUES (?, 0)",
+                    (wallet_id,),
+                )
+                conn.execute(
+                    "UPDATE balances SET amount_i64 = amount_i64 + ? WHERE miner_id = ?",
+                    (delta_i64, wallet_id),
+                )
+            return
+        delta_rtc = delta_i64 / ACCOUNT_UNIT
+        if {"miner_pk", "balance_rtc"}.issubset(cols):
+            conn.execute("INSERT OR IGNORE INTO balances (miner_pk, balance_rtc) VALUES (?, 0)", (wallet_id,))
+            conn.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_pk = ?", (delta_rtc, wallet_id))
+            return
+        if {"miner_id", "balance_rtc"}.issubset(cols):
+            conn.execute("INSERT OR IGNORE INTO balances (miner_id, balance_rtc) VALUES (?, 0)", (wallet_id,))
+            conn.execute("UPDATE balances SET balance_rtc = balance_rtc + ? WHERE miner_id = ?", (delta_rtc, wallet_id))
+            return
+        raise RuntimeError("unsupported balances schema for withdrawal refund")
 
     def _record_broadcast_reconciliation_needed(
         self,
@@ -164,10 +214,21 @@ class PayoutWorker:
             )
 
     def process_withdrawal(self, withdrawal: Dict) -> bool:
-        """Process a single withdrawal with balance deduction before execution."""
+        """Claim an already-debited withdrawal, broadcast it, and complete it —
+        or refund the request-time debit on pre-broadcast failure.
+
+        LEDGER CORRECTNESS (#2): the RTC balance was ALREADY debited (amount + fee)
+        from the canonical `balances` ledger at REQUEST time by the node's /withdraw
+        endpoint (see _debit_wallet_atomic there). This worker must therefore NOT
+        debit again. The old code debited a second time here against a NON-EXISTENT
+        `accounts` table — a latent double-debit against a phantom ledger (masked
+        only because production broadcast is stubbed). The worker's sole money
+        responsibility is to refund the request-time debit back to `balances` if the
+        payout fails before it is broadcast.
+        """
         withdrawal_id = withdrawal['withdrawal_id']
         tx_hash = None
-        funds_debited = False
+        claimed = False
 
         try:
             logger.info(f"Processing withdrawal {withdrawal_id}")
@@ -188,10 +249,11 @@ class PayoutWorker:
                 logger.error(f"✗ Withdrawal {withdrawal_id}: {message}")
                 return False
 
-            # ── Atomic balance check + deduction + status update ─────────
-            # All three operations MUST happen in a single transaction so
-            # that a crash between them cannot leave funds deducted without
-            # a matching withdrawal, or vice-versa.
+            # ── Atomically CLAIM the row (exactly-once) ──────────────────
+            # The request-time debit already reserved the funds, so the only state
+            # this transaction changes is pending -> processing. The rowcount==1
+            # guard makes the claim exactly-once across concurrent workers. No debit
+            # happens here (funds already left `balances` at request time).
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("BEGIN IMMEDIATE")
                 try:
@@ -214,38 +276,12 @@ class PayoutWorker:
                             current_status,
                         )
                         return False
-
-                    # Check sender has sufficient balance
-                    row = conn.execute(
-                        "SELECT balance FROM accounts WHERE public_key = ?",
-                        (withdrawal['miner_pk'],)
-                    ).fetchone()
-                    current_balance = row[0] if row else 0
-
-                    total_deduction = withdrawal['amount'] + withdrawal.get('fee', 0)
-                    if current_balance < total_deduction:
-                        conn.execute(
-                            "UPDATE withdrawals SET status = 'failed', error_msg = ? "
-                            "WHERE withdrawal_id = ?",
-                            (f"Insufficient balance: have {current_balance}, need {total_deduction}",
-                             withdrawal_id)
-                        )
-                        conn.execute("COMMIT")
-                        logger.error(f"✗ Withdrawal {withdrawal_id}: insufficient balance")
-                        self.stats['failed'] += 1
-                        return False
-
-                    # Deduct balance BEFORE broadcasting transaction
-                    conn.execute(
-                        "UPDATE accounts SET balance = balance - ? WHERE public_key = ?",
-                        (total_deduction, withdrawal['miner_pk'])
-                    )
                     conn.execute("COMMIT")
-                    # The debit is durable only now; the outer handler must not
-                    # refund unless this flag is set, or a COMMIT that raises
-                    # (e.g. SQLITE_BUSY) — which rolls the debit back below —
-                    # would trigger a phantom refund that creates money.
-                    funds_debited = True
+                    # Claim is durable only now. If the COMMIT raised (e.g.
+                    # SQLITE_BUSY) the row was rolled back to 'pending' and claimed
+                    # stays False, so the failure handler leaves it for retry rather
+                    # than refunding funds that were never re-reserved by us.
+                    claimed = True
                 except Exception:
                     conn.execute("ROLLBACK")
                     raise
@@ -283,25 +319,40 @@ class PayoutWorker:
                 self.stats['failed'] += 1
                 return False
 
-            # Mark as failed. Only refund if the debit actually committed:
-            # if the debit transaction was rolled back (funds_debited is False)
-            # the funds never left the account, so crediting them here would
-            # fabricate balance out of thin air.
+            # Pre-broadcast failure (tx_hash is None). Refund the request-time debit
+            # (amount + fee) back to the canonical `balances` ledger and mark the row
+            # failed — atomically and exactly-once. The refund is gated on the
+            # processing -> failed transition succeeding (rowcount == 1), which can
+            # only fire on the row THIS worker claimed, so it cannot double-refund.
+            # If we never claimed the row (claimed is False, e.g. the claim COMMIT
+            # raised), the row is still 'pending' and the funds are still reserved:
+            # leave it untouched for the next poll rather than fabricate a refund.
+            if not claimed:
+                logger.warning(
+                    "Withdrawal %s failed before it was claimed; leaving pending for retry",
+                    withdrawal_id,
+                )
+                self.stats['failed'] += 1
+                return False
+
             with sqlite3.connect(self.db_path) as conn:
                 conn.execute("BEGIN IMMEDIATE")
-                if funds_debited:
-                    conn.execute(
-                        "UPDATE accounts SET balance = balance + ? WHERE public_key = ?",
-                        (withdrawal['amount'] + withdrawal.get('fee', 0),
-                         withdrawal['miner_pk'])
+                try:
+                    marked = conn.execute(
+                        "UPDATE withdrawals SET status = 'failed', error_msg = ? "
+                        "WHERE withdrawal_id = ? AND status = 'processing'",
+                        (str(e), withdrawal_id),
                     )
-                conn.execute("""
-                    UPDATE withdrawals
-                    SET status = 'failed',
-                        error_msg = ?
-                    WHERE withdrawal_id = ?
-                """, (str(e), withdrawal_id))
-                conn.execute("COMMIT")
+                    if marked.rowcount == 1:
+                        refund_micro = (
+                            self._micro(withdrawal['amount'])
+                            + self._micro(withdrawal.get('fee', 0))
+                        )
+                        self._credit_balance_micro(conn, withdrawal['miner_pk'], refund_micro)
+                    conn.execute("COMMIT")
+                except Exception:
+                    conn.execute("ROLLBACK")
+                    raise
 
             self.stats['failed'] += 1
             return False
