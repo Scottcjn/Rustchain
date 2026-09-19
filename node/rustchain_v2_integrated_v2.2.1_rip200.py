@@ -1452,6 +1452,9 @@ TOTAL_SUPPLY_RTC = 8_388_608  # Exactly 2**23 — pure binary, immutable
 TOTAL_SUPPLY_URTC = int(TOTAL_SUPPLY_RTC * 1_000_000)  # 8,388,608,000,000 uRTC
 ACCOUNT_UNIT = 1_000_000  # balances.amount_i64 uses micro-RTC.
 UTXO_UNIT = 100_000_000   # UTXO values use nano-RTC.
+# finalize_epoch derives UTXO reward values as amount_i64 * (UTXO_UNIT // ACCOUNT_UNIT);
+# that is exact only while the ratio is an integer.
+assert UTXO_UNIT % ACCOUNT_UNIT == 0, "UTXO_UNIT must be an integer multiple of ACCOUNT_UNIT"
 # UNIT is the micro-RTC account unit. Several balance/ledger endpoints reference
 # bare `UNIT`; it was historically imported from rewards_implementation_rip200,
 # but that import is best-effort (HAVE_REWARDS) and is skipped when the rewards
@@ -5621,7 +5624,12 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 # Use Decimal arithmetic to avoid float precision loss
                 amount_decimal = Decimal(0) if Decimal(total_weight) == 0 else total_reward * Decimal(weight) / Decimal(total_weight)
                 amount_i64 = int(amount_decimal * Decimal(ACCOUNT_UNIT))
-                amount_nrtc = int(amount_decimal * Decimal(UTXO_UNIT))
+                # Derive the UTXO value FROM the truncated account credit, never by
+                # truncating amount_decimal a second time at 8 decimals: that made
+                # the minted box up to 99 nRTC larger than the account credit per
+                # miner per epoch, so the two models disagreed after every
+                # settlement with fractional shares (#2819, favoritegrandson-tech).
+                amount_nrtc = amount_i64 * (UTXO_UNIT // ACCOUNT_UNIT)
 
                 # OVERFLOW PROTECTION: Ensure stored reward units fit in signed 64-bit int
                 if amount_i64 >= 2**63 or amount_nrtc >= 2**63:
@@ -5682,7 +5690,10 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                             "(reward still credited)", pk, epoch, _led_err,
                         )
 
-                if UTXO_DUAL_WRITE:
+                # Mirror only what the account model actually credited: a miner with
+                # no balance row gets no account credit (no-phantom invariant above),
+                # so minting them a UTXO box would create value in one model only.
+                if UTXO_DUAL_WRITE and updated == 1:
                     if amount_nrtc >= UTXO_DUST_THRESHOLD:
                         utxo_reward_outputs.append({
                             "address": pk,
