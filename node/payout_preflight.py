@@ -8,11 +8,44 @@ from typing import Any, Dict, Optional, Tuple
 
 MICRO_RTC = Decimal("1000000")
 MAX_I64 = 2**63 - 1
-_RTC_ADDRESS_RE = re.compile(r"RTC[0-9A-Fa-f]{40}")
+# An RTC address is ``RTC`` + SHA256(pubkey)[:40], and ``hexdigest()`` is lowercase,
+# so a canonical address is lowercase hex. Accepting uppercase here used to let a
+# mixed-case variant through, which creates a SECOND account nobody can ever sign
+# for -- that is exactly how 239 RTC was stranded on surim0n's mixed-case address.
+_RTC_ADDRESS_RE = re.compile(r"RTC[0-9a-f]{40}")
+# Anything that *claims* to be an RTC address by prefix. Used to tell "this caller
+# meant to type an address and got it wrong" apart from "this is a handle wallet".
+_RTC_PREFIXED_RE = re.compile(r"(?i)^rtc")
 
 
 def _is_rtc_address(value: str) -> bool:
     return bool(_RTC_ADDRESS_RE.fullmatch(value))
+
+
+def _destination_error(value: str) -> str:
+    """Return an error code if ``value`` is an unusable payout destination, else "".
+
+    Two kinds of destination are legitimate:
+      * a canonical RTC address (``RTC`` + 40 lowercase hex), and
+      * a non-address account id -- hosted handle wallets (``xxzzzzy``), founder
+        buckets (``founder_community``) and symbolic miner ids (``dual-g4-125``).
+        1,113 such accounts hold real balances, so they must keep working.
+
+    What is NOT legitimate is a string that starts with ``RTC`` but is not a
+    canonical address. Nothing can ever sign for it, so any value sent there is
+    burned while the ledger records a successful payout. On 2026-09-20 an audit
+    found 22 such addresses holding ~906 RTC -- roughly 520 of it real contributor
+    bounty money that never became spendable. Every one of them would have been
+    rejected by this check: one-character truncations
+    (``RTC1d48d848...daaf2f3``), an extra character (``...c37706b``), a Solana
+    address pasted into an RTC field, an account literally named ``RTC``, and
+    free-text ids like ``RTC-agent-antigravity-9944``.
+    """
+    if _is_rtc_address(value):
+        return ""
+    if _RTC_PREFIXED_RE.match(value):
+        return "invalid_destination_address"
+    return ""
 
 
 def _is_bcn_address(value: str) -> bool:
@@ -78,6 +111,24 @@ def validate_wallet_transfer_admin(payload: Any) -> PreflightResult:
 
     if from_err or to_err:
         return PreflightResult(ok=False, error=from_err or to_err, details={})
+
+    # Destination must be spendable. Deliberately asymmetric: `to_miner` is checked,
+    # `from_miner` is NOT, because sweeping funds OFF an already-broken address is
+    # how stranded balances get recovered (see the 2026-09-20 merges) and must stay
+    # possible. Guarding the destination stops new strandings; leaving the source
+    # open lets us clean up the old ones.
+    dest_err = _destination_error(to_miner or "")
+    if dest_err:
+        return PreflightResult(
+            ok=False,
+            error=dest_err,
+            details={
+                "to_miner": to_miner,
+                "hint": "An RTC address is 'RTC' + 40 lowercase hex characters. "
+                        "For a hosted handle wallet, pass the bare handle with no "
+                        "'RTC' prefix.",
+            },
+        )
     if aerr:
         return PreflightResult(ok=False, error=aerr, details={})
     if amount_rtc is None or amount_rtc <= 0:
