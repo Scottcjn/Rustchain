@@ -10898,6 +10898,247 @@ def api_balances():
     return jsonify({"ok": False, "error": "balances_unavailable"}), 500
 
 
+# Public all-wallet export (#8359). This intentionally exposes every wallet
+# identifier (including hosted handles) and its latest ledger activity time.
+BALANCE_EXPORT_DEFAULT_LIMIT = 100
+BALANCE_EXPORT_MAX_LIMIT = 100
+BALANCE_EXPORT_RATE_LIMIT = int(os.environ.get("RC_BALANCE_EXPORT_RATE_LIMIT", "10"))
+BALANCE_EXPORT_RATE_WINDOW = int(os.environ.get("RC_BALANCE_EXPORT_RATE_WINDOW_SECONDS", "60"))
+BALANCE_EXPORT_RATE_MAX_KEYS = int(os.environ.get("RC_BALANCE_EXPORT_RATE_MAX_KEYS", "4096"))
+BALANCE_EXPORT_CACHE_MAX_PAGES = int(os.environ.get("RC_BALANCE_EXPORT_CACHE_MAX_PAGES", "256"))
+_BALANCE_EXPORT_RATE_BUCKETS = {}
+_BALANCE_EXPORT_RATE_LOCK = Lock()
+_BALANCE_EXPORT_PAGE_CACHE = {}
+_BALANCE_EXPORT_CACHE_LOCK = Lock()
+_BALANCE_EXPORT_NATIVE_RE = re.compile(r"^RTC[0-9a-fA-F]{40}$")
+
+
+def _balance_export_kind(wallet):
+    """Classify a public wallet identifier without treating arbitrary names as native."""
+    if wallet.startswith("bcn_"):
+        return "bcn"
+    if _BALANCE_EXPORT_NATIVE_RE.fullmatch(wallet):
+        return "native"
+    return "hosted_handle"
+
+
+def _check_balance_export_rate_limit(client_ip, now_ts=None):
+    """Return ``(allowed, retry_after)`` using a bounded, route-local IP map."""
+    if BALANCE_EXPORT_RATE_LIMIT <= 0:
+        return True, 0
+    now_ts = int(time.time()) if now_ts is None else int(now_ts)
+    window = max(1, BALANCE_EXPORT_RATE_WINDOW)
+    cutoff = now_ts - window
+    key = client_ip or "unknown"
+    with _BALANCE_EXPORT_RATE_LOCK:
+        attempts = [ts for ts in _BALANCE_EXPORT_RATE_BUCKETS.get(key, ()) if ts > cutoff]
+
+        # Drop expired buckets first. If an all-active IP flood still reaches
+        # the cap, evict the least recently active bucket to keep memory bounded.
+        if len(_BALANCE_EXPORT_RATE_BUCKETS) >= max(1, BALANCE_EXPORT_RATE_MAX_KEYS):
+            stale = [
+                ip for ip, values in _BALANCE_EXPORT_RATE_BUCKETS.items()
+                if not values or max(values) <= cutoff
+            ]
+            for ip in stale:
+                _BALANCE_EXPORT_RATE_BUCKETS.pop(ip, None)
+            if key not in _BALANCE_EXPORT_RATE_BUCKETS:
+                while len(_BALANCE_EXPORT_RATE_BUCKETS) >= max(1, BALANCE_EXPORT_RATE_MAX_KEYS):
+                    oldest = min(
+                        _BALANCE_EXPORT_RATE_BUCKETS,
+                        key=lambda ip: max(_BALANCE_EXPORT_RATE_BUCKETS[ip] or (0,)),
+                    )
+                    _BALANCE_EXPORT_RATE_BUCKETS.pop(oldest, None)
+
+        if len(attempts) >= BALANCE_EXPORT_RATE_LIMIT:
+            _BALANCE_EXPORT_RATE_BUCKETS[key] = attempts
+            return False, max(1, window - (now_ts - attempts[0]))
+        attempts.append(now_ts)
+        _BALANCE_EXPORT_RATE_BUCKETS[key] = attempts
+        return True, 0
+
+
+def _balance_export_current_epoch():
+    """Return the node's clock-derived epoch; callers treat failures as unknown."""
+    return int(slot_to_epoch(current_slot()))
+
+
+def _balance_export_schema(columns):
+    """Select one explicit balances layout, including mixed migration rows."""
+    modern = {"miner_id", "amount_i64"}.issubset(columns)
+    legacy = {"miner_pk", "balance_rtc"}.issubset(columns)
+    if modern and legacy:
+        return "mixed"
+    if modern:
+        return "modern"
+    if legacy:
+        return "legacy"
+    return None
+
+
+def _balance_export_query(schema, include_activity):
+    """Build the bounded page query from trusted schema/table metadata only."""
+    if schema == "modern":
+        page_columns = "rowid AS balance_rowid, miner_id AS wallet, amount_i64, NULL AS balance_rtc"
+    elif schema == "legacy":
+        page_columns = "rowid AS balance_rowid, miner_pk AS wallet, NULL AS amount_i64, balance_rtc"
+    else:
+        # During an in-place migration, preserve a valid legacy value whenever
+        # its modern counterpart has not been populated yet.
+        page_columns = (
+            "rowid AS balance_rowid, COALESCE(miner_id, miner_pk) AS wallet, "
+            "amount_i64, balance_rtc"
+        )
+    if include_activity:
+        activity = (
+            "SELECT page.wallet, page.amount_i64, page.balance_rtc, MAX(ledger.ts) AS last_activity "
+            "FROM page LEFT JOIN ledger ON ledger.miner_id = page.wallet "
+            "GROUP BY page.balance_rowid, page.wallet, page.amount_i64, page.balance_rtc "
+        )
+    else:
+        activity = (
+            "SELECT page.wallet, page.amount_i64, page.balance_rtc, NULL AS last_activity "
+            "FROM page "
+        )
+    return (
+        f"WITH page AS (SELECT {page_columns} FROM balances "
+        "ORDER BY wallet COLLATE BINARY ASC, balance_rowid ASC LIMIT ? OFFSET ?) "
+        f"{activity}ORDER BY page.wallet COLLATE BINARY ASC, page.balance_rowid ASC"
+    )
+
+
+def _balance_export_row(row, schema):
+    wallet = row["wallet"]
+    if wallet is None:
+        raise ValueError("balances row has no wallet identifier")
+    wallet = str(wallet)
+    amount_i64 = row["amount_i64"]
+    legacy_rtc = row["balance_rtc"]
+    if schema == "legacy" or (schema == "mixed" and amount_i64 is None):
+        balance_rtc = None if legacy_rtc is None else float(legacy_rtc)
+    else:
+        balance_rtc = None if amount_i64 is None else int(amount_i64) / ACCOUNT_UNIT
+    return (
+        wallet,
+        balance_rtc,
+        wallet.startswith("founder_"),
+        _balance_export_kind(wallet),
+        None if row["last_activity"] is None else int(row["last_activity"]),
+    )
+
+
+def _balance_export_response_rows(rows):
+    return [
+        {
+            "wallet": row[0],
+            "balance_rtc": row[1],
+            "is_founder": row[2],
+            "kind": row[3],
+            "last_activity": row[4],
+        }
+        for row in rows
+    ]
+
+
+@app.route("/api/balances/export", methods=["GET"])
+def api_balances_export():
+    """Export every wallet balance, including hosted identities and activity.
+
+    This is intentionally public for transparent supply/distribution analysis.
+    Consumers should understand that it publishes every balances-table identity,
+    including hosted handles, together with its latest ledger activity timestamp.
+    """
+    allowed, retry_after = _check_balance_export_rate_limit(client_ip_from_request(request))
+    if not allowed:
+        response = jsonify({
+            "ok": False,
+            "error": "rate_limited",
+            "limit": BALANCE_EXPORT_RATE_LIMIT,
+            "window_seconds": BALANCE_EXPORT_RATE_WINDOW,
+        })
+        response.status_code = 429
+        response.headers["Retry-After"] = str(retry_after)
+        return response
+
+    try:
+        limit = int(request.args.get("limit", BALANCE_EXPORT_DEFAULT_LIMIT) or BALANCE_EXPORT_DEFAULT_LIMIT)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+    try:
+        offset = int(request.args.get("offset", 0) or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
+    if limit < 1:
+        return jsonify({"ok": False, "error": "limit must be >= 1"}), 400
+    if limit > BALANCE_EXPORT_MAX_LIMIT:
+        return jsonify({"ok": False, "error": f"limit must be <= {BALANCE_EXPORT_MAX_LIMIT}"}), 400
+    if offset < 0:
+        return jsonify({"ok": False, "error": "offset must be >= 0"}), 400
+
+    try:
+        current_epoch = _balance_export_current_epoch()
+    except Exception:
+        current_epoch = None
+
+    cache_key = (os.path.abspath(DB_PATH), current_epoch, limit, offset)
+    cached = None
+    if current_epoch is not None:
+        with _BALANCE_EXPORT_CACHE_LOCK:
+            cached = _BALANCE_EXPORT_PAGE_CACHE.get(cache_key)
+    if cached is not None:
+        total, cached_rows = cached
+        return jsonify({
+            "ok": True,
+            "count": len(cached_rows),
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "epoch": current_epoch,
+            "balances": _balance_export_response_rows(cached_rows),
+        })
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            conn.execute("BEGIN")
+            columns = {
+                str(row["name"])
+                for row in conn.execute("PRAGMA table_info(balances)").fetchall()
+            }
+            schema = _balance_export_schema(columns)
+            if schema is None:
+                return jsonify({"ok": False, "error": "balances_unavailable"}), 500
+
+            ledger_exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'ledger'"
+            ).fetchone() is not None
+            total = int(conn.execute("SELECT COUNT(*) FROM balances").fetchone()[0])
+            page = conn.execute(
+                _balance_export_query(schema, ledger_exists), (limit, offset)
+            ).fetchall()
+            export_rows = tuple(_balance_export_row(row, schema) for row in page)
+    except (sqlite3.Error, TypeError, ValueError):
+        app.logger.exception("public balance export failed")
+        return jsonify({"ok": False, "error": "balances_unavailable"}), 500
+
+    if current_epoch is not None:
+        with _BALANCE_EXPORT_CACHE_LOCK:
+            # Epoch changes and page crawls cannot grow this process without bound.
+            while len(_BALANCE_EXPORT_PAGE_CACHE) >= max(1, BALANCE_EXPORT_CACHE_MAX_PAGES):
+                _BALANCE_EXPORT_PAGE_CACHE.pop(next(iter(_BALANCE_EXPORT_PAGE_CACHE)))
+            _BALANCE_EXPORT_PAGE_CACHE[cache_key] = (total, export_rows)
+
+    return jsonify({
+        "ok": True,
+        "count": len(export_rows),
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "epoch": current_epoch,
+        "balances": _balance_export_response_rows(export_rows),
+    })
+
+
 @app.route('/admin/oui_deny/list', methods=['GET'])
 def list_oui_deny():
     """List all denied OUIs"""
