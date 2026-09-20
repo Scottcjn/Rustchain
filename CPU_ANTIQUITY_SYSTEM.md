@@ -979,7 +979,7 @@ This system is based on extensive research of CPU microarchitecture timelines:
 
 ### Intel
 - [List of Intel CPU Microarchitectures - Wikipedia](https://en.wikipedia.org/wiki/List_of_Intel_CPU_microarchitectures)
-- [Intel Processor Names, Numbers and Generation List](https://www.intel.com/content/www/us/en/processors/processor-numbers.html)
+- [Intel Processor Names, Numbers and Generation List](https://www.intel.com/content/www/us/en/support/articles/000005505/processors.html)
 - [List of Intel Xeon Processors - Wikipedia](https://en.wikipedia.org/wiki/List_of_Intel_Xeon_processors)
 - [Intel CPU Naming Convention Guide - RenewTech](https://www.renewtech.com/blog/intel-cpu-naming-convention-guide.html)
 
