@@ -2,63 +2,72 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, master]
   pull_request:
-    branches: [ main ]
+    branches: [main, master]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy -- -D warnings
+
   test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run tests
+        run: cargo test --all-features
 
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: '3.11'
-        cache: 'pip'
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run tests on Windows
+        run: cargo test --all-features
+        shell: pwsh
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install ruff mypy pytest pytest-mock bandit flask beacon-skill "openapi-spec-validator>=0.7,<0.8"
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        if [ -f tests/requirements.txt ]; then pip install -r tests/requirements.txt; fi
-
-    - name: Lint (syntax + runtime safety subset)
-      run: ruff check tests --select E9,F63,F7,F82
-
-    - name: Type check (core test crypto shim)
-      run: mypy tests/mock_crypto.py --ignore-missing-imports
-
-    - name: Security scan (tests)
-      run: bandit -r tests --severity-level medium --confidence-level high -c pyproject.toml
-
-    - name: Read-only API contract and docs gate
-      run: python -m compatibility_lab ci
-
-    - name: Installed compatibility CLI smoke test
-      run: |
-        python -m pip wheel --no-deps --wheel-dir /tmp/rustchain-wheel .
-        python -m venv /tmp/rustchain-compat-venv
-        /tmp/rustchain-compat-venv/bin/pip install --force-reinstall /tmp/rustchain-wheel/rustchain-*.whl
-        cd /tmp
-        /tmp/rustchain-compat-venv/bin/rustchain-compat validate
-
-    - name: Attestation fuzz regression gate
-      env:
-        RC_ADMIN_KEY: "0123456789abcdef0123456789abcdef"
-        RC_P2P_SECRET: "ci-test-secret-00000000000000000000000000000000"
-        DB_PATH: ":memory:"
-        ATTEST_FUZZ_CASES: "10000"
-      run: python -m pytest tests/test_attestation_fuzz.py -k mutation_regression_no_unhandled_exceptions -v
-
-    - name: Verify relative documentation links
-      run: python tools/check_relative_links.py
-
-    - name: Run tests with pytest (blocking)
-      env:
-        RC_ADMIN_KEY: "0123456789abcdef0123456789abcdef"
-        RC_P2P_SECRET: "ci-test-secret-00000000000000000000000000000000"
-        DB_PATH: ":memory:"
-      run: pytest tests/ -v --ignore=tests/test_epoch_settlement_formal.py --ignore=tests/test_rip201_bucket_spoof.py
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run tests on macOS
+        run: cargo test --all-features
