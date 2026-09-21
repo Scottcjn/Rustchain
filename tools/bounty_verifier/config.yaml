@@ -13,8 +13,8 @@ github:
 
 # RustChain Node Configuration (optional)
 rustchain:
-  enabled: false  # Set true to enable wallet balance checks
-  node_url: "http://localhost:8099"
+  enabled: true  # Set true to enable wallet balance checks
+  node_url: "https://50.28.86.131"
   wallet_check_timeout: 10  # seconds
   min_balance: 0.0  # Minimum balance required (in WRTC)
 
