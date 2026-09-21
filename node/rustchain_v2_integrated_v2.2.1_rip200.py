@@ -3980,6 +3980,48 @@ def _update_account_balance(conn: sqlite3.Connection, miner: str, delta_i64: int
         )
 
 
+def _sync_welcome_bonus_utxo_mirror(conn, miner, bonus_i64, epoch, now):
+    """Move the welcome bonus on the UTXO side too, not just in the account model.
+
+    The welcome bonus debits WELCOME_BONUS_SOURCE and credits the miner directly
+    in ``balances``; it is not a pending transfer, so it never reached
+    ``_settle_account_transfer_in_utxo`` the way /pending/confirm does. Under
+    dual-write that left the payer's mirrored boxes untouched while its balance
+    dropped, i.e. mirror > balance — the exact condition bounty #2819 calls a
+    double-spend, because the same funds are then counted in both models.
+
+    Observed on node1 2026-09-20, the first day dual-write ran in production:
+    founder_community's 14 ``transfer_out`` payouts (55.20 RTC) reconciled
+    correctly because they go through pending-confirm, while the single
+    ``welcome_bonus:0.5_rtc`` debit did not — leaving an excess of exactly
+    50,000,000 nRTC, which is the 0.5 RTC bonus. The drift grows by one bonus
+    every time a new miner first attests.
+
+    A bonus is an ordinary value move, so it reuses the same reconciler as a
+    transfer confirm rather than re-deriving box handling: that helper already
+    consumes only *mirror* boxes (never independently-earned ones), tolerates a
+    non-migrated payer, consolidates each wallet to a single box, and asserts
+    mirror <= balance for both sides afterwards.
+
+    The tx id is derived from (miner, epoch) so a replayed bonus reconciles to
+    the same boxes instead of minting new ones. Failure is swallowed: the caller
+    already holds the write transaction and an un-mirrored bonus is an
+    account-only credit, which is a reporting drift rather than money created
+    twice. Raising here would abort the attestation that earned it.
+    """
+    if not HAVE_UTXO or bonus_i64 <= 0:
+        return
+    try:
+        tx_hash = hashlib.sha256(
+            f"welcome_bonus:{miner}:{int(epoch)}".encode()
+        ).hexdigest()[:32]
+        _settle_account_transfer_in_utxo(
+            conn, WELCOME_BONUS_SOURCE, miner, int(bonus_i64), int(epoch), tx_hash, int(now)
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"[WELCOME] UTXO mirror sync failed for {miner}: {exc}")
+
+
 def _write_welcome_bonus(
     conn: sqlite3.Connection,
     miner: str,
@@ -4006,6 +4048,7 @@ def _write_welcome_bonus(
             "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
             (now, epoch, miner, bonus_i64, reason),
         )
+        _sync_welcome_bonus_utxo_mirror(conn, miner, bonus_i64, epoch, now)
         return
 
     if {"from_miner", "to_miner", "memo"}.issubset(ledger_cols):
@@ -4025,6 +4068,7 @@ def _write_welcome_bonus(
             "INSERT INTO ledger (from_miner, to_miner, amount_i64, memo, ts) VALUES (?, ?, ?, ?, ?)",
             (WELCOME_BONUS_SOURCE, miner, bonus_i64, reason, now),
         )
+        _sync_welcome_bonus_utxo_mirror(conn, miner, bonus_i64, _welcome_bonus_epoch(), now)
         return
 
     raise RuntimeError("unsupported welcome bonus balance/ledger schema")
