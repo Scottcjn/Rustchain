@@ -1603,24 +1603,10 @@ if HAVE_BRIDGE:
     except Exception as e:
         print(f"[RIP-0305 Track C] Failed to register bridge endpoints: {e}")
 
-# Canonical /api/v1/* read API — binds the explorer/client read paths that
-# previously fell through to nginx 404 (#7251/#7252/#7297-#7307).
-try:
-    from api_v1 import register_api_v1
-    register_api_v1(
-        app,
-        db_path=DB_PATH,
-        current_slot=current_slot,
-        slot_to_epoch=slot_to_epoch,
-        app_version=APP_VERSION,
-        app_start_ts=APP_START_TS,
-        per_epoch_rtc=PER_EPOCH_RTC,
-        epoch_slots=EPOCH_SLOTS,
-        total_supply_rtc=TOTAL_SUPPLY_RTC,
-    )
-    print("[api/v1] Canonical read API registered")
-except Exception as e:
-    print(f"[api/v1] Failed to register canonical read API: {e}")
+# NOTE: the canonical /api/v1/* read API is registered further down, directly
+# after current_slot()/slot_to_epoch() are defined. Registering it here raised
+# NameError (those helpers are defined ~3800 lines later), the except swallowed
+# it, and every /api/v1/* path 404'd in production.
 
 # RIP-302 Agent Economy endpoints used by the explorer dashboard
 try:
@@ -5421,6 +5407,40 @@ def slot_to_epoch(slot):
 def current_slot():
     """Get current slot number"""
     return (int(time.time()) - GENESIS_TIMESTAMP) // BLOCK_TIME
+
+# Canonical /api/v1/* read API — binds the explorer/client read paths that
+# previously fell through to nginx 404 (#7251/#7252/#7297-#7307).
+#
+# This MUST sit below current_slot()/slot_to_epoch(): the register call passes
+# them by value. It used to live near the other blueprint registrations
+# (~line 1600), where both names were still undefined at import time, so the
+# call raised NameError, the bare except printed one line to stdout, and the
+# node came up with no /api/v1 at all — under gunicorn (wsgi.py imports this
+# module; nothing below `if __name__ == "__main__"` ever runs there) as much as
+# under direct execution. Failure here is now logged with a traceback so it
+# cannot hide again.
+try:
+    from api_v1 import register_api_v1
+    register_api_v1(
+        app,
+        db_path=DB_PATH,
+        current_slot=current_slot,
+        slot_to_epoch=slot_to_epoch,
+        app_version=APP_VERSION,
+        app_start_ts=APP_START_TS,
+        per_epoch_rtc=PER_EPOCH_RTC,
+        epoch_slots=EPOCH_SLOTS,
+        total_supply_rtc=TOTAL_SUPPLY_RTC,
+    )
+    print("[api/v1] Canonical read API registered")
+except Exception as e:
+    import logging as _api_v1_logging
+    import traceback as _api_v1_traceback
+    _api_v1_logging.getLogger("rustchain.api_v1").exception(
+        "[api/v1] FAILED to register canonical read API; every /api/v1/* "
+        "path will 404 until this is fixed: %s", e)
+    print(f"[api/v1] FAILED to register canonical read API: {e!r}", file=sys.stderr)
+    _api_v1_traceback.print_exc()
 
 def _record_unsettled_epoch(cursor, conn, epoch, reason):
     """Leave a trace when an epoch is processed but pays nobody.
