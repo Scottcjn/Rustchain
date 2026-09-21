@@ -6240,6 +6240,15 @@ def _submit_attestation_impl():
     if not has_signature:
         if allowlisted:
             pass  # operator-permitted structural-no-signature hardware
+        elif stored_signing_pubkey and os.environ.get("RTC_ATTEST_REJECT_UNSIGNED_WHEN_PINNED") == "1":
+            print(f"[ATTEST/ENFORCE:{enforce_mode}] REJECT unsigned: "
+                  f"miner={str(miner)[:32]} (a signing key is already on file for this miner)")
+            return jsonify({
+                "ok": False,
+                "error": "missing_signature",
+                "message": "Ed25519 signature required \u2014 a signing key is already on file for this miner",
+                "code": "MISSING_SIGNATURE",
+            }), 400
         elif enforce_mode == "log_only":
             if stored_signing_pubkey:
                 print(f"[ATTEST/ENFORCE:log_only] UNSIGNED but key on file — would "
