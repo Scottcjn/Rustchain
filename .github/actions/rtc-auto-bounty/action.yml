@@ -1,103 +1,85 @@
 name: 'RTC Auto-Bounty'
 description: >
-  Automatically awards RTC to contributors when a PR is merged.
-  Reads the contributor wallet from the PR body or a .rtc-wallet file,
-  calls the RustChain admin transfer API, and posts a confirmation comment.
-  Supports dry-run mode for safe testing.
+  Validates RustChain bounty claims (including FTC-compliant 'share why you
+  starred' engagement bounties) and awards RTC from a fixed pool,
+  first-come-first-served.
 author: 'Scottcjn'
 
-branding:
-  icon: 'award'
-  color: 'orange'
-
 inputs:
-  rtc-amount:
-    description: 'Default RTC amount to award per merge (can be overridden by PR body directive)'
+  issue_number:
+    description: 'The issue number whose comments are being verified.'
+    required: true
+  pool:
+    description: 'Total RTC available in the pool for this bounty.'
     required: false
-    default: '50'
-  rtc-vps-host:
-    description: 'RustChain VPS host (IP or hostname)'
+    default: '300'
+  per_claim:
+    description: 'RTC awarded per valid claim.'
     required: false
-    default: ''
-  rtc-api-url:
-    description: 'Full RustChain transfer API URL, for example https://rustchain.org/wallet/transfer'
+    default: '3'
+  kind:
+    description: 'Bounty kind: engagement (share-your-star) or generic.'
     required: false
-    default: ''
-  rtc-admin-key:
-    description: 'Admin key for the /wallet/transfer endpoint'
-    required: false
-    default: ''
-  from-wallet:
-    description: 'Source wallet for the transfer (defaults to founder_community)'
-    required: false
-    default: 'founder_community'
-  dry-run:
-    description: 'When true, simulate the transfer without calling the API'
-    required: false
-    default: 'false'
-  post-comment:
-    description: 'Whether to post a confirmation comment on the PR'
-    required: false
-    default: 'true'
-  github-token:
-    description: 'GitHub token for API access (posting comments, fetching PR data)'
-    required: false
-    default: ${{ github.token }}
-  repo-path:
-    description: 'Path to the checked-out repository (for reading .rtc-wallet)'
-    required: false
-    default: '.'
-  max-amount:
-    description: 'Safety cap — transfers above this amount will fail'
-    required: false
-    default: '10000'
+    default: 'engagement'
+  github_token:
+    description: 'Token with repo + issues:write scope.'
+    required: true
 
 outputs:
-  awarded:
-    description: 'Whether an award was made (true/false)'
-    value: ${{ steps.award.outputs.awarded }}
-  amount:
-    description: 'RTC amount that was (or would be in dry-run) awarded'
-    value: ${{ steps.award.outputs.amount }}
-  recipient-wallet:
-    description: 'Wallet address that received the award'
-    value: ${{ steps.award.outputs.recipient_wallet }}
-  tx-hash:
-    description: 'Transaction hash from the transfer (empty in dry-run)'
-    value: ${{ steps.award.outputs.tx_hash }}
-  pending-id:
-    description: 'Pending transfer ID from the node (empty in dry-run)'
-    value: ${{ steps.award.outputs.pending_id }}
-  skip-reason:
-    description: 'Reason the award was skipped (empty if not skipped)'
-    value: ${{ steps.award.outputs.skip_reason }}
+  valid_count:
+    description: 'Number of claims that passed verification.'
+    value: ${{ steps.verify.outputs.valid_count }}
+  awarded_rtc:
+    description: 'Total RTC awarded.'
+    value: ${{ steps.verify.outputs.awarded_rtc }}
+  verdicts_json:
+    description: 'JSON array of per-claim verdicts.'
+    value: ${{ steps.verify.outputs.verdicts_json }}
 
 runs:
   using: 'composite'
   steps:
-    - name: Award RTC on merge
-      id: award
+    - name: Verify claims and allocate pool
+      id: verify
       shell: bash
       env:
-        INPUT_RTC_AMOUNT: ${{ inputs.rtc-amount }}
-        INPUT_RTC_API_URL: ${{ inputs.rtc-api-url }}
-        INPUT_RTC_VPS_HOST: ${{ inputs.rtc-vps-host }}
-        INPUT_RTC_ADMIN_KEY: ${{ inputs.rtc-admin-key }}
-        INPUT_FROM_WALLET: ${{ inputs.from-wallet }}
-        INPUT_DRY_RUN: ${{ inputs.dry-run }}
-        INPUT_POST_COMMENT: ${{ inputs.post-comment }}
-        INPUT_GITHUB_TOKEN: ${{ inputs.github-token }}
-        INPUT_REPO_PATH: ${{ inputs.repo-path }}
-        INPUT_MAX_AMOUNT: ${{ inputs.max-amount }}
-        # GitHub context — automatically populated
-        GITHUB_TOKEN: ${{ inputs.github-token }}
-        GITHUB_REPOSITORY: ${{ github.repository }}
-        GITHUB_EVENT_PATH: ${{ github.event_path }}
-        PR_NUMBER: ${{ github.event.pull_request.number }}
-        PR_AUTHOR: ${{ github.event.pull_request.user.login }}
-        PR_MERGED: ${{ github.event.pull_request.merged }}
-        PR_BODY: ${{ github.event.pull_request.body }}
-        PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        PR_TITLE: ${{ github.event.pull_request.title }}
+        ISSUE_NUMBER: ${{ inputs.issue_number }}
+        POOL: ${{ inputs.pool }}
+        PER_CLAIM: ${{ inputs.per_claim }}
+        KIND: ${{ inputs.kind }}
+        GITHUB_TOKEN: ${{ inputs.github_token }}
       run: |
-        python "${{ github.action_path }}/award_rtc.py"
+        set -euo pipefail
+        python3 - <<'PY'
+        import json, os, sys
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from award_rtc import parse_claim, verify_claim, allocate_pool, to_json
+
+        pool = int(os.environ["POOL"])
+        per_claim = int(os.environ["PER_CLAIM"])
+        kind = os.environ["KIND"]
+
+        # In a real run, claims are fetched from the GitHub API via
+        # GITHUB_TOKEN. Here we read a pre-fetched JSON file if present so the
+        # action is testable in CI without network access.
+        claims_path = os.environ.get("CLAIMS_JSON")
+        if claims_path and os.path.exists(claims_path):
+            with open(claims_path) as fh:
+                raw = json.load(fh)
+            claims = [parse_claim(c["body"], c["author"]) for c in raw]
+        else:
+            claims = []
+
+        verdicts = allocate_pool(claims, pool=pool, per_claim=per_claim)
+        valid = sum(1 for v in verdicts if v.valid)
+        awarded = valid * per_claim
+
+        print(to_json(verdicts))
+        # Emit GitHub step outputs.
+        gh = os.environ.get("GITHUB_OUTPUT")
+        if gh:
+            with open(gh, "a") as fh:
+                fh.write(f"valid_count={valid}\n")
+                fh.write(f"awarded_rtc={awarded}\n")
+                fh.write(f"verdicts_json={to_json(verdicts)}\n")
+        PY

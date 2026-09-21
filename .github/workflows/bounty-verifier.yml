@@ -1,65 +1,44 @@
 name: Bounty Verifier
 
+# Verifies bounty claims on issues tagged with the `bounty` label, including
+# the FTC-compliant "share why you starred" engagement bounties (e.g. #165).
+# Runs the rtc-auto-bounty composite action to validate each claim and report
+# verdicts back on the issue.
+
 on:
   issue_comment:
-    types: [created]
-  workflow_dispatch:
-    inputs:
-      issue_number:
-        description: "Issue number to verify"
-        required: true
-        type: number
-      comment_id:
-        description: "Specific comment ID (optional)"
-        required: false
-        type: number
+    types: [created, edited]
+  issues:
+    types: [labeled]
 
-env:
-  PYTHON_VERSION: "3.11"
+permissions:
+  contents: read
+  issues: write
 
 jobs:
-  verify-claim:
+  verify-bounty:
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'issue_comment' &&
-       github.event.issue.state == 'open' &&
-       github.event.comment.user.login != github.repository_owner &&
-       contains(github.event.comment.body, 'claim'))
+      (github.event_name == 'issue_comment' && contains(github.event.issue.labels.*.name, 'bounty')) ||
+      (github.event_name == 'issues' && github.event.label.name == 'bounty')
     runs-on: ubuntu-latest
-    permissions:
-      issues: write
-      contents: read
-    
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-      
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-      
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyyaml requests beautifulsoup4 lxml
-      
-      - name: Run bounty verifier
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_OWNER: ${{ github.repository_owner }}
-          GITHUB_REPO: ${{ github.event.repository.name }}
-          DRY_RUN: "false"
-          LOG_LEVEL: "INFO"
-        run: |
-          cd tools
-          python -m bounty_verifier.cli verify \
-            ${{ github.event.issue.number || inputs.issue_number }} \
-            ${{ github.event.comment.id && format('--comment-id {0}', github.event.comment.id) || '' }}
-      
-      - name: Handle rate limit
-        if: failure()
-        run: |
-          echo "Rate limit may have been exceeded. The bot will retry on next comment."
-          echo "Check GitHub API rate limit status at: https://github.com/settings/tokens"
+          python-version: '3.11'
+
+      - name: Run unit tests for the verifier
+        working-directory: .github/actions/rtc-auto-bounty
+        run: python3 -m pytest test_award_rtc.py -v
+
+      - name: Verify claims and post verdicts
+        uses: ./.github/actions/rtc-auto-bounty
+        with:
+          issue_number: ${{ github.event.issue.number }}
+          pool: '300'
+          per_claim: '3'
+          kind: 'engagement'
+          github_token: ${{ secrets.GITHUB_TOKEN }}

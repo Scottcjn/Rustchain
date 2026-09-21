@@ -1,59 +1,88 @@
-name: Bounty Claim
-description: Claim an RTC bounty for your contribution
+name: "Bounty Claim"
+description: "Claim a RustChain bounty. For 'share why you starred' bounties, all three FTC disclosure fields are required."
 title: "[Bounty Claim] "
-labels: [bounty-claim]
+labels: ["bounty", "claim"]
+assignees: []
 body:
-  - type: markdown
+  - type: "markdown"
     attributes:
       value: |
-        ## Claim an RTC Bounty
-        Fill out this form after your PR is merged to receive your RTC payment.
-        **Reference rate: 1 RTC = $0.15 USD**
+        ## Claiming a RustChain bounty
 
-  - type: input
-    id: pr-link
+        A **star alone does not qualify.** Per FTC 16 CFR §465.5 / §255.5,
+        you must disclose compensation and show genuine engagement. Fill in
+        every field below — the automated verifier will reject incomplete
+        claims.
+
+  - type: "input"
+    id: issue
     attributes:
-      label: Merged PR Link
-      description: Link to your merged pull request
-      placeholder: https://github.com/Scottcjn/Rustchain/pull/123
+      label: "Bounty issue number"
+      description: "e.g. 165"
+      placeholder: "165"
     validations:
       required: true
 
-  - type: input
-    id: bounty-issue
+  - type: "input"
+    id: post_url
     attributes:
-      label: Bounty Issue Link
-      description: Link to the bounty issue you completed
-      placeholder: https://github.com/Scottcjn/rustchain-bounties/issues/123
+      label: "Link to your public post"
+      description: "X/Twitter, Reddit, Mastodon, Dev.to, HN, blog, etc. Must be public and still live."
+      placeholder: "https://x.com/you/status/..."
     validations:
       required: true
 
-  - type: input
+  - type: "input"
+    id: reviewed
+    attributes:
+      label: "What you reviewed (link)"
+      description: "At least one file, PR, feature, or doc section you actually looked at. Link it."
+      placeholder: "https://github.com/Scottcjn/Rustchain/blob/main/src/miner/oscillator_drift.rs"
+    validations:
+      required: true
+
+  - type: "textarea"
+    id: reason
+    attributes:
+      label: "Why you liked it"
+      description: "A specific, non-generic reason. 'Great project' does not qualify."
+      placeholder: "The oscillator-drift fingerprinting is a genuinely novel way to reward vintage hardware instead of burning energy on SHA-256."
+    validations:
+      required: true
+
+  - type: "input"
     id: wallet
     attributes:
-      label: RTC Wallet Name
-      description: Your RustChain wallet name (create one at rustchain.org/wallet.html)
-      placeholder: my-wallet-name
+      label: "RTC wallet address"
+      description: "Leave blank and we'll create one for you."
+      placeholder: "RTC1..."
+    validations:
+      required: false
+
+  - type: "markdown"
+    attributes:
+      value: |
+        **Disclosure (required, copy verbatim):**
+
+        > I received RTC compensation for this post.
+
+  - type: "checkbox"
+    id: disclosure
+    attributes:
+      label: "I confirm I included the disclosure line 'I received RTC compensa...' in my post/comment."
     validations:
       required: true
 
-  - type: dropdown
-    id: tier
+  - type: "checkbox"
+    id: account_age
     attributes:
-      label: Bounty Tier
-      options:
-        - Micro (1-10 RTC)
-        - Standard (20-50 RTC)
-        - Major (75-100 RTC)
-        - Critical (100-150 RTC)
+      label: "My account is older than 30 days with prior activity (not a fresh farming account)."
     validations:
       required: true
 
-  - type: textarea
-    id: summary
+  - type: "checkbox"
+    id: no_fake
     attributes:
-      label: What did you do?
-      description: Brief summary of your contribution
-      placeholder: Fixed the epoch settlement calculation for edge cases...
+      label: "I did not buy likes/retweets or otherwise fake engagement."
     validations:
       required: true
