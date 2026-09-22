@@ -5441,6 +5441,10 @@ except Exception as e:
         "path will 404 until this is fixed: %s", e)
     print(f"[api/v1] FAILED to register canonical read API: {e!r}", file=sys.stderr)
     _api_v1_traceback.print_exc()
+    # Fail closed: a swallowed registration error is how /api/v1 404'd
+    # silently in prod. The failure is deterministic, so it surfaces on the
+    # first restart after a deploy instead of hiding indefinitely.
+    raise
 
 def _record_unsettled_epoch(cursor, conn, epoch, reason):
     """Leave a trace when an epoch is processed but pays nobody.
