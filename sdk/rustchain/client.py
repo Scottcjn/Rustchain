@@ -388,7 +388,11 @@ class RustChainClient:
             "/wallet/history",
             params={"miner_id": miner_id, "limit": limit},
         )
-        return result if isinstance(result, list) else []
+        if isinstance(result, list):
+            return result
+        if isinstance(result, dict) and isinstance(result.get("transactions"), list):
+            return result["transactions"]
+        raise APIError("Expected transaction history list or transactions envelope")
 
     def submit_attestation(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """
