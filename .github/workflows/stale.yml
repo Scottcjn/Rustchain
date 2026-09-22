@@ -17,7 +17,6 @@ jobs:
       # assignee/draft inputs), so label security-titled PRs first; the
       # `security` label below then keeps stale off them.
       - name: Label PRs with "security" in the title
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
