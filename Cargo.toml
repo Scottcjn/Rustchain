@@ -1,0 +1,11 @@
+[package]
+name = "opportunity-hunter"
+version = "0.1.0"
+edition = "2021"
+
+# ----------------------------------------------------------------------
+# Dependencies for the crate.
+# Add any required crates here. For example:
+# serde = { version = "1.0", features = ["derive"] }
+# ----------------------------------------------------------------------
+[dependencies]
