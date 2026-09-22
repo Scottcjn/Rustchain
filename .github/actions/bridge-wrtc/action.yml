@@ -1,0 +1,28 @@
+name: Bridge RTC to wRTC and Consolidate
+description: |
+  Bridges 70 RTC from the main wallet to wRTC on Solana and consolidates
+  20 RTC from the truncated wallet and 30 RTC from the alias wallet into
+  the main wallet.  All operations are performed using the `rustchain`
+  CLI tool.
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: pip install -r .github/actions/bridge-wrtc/requirements.txt
+
+    - name: Execute bridge & consolidation
+      env:
+        MAIN_WALLET: ${{ secrets.MAIN_WALLET }}
+        TRUNCATED_WALLET: ${{ secrets.TRUNCATED_WALLET }}
+        ALIAS_WALLET: ${{ secrets.ALIAS_WALLET }}
+        SOLANA_WALLET: ${{ secrets.SOLANA_WALLET }}
+        RUSTCHAIN_CLI: ${{ secrets.RUSTCHAIN_CLI }}
+      run: python .github/actions/bridge-wrtc/bridge_wrtc.py

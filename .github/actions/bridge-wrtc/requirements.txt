@@ -1,0 +1,2 @@
+# No external dependencies required for the current implementation
+# Placeholder for future extensions
