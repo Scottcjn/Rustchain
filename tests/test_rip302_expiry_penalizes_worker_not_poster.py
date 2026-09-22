@@ -39,7 +39,7 @@ def env(tmp_path):
 
 def _expired_count(client, wallet):
     body = client.get(f"/agent/reputation/{wallet}").get_json()
-    rep = body.get("reputation") or {}
+    rep = body["reputation"]
     return rep.get("jobs_expired", 0)
 
 
