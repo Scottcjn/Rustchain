@@ -39,8 +39,10 @@ def env(tmp_path):
 
 def _expired_count(client, wallet):
     body = client.get(f"/agent/reputation/{wallet}").get_json()
-    rep = body["reputation"]
-    return rep.get("jobs_expired", 0)
+    rep = body["reputation"]  # KeyError if the endpoint drops the field
+    if rep is None:  # endpoint returns null for a wallet with no record yet
+        return 0
+    return rep["jobs_expired"]
 
 
 def _force_expiry(db, job_id):
