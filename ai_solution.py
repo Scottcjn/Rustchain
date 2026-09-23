@@ -1,26 +1,4 @@
-To address the security issue, the `create_escrow` function is updated to verify the caller's ownership of `from_wallet` and the `escrow_secret` is stored and not returned in the response. Here's the revised code:
-
 ```python
-def create_escrow():
-    data = request.get_json()
-    from_wallet = data['from_wallet']
-    to_wallet = data['to_wallet']
-    amount_rtc = data['amount_rtc']
-
-    # Verify the caller owns the from_wallet
-    if not verify_signature(from_wallet, data.get('signature')):
-        return jsonify({'error': 'Invalid signature'})
-
-    escrow_secret = generate_uuid()  # Generates a unique escrow_secret
-
-    # Store the escrow details
-    db.execute('''INSERT INTO render_escrow (from_wallet, to_wallet, amount_rtc, status, escrow_secret)
-                  VALUES (?, ?, ?, ?, ?)''', (from_wallet, to_wallet, amount_rtc, 'locked', escrow_secret))
-    db.commit()
-
-    # Do NOT return escrow_secret in response
-    return jsonify({'message': 'Escrow created successfully'})
-
 def release_escrow():
     data = request.get_json()
     job_id = data['job_id']
@@ -47,14 +25,9 @@ def release_escrow():
     # Update the status and return the amount
     db.execute('''UPDATE render_escrow 
                   SET status = 'released' 
-                  WHERE job_id = ?''', (job_id,))
+                  WHERE job_id = ? AND escrow_secret = ?''', 
+                  (job_id, escrow_secret))
     db.commit()
 
-    return jsonify({'amount_rtc': amount_rtc})
-```
-
-```python
-def verify_signature(wallet_id, signature):
-    # Implementation to verify Ed25519 signature
-    return True  # Replace with actual signature verification
+    return jsonify({'message': 'Escrow released successfully', 'amount_rtc': amount_rtc})
 ```
