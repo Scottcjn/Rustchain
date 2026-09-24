@@ -563,6 +563,9 @@ def beacon_join():
         return resp
 
     try:
+        # Cache the exact request bytes so existing-agent updates can require
+        # proof of possession over the same payload the server is applying.
+        body_bytes = request.get_data(cache=True)
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             return jsonify({'error': 'Invalid or missing JSON body'}), 400
@@ -651,6 +654,15 @@ def beacon_join():
                     'error': 'Cannot change coinbase_address for existing agent — '
                              'payment address is immutable after registration'
                 }), 403
+
+            # Matching a public key value identifies the row but does not prove
+            # possession of its private key. Require a signed Beacon request
+            # before ANY existing-agent mutation, including display-name
+            # changes and inactive -> active rejoin. First registration remains
+            # governed by the canonical agent_id/public-key binding above.
+            _, auth_error = _authenticate_contract_agent(db, [agent_id], body_bytes)
+            if auth_error:
+                return auth_error
 
             # Update mutable fields only.
             # SECURITY: a rejoin must never re-activate an agent an admin has
