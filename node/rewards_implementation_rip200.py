@@ -61,6 +61,12 @@ except ImportError:
         )
         RIP200_AVAILABLE = True
 
+# SYBIL-GUARD: review-hold escrow on the standard settlement path. Hard import.
+try:
+    import sybil_guard
+except ImportError:
+    from node import sybil_guard
+
 # Import Issue #1449: Anti-Double-Mining (optional - falls back to standard rewards)
 try:
     from anti_double_mining import (
@@ -377,6 +383,17 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
             current,
             b""  # prev_block_hash fallback for standard path
         )
+
+        # SYBIL-GUARD: calculate_epoch_rewards_time_aged zeroed held miners on
+        # its read connection; record their would-be weight here, on `db`,
+        # inside this settlement transaction (never raises).
+        try:
+            _enrolled = dict(db.execute(
+                "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?", (epoch,)
+            ).fetchall())  # fetchall-ok: bounded-by-schema (one row per enrolled miner)
+        except sqlite3.Error:
+            _enrolled = {}
+        sybil_guard.hold_for_settlement(db, epoch, list(_enrolled), weights=_enrolled)
 
         if not rewards:
             db.rollback()
