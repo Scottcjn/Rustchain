@@ -335,6 +335,13 @@ class UtxoDB:
         creation_height, transaction_id, output_index,
         tokens_json (opt), registers_json (opt)
         """
+        # Same amount invariant apply_transaction() enforces on outputs: a
+        # negative or non-int value would otherwise net against real boxes in
+        # get_balance()/integrity_check() and break coin_select().
+        if not _is_positive_int64(box['value_nrtc']):
+            raise ValueError(
+                f"value_nrtc must be a positive int64, got {box['value_nrtc']!r}"
+            )
         own = conn is None
         if own:
             conn = self._conn()
@@ -1225,7 +1232,9 @@ class UtxoDB:
         Verify UTXO set integrity.
 
         Returns dict with ok, total_unspent_nrtc, total_unspent_boxes,
-        state_root, and optional comparison with expected_total.
+        state_root, and optional comparison with expected_total. Unspent
+        boxes whose value is not a positive integer set ok=False and are
+        counted in invalid_value_boxes.
         """
         # SECURITY(#2819, robin1121): totals and the state root must come from ONE
         # snapshot. compute_state_root() used to open its own connection, so a
@@ -1244,11 +1253,14 @@ class UtxoDB:
             cur.row_factory = sqlite3.Row
             row = cur.execute(
                 """SELECT COALESCE(SUM(value_nrtc), 0) AS total,
-                          COUNT(*) AS cnt
+                          COUNT(*) AS cnt,
+                          COALESCE(SUM(typeof(value_nrtc) != 'integer'
+                                       OR value_nrtc <= 0), 0) AS invalid
                    FROM utxo_boxes WHERE spent_at IS NULL"""
             ).fetchone()
             total = row['total']
             cnt = row['cnt']
+            invalid = row['invalid']
             root = self.compute_state_root(conn=conn)
 
             result = {
@@ -1258,6 +1270,12 @@ class UtxoDB:
                 'total_unspent_boxes': cnt,
                 'state_root': root,
             }
+
+            # A matching aggregate can hide an impossible box (e.g. -50 and
+            # +200 summing to an expected 150), so check values individually.
+            if invalid:
+                result['ok'] = False
+                result['invalid_value_boxes'] = invalid
 
             if expected_total is not None:
                 match = total == expected_total

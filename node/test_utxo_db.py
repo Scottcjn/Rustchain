@@ -659,6 +659,45 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(result['ok'])
         self.assertFalse(result['models_agree'])
 
+    def test_integrity_flags_non_positive_box_despite_matching_total(self):
+        self.db.add_box({
+            'box_id': 'good', 'value_nrtc': 200 * UNIT, 'proposition': '00',
+            'owner_address': 'alice', 'creation_height': 1,
+            'transaction_id': '11' * 32, 'output_index': 1,
+        })
+        insert = """INSERT INTO utxo_boxes
+               (box_id, value_nrtc, proposition, owner_address,
+                creation_height, transaction_id, output_index, created_at)
+               VALUES (?, ?, '00', 'alice', 1, ?, ?, 0)"""
+        conn = self.db._conn()
+        conn.execute(insert, ('neg', -50 * UNIT, '11' * 32, 0))
+        conn.commit()
+        result = self.db.integrity_check(expected_total=150 * UNIT)
+        self.assertTrue(result['models_agree'])
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['invalid_value_boxes'], 1)
+
+        conn.execute(insert, ('frac', 1.5, '11' * 32, 2))
+        conn.commit()
+        conn.close()
+        self.assertEqual(self.db.integrity_check()['invalid_value_boxes'], 2)
+
+    def test_add_box_rejects_invalid_value(self):
+        base = {
+            'proposition': '00', 'owner_address': 'alice',
+            'creation_height': 1, 'transaction_id': '11' * 32,
+        }
+        for i, bad in enumerate([-50, 0, '100', 1.5, True, 2 ** 63]):
+            with self.subTest(value=bad):
+                with self.assertRaises(ValueError):
+                    self.db.add_box({**base, 'box_id': f'bad{i}',
+                                     'value_nrtc': bad, 'output_index': i})
+        self.assertEqual(self.db.get_balance('alice'), 0)
+        self.db.add_box({**base, 'box_id': 'good',
+                         'value_nrtc': 200, 'output_index': 99})
+        self.assertEqual(self.db.get_balance('alice'), 200)
+        self.assertTrue(self.db.integrity_check(expected_total=200)['ok'])
+
     # -- mempool -------------------------------------------------------------
 
     def test_mempool_add_and_remove(self):
