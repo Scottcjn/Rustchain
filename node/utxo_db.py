@@ -27,9 +27,30 @@ Architectural boundary -- spending_proof validation:
 
 import hashlib
 import json
+import logging
 import sqlite3
+import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+# Count of post-spend stale-mempool evictions that failed (#2819). A failure
+# never undoes a spend, but it must not be silent either: every one is logged
+# at ERROR and counted here so health/metrics code can alert on a non-zero
+# value. Process-local (per gunicorn worker).
+_mempool_eviction_failures = 0
+_mempool_eviction_failures_lock = threading.Lock()
+
+
+class _EvictionRollbackFailed(Exception):
+    """Eviction failed on a caller's connection AND could not be undone."""
+
+
+def mempool_eviction_failure_count() -> int:
+    """Number of stale-mempool evictions that failed after a spend (process-local)."""
+    with _mempool_eviction_failures_lock:
+        return _mempool_eviction_failures
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -1117,25 +1138,38 @@ class UtxoDB:
             # Only regular inputs are spent by this transaction. Read-only
             # data_inputs remain unspent and must not evict other mempool
             # transactions that legitimately depend on the same reference box.
-            _spent_ids = list(set(input_box_ids))
+            _spent_ids = sorted(set(input_box_ids))
             if _spent_ids:
                 if not manage_tx:
                     # External-connection path: evict inside the caller's
                     # transaction so the DELETEs share the same write lock.
+                    # The helper wraps its DELETEs in a SAVEPOINT, so a
+                    # failure leaves the caller's spend writes intact.
                     try:
                         self._evict_stale_data_input_txs(_spent_ids, conn=conn)
-                    except Exception:
-                        pass  # best-effort; outer caller will commit the spend
+                    except Exception as exc:
+                        if (not conn.in_transaction
+                                or isinstance(exc, _EvictionRollbackFailed)):
+                            # SQLite aborted the caller's whole transaction
+                            # (e.g. RAISE(ROLLBACK), disk full): the spend
+                            # written above is gone. Or the eviction could
+                            # not be undone, so partial DELETEs (claims gone,
+                            # mempool row kept) would ride along on the
+                            # caller's COMMIT. Either way reporting success
+                            # would be a false green -- fail closed.
+                            raise
+                        self._report_eviction_failure(tx_id_hex, _spent_ids, exc)
             if manage_tx:
                 conn.execute("COMMIT")
-                # Own-transaction path: spend is committed. Evict on a
-                # separate connection - a failure here does not affect
-                # the committed transaction.
+                # Own-transaction path: spend is committed and durable.
+                # Evict on a separate connection - a failure here must not
+                # (and cannot) undo the spend, but it is surfaced, not
+                # swallowed.
                 if _spent_ids:
                     try:
                         self._evict_stale_data_input_txs(_spent_ids)
-                    except Exception:
-                        pass  # best-effort; already committed
+                    except Exception as exc:
+                        self._report_eviction_failure(tx_id_hex, _spent_ids, exc)
             return True
 
         except Exception:
@@ -1612,6 +1646,76 @@ class UtxoDB:
         finally:
             conn.close()
 
+    @staticmethod
+    def _report_eviction_failure(tx_id: str, spent_box_ids: List[str],
+                                 exc: BaseException) -> None:
+        """Surface a failed post-spend mempool eviction (#2819).
+
+        The spend itself stands; what may be left behind are mempool txs
+        that still reference the spent boxes. They cannot be mined (apply
+        and candidate selection re-validate every input) and expire after
+        MAX_TX_AGE_SECONDS, but until then they hold input claims and pool
+        capacity, so the failure is logged at ERROR and counted.
+        """
+        global _mempool_eviction_failures
+        with _mempool_eviction_failures_lock:
+            _mempool_eviction_failures += 1
+        logger.error(
+            "UTXO stale-mempool eviction FAILED after spend (spend kept): "
+            "tx_id=%s spent_box_ids=%s error=%r -- mempool txs depending on "
+            "these boxes may remain until expiry",
+            tx_id, spent_box_ids, exc,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+
+    @staticmethod
+    def _mempool_row_references(tx_data_json: Any, spent_set: set) -> bool:
+        """True if a mempool row's stored tx reads or spends a spent box.
+
+        Checks data_inputs (never recorded in utxo_mempool_inputs) and, as
+        defense in depth, regular inputs too, so a row whose claim rows are
+        missing is still evicted. Malformed rows are left alone here; they
+        are handled by expiry / candidate re-validation.
+        """
+        try:
+            tx_data = json.loads(tx_data_json)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return False
+        if not isinstance(tx_data, dict):
+            return False
+        data_inputs = tx_data.get("data_inputs")
+        if isinstance(data_inputs, list):
+            for box_id in data_inputs:
+                if isinstance(box_id, str) and box_id in spent_set:
+                    return True
+        inputs = tx_data.get("inputs")
+        if isinstance(inputs, list):
+            for inp in inputs:
+                if isinstance(inp, dict):
+                    box_id = inp.get("box_id")
+                    if isinstance(box_id, str) and box_id in spent_set:
+                        return True
+        return False
+
+    @staticmethod
+    def _release_savepoint(conn: sqlite3.Connection, savepoint: str) -> None:
+        """RELEASE an eviction savepoint on a caller's connection.
+
+        A failed RELEASE is logged, never raised: it only leaves the
+        savepoint on SQLite's stack, and the caller's COMMIT (or ROLLBACK)
+        closes every open savepoint together with the outer transaction.
+        Raising here would make apply_transaction() fail a spend whose
+        writes are intact.
+        """
+        try:
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        except sqlite3.Error as exc:
+            logger.error(
+                "UTXO stale-mempool eviction: RELEASE SAVEPOINT %s failed "
+                "(%r); savepoint left open until the caller's COMMIT/ROLLBACK",
+                savepoint, exc,
+            )
+
     def _evict_stale_data_input_txs(self, spent_box_ids: List[str],
                               conn: Optional[sqlite3.Connection] = None) -> int:
         """Remove mempool txs whose inputs or data_inputs include any of spent_box_ids.
@@ -1625,67 +1729,98 @@ class UtxoDB:
         Search strategy:
         1. Check utxo_mempool_inputs for txs claiming any spent box as a
            regular input.
-        2. Scan utxo_mempool.tx_data_json for txs whose data_inputs
-           reference any spent box (since data_inputs are not recorded
+        2. Scan utxo_mempool.tx_data_json for txs whose data_inputs (or
+           inputs) reference any spent box (data_inputs are not recorded
            in utxo_mempool_inputs — they are read-only references).
+
+        Atomic: both DELETEs land or neither does. With our own connection
+        this is a BEGIN IMMEDIATE transaction; with a caller's connection it
+        is a SAVEPOINT, so a failure never discards the caller's other
+        writes (the spend) and never leaves claim rows deleted while the
+        mempool row survives.
+
+        Errors are RAISED, not swallowed (#2819): the caller decides how to
+        surface them. Raises _EvictionRollbackFailed if a failure on a
+        caller's connection could not be rolled back to the savepoint.
         """
         if not spent_box_ids:
             return 0
+        spent_box_ids = list(spent_box_ids)
         own_conn = conn is None
         if own_conn:
             conn = self._conn()
+        savepoint = "utxo_evict_stale_mempool"
         try:
-            spent_set = set(spent_box_ids)
-            stale_tx_ids = set()
+            if own_conn:
+                conn.execute("BEGIN IMMEDIATE")
+            else:
+                conn.execute(f"SAVEPOINT {savepoint}")
+            try:
+                spent_set = set(spent_box_ids)
+                stale_tx_ids = set()
 
-            # 1. Txs claiming spent boxes as regular inputs
-            placeholders = ",".join("?" for _ in spent_box_ids)
-            rows = conn.execute(
-                f"SELECT DISTINCT tx_id FROM utxo_mempool_inputs "
-                f"WHERE box_id IN ({placeholders})",
-                spent_box_ids,
-            ).fetchall()
-            for row in rows:
-                stale_tx_ids.add(row["tx_id"])
+                # 1. Txs claiming spent boxes as regular inputs
+                placeholders = ",".join("?" for _ in spent_box_ids)
+                rows = conn.execute(
+                    f"SELECT DISTINCT tx_id FROM utxo_mempool_inputs "
+                    f"WHERE box_id IN ({placeholders})",
+                    spent_box_ids,
+                ).fetchall()
+                for row in rows:
+                    stale_tx_ids.add(row["tx_id"])
 
-            # 2. Txs referencing spent boxes as data_inputs
-            #    (not stored in utxo_mempool_inputs, so parse tx_data_json)
-            for mp_row in conn.execute(
-                "SELECT tx_id, tx_data_json FROM utxo_mempool"
-            ):
-                if mp_row["tx_id"] in stale_tx_ids:
-                    continue  # already flagged
-                try:
-                    tx_data = json.loads(mp_row["tx_data_json"])
-                    di = tx_data.get("data_inputs", [])
-                    if di and spent_set & set(di):
+                # 2. Txs referencing spent boxes via tx_data_json
+                #    (cursor iteration: never load the whole pool)
+                for mp_row in conn.execute(
+                    "SELECT tx_id, tx_data_json FROM utxo_mempool"
+                ):
+                    if mp_row["tx_id"] in stale_tx_ids:
+                        continue  # already flagged
+                    if self._mempool_row_references(
+                        mp_row["tx_data_json"], spent_set
+                    ):
                         stale_tx_ids.add(mp_row["tx_id"])
-                except (json.JSONDecodeError, TypeError):
-                    continue
 
-            if not stale_tx_ids:
-                return 0
+                if stale_tx_ids:
+                    tx_ids = sorted(stale_tx_ids)
+                    tx_placeholders = ",".join("?" for _ in tx_ids)
+                    conn.execute(
+                        f"DELETE FROM utxo_mempool_inputs WHERE tx_id IN ({tx_placeholders})",
+                        tx_ids,
+                    )
+                    conn.execute(
+                        f"DELETE FROM utxo_mempool WHERE tx_id IN ({tx_placeholders})",
+                        tx_ids,
+                    )
+            except Exception as exc:
+                if own_conn:
+                    try:
+                        conn.execute("ROLLBACK")
+                    except sqlite3.Error:
+                        pass  # already rolled back by SQLite; nothing committed
+                    raise
+                if conn.in_transaction:
+                    # Only a failed ROLLBACK TO leaves the eviction's partial
+                    # DELETEs in the caller's transaction -- that alone is
+                    # fatal. Once it succeeds the caller's writes are safe,
+                    # so a RELEASE failure afterwards must not fail the spend.
+                    try:
+                        conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                    except sqlite3.Error as rb_exc:
+                        raise _EvictionRollbackFailed(
+                            f"eviction failed ({exc!r}) and savepoint "
+                            f"rollback failed ({rb_exc!r})"
+                        ) from exc
+                    self._release_savepoint(conn, savepoint)
+                # else: SQLite already aborted the caller's whole
+                # transaction; the caller checks conn.in_transaction.
+                raise
 
-            tx_ids = list(stale_tx_ids)
-            tx_placeholders = ",".join("?" for _ in tx_ids)
-            conn.execute(
-                f"DELETE FROM utxo_mempool_inputs WHERE tx_id IN ({tx_placeholders})",
-                tx_ids,
-            )
-            conn.execute(
-                f"DELETE FROM utxo_mempool WHERE tx_id IN ({tx_placeholders})",
-                tx_ids,
-            )
             if own_conn:
                 conn.commit()
-            return len(tx_ids)
-        except Exception:
-            if own_conn:
-                try:
-                    conn.execute("ROLLBACK")
-                except Exception:
-                    pass
-            return 0
+            else:
+                self._release_savepoint(conn, savepoint)
+            return len(stale_tx_ids)
         finally:
             if own_conn:
                 conn.close()
