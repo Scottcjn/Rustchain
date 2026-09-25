@@ -157,7 +157,7 @@ def test_snapshot_is_idempotent_on_epoch(db_path):
 
 def test_snapshot_bridged_supply_committed_formula(db_path):
     # locked = 10 + 20 = 30; completed = 50; voided = 3
-    # bridged_supply_committed = 30 + 50 - 3 = 77
+    # bridged_supply_committed = 30 + 50 = 80 (voided is already excluded from locked_in)
     _seed_transfer(db_path, status="pending", amount_rtc=10.0)
     _seed_transfer(db_path, status="locked", amount_rtc=20.0, id_suffix=1)
     _seed_transfer(db_path, status="completed", amount_rtc=50.0, id_suffix=2)
@@ -167,7 +167,7 @@ def test_snapshot_bridged_supply_committed_formula(db_path):
     assert snap["locked_in_rtc"] == 30.0
     assert snap["completed_in_rtc"] == 50.0
     assert snap["voided_in_rtc"] == 3.0
-    assert snap["bridged_supply_committed"] == pytest.approx(77.0)
+    assert snap["bridged_supply_committed"] == pytest.approx(80.0)
 
 
 def test_snapshot_uses_provided_aggregate_state(db_path):
@@ -186,7 +186,7 @@ def test_snapshot_uses_provided_aggregate_state(db_path):
     assert snap["locked_in_rtc"] == 1.0
     assert snap["completed_in_rtc"] == 2.0
     assert snap["voided_in_rtc"] == 0.5
-    assert snap["bridged_supply_committed"] == pytest.approx(2.5)
+    assert snap["bridged_supply_committed"] == pytest.approx(3.0)
 
 
 # ---------- routes ----------------------------------------------------------
