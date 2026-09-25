@@ -70,6 +70,26 @@ APP_VERSION = "2.2.1-rip200"
 APP_START_TS = time.time()
 
 # Rewards system
+def _native_total_balances(db):
+    """Sum of all account balances in uRTC (native copy of rewards.total_balances).
+
+    finalize_epoch() uses total_balances() for the RIP-0004 supply-cap headroom.
+    That is the block-ingest settlement path, so it must not depend on the
+    optional rewards import below: before #8249 the import named a function the
+    module does not define, HAVE_REWARDS was False on every worker start, and
+    any code reaching a bare total_balances() would have raised NameError.
+    Same SQL and same fail-open-to-0 semantics as the module's version.
+    """
+    try:
+        row = db.execute("SELECT COALESCE(SUM(amount_i64),0) FROM balances").fetchone()
+        return int(row[0])
+    except Exception:
+        return 0
+
+
+# Every name imported here must exist in node/rewards_implementation_rip200.py;
+# tests/test_rewards_module_import.py enforces that, so a stale name can never
+# again silently flip HAVE_REWARDS to False.
 try:
     from rewards_implementation_rip200 import (
         settle_epoch_rip200 as settle_epoch, total_balances, UNIT, PER_EPOCH_URTC
@@ -78,6 +98,8 @@ try:
 except Exception as e:
     print(f"WARN: Rewards module not loaded: {e}")
     HAVE_REWARDS = False
+    total_balances = _native_total_balances
+    settle_epoch = None  # /rewards/settle answers 503 instead of NameError
 
 # UTXO Layer (Phase 1 — dual-write alongside account model)
 UTXO_DUAL_WRITE = os.environ.get("UTXO_DUAL_WRITE", "0") == "1"
@@ -11634,6 +11656,12 @@ def api_rewards_settle():
     admin_key = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
     if not hmac.compare_digest(admin_key, admin_key_env):
         return jsonify({"ok": False, "reason": "admin_required"}), 401
+
+    if not HAVE_REWARDS or settle_epoch is None:
+        # Checked after auth so an unauthenticated caller learns nothing about
+        # module state. Fail closed and say why, rather than a NameError 500.
+        return jsonify({"ok": False, "reason": "rewards_module_unavailable",
+                        "code": "REWARDS_MODULE_UNAVAILABLE"}), 503
 
     body = request.get_json(force=True, silent=True)
     if body is None:
