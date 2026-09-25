@@ -1,12 +1,31 @@
 #!/usr/bin/env python3
 """
-RustChain v2 - RIP-0005 Epoch Pro-Rata Rewards
-Production Anti-Spoof System with Fair Distribution
+LEGACY PROTOTYPE -- RustChain v2 RIP-0005 epoch pro-rata rewards (2.1.0-rip5).
+
+THIS IS NOT THE RUSTCHAIN NODE. The production node is
+``node/rustchain_v2_integrated_v2.2.1_rip200.py`` served via ``node/wsgi.py``
+(gunicorn). This standalone Flask app predates RIP-200 and has its OWN epoch
+enrollment and settlement writers with none of the node's protections:
+unauthenticated ``/attest/submit`` hands out enrollment tickets, and it has no
+new-miner probation / Sybil holds, no anti-double-mining, no hardware binding
+and no fingerprint validation.
+
+Because ``DB_PATH`` is the relative ``./rustchain_v2.db`` -- the same filename
+the real node uses -- running it from a node's working directory would write
+straight into the consensus ``epoch_enroll`` table the real node settles from.
+
+Its money-writing paths (``inc_epoch_block``, ``enroll_epoch``,
+``finalize_epoch``, ``init_db`` and the ``/epoch/enroll`` and
+``/api/submit_block`` routes) therefore fail closed unless
+``RUSTCHAIN_SOPHIA_ELYA_LEGACY_SETTLEMENT=1`` is set, and they refuse a
+database that looks like a consensus node DB even when it is.
+
 Issue #2295: Added WebSocket real-time feed for Block Explorer
 """
 import math
 import hashlib
 import json
+import os
 import secrets
 import sqlite3
 import time
@@ -42,6 +61,58 @@ LAST_EPOCH = None
 # Database setup
 DB_PATH = "./rustchain_v2.db"
 RTC_MICRO_UNITS = 1_000_000
+
+LEGACY_SETTLEMENT_ENV = "RUSTCHAIN_SOPHIA_ELYA_LEGACY_SETTLEMENT"
+REAL_NODE_HINT = (
+    "Run the real node instead: node/rustchain_v2_integrated_v2.2.1_rip200.py "
+    "via node/wsgi.py (gunicorn). Its enrollment and settlement apply "
+    "probation/holds, anti-double-mining and fingerprint checks; this legacy "
+    "RIP-0005 prototype applies none of them."
+)
+
+
+class LegacySettlementDisabled(RuntimeError):
+    """Raised when this legacy prototype is asked to enroll miners or settle epochs."""
+
+
+def _legacy_settlement_enabled():
+    return os.environ.get(LEGACY_SETTLEMENT_ENV, "") == "1"
+
+
+def _looks_like_consensus_db(conn):
+    """True if ``conn`` is a real RustChain node database, not a Sophia sandbox DB."""
+    balance_cols = {row[1] for row in conn.execute("PRAGMA table_info(balances)").fetchall()}  # fetchall-ok: pragma-result
+    if balance_cols & {"miner_id", "amount_i64", "coinbase_address"}:
+        return True
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='miner_attest_recent'"
+    ).fetchone()
+    return row is not None
+
+
+def _require_legacy_settlement(conn=None):
+    """Fail closed before any enrollment / settlement / block-accounting write.
+
+    Off unless explicitly opted in, and -- even when opted in -- never against a
+    database that belongs to a real node.
+    """
+    if not _legacy_settlement_enabled():
+        raise LegacySettlementDisabled(
+            "sophia_elya_service is a legacy RIP-0005 prototype and its epoch "
+            f"enrollment/settlement is disabled (set {LEGACY_SETTLEMENT_ENV}=1 "
+            "only for isolated testing). " + REAL_NODE_HINT
+        )
+    if conn is not None and _looks_like_consensus_db(conn):
+        raise LegacySettlementDisabled(
+            f"sophia_elya_service refuses to write to {DB_PATH!r}: it looks like a "
+            "RustChain consensus node database (balances.amount_i64 / "
+            "miner_attest_recent present). " + REAL_NODE_HINT
+        )
+
+
+def _legacy_disabled_response(exc):
+    return jsonify({"ok": False, "reason": "legacy_settlement_disabled", "detail": str(exc)}), 503
+
 
 def _rtc_to_micro(amount_rtc):
     """Convert public RTC values to canonical integer micro-RTC units."""
@@ -128,7 +199,9 @@ def _ensure_epoch_state_settlement_schema(conn):
 
 def init_db():
     """Initialize database with epoch tables"""
+    _require_legacy_settlement()  # before connect: a refusal creates no DB file
     with sqlite3.connect(DB_PATH) as c:
+        _require_legacy_settlement(c)
         # Existing tables
         c.execute("CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, expires_at INTEGER)")
         c.execute("CREATE TABLE IF NOT EXISTS tickets (ticket_id TEXT PRIMARY KEY, expires_at INTEGER, commitment TEXT)")
@@ -187,7 +260,9 @@ def _finite_float(value, default=1.0):
 
 def inc_epoch_block(epoch):
     """Increment accepted blocks for epoch"""
+    _require_legacy_settlement()
     with sqlite3.connect(DB_PATH) as c:
+        _require_legacy_settlement(c)
         c.execute("PRAGMA busy_timeout=5000")
         c.execute("INSERT OR IGNORE INTO epoch_state(epoch, accepted_blocks, finalized, settled) VALUES (?,0,0,0)", (epoch,))
         # Do not inflate the block count once the epoch is finalized/settled —
@@ -210,12 +285,16 @@ def enroll_epoch(epoch, miner_pk, weight):
     # this guard protects any internal enrollment path as well.
     if not math.isfinite(weight) or weight <= 0:
         return
+    _require_legacy_settlement()
     with sqlite3.connect(DB_PATH) as c:
+        _require_legacy_settlement(c)
         c.execute("INSERT OR IGNORE INTO epoch_enroll(epoch, miner_pk, weight) VALUES (?,?,?)", (epoch, miner_pk, weight))
 
 def finalize_epoch(epoch, per_block_rtc):
     """Finalize epoch and distribute rewards"""
+    _require_legacy_settlement()
     with sqlite3.connect(DB_PATH) as c:
+        _require_legacy_settlement(c)
         c.execute("PRAGMA busy_timeout=5000")
         c.execute("BEGIN IMMEDIATE")
         # COALESCE settled so a legacy/shared row whose column was added without
@@ -437,13 +516,23 @@ def epoch_enroll():
     if not (total_weight > 0):
         return jsonify({"ok": False, "reason": "invalid_weights"}), 400
 
+    # Fail closed BEFORE consuming the ticket: this legacy prototype must not
+    # enroll miners unless explicitly opted in (see module docstring).
+    try:
+        _require_legacy_settlement()
+    except LegacySettlementDisabled as exc:
+        return _legacy_disabled_response(exc)
+
     # Enroll
     # Consume ticket after all request validation so malformed requests do not
     # burn a valid ticket before the miner can retry.
     if not consume_ticket(ticket_id):
         return jsonify({"ok": False, "reason": "ticket_invalid"}), 400
 
-    enroll_epoch(epoch, miner_pk, total_weight)
+    try:
+        enroll_epoch(epoch, miner_pk, total_weight)
+    except LegacySettlementDisabled as exc:
+        return _legacy_disabled_response(exc)
 
     return jsonify({
         "ok": True,
@@ -598,12 +687,21 @@ def api_submit_block():
         return jsonify({"error": "invalid_slot"}), 400
     epoch = slot_to_epoch(slot)
 
+    # Fail closed before any epoch rollover (settlement) or block accounting.
+    try:
+        _require_legacy_settlement()
+    except LegacySettlementDisabled as exc:
+        return _legacy_disabled_response(exc)
+
     if LAST_EPOCH is None:
         LAST_EPOCH = epoch
 
     if epoch != LAST_EPOCH:
         # Finalize previous epoch
-        result = finalize_epoch(LAST_EPOCH, PER_BLOCK_RTC)
+        try:
+            result = finalize_epoch(LAST_EPOCH, PER_BLOCK_RTC)
+        except LegacySettlementDisabled as exc:
+            return _legacy_disabled_response(exc)
         print(f"Finalized epoch {LAST_EPOCH}: {result}")
         
         # Broadcast epoch settlement event via WebSocket (Issue #2295)
@@ -621,7 +719,10 @@ def api_submit_block():
         LAST_EPOCH = epoch
 
     # Add block to current epoch
-    inc_epoch_block(epoch)
+    try:
+        inc_epoch_block(epoch)
+    except LegacySettlementDisabled as exc:
+        return _legacy_disabled_response(exc)
 
     # Update block hash
     payload = json.dumps({"header": header, "ext": ext}, sort_keys=True).encode()
@@ -677,7 +778,10 @@ def get_hardware_tier(fingerprint):
         return "Unknown"
 
 if __name__ == "__main__":
-    init_db()
+    try:
+        init_db()
+    except LegacySettlementDisabled as exc:
+        raise SystemExit(f"[sophia_elya_service] refusing to start: {exc}")
     print("RustChain v2 RIP-0005 - Epoch Pro-Rata Rewards")
     print(f"Block Time: {BLOCK_TIME}s, Reward: {PER_BLOCK_RTC} RTC per block")
     print(f"Epoch Length: {EPOCH_SLOTS} blocks ({EPOCH_SLOTS * BLOCK_TIME // 3600}h)")
