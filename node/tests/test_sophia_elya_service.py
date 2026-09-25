@@ -1,7 +1,21 @@
 import sqlite3
 import time
 
+import pytest
+
 from node import sophia_elya_service as elya
+
+
+@pytest.fixture(autouse=True)
+def _opt_in_legacy_settlement(monkeypatch, tmp_path):
+    # These tests exercise the legacy RIP-0005 prototype's own settlement logic
+    # against throwaway DBs; its money paths are fail-closed unless opted in.
+    # Also isolate DB_PATH: the module default is the relative
+    # "./rustchain_v2.db", which previously left a settled DB in the cwd and made
+    # reruns fail with "already_settled".
+    monkeypatch.setenv("RUSTCHAIN_SOPHIA_ELYA_LEGACY_SETTLEMENT", "1")
+    monkeypatch.setattr(elya, "DB_PATH", str(tmp_path / "elya.db"))
+    elya.init_db()
 
 
 def _client():
