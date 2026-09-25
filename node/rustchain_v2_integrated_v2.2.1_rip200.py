@@ -22,6 +22,14 @@ try:
     from db_helpers import fetch_page
 except ImportError:
     from node.db_helpers import fetch_page
+# SYBIL-GUARD (2026-09-24 incident): new-miner probation. Hard import on
+# purpose, like payout_preflight above: if the module is missing the node must
+# fail loudly at startup rather than silently re-open the welcome-bonus /
+# vintage-weight path the Sybil wave used.
+try:
+    import sybil_guard
+except ImportError:
+    from node import sybil_guard
 
 # Hardware Binding v2.0 - Anti-Spoof with Entropy Validation
 try:
@@ -2236,6 +2244,12 @@ def init_db():
     # legacy payload hashes are versioned consistently across startup paths.
     init_beacon_table(DB_PATH)
 
+    # SYBIL-GUARD: create + verify probation/escrow tables ONCE at startup.
+    # Request and settlement paths never run DDL. An incompatible existing
+    # table raises SchemaError here, so the worker fails to boot loudly
+    # instead of running with a guard that cannot read its own state.
+    sybil_guard.init_schema(DB_PATH)
+
     # Initialize UTXO tables (Phase 1 — tables created even if dual-write is off)
     if HAVE_UTXO:
         try:
@@ -3980,7 +3994,66 @@ def _update_account_balance(conn: sqlite3.Connection, miner: str, delta_i64: int
         )
 
 
+def _sync_welcome_bonus_utxo_mirror(conn, miner, bonus_i64, epoch, now):
+    """Move the welcome bonus on the UTXO side too, not just in the account model.
+
+    Ported verbatim in behaviour from Scottcjn/Rustchain PR #8491 (open, not
+    merged as of 2026-09-24). The bonus debits WELCOME_BONUS_SOURCE and credits
+    the miner directly in ``balances``; it is not a pending transfer, so it never
+    reached ``_settle_account_transfer_in_utxo`` the way /pending/confirm does.
+    Under dual-write that left the payer's mirrored boxes untouched while its
+    balance dropped (mirror > balance, the bounty #2819 double-spend condition).
+    Node1 2026-09-20: founder_community excess == exactly 0.5 RTC; the
+    2026-09-24 Sybil wave widened it by ~60 RTC and /pending/confirm has failed
+    its mirror_exceeds_balance check since.
+
+    Reuses the transfer-confirm reconciler (consumes only mirror boxes,
+    tolerates a non-migrated payer, asserts mirror <= balance afterwards). The
+    tx id is derived from (miner, epoch) so a replay reconciles onto the same
+    boxes. Failure RAISES (round-2 review): _write_welcome_bonus runs this
+    inside a SAVEPOINT together with the account debit/credit and the ledger
+    marker, so a mirror failure rolls the whole bonus back and it stays
+    unpaid and retryable. Swallowing it would commit an account-only credit
+    and the paid marker, recreating mirror drift permanently.
+
+    Deploy precondition: while founder_community's mirror already exceeds its
+    balance (~61.5 RTC on node1, 2026-09-24), the reconciler's invariant check
+    raises mirror_exceeds_balance on EVERY bonus, so graduation bonuses fail
+    (cleanly, retryably) until an operator repairs that gap.
+    """
+    if not HAVE_UTXO or bonus_i64 <= 0:
+        return
+    tx_hash = hashlib.sha256(
+        f"welcome_bonus:{miner}:{int(epoch)}".encode()
+    ).hexdigest()[:32]
+    _settle_account_transfer_in_utxo(
+        conn, WELCOME_BONUS_SOURCE, miner, int(bonus_i64), int(epoch), tx_hash, int(now)
+    )
+
+
 def _write_welcome_bonus(
+    conn: sqlite3.Connection,
+    miner: str,
+    bonus_i64: int,
+    ledger_cols: set,
+    balance_cols: set,
+):
+    """Pay the bonus atomically: account debit + credit + ledger marker + UTXO
+    mirror move all happen inside one SAVEPOINT. Any failure (including the
+    mirror invariant) rolls back every write of this bonus and re-raises, so
+    nothing half-applied can be committed by the caller and the bonus stays
+    retryable (no paid marker is left behind)."""
+    conn.execute("SAVEPOINT welcome_bonus")
+    try:
+        _write_welcome_bonus_unguarded(conn, miner, bonus_i64, ledger_cols, balance_cols)
+        conn.execute("RELEASE welcome_bonus")
+    except Exception:
+        conn.execute("ROLLBACK TO welcome_bonus")
+        conn.execute("RELEASE welcome_bonus")
+        raise
+
+
+def _write_welcome_bonus_unguarded(
     conn: sqlite3.Connection,
     miner: str,
     bonus_i64: int,
@@ -4006,6 +4079,7 @@ def _write_welcome_bonus(
             "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
             (now, epoch, miner, bonus_i64, reason),
         )
+        _sync_welcome_bonus_utxo_mirror(conn, miner, bonus_i64, epoch, now)
         return
 
     if {"from_miner", "to_miner", "memo"}.issubset(ledger_cols):
@@ -4025,6 +4099,7 @@ def _write_welcome_bonus(
             "INSERT INTO ledger (from_miner, to_miner, amount_i64, memo, ts) VALUES (?, ?, ?, ?, ?)",
             (WELCOME_BONUS_SOURCE, miner, bonus_i64, reason, now),
         )
+        _sync_welcome_bonus_utxo_mirror(conn, miner, bonus_i64, _welcome_bonus_epoch(), now)
         return
 
     raise RuntimeError("unsupported welcome bonus balance/ledger schema")
@@ -4066,43 +4141,72 @@ def _welcome_bonus_source_balance_i64(conn: sqlite3.Connection) -> Optional[int]
     return int(row[0])
 
 
-def _check_welcome_bonus(miner: str):
-    """Award welcome bonus on first-ever attestation. Funded from founder_community.
+def _check_welcome_bonus(miner: str, probation_status: dict = None):
+    """Award the one-time welcome bonus. Funded from founder_community.
 
-    Callers must only invoke this for attestations that PASSED the hardware
-    fingerprint (see the /attest/submit call site). The payer itself refuses to
-    drive WELCOME_BONUS_SOURCE negative and takes the write lock up front so two
-    concurrent first attests cannot both pass the already-paid check.
+    SYBIL-GUARD: the bonus used to be paid on the very first attestation, which
+    made "one fabricated POST = 0.5 RTC" the cheapest reward on the chain (the
+    2026-09-24 wave took 60 RTC across 120 wallets). Now:
+
+      * new miners are paid when they EXIT probation (state == trusted), which
+        already enforces the per-/32 admission and per-/24 + global exit caps;
+      * grandfathered miners keep the legacy first-attestation rule unchanged
+        (in practice all are long past it, so none are paid);
+      * a missing/unknown status or a needs_review flag fails closed.
+
+    The paid-check and the write run under one BEGIN IMMEDIATE so two gunicorn
+    workers cannot both pay the same miner. Returns True iff a bonus was paid.
     """
+    if not isinstance(probation_status, dict):
+        print(f"[WELCOME] {miner}: no probation status -- bonus withheld (fail closed)")
+        return False
+    state = probation_status.get("state")
+    if state not in (sybil_guard.STATE_TRUSTED, sybil_guard.STATE_GRANDFATHERED):
+        return False
+    if sybil_guard.needs_review(probation_status):
+        return False
     try:
-        with closing(sqlite3.connect(DB_PATH)) as conn:
+        with closing(sqlite3.connect(DB_PATH, timeout=10, isolation_level=None)) as conn:
             conn.execute("BEGIN IMMEDIATE")
-            # Check if this miner has ever attested before
-            history_count = conn.execute(
-                "SELECT COUNT(*) FROM miner_attest_history WHERE miner = ?", (miner,)
-            ).fetchone()[0]
-
-            if history_count <= 1:  # First attestation (just recorded)
+            try:
+                # Round 3: re-authorise under the write lock from the PERSISTED
+                # probation row + CURRENT cohort membership. A hold or cohort
+                # insert committed after this attestation's observation (another
+                # worker, an operator) is seen here. Undeterminable -> withhold
+                # (retryable), never pay.
+                _eligible, _pstate, _why = sybil_guard.bonus_eligibility_in_txn(conn, miner)
+                if not _eligible:
+                    conn.execute("ROLLBACK")
+                    print(f"[WELCOME] {miner}: bonus withheld at payment time ({_why})")
+                    return False
+                state = _pstate
+                if state == sybil_guard.STATE_GRANDFATHERED:
+                    history_count = conn.execute(
+                        "SELECT COUNT(*) FROM miner_attest_history WHERE miner = ?", (miner,)
+                    ).fetchone()[0]
+                    if history_count > 1:  # legacy rule: first attestation only
+                        conn.execute("ROLLBACK")
+                        return False
                 ledger_cols = _table_columns(conn, "ledger")
                 balance_cols = _table_columns(conn, "balances")
-                # Check if welcome bonus already paid
-                already_paid = _welcome_bonus_already_paid(conn, miner, ledger_cols)
-
-                if not already_paid:
-                    bonus_i64 = int(WELCOME_BONUS_RTC * 1_000_000)
-                    source_balance = _welcome_bonus_source_balance_i64(conn)
-                    if source_balance is None or source_balance < bonus_i64:
-                        print(f"[WELCOME] SKIPPED for {miner}: {WELCOME_BONUS_SOURCE} "
-                              f"balance {source_balance} < {bonus_i64} uRTC")
-                        conn.rollback()
-                        return
-                    _write_welcome_bonus(conn, miner, bonus_i64, ledger_cols, balance_cols)
-                    conn.commit()
-                    print(f"[WELCOME] {miner} received {WELCOME_BONUS_RTC} RTC welcome bonus!")
-                    return
-            conn.rollback()
+                if _welcome_bonus_already_paid(conn, miner, ledger_cols):
+                    conn.execute("ROLLBACK")
+                    return False
+                bonus_i64 = int(WELCOME_BONUS_RTC * 1_000_000)
+                _write_welcome_bonus(conn, miner, bonus_i64, ledger_cols, balance_cols)
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+        print(f"[WELCOME] {miner} received {WELCOME_BONUS_RTC} RTC welcome bonus (state={state})")
+        return True
     except Exception as e:
-        print(f"[WELCOME] Error for {miner}: {e}")
+        # Nothing was committed (savepoint + transaction rolled back), so the
+        # bonus is still unpaid and will be retried on the next attestation.
+        logging.critical(
+            "[WELCOME] bonus NOT paid for %s (rolled back, will retry): %s", miner, e)
+        print(f"[WELCOME] Error for {miner}: {e} -- NOT paid, retryable")
+        return False
 
 
 def _get_streak_bonus(miner: str) -> float:
@@ -4586,8 +4690,12 @@ def verify_measurement_binding(nonce: str, binding, expected_rate_ns=None,
 
     try:
         duration_ns = float(binding.get("duration_ns"))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return {"state": "malformed", "ok": False, "reason": "duration_not_numeric"}
+    # SYBIL-GUARD: NaN compares False with everything and inf divides to inf,
+    # so both used to come back "bound".
+    if not math.isfinite(duration_ns):
+        return {"state": "malformed", "ok": False, "reason": "duration_not_finite"}
     if duration_ns <= 0:
         return {"state": "malformed", "ok": False, "reason": "duration_not_positive"}
 
@@ -4602,7 +4710,9 @@ def verify_measurement_binding(nonce: str, binding, expected_rate_ns=None,
     if expected_rate_ns:
         try:
             expected = float(expected_rate_ns)
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            expected = 0.0
+        if not math.isfinite(expected):
             expected = 0.0
         if expected > 0:
             ratio = rate_ns / expected
@@ -4625,7 +4735,12 @@ def verify_measurement_binding(nonce: str, binding, expected_rate_ns=None,
 TEMPORAL_UNVERIFIED_BONUS_FRACTION = 0.5
 
 
-def apply_temporal_consistency_to_weight(hw_weight: float, temporal_review: dict) -> float:
+_NO_PROBATION = object()
+
+
+def apply_temporal_consistency_to_weight(
+    hw_weight: float, temporal_review: dict, probation_status=_NO_PROBATION,
+) -> float:
     """Gate the ANTIQUITY BONUS on the miner's consistency with its own history.
 
     Antiquity multipliers above 1.0 are the only thing worth forging on this
@@ -4649,7 +4764,19 @@ def apply_temporal_consistency_to_weight(hw_weight: float, temporal_review: dict
     reward is for staying consistent, which a farm cannot mass-produce, because
     each identity must be self-consistent AND independent of the others at the
     same time. See finding-contributor-tenure-multiplier-rejected.
+
+    SYBIL-GUARD (2026-09-24): the self-history check cannot judge a miner that
+    HAS no history, and "insufficient_history" still paid half the premium (a
+    fabricated G4 enrolled at 1.75x on its first POST). When the caller passes
+    `probation_status`, the temporal-adjusted weight is run through
+    sybil_guard.enrollment_weight: probation -> capped at PROBATION_WEIGHT_CAP
+    (1.0, the floor this function already guarantees), needs_review -> 0 (the
+    caller escrows it), graduated without a bound measurement -> capped,
+    grandfathered -> unchanged. Omitting the argument keeps the old behaviour.
     """
+    if probation_status is not _NO_PROBATION:
+        adjusted = apply_temporal_consistency_to_weight(hw_weight, temporal_review)
+        return sybil_guard.enrollment_weight(adjusted, probation_status)
     try:
         weight = float(hw_weight)
     except (TypeError, ValueError):
@@ -5600,6 +5727,23 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 print(f"[SECURITY] Epoch {epoch} already settled (claim lost) — skipping to prevent double-reward")
                 return
 
+            # SYBIL-GUARD settlement guard, read INSIDE this BEGIN IMMEDIATE
+            # (round-2 review: reading before it let a hold committed in
+            # between be missed). needs_review / cohort miners settle at 0;
+            # their would-be weight is escrowed in this same transaction.
+            # hold_for_settlement never raises, so it cannot halt settlement.
+            _held = sybil_guard.hold_for_settlement(
+                conn, epoch, [pk for pk, _ in miners], weights=dict(miners))
+            if _held:
+                miners = [(pk, w) for pk, w in miners if pk not in _held]
+                total_weight = sum(w for _, w in miners)
+                print(f"[SYBIL-GUARD] finalize_epoch {epoch}: {len(_held)} needs_review miner(s) held at 0")
+                if total_weight == 0:
+                    c.execute("ROLLBACK")
+                    print(f"[SYBIL-GUARD] finalize_epoch {epoch}: every miner held -- epoch left unsettled")
+                    _record_unsettled_epoch(c, conn, epoch, "all_miners_held")
+                    return
+
             utxo_reward_outputs = []
             skipped_utxo_dust_nrtc = 0
 
@@ -6119,6 +6263,90 @@ def _check_hardware_binding(miner_id: str, device: dict, signals: dict = None, s
         return False, 'hardware_binding_unavailable', ''
 
 
+def _sybil_guard_observe(miner, fingerprint, client_ip, fingerprint_passed,
+                         nonce=None, measurement_binding=None):
+    """SYBIL-GUARD: advance probation for this attestation. NEVER raises.
+
+    Everything that can throw (profile extraction, binding verification, the
+    probation write) is inside the boundary. Fallback chain on error:
+      1. read-only get_probation_status (a grandfathered miner keeps its tier
+         through a transient lock);
+      2. sybil_guard.fallback_status: STATE_UNAVAILABLE plus whether the miner
+         has pre-cutoff history. Established -> today's weight; new -> probation
+         cap; unknown -> enrollment is DEFERRED (never a reduced weight written
+         for an established miner because of an error).
+    """
+    try:
+        binding_state = verify_measurement_binding(nonce, measurement_binding).get("state")
+    except Exception as exc:
+        print(f"[SYBIL-GUARD] binding verify failed for {str(miner)[:20]}: {exc}")
+        binding_state = "error"
+    try:
+        profile = extract_temporal_profile(fingerprint if isinstance(fingerprint, dict) else {})
+        with closing(sqlite3.connect(DB_PATH, timeout=10, isolation_level=None)) as pconn:
+            status = sybil_guard.observe_attestation(
+                pconn, miner, profile, client_ip,
+                fingerprint_passed=bool(fingerprint_passed),
+                binding_state=binding_state,
+                # RIP-309d (implemented, previously never called): new
+                # identities from one /24 must look like independent machines.
+                cluster_check=cluster_independence,
+            )
+    except Exception as exc:
+        print(f"[SYBIL-GUARD] observe failed for {str(miner)[:20]}: {exc}")
+        status = None
+        try:
+            with closing(sqlite3.connect(DB_PATH, timeout=10)) as rconn:
+                status = sybil_guard.get_probation_status(rconn, miner)
+        except Exception as exc2:
+            print(f"[SYBIL-GUARD] status read failed for {str(miner)[:20]}: {exc2}")
+        if status is None:
+            try:
+                with closing(sqlite3.connect(DB_PATH, timeout=10)) as fconn:
+                    status = sybil_guard.fallback_status(fconn, miner)
+            except Exception as exc3:
+                print(f"[SYBIL-GUARD] fallback classification failed for {str(miner)[:20]}: {exc3}")
+                status = sybil_guard.fallback_status(None, miner)
+    try:
+        if status.get("anomalies") or status.get("incident_signature") or status.get("needs_review"):
+            print(f"[SYBIL-GUARD] {str(miner)[:20]}... anomalies={status.get('anomalies')} "
+                  f"incident_signature={status.get('incident_signature')} "
+                  f"needs_review={status.get('review_reason')} "
+                  f"state={status.get('state')} prefix={sybil_guard.source_prefix(client_ip)}")
+        if status.get("just_exited"):
+            print(f"[SYBIL-GUARD] {str(miner)[:20]}... exited probation")
+        elif sybil_guard.is_in_probation(status):
+            print(f"[SYBIL-GUARD] {str(miner)[:20]}... state={status.get('state')} "
+                  f"blockers={list(status.get('blockers') or [])[:3]}")
+    except Exception:
+        pass
+    return status
+
+
+class _EnrollmentDeferred(Exception):
+    """SYBIL-GUARD: classification unavailable and establishment unknown."""
+
+
+def _sybil_guard_hold_enrollment(conn, epoch, miner, would_be_units, status):
+    """SYBIL-GUARD needs_review: zero this epoch's enrollment, keep a record.
+
+    Enrollment is INSERT OR IGNORE (first write wins), so a miner flagged after
+    its first enrollment this epoch is downgraded explicitly. Only the CURRENT
+    epoch row is touched. The would-be weight (baseline-capped, i.e. what
+    probation would have paid) goes to sybil_review_escrow so an operator can
+    restore it. The flag comes only from this miner's own attestation, so a
+    third party cannot use this to zero someone else.
+    """
+    sybil_guard.record_review_escrow(
+        conn, epoch, miner, would_be_units, status.get("review_reason") or "needs_review")
+    conn.execute(
+        "UPDATE epoch_enroll SET weight = 0 WHERE epoch = ? AND miner_pk = ?",
+        (epoch, miner),
+    )
+    print(f"[SYBIL-GUARD] {str(miner)[:20]}... needs_review -> epoch {epoch} weight 0 "
+          f"(escrowed {would_be_units} units)")
+
+
 @app.route('/attest/submit', methods=['POST'])
 def submit_attestation():
     """Submit hardware attestation with fingerprint validation"""
@@ -6542,9 +6770,26 @@ def _submit_attestation_impl():
         if not oui_ok:
             return jsonify(oui_info), 412
 
+    # Validate fingerprint data (RIP-PoA).
+    # SYBIL-GUARD fix: this used to run AFTER the replay block below, which set
+    # fingerprint_passed = False first. That made detect_fingerprint_anomalies
+    # (guarded by `if fingerprint_passed`) dead code and stored
+    # attestation_valid=False for every submission. validate_fingerprint_data
+    # has no DB side effects, so running it first changes no outcome -- a replay
+    # is still rejected with 409 below.
+    # FIX #305: Default to False - must pass validation to earn rewards
+    fingerprint_passed = False
+    fingerprint_reason = "not_checked"
+
+    # FIX #305: Always validate - pass None/empty to validator which rejects them
+    if fingerprint is not None:
+        fingerprint_passed, fingerprint_reason = validate_fingerprint_data(
+            fingerprint, claimed_device=device,
+        )
+    else:
+        fingerprint_reason = "no_fingerprint_submitted"
+
     # Issue #2276: Hardware Fingerprint Replay Attack Defense
-    # Check for replay attacks BEFORE validating fingerprint data
-    fingerprint_passed = False  # Initialize before replay defense block
     replay_blocked = False
     replay_reason = "not_checked"
     replay_details = None
@@ -6635,18 +6880,8 @@ def _submit_attestation_impl():
             "code": "REPLAY_ATTACK_BLOCKED"
         }), 409
 
-    # NEW: Validate fingerprint data (RIP-PoA)
-    # FIX #305: Default to False - must pass validation to earn rewards
-    fingerprint_passed = False
-    fingerprint_reason = "not_checked"
-
-    # FIX #305: Always validate - pass None/empty to validator which rejects them
-    if fingerprint is not None:
-        fingerprint_passed, fingerprint_reason = validate_fingerprint_data(
-            fingerprint, claimed_device=device,
-        )
-    else:
-        fingerprint_reason = "no_fingerprint_submitted"
+    # (fingerprint_passed / fingerprint_reason are computed above, before the
+    # replay block -- SYBIL-GUARD dead-code fix.)
 
     # DEBUG: dump fingerprint payload for diagnosis
     if miner and 'selena' in miner.lower():
@@ -6708,6 +6943,15 @@ def _submit_attestation_impl():
     except Exception as _te:
         print(f"[TEMPORAL] Warning: {_te}")
 
+    # SYBIL-GUARD: advance new-miner probation. Runs after
+    # record_attestation_success (history includes this attestation) and before
+    # the welcome bonus and auto-enroll, which both consult the result.
+    probation_status = _sybil_guard_observe(
+        miner, fingerprint if isinstance(fingerprint, dict) else {},
+        client_ip, fingerprint_passed,
+        nonce=nonce, measurement_binding=data.get("measurement_binding"),
+    )
+
     # Update warthog_bonus in attestation record.
     # Written unconditionally: warthog_bonus describes THIS attestation, and
     # record_attestation_success() does not carry the column in its upsert. A
@@ -6733,7 +6977,7 @@ def _submit_attestation_impl():
     # hardware fingerprint earns it: a VM/emulator/missing-fingerprint attest is
     # still recorded (zero reward weight) but must not drain founder_community.
     if fingerprint_passed:
-        _check_welcome_bonus(miner)
+        _check_welcome_bonus(miner, probation_status)  # SYBIL-GUARD: paid at probation exit
 
     # AUTO-ENROLL: Automatically enroll miner in current epoch on successful attestation
     # This eliminates the need for miners to make a separate POST /epoch/enroll call
@@ -6760,7 +7004,7 @@ def _submit_attestation_impl():
         # line, so a miner contradicting its own measurement history still
         # collected the full antiquity premium. Gate the bonus on it.
         hw_weight_raw = hw_weight
-        hw_weight = apply_temporal_consistency_to_weight(hw_weight, temporal_review)
+        hw_weight = apply_temporal_consistency_to_weight(hw_weight, temporal_review, probation_status)
 
         # RIP-309c phase 0: observe only. Record whether this submission bound
         # its measurement to the challenge, so fleet adoption can be measured
@@ -6779,6 +7023,9 @@ def _submit_attestation_impl():
                 f"reason={measurement_binding_verdict.get('reason')}"
             )
         miner_id = _attest_valid_miner(data.get("miner_id")) or miner
+
+        if sybil_guard.should_defer_enrollment(probation_status):
+            raise _EnrollmentDeferred(miner)
 
         with closing(sqlite3.connect(DB_PATH)) as enroll_conn:
             _fp_for_rotation = fingerprint if isinstance(fingerprint, dict) else {}
@@ -6808,6 +7055,19 @@ def _submit_attestation_impl():
                 "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
                 (epoch, miner, enroll_weight_units)
             )
+            if sybil_guard.needs_review(probation_status):
+                if not fingerprint_passed:
+                    _would_be_units = FAILED_FINGERPRINT_WEIGHT_UNITS
+                else:
+                    _would_be_units = epoch_weight_to_units(
+                        apply_temporal_consistency_to_weight(
+                            hw_weight_raw, temporal_review,
+                            sybil_guard.unguarded_status(probation_status),
+                        ) * rotation_eval["active_ratio"]
+                    )
+                _sybil_guard_hold_enrollment(
+                    enroll_conn, epoch, miner, _would_be_units, probation_status,
+                )
             header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner)
             if header_pubkey:
                 # Lottery participation and header authorization use the
@@ -6835,6 +7095,10 @@ def _submit_attestation_impl():
             f"[AUTO-ENROLL] {miner[:20]}... enrolled epoch {epoch} weight={enroll_weight} family={family} "
             f"arch={arch_for_weight} hw_weight={hw_weight} active_ratio={rotation_eval['active_ratio']:.3f}"
         )
+    except _EnrollmentDeferred:
+        app.logger.warning(
+            f"[SYBIL-GUARD] {miner[:20]}... enrollment deferred: probation status unavailable "
+            f"and establishment unknown (next attestation retries)")
     except Exception as e:
         app.logger.error(f"[AUTO-ENROLL] Error enrolling {miner[:20]}...: {e}")
 
@@ -6869,6 +7133,9 @@ def _submit_attestation_impl():
         "device": device,
         "fingerprint_passed": fingerprint_passed,
         "temporal_review_flag": bool(temporal_review.get("review_flag")),
+        # SYBIL-GUARD: tells a new miner why it is not yet earning the vintage
+        # multiplier / welcome bonus and what it still needs.
+        "probation": sybil_guard.public_status(probation_status),
         # RIP-309c: tells a client whether its measurement was bound to the
         # challenge, and what workload the NEXT round expects. A client can
         # adopt binding without a coordinated release by reading this.
@@ -7131,7 +7398,20 @@ def enroll_epoch():
         _temporal_enroll = validate_temporal_consistency(
             fetch_miner_fingerprint_sequence(c, miner_pk)
         )
-        hw_weight = apply_temporal_consistency_to_weight(hw_weight, _temporal_enroll)
+        # SYBIL-GUARD: read-only probation lookup; enrollment never advances
+        # probation (only attestations do). Unknown -> probation (fail closed).
+        try:
+            _probation_enroll = sybil_guard.get_probation_status(c, miner_pk)
+        except Exception as _pe:
+            print(f"[SYBIL-GUARD] enroll status read failed for {miner_pk[:20]}: {_pe}")
+            _probation_enroll = sybil_guard.fallback_status(c, miner_pk)
+        if sybil_guard.should_defer_enrollment(_probation_enroll):
+            return jsonify({
+                "ok": False, "error": "enrollment_deferred",
+                "hint": "probation status temporarily unavailable; retry",
+            }), 503
+        _hw_weight_raw_enroll = hw_weight
+        hw_weight = apply_temporal_consistency_to_weight(hw_weight, _temporal_enroll, _probation_enroll)
 
         _enroll_fp = resolve_enroll_fingerprint(c, miner_pk, data)
         rotation_eval = evaluate_rotating_fingerprint_checks(
@@ -7175,6 +7455,17 @@ def enroll_epoch():
             "INSERT OR IGNORE INTO epoch_enroll (epoch, miner_pk, weight) VALUES (?, ?, ?)",
             (epoch, miner_pk, weight_units)
         )
+        if sybil_guard.needs_review(_probation_enroll):
+            if fingerprint_failed:
+                _would_be_units = FAILED_FINGERPRINT_WEIGHT_UNITS
+            else:
+                _would_be_units = epoch_weight_to_units(
+                    apply_temporal_consistency_to_weight(
+                        _hw_weight_raw_enroll, _temporal_enroll,
+                        sybil_guard.unguarded_status(_probation_enroll),
+                    ) * rotation_eval['active_ratio']
+                )
+            _sybil_guard_hold_enrollment(c, epoch, miner_pk, _would_be_units, _probation_enroll)
 
         # Register a real Ed25519 pubkey for block-header verification when available.
         header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner_pk)

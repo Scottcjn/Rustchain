@@ -1,0 +1,2090 @@
+[
+{
+"miner": "honest-aarch64-029",
+"ts": 1789120726,
+"profile_json": "{\"clock_drift_cv\":0.200827,\"thermal_variance\":0.9178,\"jitter_cv\":0.017740450724105752,\"cache_hierarchy_ratio\":1.005}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-aarch64-029",
+"ts": 1789121331,
+"profile_json": "{\"clock_drift_cv\":0.200827,\"thermal_variance\":0.9178,\"jitter_cv\":0.017740450724105752,\"cache_hierarchy_ratio\":1.005}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-aarch64-029",
+"ts": 1789121936,
+"profile_json": "{\"clock_drift_cv\":0.200827,\"thermal_variance\":0.9178,\"jitter_cv\":0.017740450724105752,\"cache_hierarchy_ratio\":1.005}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-aarch64-029",
+"ts": 1789122541,
+"profile_json": "{\"clock_drift_cv\":0.200827,\"thermal_variance\":0.9178,\"jitter_cv\":0.017740450724105752,\"cache_hierarchy_ratio\":1.005}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-aarch64-029",
+"ts": 1789123146,
+"profile_json": "{\"clock_drift_cv\":0.200827,\"thermal_variance\":0.9178,\"jitter_cv\":0.017740450724105752,\"cache_hierarchy_ratio\":1.005}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-x86-64-069",
+"ts": 1789129499,
+"profile_json": "{\"clock_drift_cv\":0.0,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "x86_64"
+},
+{
+"miner": "honest-g5-043",
+"ts": 1789132285,
+"profile_json": "{\"clock_drift_cv\":0.0,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-032",
+"ts": 1789132502,
+"profile_json": "{\"clock_drift_cv\":0.00894935210210751,\"thermal_variance\":0.363834814814572,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.219182}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-031",
+"ts": 1789132540,
+"profile_json": "{\"clock_drift_cv\":0.0119954,\"thermal_variance\":0.49755,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.41392}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-039",
+"ts": 1789132545,
+"profile_json": "{\"clock_drift_cv\":0.0069418,\"thermal_variance\":0.23302,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.14224}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-046",
+"ts": 1789132552,
+"profile_json": "{\"clock_drift_cv\":0.009376402423763934,\"thermal_variance\":0.3896295945805975,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.31194}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-018",
+"ts": 1789132556,
+"profile_json": "{\"clock_drift_cv\":0.007939224883296455,\"thermal_variance\":0.2902556384653898,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.165678}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-052",
+"ts": 1789132568,
+"profile_json": "{\"clock_drift_cv\":0.0054962,\"thermal_variance\":0.1744,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.047515}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-010",
+"ts": 1789132896,
+"profile_json": "{\"clock_drift_cv\":0.007607795522105148,\"thermal_variance\":0.29331,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.189009}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-010",
+"ts": 1789133050,
+"profile_json": "{\"clock_drift_cv\":0.0043836,\"thermal_variance\":0.125847,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.024494}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-041",
+"ts": 1789133204,
+"profile_json": "{\"clock_drift_cv\":0.0111681,\"thermal_variance\":0.46196,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.36283}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-041",
+"ts": 1789133220,
+"profile_json": "{\"clock_drift_cv\":0.01118130761229217,\"thermal_variance\":0.46196,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.362961131765088}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-041",
+"ts": 1789133220,
+"profile_json": "{\"clock_drift_cv\":0.01138543480564177,\"thermal_variance\":0.4716615530466878,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.372572}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-041",
+"ts": 1789133241,
+"profile_json": "{\"clock_drift_cv\":0.0111945,\"thermal_variance\":0.46196,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.36309188938219}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-041",
+"ts": 1789133273,
+"profile_json": "{\"clock_drift_cv\":0.01120764660498244,\"thermal_variance\":0.46196,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.36322}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-041",
+"ts": 1789133323,
+"profile_json": "{\"clock_drift_cv\":0.0090279,\"thermal_variance\":0.350504,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.254488}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-041",
+"ts": 1789133383,
+"profile_json": "{\"clock_drift_cv\":0.0112749,\"thermal_variance\":0.46939,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.3697}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-041",
+"ts": 1789133417,
+"profile_json": "{\"clock_drift_cv\":0.0112881,\"thermal_variance\":0.46939,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.3698}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-041",
+"ts": 1789133439,
+"profile_json": "{\"clock_drift_cv\":0.0113013,\"thermal_variance\":0.46939,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.36996}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-041",
+"ts": 1789133487,
+"profile_json": "{\"clock_drift_cv\":0.0113144,\"thermal_variance\":0.46939,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.37009}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-048",
+"ts": 1789133501,
+"profile_json": "{\"clock_drift_cv\":0.012246542399245724,\"thermal_variance\":0.53,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.37397}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-048",
+"ts": 1789133531,
+"profile_json": "{\"clock_drift_cv\":0.0122592900212483,\"thermal_variance\":0.53,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.3741}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-048",
+"ts": 1789133545,
+"profile_json": "{\"clock_drift_cv\":0.01227203764325088,\"thermal_variance\":0.53,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.37423}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-048",
+"ts": 1789133569,
+"profile_json": "{\"clock_drift_cv\":0.012284785265253458,\"thermal_variance\":0.53,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.37436}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-037",
+"ts": 1789133595,
+"profile_json": "{\"clock_drift_cv\":0.0115921,\"thermal_variance\":0.45120615841544837,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.3436}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-037",
+"ts": 1789133607,
+"profile_json": "{\"clock_drift_cv\":0.011605531857655801,\"thermal_variance\":0.45120615841544837,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.34368}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-037",
+"ts": 1789133623,
+"profile_json": "{\"clock_drift_cv\":0.0116189,\"thermal_variance\":0.45120615841544837,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.34381}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-037",
+"ts": 1789133639,
+"profile_json": "{\"clock_drift_cv\":0.011632302607367376,\"thermal_variance\":0.45120615841544837,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.34394}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-021",
+"ts": 1789133665,
+"profile_json": "{\"clock_drift_cv\":0.013698659258844394,\"thermal_variance\":0.5625717973409302,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.523075}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-021",
+"ts": 1789133675,
+"profile_json": "{\"clock_drift_cv\":0.0137118,\"thermal_variance\":0.5625717973409302,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.523208}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-021",
+"ts": 1789133684,
+"profile_json": "{\"clock_drift_cv\":0.0137249,\"thermal_variance\":0.5625717973409302,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.52334}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-021",
+"ts": 1789133695,
+"profile_json": "{\"clock_drift_cv\":0.013738,\"thermal_variance\":0.5625717973409302,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.523472}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-038",
+"ts": 1789136406,
+"profile_json": "{\"clock_drift_cv\":0.1357866,\"thermal_variance\":0.3,\"jitter_cv\":0.1993993,\"cache_hierarchy_ratio\":2.816049551980771}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-038",
+"ts": 1789136726,
+"profile_json": "{\"clock_drift_cv\":0.11567,\"thermal_variance\":0.3,\"jitter_cv\":0.1698587,\"cache_hierarchy_ratio\":2.398857}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-038",
+"ts": 1789137042,
+"profile_json": "{\"clock_drift_cv\":0.12573,\"thermal_variance\":0.3,\"jitter_cv\":0.18463,\"cache_hierarchy_ratio\":2.60745}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-038",
+"ts": 1789137366,
+"profile_json": "{\"clock_drift_cv\":0.1357866,\"thermal_variance\":0.3,\"jitter_cv\":0.1993993,\"cache_hierarchy_ratio\":2.816049551980771}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-038",
+"ts": 1789137728,
+"profile_json": "{\"clock_drift_cv\":0.11567,\"thermal_variance\":0.3,\"jitter_cv\":0.1698587,\"cache_hierarchy_ratio\":2.398857}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-038",
+"ts": 1789138029,
+"profile_json": "{\"clock_drift_cv\":0.12573,\"thermal_variance\":0.3,\"jitter_cv\":0.18463,\"cache_hierarchy_ratio\":2.60745}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-038",
+"ts": 1789138570,
+"profile_json": "{\"clock_drift_cv\":0.1357866,\"thermal_variance\":0.333,\"jitter_cv\":0.1993993,\"cache_hierarchy_ratio\":2.816049551980771}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-038",
+"ts": 1789140258,
+"profile_json": "{\"clock_drift_cv\":0.11567,\"thermal_variance\":0.284,\"jitter_cv\":0.1698587,\"cache_hierarchy_ratio\":2.398857}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-aarch64-070",
+"ts": 1789143508,
+"profile_json": "{\"clock_drift_cv\":0.02,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-g5-038",
+"ts": 1789144644,
+"profile_json": "{\"clock_drift_cv\":0.12573,\"thermal_variance\":0.3,\"jitter_cv\":0.18463,\"cache_hierarchy_ratio\":2.60745}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g5-038",
+"ts": 1789144663,
+"profile_json": "{\"clock_drift_cv\":0.1357866,\"thermal_variance\":0.333,\"jitter_cv\":0.1993993,\"cache_hierarchy_ratio\":2.816049551980771}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-aarch64-070",
+"ts": 1789144872,
+"profile_json": "{\"clock_drift_cv\":0.02,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-aarch64-071",
+"ts": 1789145279,
+"profile_json": "{\"clock_drift_cv\":0.041,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-g5-022",
+"ts": 1789145665,
+"profile_json": "{\"clock_drift_cv\":0.123,\"thermal_variance\":0.3,\"jitter_cv\":0.182,\"cache_hierarchy_ratio\":2.57}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-g4-072",
+"ts": 1789146617,
+"profile_json": "{\"clock_drift_cv\":0.0123,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.0}",
+"device_arch": "G4"
+},
+{
+"miner": "honest-386-073",
+"ts": 1789147803,
+"profile_json": "{\"clock_drift_cv\":0.0124,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "386"
+},
+{
+"miner": "honest-g5-074",
+"ts": 1789148954,
+"profile_json": "{\"clock_drift_cv\":0.0218,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.0}",
+"device_arch": "G5"
+},
+{
+"miner": "honest-nes-6502-075",
+"ts": 1789148972,
+"profile_json": "{\"clock_drift_cv\":0.0,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "nes_6502"
+},
+{
+"miner": "honest-default-076",
+"ts": 1789150215,
+"profile_json": "{\"clock_drift_cv\":0.004,\"thermal_variance\":0.0,\"jitter_cv\":0.02,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "default"
+},
+{
+"miner": "honest-default-076",
+"ts": 1789150291,
+"profile_json": "{\"clock_drift_cv\":0.004,\"thermal_variance\":0.0,\"jitter_cv\":0.02,\"cache_hierarchy_ratio\":4.0}",
+"device_arch": "default"
+},
+{
+"miner": "honest-g4-072",
+"ts": 1789154207,
+"profile_json": "{\"clock_drift_cv\":0.0126,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.0}",
+"device_arch": "G4"
+},
+{
+"miner": "honest-aarch64-077",
+"ts": 1789156899,
+"profile_json": "{\"clock_drift_cv\":0.02,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-g4-078",
+"ts": 1789157048,
+"profile_json": "{\"clock_drift_cv\":0.0125,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.0}",
+"device_arch": "G4"
+},
+{
+"miner": "honest-g4-079",
+"ts": 1789162932,
+"profile_json": "{\"clock_drift_cv\":0.0121,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":2.0}",
+"device_arch": "G4"
+},
+{
+"miner": "honest-g4-083",
+"ts": 1789162987,
+"profile_json": "{\"clock_drift_cv\":0.0124,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "G4"
+},
+{
+"miner": "honest-386-084",
+"ts": 1789163013,
+"profile_json": "{\"clock_drift_cv\":0.012,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "386"
+},
+{
+"miner": "honest-aarch64-000",
+"ts": 1789218142,
+"profile_json": "{\"clock_drift_cv\":0.04263,\"thermal_variance\":1.0483,\"jitter_cv\":0.045375513769839074,\"cache_hierarchy_ratio\":1.017}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-arm2-053",
+"ts": 1789309337,
+"profile_json": "{\"clock_drift_cv\":0.021,\"thermal_variance\":1.2,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.16}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-053",
+"ts": 1789316128,
+"profile_json": "{\"clock_drift_cv\":0.020626418720345006,\"thermal_variance\":1.1788754923274072,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.1572029331040845}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-036",
+"ts": 1789316136,
+"profile_json": "{\"clock_drift_cv\":0.022256061360095863,\"thermal_variance\":1.207795606032869,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.3025067752710946}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-034",
+"ts": 1789316145,
+"profile_json": "{\"clock_drift_cv\":0.023666102246517155,\"thermal_variance\":1.214076159592142,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.348300574026945}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-028",
+"ts": 1789316154,
+"profile_json": "{\"clock_drift_cv\":0.025749207175723578,\"thermal_variance\":1.228599273385013,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.357027209615553}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-017",
+"ts": 1789316162,
+"profile_json": "{\"clock_drift_cv\":0.028058858728727747,\"thermal_variance\":1.2546418914495845,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.3280233578485494}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-024",
+"ts": 1789316171,
+"profile_json": "{\"clock_drift_cv\":0.029571194579982005,\"thermal_variance\":1.2575517458800196,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.2135110823399873}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-047",
+"ts": 1789316179,
+"profile_json": "{\"clock_drift_cv\":0.03119682254403238,\"thermal_variance\":1.3069162712278357,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.3995159723451325}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-001",
+"ts": 1789316188,
+"profile_json": "{\"clock_drift_cv\":0.03210781691234259,\"thermal_variance\":1.337650780714241,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.2357842511109807}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-011",
+"ts": 1789316196,
+"profile_json": "{\"clock_drift_cv\":0.0353642590828415,\"thermal_variance\":1.3703765415905111,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.4081214190535114}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-023",
+"ts": 1789316205,
+"profile_json": "{\"clock_drift_cv\":0.03651895282602455,\"thermal_variance\":1.3355575751115574,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.435570134732577}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-015",
+"ts": 1789316213,
+"profile_json": "{\"clock_drift_cv\":0.03870471653965016,\"thermal_variance\":1.3758797265264873,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.4194249202886753}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-051",
+"ts": 1789316222,
+"profile_json": "{\"clock_drift_cv\":0.03980191857294064,\"thermal_variance\":1.3931001979400834,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.334119760288473}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-014",
+"ts": 1789316230,
+"profile_json": "{\"clock_drift_cv\":0.04261687350901837,\"thermal_variance\":1.4665232614423147,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.443727879671471}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-045",
+"ts": 1789316239,
+"profile_json": "{\"clock_drift_cv\":0.04214437229857436,\"thermal_variance\":1.4138959692152375,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.3726869093816183}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-053",
+"ts": 1789319789,
+"profile_json": "{\"clock_drift_cv\":0.02058505110435002,\"thermal_variance\":1.1790769021290062,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.1595389549469926}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-003",
+"ts": 1789319791,
+"profile_json": "{\"clock_drift_cv\":0.026796006660420344,\"thermal_variance\":1.2892826455114508,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.233084669939401}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-006",
+"ts": 1789319791,
+"profile_json": "{\"clock_drift_cv\":0.024303810860731714,\"thermal_variance\":1.2396667738494929,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.272692495696009}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-009",
+"ts": 1789319791,
+"profile_json": "{\"clock_drift_cv\":0.031382640204304875,\"thermal_variance\":1.3180677327988963,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.2822641013414655}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-016",
+"ts": 1789319791,
+"profile_json": "{\"clock_drift_cv\":0.033572344326929356,\"thermal_variance\":1.3260823186361608,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.39720959319538}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-030",
+"ts": 1789319791,
+"profile_json": "{\"clock_drift_cv\":0.029089806172765978,\"thermal_variance\":1.324433112948901,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.2518252534261447}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-042",
+"ts": 1789319791,
+"profile_json": "{\"clock_drift_cv\":0.035136408455821555,\"thermal_variance\":1.3875876812166865,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.2543177275413395}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-044",
+"ts": 1789319791,
+"profile_json": "{\"clock_drift_cv\":0.02788092303328988,\"thermal_variance\":1.289951826071399,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.364761701427179}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-054",
+"ts": 1789319791,
+"profile_json": "{\"clock_drift_cv\":0.022672918293355594,\"thermal_variance\":1.1938751421722371,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.1934151085463105}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-013",
+"ts": 1789319793,
+"profile_json": "{\"clock_drift_cv\":0.03529580716574705,\"thermal_variance\":1.3641485882595143,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.388619847869211}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-012",
+"ts": 1789319859,
+"profile_json": "{\"clock_drift_cv\":0.039120600149892805,\"thermal_variance\":1.3875627199374794,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.2743725766470213}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-020",
+"ts": 1789319859,
+"profile_json": "{\"clock_drift_cv\":0.04006293554489442,\"thermal_variance\":1.409805858010213,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.3907100238528343}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-035",
+"ts": 1789319859,
+"profile_json": "{\"clock_drift_cv\":0.042340325252225745,\"thermal_variance\":1.466853260609063,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.302210951661236}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-040",
+"ts": 1789319859,
+"profile_json": "{\"clock_drift_cv\":0.04212500994365954,\"thermal_variance\":1.4477749169663636,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.4296526609740257}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-arm2-050",
+"ts": 1789319859,
+"profile_json": "{\"clock_drift_cv\":0.04410336719757928,\"thermal_variance\":1.4423839645651713,\"jitter_cv\":0.04,\"cache_hierarchy_ratio\":3.373946178097246}",
+"device_arch": "arm2"
+},
+{
+"miner": "honest-default-055",
+"ts": 1789351346,
+"profile_json": "{\"clock_drift_cv\":0.3523,\"thermal_variance\":0.9333,\"jitter_cv\":0.035504113977094076,\"cache_hierarchy_ratio\":0.995}",
+"device_arch": "default"
+},
+{
+"miner": "honest-default-055",
+"ts": 1789351933,
+"profile_json": "{\"clock_drift_cv\":0.3523,\"thermal_variance\":0.9333,\"jitter_cv\":0.035504113977094076,\"cache_hierarchy_ratio\":0.995}",
+"device_arch": "default"
+},
+{
+"miner": "honest-default-055",
+"ts": 1789352516,
+"profile_json": "{\"clock_drift_cv\":0.3523,\"thermal_variance\":0.9333,\"jitter_cv\":0.035504113977094076,\"cache_hierarchy_ratio\":0.995}",
+"device_arch": "default"
+},
+{
+"miner": "honest-default-055",
+"ts": 1789353099,
+"profile_json": "{\"clock_drift_cv\":0.3523,\"thermal_variance\":0.9333,\"jitter_cv\":0.035504113977094076,\"cache_hierarchy_ratio\":0.995}",
+"device_arch": "default"
+},
+{
+"miner": "honest-default-055",
+"ts": 1789353682,
+"profile_json": "{\"clock_drift_cv\":0.3523,\"thermal_variance\":0.9333,\"jitter_cv\":0.035504113977094076,\"cache_hierarchy_ratio\":0.995}",
+"device_arch": "default"
+},
+{
+"miner": "honest-default-055",
+"ts": 1789354273,
+"profile_json": "{\"clock_drift_cv\":0.3523,\"thermal_variance\":0.9333,\"jitter_cv\":0.035504113977094076,\"cache_hierarchy_ratio\":0.995}",
+"device_arch": "default"
+},
+{
+"miner": "honest-default-055",
+"ts": 1789354862,
+"profile_json": "{\"clock_drift_cv\":0.3523,\"thermal_variance\":0.9333,\"jitter_cv\":0.035504113977094076,\"cache_hierarchy_ratio\":0.995}",
+"device_arch": "default"
+},
+{
+"miner": "honest-default-055",
+"ts": 1789355447,
+"profile_json": "{\"clock_drift_cv\":0.3523,\"thermal_variance\":0.9333,\"jitter_cv\":0.035504113977094076,\"cache_hierarchy_ratio\":0.995}",
+"device_arch": "default"
+},
+{
+"miner": "honest-default-055",
+"ts": 1789356031,
+"profile_json": "{\"clock_drift_cv\":0.3523,\"thermal_variance\":0.9333,\"jitter_cv\":0.035504113977094076,\"cache_hierarchy_ratio\":0.995}",
+"device_arch": "default"
+},
+{
+"miner": "honest-default-055",
+"ts": 1789356622,
+"profile_json": "{\"clock_drift_cv\":0.3523,\"thermal_variance\":0.9333,\"jitter_cv\":0.035504113977094076,\"cache_hierarchy_ratio\":0.995}",
+"device_arch": "default"
+},
+{
+"miner": "honest-modern-057",
+"ts": 1789563903,
+"profile_json": "{\"clock_drift_cv\":0.11291,\"thermal_variance\":1.0681,\"jitter_cv\":0.16369080547928283,\"cache_hierarchy_ratio\":1.112}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-057",
+"ts": 1789564510,
+"profile_json": "{\"clock_drift_cv\":0.11291,\"thermal_variance\":1.0681,\"jitter_cv\":0.16369080547928283,\"cache_hierarchy_ratio\":1.112}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-057",
+"ts": 1789565117,
+"profile_json": "{\"clock_drift_cv\":0.11291,\"thermal_variance\":1.0681,\"jitter_cv\":0.16369080547928283,\"cache_hierarchy_ratio\":1.112}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-057",
+"ts": 1789565724,
+"profile_json": "{\"clock_drift_cv\":0.11291,\"thermal_variance\":1.0681,\"jitter_cv\":0.16369080547928283,\"cache_hierarchy_ratio\":1.112}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-057",
+"ts": 1789566330,
+"profile_json": "{\"clock_drift_cv\":0.11291,\"thermal_variance\":1.0681,\"jitter_cv\":0.16369080547928283,\"cache_hierarchy_ratio\":1.112}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-057",
+"ts": 1789566937,
+"profile_json": "{\"clock_drift_cv\":0.11291,\"thermal_variance\":1.0681,\"jitter_cv\":0.16369080547928283,\"cache_hierarchy_ratio\":1.112}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-057",
+"ts": 1789567544,
+"profile_json": "{\"clock_drift_cv\":0.11291,\"thermal_variance\":1.0681,\"jitter_cv\":0.16369080547928283,\"cache_hierarchy_ratio\":1.112}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-057",
+"ts": 1789568150,
+"profile_json": "{\"clock_drift_cv\":0.11291,\"thermal_variance\":1.0681,\"jitter_cv\":0.16369080547928283,\"cache_hierarchy_ratio\":1.112}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-057",
+"ts": 1789568756,
+"profile_json": "{\"clock_drift_cv\":0.11291,\"thermal_variance\":1.0681,\"jitter_cv\":0.16369080547928283,\"cache_hierarchy_ratio\":1.112}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-057",
+"ts": 1789569364,
+"profile_json": "{\"clock_drift_cv\":0.11291,\"thermal_variance\":1.0681,\"jitter_cv\":0.16369080547928283,\"cache_hierarchy_ratio\":1.112}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-027",
+"ts": 1789638335,
+"profile_json": "{\"clock_drift_cv\":0.010593,\"thermal_variance\":0.9472,\"jitter_cv\":0.21855489904970868,\"cache_hierarchy_ratio\":1.055}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-027",
+"ts": 1789638941,
+"profile_json": "{\"clock_drift_cv\":0.010593,\"thermal_variance\":0.9472,\"jitter_cv\":0.21855489904970868,\"cache_hierarchy_ratio\":1.055}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-027",
+"ts": 1789639545,
+"profile_json": "{\"clock_drift_cv\":0.010593,\"thermal_variance\":0.9472,\"jitter_cv\":0.21855489904970868,\"cache_hierarchy_ratio\":1.055}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-027",
+"ts": 1789640151,
+"profile_json": "{\"clock_drift_cv\":0.010593,\"thermal_variance\":0.9472,\"jitter_cv\":0.21855489904970868,\"cache_hierarchy_ratio\":1.055}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-027",
+"ts": 1789640765,
+"profile_json": "{\"clock_drift_cv\":0.010593,\"thermal_variance\":0.9472,\"jitter_cv\":0.21855489904970868,\"cache_hierarchy_ratio\":1.055}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-027",
+"ts": 1789641370,
+"profile_json": "{\"clock_drift_cv\":0.010593,\"thermal_variance\":0.9472,\"jitter_cv\":0.21855489904970868,\"cache_hierarchy_ratio\":1.055}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-027",
+"ts": 1789641975,
+"profile_json": "{\"clock_drift_cv\":0.010593,\"thermal_variance\":0.9472,\"jitter_cv\":0.21855489904970868,\"cache_hierarchy_ratio\":1.055}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-027",
+"ts": 1789642584,
+"profile_json": "{\"clock_drift_cv\":0.010593,\"thermal_variance\":0.9472,\"jitter_cv\":0.21855489904970868,\"cache_hierarchy_ratio\":1.055}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-027",
+"ts": 1789643196,
+"profile_json": "{\"clock_drift_cv\":0.010593,\"thermal_variance\":0.9472,\"jitter_cv\":0.21855489904970868,\"cache_hierarchy_ratio\":1.055}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-027",
+"ts": 1789643820,
+"profile_json": "{\"clock_drift_cv\":0.010593,\"thermal_variance\":0.9472,\"jitter_cv\":0.21855489904970868,\"cache_hierarchy_ratio\":1.055}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-066",
+"ts": 1789690525,
+"profile_json": "{\"clock_drift_cv\":0.007139,\"thermal_variance\":1.0057,\"jitter_cv\":0.021381768670776572,\"cache_hierarchy_ratio\":1.024}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-066",
+"ts": 1789690853,
+"profile_json": "{\"clock_drift_cv\":0.01208,\"thermal_variance\":0.9642,\"jitter_cv\":0.010227584443322372,\"cache_hierarchy_ratio\":1.018}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-066",
+"ts": 1789691454,
+"profile_json": "{\"clock_drift_cv\":0.01208,\"thermal_variance\":0.9642,\"jitter_cv\":0.010227584443322372,\"cache_hierarchy_ratio\":1.018}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-066",
+"ts": 1789692056,
+"profile_json": "{\"clock_drift_cv\":0.01208,\"thermal_variance\":0.9642,\"jitter_cv\":0.010227584443322372,\"cache_hierarchy_ratio\":1.018}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-066",
+"ts": 1789692657,
+"profile_json": "{\"clock_drift_cv\":0.01208,\"thermal_variance\":0.9642,\"jitter_cv\":0.010227584443322372,\"cache_hierarchy_ratio\":1.018}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-066",
+"ts": 1789693258,
+"profile_json": "{\"clock_drift_cv\":0.01208,\"thermal_variance\":0.9642,\"jitter_cv\":0.010227584443322372,\"cache_hierarchy_ratio\":1.018}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-066",
+"ts": 1789693859,
+"profile_json": "{\"clock_drift_cv\":0.01208,\"thermal_variance\":0.9642,\"jitter_cv\":0.010227584443322372,\"cache_hierarchy_ratio\":1.018}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-066",
+"ts": 1789694460,
+"profile_json": "{\"clock_drift_cv\":0.01208,\"thermal_variance\":0.9642,\"jitter_cv\":0.010227584443322372,\"cache_hierarchy_ratio\":1.018}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-066",
+"ts": 1789695062,
+"profile_json": "{\"clock_drift_cv\":0.01208,\"thermal_variance\":0.9642,\"jitter_cv\":0.010227584443322372,\"cache_hierarchy_ratio\":1.018}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-066",
+"ts": 1789695663,
+"profile_json": "{\"clock_drift_cv\":0.01208,\"thermal_variance\":0.9642,\"jitter_cv\":0.010227584443322372,\"cache_hierarchy_ratio\":1.018}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-intel64-family-6-model-1-049",
+"ts": 1789765045,
+"profile_json": "{\"clock_drift_cv\":0.0201,\"thermal_variance\":3.04,\"jitter_cv\":0.03149535110790892,\"cache_hierarchy_ratio\":1.079}",
+"device_arch": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+},
+{
+"miner": "honest-intel64-family-6-model-1-049",
+"ts": 1789771262,
+"profile_json": "{\"clock_drift_cv\":0.038084,\"thermal_variance\":1.0078,\"jitter_cv\":0.047566352228196336,\"cache_hierarchy_ratio\":1.042}",
+"device_arch": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+},
+{
+"miner": "honest-intel64-family-6-model-1-049",
+"ts": 1789771793,
+"profile_json": "{\"clock_drift_cv\":0.031271,\"thermal_variance\":1.0101,\"jitter_cv\":0.053738583058713076,\"cache_hierarchy_ratio\":1.062}",
+"device_arch": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+},
+{
+"miner": "honest-modern-061",
+"ts": 1789889020,
+"profile_json": "{\"clock_drift_cv\":0.271722,\"thermal_variance\":0.8592,\"jitter_cv\":0.2365170012071107,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-061",
+"ts": 1789889622,
+"profile_json": "{\"clock_drift_cv\":0.271722,\"thermal_variance\":0.8592,\"jitter_cv\":0.2365170012071107,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-061",
+"ts": 1789890223,
+"profile_json": "{\"clock_drift_cv\":0.271722,\"thermal_variance\":0.8592,\"jitter_cv\":0.2365170012071107,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-061",
+"ts": 1789890824,
+"profile_json": "{\"clock_drift_cv\":0.271722,\"thermal_variance\":0.8592,\"jitter_cv\":0.2365170012071107,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-061",
+"ts": 1789891458,
+"profile_json": "{\"clock_drift_cv\":0.271722,\"thermal_variance\":0.8592,\"jitter_cv\":0.2365170012071107,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-061",
+"ts": 1789892059,
+"profile_json": "{\"clock_drift_cv\":0.271722,\"thermal_variance\":0.8592,\"jitter_cv\":0.2365170012071107,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-061",
+"ts": 1789892660,
+"profile_json": "{\"clock_drift_cv\":0.271722,\"thermal_variance\":0.8592,\"jitter_cv\":0.2365170012071107,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-061",
+"ts": 1789893261,
+"profile_json": "{\"clock_drift_cv\":0.271722,\"thermal_variance\":0.8592,\"jitter_cv\":0.2365170012071107,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-061",
+"ts": 1789893863,
+"profile_json": "{\"clock_drift_cv\":0.271722,\"thermal_variance\":0.8592,\"jitter_cv\":0.2365170012071107,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-061",
+"ts": 1789894464,
+"profile_json": "{\"clock_drift_cv\":0.271722,\"thermal_variance\":0.8592,\"jitter_cv\":0.2365170012071107,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-amd64-family-16-model-4--026",
+"ts": 1789923811,
+"profile_json": "{\"clock_drift_cv\":0.020132,\"thermal_variance\":1.0042,\"jitter_cv\":0.03574158632699975,\"cache_hierarchy_ratio\":1.037}",
+"device_arch": "AMD64 Family 16 Model 4 Stepping 3, AuthenticAMD"
+},
+{
+"miner": "honest-amd64-family-16-model-4--026",
+"ts": 1789924185,
+"profile_json": "{\"clock_drift_cv\":0.017447,\"thermal_variance\":1.0757,\"jitter_cv\":0.08376861540957801,\"cache_hierarchy_ratio\":1.035}",
+"device_arch": "AMD64 Family 16 Model 4 Stepping 3, AuthenticAMD"
+},
+{
+"miner": "honest-intel64-family-6-model-1-007",
+"ts": 1790070570,
+"profile_json": "{\"clock_drift_cv\":0.24703,\"thermal_variance\":1.1752,\"jitter_cv\":0.28311692440491365,\"cache_hierarchy_ratio\":1.005}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-intel64-family-6-model-1-007",
+"ts": 1790071110,
+"profile_json": "{\"clock_drift_cv\":0.152327,\"thermal_variance\":0.9379,\"jitter_cv\":0.40639274252979657,\"cache_hierarchy_ratio\":1.027}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-intel64-family-6-model-1-007",
+"ts": 1790071642,
+"profile_json": "{\"clock_drift_cv\":0.246525,\"thermal_variance\":1.0824,\"jitter_cv\":0.25797719910709704,\"cache_hierarchy_ratio\":1.115}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-intel64-family-6-model-1-007",
+"ts": 1790072182,
+"profile_json": "{\"clock_drift_cv\":0.210208,\"thermal_variance\":1.1329,\"jitter_cv\":0.21353707265838276,\"cache_hierarchy_ratio\":1.059}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-intel64-family-6-model-1-007",
+"ts": 1790072713,
+"profile_json": "{\"clock_drift_cv\":0.230377,\"thermal_variance\":1.0834,\"jitter_cv\":0.22734352848350464,\"cache_hierarchy_ratio\":0.837}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-intel64-family-6-model-1-007",
+"ts": 1790073252,
+"profile_json": "{\"clock_drift_cv\":0.233728,\"thermal_variance\":1.0054,\"jitter_cv\":0.1380659675116954,\"cache_hierarchy_ratio\":1.207}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-intel64-family-6-model-1-007",
+"ts": 1790073784,
+"profile_json": "{\"clock_drift_cv\":0.232869,\"thermal_variance\":1.3171,\"jitter_cv\":0.2081182446050274,\"cache_hierarchy_ratio\":1.106}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-intel64-family-6-model-1-007",
+"ts": 1790074314,
+"profile_json": "{\"clock_drift_cv\":0.189195,\"thermal_variance\":0.8114,\"jitter_cv\":0.23909364754185636,\"cache_hierarchy_ratio\":1.337}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-intel64-family-6-model-1-007",
+"ts": 1790074844,
+"profile_json": "{\"clock_drift_cv\":0.167153,\"thermal_variance\":0.9303,\"jitter_cv\":0.3057351402039381,\"cache_hierarchy_ratio\":1.055}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-intel64-family-6-model-1-007",
+"ts": 1790075384,
+"profile_json": "{\"clock_drift_cv\":0.22266,\"thermal_variance\":1.0262,\"jitter_cv\":0.13469279412015858,\"cache_hierarchy_ratio\":1.217}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-amd64-002",
+"ts": 1790082604,
+"profile_json": "{\"clock_drift_cv\":0.104006,\"thermal_variance\":1.0424,\"jitter_cv\":0.23919888435574158,\"cache_hierarchy_ratio\":1.049}",
+"device_arch": "AMD64"
+},
+{
+"miner": "honest-amd64-002",
+"ts": 1790082647,
+"profile_json": "{\"clock_drift_cv\":0.0,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "AMD64"
+},
+{
+"miner": "honest-x86-64-056",
+"ts": 1790127171,
+"profile_json": "{\"clock_drift_cv\":0.0,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "x86_64"
+},
+{
+"miner": "honest-modern-064",
+"ts": 1790140450,
+"profile_json": "{\"clock_drift_cv\":0.030709,\"thermal_variance\":1.0144,\"jitter_cv\":0.04859588575099213,\"cache_hierarchy_ratio\":0.985}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-064",
+"ts": 1790141051,
+"profile_json": "{\"clock_drift_cv\":0.030709,\"thermal_variance\":1.0144,\"jitter_cv\":0.04859588575099213,\"cache_hierarchy_ratio\":0.985}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-064",
+"ts": 1790141652,
+"profile_json": "{\"clock_drift_cv\":0.030709,\"thermal_variance\":1.0144,\"jitter_cv\":0.04859588575099213,\"cache_hierarchy_ratio\":0.985}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-064",
+"ts": 1790142253,
+"profile_json": "{\"clock_drift_cv\":0.030709,\"thermal_variance\":1.0144,\"jitter_cv\":0.04859588575099213,\"cache_hierarchy_ratio\":0.985}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-064",
+"ts": 1790142854,
+"profile_json": "{\"clock_drift_cv\":0.030709,\"thermal_variance\":1.0144,\"jitter_cv\":0.04859588575099213,\"cache_hierarchy_ratio\":0.985}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-064",
+"ts": 1790143467,
+"profile_json": "{\"clock_drift_cv\":0.030709,\"thermal_variance\":1.0144,\"jitter_cv\":0.04859588575099213,\"cache_hierarchy_ratio\":0.985}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-064",
+"ts": 1790144068,
+"profile_json": "{\"clock_drift_cv\":0.030709,\"thermal_variance\":1.0144,\"jitter_cv\":0.04859588575099213,\"cache_hierarchy_ratio\":0.985}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-064",
+"ts": 1790144669,
+"profile_json": "{\"clock_drift_cv\":0.030709,\"thermal_variance\":1.0144,\"jitter_cv\":0.04859588575099213,\"cache_hierarchy_ratio\":0.985}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-064",
+"ts": 1790145270,
+"profile_json": "{\"clock_drift_cv\":0.030709,\"thermal_variance\":1.0144,\"jitter_cv\":0.04859588575099213,\"cache_hierarchy_ratio\":0.985}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-064",
+"ts": 1790146580,
+"profile_json": "{\"clock_drift_cv\":0.030709,\"thermal_variance\":1.0144,\"jitter_cv\":0.04859588575099213,\"cache_hierarchy_ratio\":0.985}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-063",
+"ts": 1790166918,
+"profile_json": "{\"clock_drift_cv\":0.039561,\"thermal_variance\":0.9807,\"jitter_cv\":0.004469766321687669,\"cache_hierarchy_ratio\":1.027}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-063",
+"ts": 1790167040,
+"profile_json": "{\"clock_drift_cv\":0.010883,\"thermal_variance\":1.0174,\"jitter_cv\":0.005619113838141636,\"cache_hierarchy_ratio\":1.027}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-063",
+"ts": 1790167525,
+"profile_json": "{\"clock_drift_cv\":0.039561,\"thermal_variance\":0.9807,\"jitter_cv\":0.004469766321687669,\"cache_hierarchy_ratio\":1.027}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-063",
+"ts": 1790167645,
+"profile_json": "{\"clock_drift_cv\":0.010883,\"thermal_variance\":1.0174,\"jitter_cv\":0.005619113838141636,\"cache_hierarchy_ratio\":1.027}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-063",
+"ts": 1790168131,
+"profile_json": "{\"clock_drift_cv\":0.039561,\"thermal_variance\":0.9807,\"jitter_cv\":0.004469766321687669,\"cache_hierarchy_ratio\":1.027}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-063",
+"ts": 1790168250,
+"profile_json": "{\"clock_drift_cv\":0.010883,\"thermal_variance\":1.0174,\"jitter_cv\":0.005619113838141636,\"cache_hierarchy_ratio\":1.027}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-063",
+"ts": 1790168735,
+"profile_json": "{\"clock_drift_cv\":0.039561,\"thermal_variance\":0.9807,\"jitter_cv\":0.004469766321687669,\"cache_hierarchy_ratio\":1.027}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-063",
+"ts": 1790168854,
+"profile_json": "{\"clock_drift_cv\":0.010883,\"thermal_variance\":1.0174,\"jitter_cv\":0.005619113838141636,\"cache_hierarchy_ratio\":1.027}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-retro-058",
+"ts": 1790265215,
+"profile_json": "{\"clock_drift_cv\":0.001698,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "retro"
+},
+{
+"miner": "honest-modern-082",
+"ts": 1790266028,
+"profile_json": "{\"clock_drift_cv\":0.08887094245958535,\"thermal_variance\":0.9976,\"jitter_cv\":0.16469560544891995,\"cache_hierarchy_ratio\":1.19}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-retro-058",
+"ts": 1790267016,
+"profile_json": "{\"clock_drift_cv\":0.001705,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "retro"
+},
+{
+"miner": "honest-modern-082",
+"ts": 1790267828,
+"profile_json": "{\"clock_drift_cv\":0.007915850065460816,\"thermal_variance\":0.9982,\"jitter_cv\":0.029959753939042478,\"cache_hierarchy_ratio\":1.015}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-082",
+"ts": 1790269628,
+"profile_json": "{\"clock_drift_cv\":0.029643216599503888,\"thermal_variance\":0.9988,\"jitter_cv\":0.009901162155861716,\"cache_hierarchy_ratio\":1.034}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-082",
+"ts": 1790271429,
+"profile_json": "{\"clock_drift_cv\":0.05172652718935393,\"thermal_variance\":0.9961,\"jitter_cv\":0.0431077947299461,\"cache_hierarchy_ratio\":1.024}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-082",
+"ts": 1790273229,
+"profile_json": "{\"clock_drift_cv\":0.05581278931678008,\"thermal_variance\":1.0541,\"jitter_cv\":0.09157335991564648,\"cache_hierarchy_ratio\":1.034}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-retro-058",
+"ts": 1790275012,
+"profile_json": "{\"clock_drift_cv\":0.001703,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "retro"
+},
+{
+"miner": "honest-modern-082",
+"ts": 1790275029,
+"profile_json": "{\"clock_drift_cv\":0.01088715662209625,\"thermal_variance\":0.9971,\"jitter_cv\":0.010826308599385926,\"cache_hierarchy_ratio\":1.023}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-retro-058",
+"ts": 1790276813,
+"profile_json": "{\"clock_drift_cv\":0.00187,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "retro"
+},
+{
+"miner": "honest-modern-082",
+"ts": 1790276829,
+"profile_json": "{\"clock_drift_cv\":0.013140109367091183,\"thermal_variance\":1.0016,\"jitter_cv\":0.006857859758627535,\"cache_hierarchy_ratio\":1.017}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-retro-058",
+"ts": 1790278613,
+"profile_json": "{\"clock_drift_cv\":0.001705,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "retro"
+},
+{
+"miner": "honest-retro-058",
+"ts": 1790280414,
+"profile_json": "{\"clock_drift_cv\":0.001704,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "retro"
+},
+{
+"miner": "honest-retro-058",
+"ts": 1790282215,
+"profile_json": "{\"clock_drift_cv\":0.001711,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "retro"
+},
+{
+"miner": "honest-intel64-family-6-model-1-059",
+"ts": 1790283563,
+"profile_json": "{\"clock_drift_cv\":0.022329,\"thermal_variance\":1.0064,\"jitter_cv\":0.03964039901703559,\"cache_hierarchy_ratio\":1.02}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-retro-058",
+"ts": 1790284015,
+"profile_json": "{\"clock_drift_cv\":0.001704,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "retro"
+},
+{
+"miner": "honest-modern-082",
+"ts": 1790284026,
+"profile_json": "{\"clock_drift_cv\":0.12079454300503606,\"thermal_variance\":0.9939,\"jitter_cv\":0.007491274035793039,\"cache_hierarchy_ratio\":1.0}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-intel64-family-6-model-1-059",
+"ts": 1790284101,
+"profile_json": "{\"clock_drift_cv\":0.023244,\"thermal_variance\":0.9884,\"jitter_cv\":0.03499970788593141,\"cache_hierarchy_ratio\":1.024}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-aarch64-025",
+"ts": 1790284519,
+"profile_json": "{\"clock_drift_cv\":0.86725,\"thermal_variance\":1.229,\"jitter_cv\":0.38217577837959993,\"cache_hierarchy_ratio\":1.84}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-intel64-family-6-model-1-059",
+"ts": 1790284640,
+"profile_json": "{\"clock_drift_cv\":0.12201,\"thermal_variance\":1.0093,\"jitter_cv\":0.03824095212609347,\"cache_hierarchy_ratio\":1.037}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-intel64-family-6-model-1-059",
+"ts": 1790285177,
+"profile_json": "{\"clock_drift_cv\":0.032581,\"thermal_variance\":0.9896,\"jitter_cv\":0.05379502388828837,\"cache_hierarchy_ratio\":1.044}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-aarch64-025",
+"ts": 1790285399,
+"profile_json": "{\"clock_drift_cv\":0.86725,\"thermal_variance\":1.229,\"jitter_cv\":0.38217577837959993,\"cache_hierarchy_ratio\":1.84}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-intel64-family-6-model-1-059",
+"ts": 1790285715,
+"profile_json": "{\"clock_drift_cv\":0.023852,\"thermal_variance\":0.9838,\"jitter_cv\":0.04597562716341902,\"cache_hierarchy_ratio\":1.003}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-retro-058",
+"ts": 1790285816,
+"profile_json": "{\"clock_drift_cv\":0.00171,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "retro"
+},
+{
+"miner": "honest-modern-082",
+"ts": 1790285825,
+"profile_json": "{\"clock_drift_cv\":0.008832109845462397,\"thermal_variance\":1.0102,\"jitter_cv\":0.09223218635321698,\"cache_hierarchy_ratio\":1.014}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-intel64-family-6-model-1-059",
+"ts": 1790286253,
+"profile_json": "{\"clock_drift_cv\":0.025631,\"thermal_variance\":0.9963,\"jitter_cv\":0.027045553584974395,\"cache_hierarchy_ratio\":1.004}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-aarch64-025",
+"ts": 1790286741,
+"profile_json": "{\"clock_drift_cv\":0.86725,\"thermal_variance\":1.229,\"jitter_cv\":0.38217577837959993,\"cache_hierarchy_ratio\":1.84}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-intel64-family-6-model-1-059",
+"ts": 1790286790,
+"profile_json": "{\"clock_drift_cv\":0.029974,\"thermal_variance\":0.9991,\"jitter_cv\":0.02237719787054168,\"cache_hierarchy_ratio\":1.011}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-broadwell-067",
+"ts": 1790286820,
+"profile_json": "{\"clock_drift_cv\":0.006618,\"thermal_variance\":0.9881,\"jitter_cv\":0.00836481707594592,\"cache_hierarchy_ratio\":1.026}",
+"device_arch": "broadwell"
+},
+{
+"miner": "honest-modern-085",
+"ts": 1790286951,
+"profile_json": "{\"clock_drift_cv\":0.117826,\"thermal_variance\":0.9959,\"jitter_cv\":0.07160136882239097,\"cache_hierarchy_ratio\":1.031}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m2-019",
+"ts": 1790287295,
+"profile_json": "{\"clock_drift_cv\":0.416583,\"thermal_variance\":1.0285,\"jitter_cv\":0.6351680661756434,\"cache_hierarchy_ratio\":1.146}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-intel64-family-6-model-1-059",
+"ts": 1790287328,
+"profile_json": "{\"clock_drift_cv\":0.102447,\"thermal_variance\":1.0135,\"jitter_cv\":0.026686628904024724,\"cache_hierarchy_ratio\":0.983}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-aarch64-060",
+"ts": 1790287455,
+"profile_json": "{\"clock_drift_cv\":0.005009,\"thermal_variance\":0.998,\"jitter_cv\":0.007090360411765843,\"cache_hierarchy_ratio\":0.988}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-broadwell-067",
+"ts": 1790287467,
+"profile_json": "{\"clock_drift_cv\":0.006529,\"thermal_variance\":0.9812,\"jitter_cv\":0.005805301520522408,\"cache_hierarchy_ratio\":1.03}",
+"device_arch": "broadwell"
+},
+{
+"miner": "honest-modern-081",
+"ts": 1790287494,
+"profile_json": "{\"clock_drift_cv\":0.270864,\"thermal_variance\":0.8688,\"jitter_cv\":0.054061915991534364,\"cache_hierarchy_ratio\":0.991}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m2-004",
+"ts": 1790287498,
+"profile_json": "{\"clock_drift_cv\":0.514547,\"thermal_variance\":1.006,\"jitter_cv\":0.05092521874007235,\"cache_hierarchy_ratio\":0.99}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-modern-080",
+"ts": 1790287541,
+"profile_json": "{\"clock_drift_cv\":0.427971,\"thermal_variance\":0.9685,\"jitter_cv\":0.3923040143320424,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-085",
+"ts": 1790287564,
+"profile_json": "{\"clock_drift_cv\":0.119391,\"thermal_variance\":0.9832,\"jitter_cv\":0.026419636166872575,\"cache_hierarchy_ratio\":1.067}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-033",
+"ts": 1790287577,
+"profile_json": "{\"clock_drift_cv\":0.452453,\"thermal_variance\":0.9851,\"jitter_cv\":0.03815999918264478,\"cache_hierarchy_ratio\":1.067}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-retro-058",
+"ts": 1790287617,
+"profile_json": "{\"clock_drift_cv\":0.002092,\"thermal_variance\":0.0,\"jitter_cv\":0.0,\"cache_hierarchy_ratio\":0.0}",
+"device_arch": "retro"
+},
+{
+"miner": "honest-modern-082",
+"ts": 1790287626,
+"profile_json": "{\"clock_drift_cv\":0.002253770284071094,\"thermal_variance\":0.9973,\"jitter_cv\":0.04537059484146286,\"cache_hierarchy_ratio\":1.018}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-062",
+"ts": 1790287660,
+"profile_json": "{\"clock_drift_cv\":2.386849,\"thermal_variance\":0.9879,\"jitter_cv\":0.0442768907339667,\"cache_hierarchy_ratio\":1.019}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-intel64-family-6-model-1-059",
+"ts": 1790287866,
+"profile_json": "{\"clock_drift_cv\":0.160209,\"thermal_variance\":0.9924,\"jitter_cv\":0.024403828751650883,\"cache_hierarchy_ratio\":1.013}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-amd64-family-25-model-97-065",
+"ts": 1790287872,
+"profile_json": "{\"clock_drift_cv\":0.03803,\"thermal_variance\":0.9775,\"jitter_cv\":0.04694234537334146,\"cache_hierarchy_ratio\":1.004}",
+"device_arch": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD"
+},
+{
+"miner": "honest-m2-019",
+"ts": 1790287881,
+"profile_json": "{\"clock_drift_cv\":0.416583,\"thermal_variance\":1.0285,\"jitter_cv\":0.6351680661756434,\"cache_hierarchy_ratio\":1.146}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-aarch64-025",
+"ts": 1790288004,
+"profile_json": "{\"clock_drift_cv\":0.86725,\"thermal_variance\":1.229,\"jitter_cv\":0.38217577837959993,\"cache_hierarchy_ratio\":1.84}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-aarch64-060",
+"ts": 1790288057,
+"profile_json": "{\"clock_drift_cv\":0.005009,\"thermal_variance\":0.998,\"jitter_cv\":0.007090360411765843,\"cache_hierarchy_ratio\":0.988}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-m2-004",
+"ts": 1790288090,
+"profile_json": "{\"clock_drift_cv\":0.514547,\"thermal_variance\":1.006,\"jitter_cv\":0.05092521874007235,\"cache_hierarchy_ratio\":0.99}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-modern-081",
+"ts": 1790288109,
+"profile_json": "{\"clock_drift_cv\":0.270864,\"thermal_variance\":0.8688,\"jitter_cv\":0.054061915991534364,\"cache_hierarchy_ratio\":0.991}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-080",
+"ts": 1790288142,
+"profile_json": "{\"clock_drift_cv\":0.427971,\"thermal_variance\":0.9685,\"jitter_cv\":0.3923040143320424,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-broadwell-067",
+"ts": 1790288158,
+"profile_json": "{\"clock_drift_cv\":0.002679,\"thermal_variance\":0.9841,\"jitter_cv\":0.004901135745795869,\"cache_hierarchy_ratio\":1.027}",
+"device_arch": "broadwell"
+},
+{
+"miner": "honest-modern-085",
+"ts": 1790288178,
+"profile_json": "{\"clock_drift_cv\":0.160589,\"thermal_variance\":0.9857,\"jitter_cv\":0.23197720641665467,\"cache_hierarchy_ratio\":0.754}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-033",
+"ts": 1790288188,
+"profile_json": "{\"clock_drift_cv\":0.452453,\"thermal_variance\":0.9851,\"jitter_cv\":0.03815999918264478,\"cache_hierarchy_ratio\":1.067}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-062",
+"ts": 1790288262,
+"profile_json": "{\"clock_drift_cv\":2.386849,\"thermal_variance\":0.9879,\"jitter_cv\":0.0442768907339667,\"cache_hierarchy_ratio\":1.019}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-amd64-family-25-model-97-065",
+"ts": 1790288398,
+"profile_json": "{\"clock_drift_cv\":0.026523,\"thermal_variance\":0.9763,\"jitter_cv\":0.022902776474493885,\"cache_hierarchy_ratio\":1.03}",
+"device_arch": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD"
+},
+{
+"miner": "honest-intel64-family-6-model-1-059",
+"ts": 1790288403,
+"profile_json": "{\"clock_drift_cv\":0.025787,\"thermal_variance\":0.9814,\"jitter_cv\":0.05942274314233302,\"cache_hierarchy_ratio\":1.0}",
+"device_arch": "Intel64 Family 6 Model 158 Stepping 10, GenuineIntel"
+},
+{
+"miner": "honest-modern-008",
+"ts": 1790288419,
+"profile_json": "{\"clock_drift_cv\":0.071071,\"thermal_variance\":0.4693,\"jitter_cv\":0.026837382750966275,\"cache_hierarchy_ratio\":0.956}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m2-019",
+"ts": 1790288469,
+"profile_json": "{\"clock_drift_cv\":0.416583,\"thermal_variance\":1.0285,\"jitter_cv\":0.6351680661756434,\"cache_hierarchy_ratio\":1.146}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-aarch64-025",
+"ts": 1790288647,
+"profile_json": "{\"clock_drift_cv\":0.86725,\"thermal_variance\":1.229,\"jitter_cv\":0.38217577837959993,\"cache_hierarchy_ratio\":1.84}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-aarch64-060",
+"ts": 1790288658,
+"profile_json": "{\"clock_drift_cv\":0.005009,\"thermal_variance\":0.998,\"jitter_cv\":0.007090360411765843,\"cache_hierarchy_ratio\":0.988}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-m2-004",
+"ts": 1790288682,
+"profile_json": "{\"clock_drift_cv\":0.514547,\"thermal_variance\":1.006,\"jitter_cv\":0.05092521874007235,\"cache_hierarchy_ratio\":0.99}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-modern-081",
+"ts": 1790288725,
+"profile_json": "{\"clock_drift_cv\":0.270864,\"thermal_variance\":0.8688,\"jitter_cv\":0.054061915991534364,\"cache_hierarchy_ratio\":0.991}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-080",
+"ts": 1790288744,
+"profile_json": "{\"clock_drift_cv\":0.427971,\"thermal_variance\":0.9685,\"jitter_cv\":0.3923040143320424,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-085",
+"ts": 1790288790,
+"profile_json": "{\"clock_drift_cv\":0.187967,\"thermal_variance\":0.9293,\"jitter_cv\":0.07100921045338776,\"cache_hierarchy_ratio\":1.057}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-033",
+"ts": 1790288798,
+"profile_json": "{\"clock_drift_cv\":0.452453,\"thermal_variance\":0.9851,\"jitter_cv\":0.03815999918264478,\"cache_hierarchy_ratio\":1.067}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-broadwell-067",
+"ts": 1790288805,
+"profile_json": "{\"clock_drift_cv\":0.007742,\"thermal_variance\":0.992,\"jitter_cv\":0.006150646408169271,\"cache_hierarchy_ratio\":1.03}",
+"device_arch": "broadwell"
+},
+{
+"miner": "honest-modern-062",
+"ts": 1790288863,
+"profile_json": "{\"clock_drift_cv\":2.386849,\"thermal_variance\":0.9879,\"jitter_cv\":0.0442768907339667,\"cache_hierarchy_ratio\":1.019}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-amd64-family-25-model-97-065",
+"ts": 1790288924,
+"profile_json": "{\"clock_drift_cv\":0.0309,\"thermal_variance\":0.9771,\"jitter_cv\":0.05412050063251857,\"cache_hierarchy_ratio\":0.946}",
+"device_arch": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD"
+},
+{
+"miner": "honest-modern-008",
+"ts": 1790289021,
+"profile_json": "{\"clock_drift_cv\":0.071071,\"thermal_variance\":0.4693,\"jitter_cv\":0.026837382750966275,\"cache_hierarchy_ratio\":0.956}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m2-019",
+"ts": 1790289051,
+"profile_json": "{\"clock_drift_cv\":0.416583,\"thermal_variance\":1.0285,\"jitter_cv\":0.6351680661756434,\"cache_hierarchy_ratio\":1.146}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-aarch64-060",
+"ts": 1790289260,
+"profile_json": "{\"clock_drift_cv\":0.005009,\"thermal_variance\":0.998,\"jitter_cv\":0.007090360411765843,\"cache_hierarchy_ratio\":0.988}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-m2-004",
+"ts": 1790289273,
+"profile_json": "{\"clock_drift_cv\":0.514547,\"thermal_variance\":1.006,\"jitter_cv\":0.05092521874007235,\"cache_hierarchy_ratio\":0.99}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-aarch64-025",
+"ts": 1790289286,
+"profile_json": "{\"clock_drift_cv\":0.86725,\"thermal_variance\":1.229,\"jitter_cv\":0.38217577837959993,\"cache_hierarchy_ratio\":1.84}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-modern-081",
+"ts": 1790289341,
+"profile_json": "{\"clock_drift_cv\":0.270864,\"thermal_variance\":0.8688,\"jitter_cv\":0.054061915991534364,\"cache_hierarchy_ratio\":0.991}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-080",
+"ts": 1790289346,
+"profile_json": "{\"clock_drift_cv\":0.427971,\"thermal_variance\":0.9685,\"jitter_cv\":0.3923040143320424,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-085",
+"ts": 1790289409,
+"profile_json": "{\"clock_drift_cv\":0.206471,\"thermal_variance\":1.02,\"jitter_cv\":0.2359561957777919,\"cache_hierarchy_ratio\":0.96}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-033",
+"ts": 1790289410,
+"profile_json": "{\"clock_drift_cv\":0.452453,\"thermal_variance\":0.9851,\"jitter_cv\":0.03815999918264478,\"cache_hierarchy_ratio\":1.067}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-broadwell-067",
+"ts": 1790289420,
+"profile_json": "{\"clock_drift_cv\":0.022308,\"thermal_variance\":0.979,\"jitter_cv\":0.003820629869248802,\"cache_hierarchy_ratio\":1.028}",
+"device_arch": "broadwell"
+},
+{
+"miner": "honest-amd64-family-25-model-97-065",
+"ts": 1790289451,
+"profile_json": "{\"clock_drift_cv\":0.02923,\"thermal_variance\":0.9756,\"jitter_cv\":0.020776356089811033,\"cache_hierarchy_ratio\":0.998}",
+"device_arch": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD"
+},
+{
+"miner": "honest-modern-062",
+"ts": 1790289464,
+"profile_json": "{\"clock_drift_cv\":2.386849,\"thermal_variance\":0.9879,\"jitter_cv\":0.0442768907339667,\"cache_hierarchy_ratio\":1.019}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-008",
+"ts": 1790289624,
+"profile_json": "{\"clock_drift_cv\":0.071071,\"thermal_variance\":0.4693,\"jitter_cv\":0.026837382750966275,\"cache_hierarchy_ratio\":0.956}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m2-019",
+"ts": 1790289641,
+"profile_json": "{\"clock_drift_cv\":0.416583,\"thermal_variance\":1.0285,\"jitter_cv\":0.6351680661756434,\"cache_hierarchy_ratio\":1.146}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-m4-005",
+"ts": 1790289801,
+"profile_json": "{\"clock_drift_cv\":0.152137,\"thermal_variance\":1.0359,\"jitter_cv\":0.06891609025287015,\"cache_hierarchy_ratio\":0.968}",
+"device_arch": "M4"
+},
+{
+"miner": "honest-aarch64-060",
+"ts": 1790289862,
+"profile_json": "{\"clock_drift_cv\":0.005009,\"thermal_variance\":0.998,\"jitter_cv\":0.007090360411765843,\"cache_hierarchy_ratio\":0.988}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-m2-004",
+"ts": 1790289865,
+"profile_json": "{\"clock_drift_cv\":0.514547,\"thermal_variance\":1.006,\"jitter_cv\":0.05092521874007235,\"cache_hierarchy_ratio\":0.99}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-modern-080",
+"ts": 1790289948,
+"profile_json": "{\"clock_drift_cv\":0.427971,\"thermal_variance\":0.9685,\"jitter_cv\":0.3923040143320424,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-081",
+"ts": 1790289953,
+"profile_json": "{\"clock_drift_cv\":0.270864,\"thermal_variance\":0.8688,\"jitter_cv\":0.054061915991534364,\"cache_hierarchy_ratio\":0.991}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-amd64-family-25-model-97-065",
+"ts": 1790289980,
+"profile_json": "{\"clock_drift_cv\":0.073482,\"thermal_variance\":1.8325,\"jitter_cv\":0.16373947202592115,\"cache_hierarchy_ratio\":0.994}",
+"device_arch": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD"
+},
+{
+"miner": "honest-modern-033",
+"ts": 1790290020,
+"profile_json": "{\"clock_drift_cv\":0.452453,\"thermal_variance\":0.9851,\"jitter_cv\":0.03815999918264478,\"cache_hierarchy_ratio\":1.067}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-085",
+"ts": 1790290028,
+"profile_json": "{\"clock_drift_cv\":0.157374,\"thermal_variance\":0.8922,\"jitter_cv\":0.0711966285941691,\"cache_hierarchy_ratio\":0.891}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-062",
+"ts": 1790290066,
+"profile_json": "{\"clock_drift_cv\":2.386849,\"thermal_variance\":0.9879,\"jitter_cv\":0.0442768907339667,\"cache_hierarchy_ratio\":1.019}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m4-005",
+"ts": 1790290109,
+"profile_json": "{\"clock_drift_cv\":0.152137,\"thermal_variance\":1.0359,\"jitter_cv\":0.06891609025287015,\"cache_hierarchy_ratio\":0.968}",
+"device_arch": "M4"
+},
+{
+"miner": "honest-broadwell-067",
+"ts": 1790290127,
+"profile_json": "{\"clock_drift_cv\":0.008103,\"thermal_variance\":1.0074,\"jitter_cv\":0.008883891371423923,\"cache_hierarchy_ratio\":1.029}",
+"device_arch": "broadwell"
+},
+{
+"miner": "honest-modern-008",
+"ts": 1790290226,
+"profile_json": "{\"clock_drift_cv\":0.071071,\"thermal_variance\":0.4693,\"jitter_cv\":0.026837382750966275,\"cache_hierarchy_ratio\":0.956}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m2-019",
+"ts": 1790290228,
+"profile_json": "{\"clock_drift_cv\":0.416583,\"thermal_variance\":1.0285,\"jitter_cv\":0.6351680661756434,\"cache_hierarchy_ratio\":1.146}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-m4-005",
+"ts": 1790290418,
+"profile_json": "{\"clock_drift_cv\":0.152137,\"thermal_variance\":1.0359,\"jitter_cv\":0.06891609025287015,\"cache_hierarchy_ratio\":0.968}",
+"device_arch": "M4"
+},
+{
+"miner": "honest-m2-004",
+"ts": 1790290456,
+"profile_json": "{\"clock_drift_cv\":0.514547,\"thermal_variance\":1.006,\"jitter_cv\":0.05092521874007235,\"cache_hierarchy_ratio\":0.99}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-aarch64-060",
+"ts": 1790290464,
+"profile_json": "{\"clock_drift_cv\":0.005009,\"thermal_variance\":0.998,\"jitter_cv\":0.007090360411765843,\"cache_hierarchy_ratio\":0.988}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-amd64-family-25-model-97-065",
+"ts": 1790290507,
+"profile_json": "{\"clock_drift_cv\":0.031571,\"thermal_variance\":0.9825,\"jitter_cv\":0.055460643268029464,\"cache_hierarchy_ratio\":1.03}",
+"device_arch": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD"
+},
+{
+"miner": "honest-modern-080",
+"ts": 1790290550,
+"profile_json": "{\"clock_drift_cv\":0.427971,\"thermal_variance\":0.9685,\"jitter_cv\":0.3923040143320424,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-081",
+"ts": 1790290568,
+"profile_json": "{\"clock_drift_cv\":0.270864,\"thermal_variance\":0.8688,\"jitter_cv\":0.054061915991534364,\"cache_hierarchy_ratio\":0.991}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-033",
+"ts": 1790290631,
+"profile_json": "{\"clock_drift_cv\":0.452453,\"thermal_variance\":0.9851,\"jitter_cv\":0.03815999918264478,\"cache_hierarchy_ratio\":1.067}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-062",
+"ts": 1790290667,
+"profile_json": "{\"clock_drift_cv\":2.386849,\"thermal_variance\":0.9879,\"jitter_cv\":0.0442768907339667,\"cache_hierarchy_ratio\":1.019}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m4-005",
+"ts": 1790290721,
+"profile_json": "{\"clock_drift_cv\":0.152137,\"thermal_variance\":1.0359,\"jitter_cv\":0.06891609025287015,\"cache_hierarchy_ratio\":0.968}",
+"device_arch": "M4"
+},
+{
+"miner": "honest-broadwell-067",
+"ts": 1790290723,
+"profile_json": "{\"clock_drift_cv\":0.006247,\"thermal_variance\":0.9817,\"jitter_cv\":0.023234831027716642,\"cache_hierarchy_ratio\":1.032}",
+"device_arch": "broadwell"
+},
+{
+"miner": "honest-modern-068",
+"ts": 1790290804,
+"profile_json": "{\"clock_drift_cv\":0.16203,\"thermal_variance\":0.8429,\"jitter_cv\":0.16271161610633658,\"cache_hierarchy_ratio\":1.004}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m2-019",
+"ts": 1790290816,
+"profile_json": "{\"clock_drift_cv\":0.416583,\"thermal_variance\":1.0285,\"jitter_cv\":0.6351680661756434,\"cache_hierarchy_ratio\":1.146}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-modern-008",
+"ts": 1790290828,
+"profile_json": "{\"clock_drift_cv\":0.071071,\"thermal_variance\":0.4693,\"jitter_cv\":0.026837382750966275,\"cache_hierarchy_ratio\":0.956}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-068",
+"ts": 1790290845,
+"profile_json": "{\"clock_drift_cv\":0.075551,\"thermal_variance\":0.9959,\"jitter_cv\":0.14009500150849574,\"cache_hierarchy_ratio\":1.028}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m4-005",
+"ts": 1790291029,
+"profile_json": "{\"clock_drift_cv\":0.152137,\"thermal_variance\":1.0359,\"jitter_cv\":0.06891609025287015,\"cache_hierarchy_ratio\":0.968}",
+"device_arch": "M4"
+},
+{
+"miner": "honest-amd64-family-25-model-97-065",
+"ts": 1790291033,
+"profile_json": "{\"clock_drift_cv\":0.027032,\"thermal_variance\":0.9794,\"jitter_cv\":0.027957844070454665,\"cache_hierarchy_ratio\":0.959}",
+"device_arch": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD"
+},
+{
+"miner": "honest-m2-004",
+"ts": 1790291048,
+"profile_json": "{\"clock_drift_cv\":0.514547,\"thermal_variance\":1.006,\"jitter_cv\":0.05092521874007235,\"cache_hierarchy_ratio\":0.99}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-aarch64-060",
+"ts": 1790291065,
+"profile_json": "{\"clock_drift_cv\":0.005009,\"thermal_variance\":0.998,\"jitter_cv\":0.007090360411765843,\"cache_hierarchy_ratio\":0.988}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-modern-068",
+"ts": 1790291112,
+"profile_json": "{\"clock_drift_cv\":0.16203,\"thermal_variance\":0.8429,\"jitter_cv\":0.16271161610633658,\"cache_hierarchy_ratio\":1.004}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-080",
+"ts": 1790291152,
+"profile_json": "{\"clock_drift_cv\":0.427971,\"thermal_variance\":0.9685,\"jitter_cv\":0.3923040143320424,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-085",
+"ts": 1790291158,
+"profile_json": "{\"clock_drift_cv\":0.889131,\"thermal_variance\":0.9786,\"jitter_cv\":0.07961606409690251,\"cache_hierarchy_ratio\":1.051}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-081",
+"ts": 1790291184,
+"profile_json": "{\"clock_drift_cv\":0.270864,\"thermal_variance\":0.8688,\"jitter_cv\":0.054061915991534364,\"cache_hierarchy_ratio\":0.991}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-aarch64-025",
+"ts": 1790291207,
+"profile_json": "{\"clock_drift_cv\":0.86725,\"thermal_variance\":1.229,\"jitter_cv\":0.38217577837959993,\"cache_hierarchy_ratio\":1.84}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-modern-033",
+"ts": 1790291241,
+"profile_json": "{\"clock_drift_cv\":0.452453,\"thermal_variance\":0.9851,\"jitter_cv\":0.03815999918264478,\"cache_hierarchy_ratio\":1.067}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-062",
+"ts": 1790291269,
+"profile_json": "{\"clock_drift_cv\":2.386849,\"thermal_variance\":0.9879,\"jitter_cv\":0.0442768907339667,\"cache_hierarchy_ratio\":1.019}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-broadwell-067",
+"ts": 1790291383,
+"profile_json": "{\"clock_drift_cv\":0.009193,\"thermal_variance\":1.0015,\"jitter_cv\":0.006861846149964414,\"cache_hierarchy_ratio\":1.01}",
+"device_arch": "broadwell"
+},
+{
+"miner": "honest-m2-019",
+"ts": 1790291403,
+"profile_json": "{\"clock_drift_cv\":0.416583,\"thermal_variance\":1.0285,\"jitter_cv\":0.6351680661756434,\"cache_hierarchy_ratio\":1.146}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-modern-068",
+"ts": 1790291427,
+"profile_json": "{\"clock_drift_cv\":0.16203,\"thermal_variance\":0.8429,\"jitter_cv\":0.16271161610633658,\"cache_hierarchy_ratio\":1.004}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-008",
+"ts": 1790291430,
+"profile_json": "{\"clock_drift_cv\":0.071071,\"thermal_variance\":0.4693,\"jitter_cv\":0.026837382750966275,\"cache_hierarchy_ratio\":0.956}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-068",
+"ts": 1790291482,
+"profile_json": "{\"clock_drift_cv\":0.075551,\"thermal_variance\":0.9959,\"jitter_cv\":0.14009500150849574,\"cache_hierarchy_ratio\":1.028}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-amd64-family-25-model-97-065",
+"ts": 1790291559,
+"profile_json": "{\"clock_drift_cv\":0.026012,\"thermal_variance\":0.9787,\"jitter_cv\":0.01989671988438791,\"cache_hierarchy_ratio\":1.031}",
+"device_arch": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD"
+},
+{
+"miner": "honest-m2-004",
+"ts": 1790291639,
+"profile_json": "{\"clock_drift_cv\":0.514547,\"thermal_variance\":1.006,\"jitter_cv\":0.05092521874007235,\"cache_hierarchy_ratio\":0.99}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-aarch64-060",
+"ts": 1790291667,
+"profile_json": "{\"clock_drift_cv\":0.005009,\"thermal_variance\":0.998,\"jitter_cv\":0.007090360411765843,\"cache_hierarchy_ratio\":0.988}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-modern-068",
+"ts": 1790291734,
+"profile_json": "{\"clock_drift_cv\":0.16203,\"thermal_variance\":0.8429,\"jitter_cv\":0.16271161610633658,\"cache_hierarchy_ratio\":1.004}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-080",
+"ts": 1790291754,
+"profile_json": "{\"clock_drift_cv\":0.427971,\"thermal_variance\":0.9685,\"jitter_cv\":0.3923040143320424,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-085",
+"ts": 1790291776,
+"profile_json": "{\"clock_drift_cv\":0.082445,\"thermal_variance\":0.7139,\"jitter_cv\":0.014217121313989185,\"cache_hierarchy_ratio\":1.055}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-081",
+"ts": 1790291800,
+"profile_json": "{\"clock_drift_cv\":0.270864,\"thermal_variance\":0.8688,\"jitter_cv\":0.054061915991534364,\"cache_hierarchy_ratio\":0.991}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-aarch64-025",
+"ts": 1790291810,
+"profile_json": "{\"clock_drift_cv\":0.86725,\"thermal_variance\":1.229,\"jitter_cv\":0.38217577837959993,\"cache_hierarchy_ratio\":1.84}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-modern-033",
+"ts": 1790291851,
+"profile_json": "{\"clock_drift_cv\":0.452453,\"thermal_variance\":0.9851,\"jitter_cv\":0.03815999918264478,\"cache_hierarchy_ratio\":1.067}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m4-005",
+"ts": 1790291862,
+"profile_json": "{\"clock_drift_cv\":0.152137,\"thermal_variance\":1.0359,\"jitter_cv\":0.06891609025287015,\"cache_hierarchy_ratio\":0.968}",
+"device_arch": "M4"
+},
+{
+"miner": "honest-modern-062",
+"ts": 1790291870,
+"profile_json": "{\"clock_drift_cv\":2.386849,\"thermal_variance\":0.9879,\"jitter_cv\":0.0442768907339667,\"cache_hierarchy_ratio\":1.019}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m2-019",
+"ts": 1790291990,
+"profile_json": "{\"clock_drift_cv\":0.416583,\"thermal_variance\":1.0285,\"jitter_cv\":0.6351680661756434,\"cache_hierarchy_ratio\":1.146}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-modern-008",
+"ts": 1790292033,
+"profile_json": "{\"clock_drift_cv\":0.071071,\"thermal_variance\":0.4693,\"jitter_cv\":0.026837382750966275,\"cache_hierarchy_ratio\":0.956}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-amd64-family-25-model-97-065",
+"ts": 1790292087,
+"profile_json": "{\"clock_drift_cv\":0.061174,\"thermal_variance\":0.9858,\"jitter_cv\":0.02785758802475464,\"cache_hierarchy_ratio\":0.98}",
+"device_arch": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD"
+},
+{
+"miner": "honest-broadwell-067",
+"ts": 1790292089,
+"profile_json": "{\"clock_drift_cv\":0.00791,\"thermal_variance\":0.9899,\"jitter_cv\":0.00747848950476507,\"cache_hierarchy_ratio\":1.025}",
+"device_arch": "broadwell"
+},
+{
+"miner": "honest-modern-068",
+"ts": 1790292099,
+"profile_json": "{\"clock_drift_cv\":0.075551,\"thermal_variance\":0.9959,\"jitter_cv\":0.14009500150849574,\"cache_hierarchy_ratio\":1.028}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m4-005",
+"ts": 1790292173,
+"profile_json": "{\"clock_drift_cv\":0.152137,\"thermal_variance\":1.0359,\"jitter_cv\":0.06891609025287015,\"cache_hierarchy_ratio\":0.968}",
+"device_arch": "M4"
+},
+{
+"miner": "honest-m2-004",
+"ts": 1790292231,
+"profile_json": "{\"clock_drift_cv\":0.514547,\"thermal_variance\":1.006,\"jitter_cv\":0.05092521874007235,\"cache_hierarchy_ratio\":0.99}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-aarch64-060",
+"ts": 1790292269,
+"profile_json": "{\"clock_drift_cv\":0.005009,\"thermal_variance\":0.998,\"jitter_cv\":0.007090360411765843,\"cache_hierarchy_ratio\":0.988}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-modern-080",
+"ts": 1790292356,
+"profile_json": "{\"clock_drift_cv\":0.427971,\"thermal_variance\":0.9685,\"jitter_cv\":0.3923040143320424,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-aarch64-025",
+"ts": 1790292397,
+"profile_json": "{\"clock_drift_cv\":0.86725,\"thermal_variance\":1.229,\"jitter_cv\":0.38217577837959993,\"cache_hierarchy_ratio\":1.84}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-modern-081",
+"ts": 1790292414,
+"profile_json": "{\"clock_drift_cv\":0.270864,\"thermal_variance\":0.8688,\"jitter_cv\":0.054061915991534364,\"cache_hierarchy_ratio\":0.991}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-085",
+"ts": 1790292419,
+"profile_json": "{\"clock_drift_cv\":0.139441,\"thermal_variance\":1.0116,\"jitter_cv\":0.19603991213576194,\"cache_hierarchy_ratio\":1.053}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-033",
+"ts": 1790292462,
+"profile_json": "{\"clock_drift_cv\":0.452453,\"thermal_variance\":0.9851,\"jitter_cv\":0.03815999918264478,\"cache_hierarchy_ratio\":1.067}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-062",
+"ts": 1790292471,
+"profile_json": "{\"clock_drift_cv\":2.386849,\"thermal_variance\":0.9879,\"jitter_cv\":0.0442768907339667,\"cache_hierarchy_ratio\":1.019}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m4-005",
+"ts": 1790292475,
+"profile_json": "{\"clock_drift_cv\":0.152137,\"thermal_variance\":1.0359,\"jitter_cv\":0.06891609025287015,\"cache_hierarchy_ratio\":0.968}",
+"device_arch": "M4"
+},
+{
+"miner": "honest-modern-068",
+"ts": 1790292561,
+"profile_json": "{\"clock_drift_cv\":0.16203,\"thermal_variance\":0.8429,\"jitter_cv\":0.16271161610633658,\"cache_hierarchy_ratio\":1.004}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m2-019",
+"ts": 1790292577,
+"profile_json": "{\"clock_drift_cv\":0.416583,\"thermal_variance\":1.0285,\"jitter_cv\":0.6351680661756434,\"cache_hierarchy_ratio\":1.146}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-amd64-family-25-model-97-065",
+"ts": 1790292614,
+"profile_json": "{\"clock_drift_cv\":0.04072,\"thermal_variance\":0.9688,\"jitter_cv\":0.03837636269812703,\"cache_hierarchy_ratio\":1.007}",
+"device_arch": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD"
+},
+{
+"miner": "honest-modern-008",
+"ts": 1790292635,
+"profile_json": "{\"clock_drift_cv\":0.071071,\"thermal_variance\":0.4693,\"jitter_cv\":0.026837382750966275,\"cache_hierarchy_ratio\":0.956}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-broadwell-067",
+"ts": 1790292682,
+"profile_json": "{\"clock_drift_cv\":0.007079,\"thermal_variance\":0.9891,\"jitter_cv\":0.0038993110911627704,\"cache_hierarchy_ratio\":1.026}",
+"device_arch": "broadwell"
+},
+{
+"miner": "honest-modern-085",
+"ts": 1790292769,
+"profile_json": "{\"clock_drift_cv\":0.144332,\"thermal_variance\":0.7528,\"jitter_cv\":0.062442181466563364,\"cache_hierarchy_ratio\":0.856}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m4-005",
+"ts": 1790292780,
+"profile_json": "{\"clock_drift_cv\":0.152137,\"thermal_variance\":1.0359,\"jitter_cv\":0.06891609025287015,\"cache_hierarchy_ratio\":0.968}",
+"device_arch": "M4"
+},
+{
+"miner": "honest-modern-068",
+"ts": 1790292806,
+"profile_json": "{\"clock_drift_cv\":0.075551,\"thermal_variance\":0.9959,\"jitter_cv\":0.14009500150849574,\"cache_hierarchy_ratio\":1.028}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m2-004",
+"ts": 1790292822,
+"profile_json": "{\"clock_drift_cv\":0.514547,\"thermal_variance\":1.006,\"jitter_cv\":0.05092521874007235,\"cache_hierarchy_ratio\":0.99}",
+"device_arch": "M2"
+},
+{
+"miner": "honest-modern-068",
+"ts": 1790292868,
+"profile_json": "{\"clock_drift_cv\":0.16203,\"thermal_variance\":0.8429,\"jitter_cv\":0.16271161610633658,\"cache_hierarchy_ratio\":1.004}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-aarch64-060",
+"ts": 1790292870,
+"profile_json": "{\"clock_drift_cv\":0.005009,\"thermal_variance\":0.998,\"jitter_cv\":0.007090360411765843,\"cache_hierarchy_ratio\":0.988}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-modern-080",
+"ts": 1790292958,
+"profile_json": "{\"clock_drift_cv\":0.427971,\"thermal_variance\":0.9685,\"jitter_cv\":0.3923040143320424,\"cache_hierarchy_ratio\":0.857}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-aarch64-025",
+"ts": 1790293005,
+"profile_json": "{\"clock_drift_cv\":0.86725,\"thermal_variance\":1.229,\"jitter_cv\":0.38217577837959993,\"cache_hierarchy_ratio\":1.84}",
+"device_arch": "aarch64"
+},
+{
+"miner": "honest-modern-081",
+"ts": 1790293030,
+"profile_json": "{\"clock_drift_cv\":0.270864,\"thermal_variance\":0.8688,\"jitter_cv\":0.054061915991534364,\"cache_hierarchy_ratio\":0.991}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-033",
+"ts": 1790293073,
+"profile_json": "{\"clock_drift_cv\":0.452453,\"thermal_variance\":0.9851,\"jitter_cv\":0.03815999918264478,\"cache_hierarchy_ratio\":1.067}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-modern-062",
+"ts": 1790293073,
+"profile_json": "{\"clock_drift_cv\":2.386849,\"thermal_variance\":0.9879,\"jitter_cv\":0.0442768907339667,\"cache_hierarchy_ratio\":1.019}",
+"device_arch": "modern"
+},
+{
+"miner": "honest-m4-005",
+"ts": 1790293091,
+"profile_json": "{\"clock_drift_cv\":0.152137,\"thermal_variance\":1.0359,\"jitter_cv\":0.06891609025287015,\"cache_hierarchy_ratio\":0.968}",
+"device_arch": "M4"
+}
+]

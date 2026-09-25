@@ -27,6 +27,12 @@ import logging
 import os
 import tempfile
 from contextlib import closing
+# SYBIL-GUARD: the preferred settlement path (settle_epoch_rip200 -> ADM) must
+# apply the review hold. Hard import: never silently settle held miners.
+try:
+    import sybil_guard
+except ImportError:
+    from node import sybil_guard
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 
@@ -290,6 +296,7 @@ def select_representative_miner(
     conn: sqlite3.Connection,
     miner_ids: List[str],
     epoch: Optional[int] = None,
+    held: Optional[set] = None,
 ) -> str:
     """
     Select one representative miner ID from a group of miner IDs belonging to the same machine.
@@ -311,6 +318,10 @@ def select_representative_miner(
     # the same physical machine cannot displace the canonical rewarded miner.
     if epoch is not None:
         epoch_weights = _get_epoch_enrolled_weights(conn, epoch)
+        if held:
+            # SYBIL-GUARD: a held miner competes at weight 0, so it cannot
+            # displace an unheld alias of the same machine.
+            epoch_weights = {m: (0.0 if m in held else w) for m, w in epoch_weights.items()}
         if epoch_weights:
             best_weight = max(epoch_weights.get(miner_id, 0.0) for miner_id in miner_ids)
             weighted_ids = [
@@ -435,21 +446,20 @@ def _get_epoch_enrolled_weights(conn: sqlite3.Connection, epoch: int) -> Dict[st
     returns an empty map and callers fall back to the historical arch-derived
     multiplier path.
     """
-    try:
-        cols = conn.execute("PRAGMA table_info(epoch_enroll)").fetchall()
-    except sqlite3.Error:
-        return {}
+    # SYBIL-GUARD (round 2): these used to swallow every sqlite3.Error and
+    # return {}, which made the caller fall back to ARCH multipliers for every
+    # miner -- a held (weight 0) G4 would then be paid 2.5x. Only a genuinely
+    # absent table/column is "no weights"; any other error propagates so the
+    # settlement rolls back and the epoch stays unsettled for retry.
+    cols = conn.execute("PRAGMA table_info(epoch_enroll)").fetchall()
 
     if not any(col[1] == "weight" for col in cols):
         return {}
 
-    try:
-        rows = conn.execute(
-            "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
-            (epoch,),
-        ).fetchall()
-    except sqlite3.Error:
-        return {}
+    rows = conn.execute(
+        "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?",
+        (epoch,),
+    ).fetchall()
 
     weights: Dict[str, float] = {}
     for miner_pk, weight in rows:
@@ -490,165 +500,13 @@ def calculate_anti_double_mining_rewards(
         - rewards_dict: {miner_id: reward_urtc} for representative miners only
         - telemetry_dict: Detection statistics for monitoring
     """
-    from rip_200_round_robin_1cpu1vote import get_time_aged_multiplier, get_chain_age_years
-    
-    chain_age_years = get_chain_age_years(current_slot)
-    
-    epoch_start_slot = epoch * 144
-    epoch_end_slot = epoch_start_slot + 143
-    epoch_start_ts = GENESIS_TIMESTAMP + (epoch_start_slot * BLOCK_TIME)
-    epoch_end_ts = GENESIS_TIMESTAMP + (epoch_end_slot * BLOCK_TIME)
-
+    # SYBIL-GUARD (round 2): delegate to the connection variant so the review
+    # hold lives in one place. Read-only: record_escrow=False, never committed.
     with closing(sqlite3.connect(db_path)) as conn:
-        conn.execute("BEGIN")
-        
-        # Detect duplicate identities
-        duplicates = detect_duplicate_identities(conn, epoch, epoch_start_ts, epoch_end_ts)
-        
-        # Log telemetry
-        log_duplicate_detection(duplicates, epoch)
-        
-        # Get all miner groups by machine identity
-        miner_groups = get_epoch_miner_groups(conn, epoch)
-        
-        # Select representative miner for each machine
-        representative_map: Dict[str, str] = {}  # machine_identity -> representative_miner_id
-        skipped_miners: Dict[str, str] = {}  # skipped_miner_id -> representative_miner_id
-        
-        for identity_hash, miner_ids in miner_groups.items():
-            if len(miner_ids) > 1:
-                # Multiple miners for same machine - select one
-                rep = select_representative_miner(conn, miner_ids, epoch=epoch)
-                representative_map[identity_hash] = rep
-                
-                # Track skipped miners for telemetry
-                for mid in miner_ids:
-                    if mid != rep:
-                        skipped_miners[mid] = rep
-                
-                logger.info(
-                    f"Epoch {epoch}: Machine {identity_hash[:8]}... has {len(miner_ids)} miners, "
-                    f"selected {rep} as representative"
-                )
-            else:
-                # Single miner - use directly
-                representative_map[identity_hash] = miner_ids[0]
-        
-        # Get device arch for each representative miner
-        cursor = conn.cursor()
-        enrolled_weights = _get_epoch_enrolled_weights(conn, epoch)
-        machine_data = []
-        
-        for identity_hash, miner_id in representative_map.items():
-            row = cursor.execute(
-                "SELECT device_arch, COALESCE(fingerprint_passed, 1) FROM miner_attest_recent WHERE miner=?",
-                (miner_id,)
-            ).fetchone()
-            
-            if row:
-                device_arch = row[0] or "unknown"
-                fingerprint_ok = row[1]
-                machine_data.append((miner_id, device_arch, fingerprint_ok, identity_hash))
-        
-        # Calculate time-aged weights for each machine
-        weighted_machines = []
-        total_weight = 0.0
-        
-        for miner_id, device_arch, fingerprint_ok, identity_hash in machine_data:
-            # STRICT: VMs/emulators with failed fingerprint get ZERO weight
-            if fingerprint_ok == 0:
-                weight = 0.0
-                logger.info(f"[REWARD] {miner_id[:20]}... fingerprint=FAIL -> weight=0")
-            elif miner_id in enrolled_weights:
-                # Preserve the canonical per-epoch weight snapshot used by the
-                # normal settlement path.  Recomputing from device_arch here can
-                # change the payout split for delayed settlements or RIP-309
-                # filtered weights.
-                weight = enrolled_weights[miner_id]
-            else:
-                weight = get_time_aged_multiplier(device_arch, chain_age_years)
-            
-            # Apply Warthog dual-mining bonus
-            if weight > 0 and fingerprint_ok == 1:
-                try:
-                    wart_row = cursor.execute(
-                        "SELECT warthog_bonus FROM miner_attest_recent WHERE miner=?",
-                        (miner_id,)
-                    ).fetchone()
-                    # Apply capped warthog bonus (MAX = 2.0) to prevent reward inflation.
-                    # Must match _calculate_anti_double_mining_rewards_conn exactly, or the
-                    # same epoch settles to a different split depending on whether the caller
-                    # passed an existing connection (settle_epoch_with_anti_double_mining
-                    # dispatches to the two paths on that condition).
-                    if wart_row and wart_row[0]:
-                        bonus = float(wart_row[0])
-                        if 1.0 < bonus <= 2.0:
-                            weight *= bonus
-                        elif bonus > 2.0:
-                            weight *= 2.0
-                except Exception:
-                    pass
-            
-            weighted_machines.append((miner_id, weight))
-            total_weight += weight
+        return _calculate_anti_double_mining_rewards_conn(
+            conn, epoch, total_reward_urtc, current_slot, record_escrow=False
+        )
 
-        # Distribute rewards (one per machine, not per miner_id)
-        # Only miners with positive weight receive rewards
-        rewards = {}
-        remaining = total_reward_urtc
-        
-        # Filter to only positive-weight miners for distribution
-        positive_weight_miners = [(mid, w) for mid, w in weighted_machines if w > 0]
-        
-        if not positive_weight_miners:
-            # No eligible miners (all failed fingerprint)
-            conn.commit()
-            return {}, {
-                "epoch": epoch,
-                "total_machines": len(representative_map),
-                "total_miner_ids_processed": sum(len(ids) for ids in miner_groups.values()),
-                "duplicate_machines_detected": len(duplicates),
-                "duplicate_miner_ids_skipped": len(skipped_miners),
-                "skipped_details": [
-                    {"skipped": skipped, "rewarded_representative": rep}
-                    for skipped, rep in skipped_miners.items()
-                ],
-                "duplicate_machine_details": [d.to_dict() for d in duplicates],
-                "note": "No eligible miners (all failed fingerprint validation)"
-            }
-        
-        for i, (miner_id, weight) in enumerate(positive_weight_miners):
-            if i == len(positive_weight_miners) - 1:
-                # Last miner gets remainder (prevents rounding issues)
-                share = remaining
-            else:
-                share = 0 if total_weight == 0 else int((weight / total_weight) * total_reward_urtc)
-                remaining -= share
-
-            rewards[miner_id] = share
-        
-        conn.commit()
-        
-        # Build telemetry report
-        telemetry = {
-            "epoch": epoch,
-            "total_machines": len(representative_map),
-            "total_miner_ids_processed": sum(len(ids) for ids in miner_groups.values()),
-            "duplicate_machines_detected": len(duplicates),
-            "duplicate_miner_ids_skipped": len(skipped_miners),
-            "skipped_details": [
-                {"skipped": skipped, "rewarded_representative": rep}
-                for skipped, rep in skipped_miners.items()
-            ],
-            "duplicate_machine_details": [d.to_dict() for d in duplicates]
-        }
-        
-        return rewards, telemetry
-
-
-# =============================================================================
-# INTEGRATION WITH EXISTING REWARDS SYSTEM
-# =============================================================================
 
 def settle_epoch_with_anti_double_mining(
     db_path: str,
@@ -696,14 +554,11 @@ def settle_epoch_with_anti_double_mining(
 
         # Calculate rewards with anti-double-mining.
         # When we share the caller's connection we must NOT open a separate one.
-        if existing_conn is not None:
-            rewards, telemetry = _calculate_anti_double_mining_rewards_conn(
-                db, epoch, per_epoch_urtc, current_slot
-            )
-        else:
-            rewards, telemetry = calculate_anti_double_mining_rewards(
-                db_path, epoch, per_epoch_urtc, current_slot
-            )
+        # SYBIL-GUARD: always compute on `db` (the settlement transaction), so
+        # the hold read and the escrow write are atomic with the credits.
+        rewards, telemetry = _calculate_anti_double_mining_rewards_conn(
+            db, epoch, per_epoch_urtc, current_slot
+        )
 
         if not rewards:
             if own_conn:
@@ -809,7 +664,8 @@ def _calculate_anti_double_mining_rewards_conn(
     conn,
     epoch: int,
     total_reward_urtc: int,
-    current_slot: int
+    current_slot: int,
+    record_escrow: bool = True,
 ) -> Tuple[Dict[str, int], Dict[str, Any]]:
     """Same as calculate_anti_double_mining_rewards but uses an existing connection.
 
@@ -834,13 +690,27 @@ def _calculate_anti_double_mining_rewards_conn(
     # Get all miner groups by machine identity
     miner_groups = get_epoch_miner_groups(conn, epoch)
 
+    # SYBIL-GUARD: needs_review / incident-cohort miners settle at 0, read on
+    # the settlement connection. When record_escrow, each held miner's
+    # positive enrolled weight is escrowed in the same transaction as the
+    # credits. hold_for_settlement never raises.
+    _all_ids = [m for ids in miner_groups.values() for m in ids]
+    # weights is passed as a callable so a transient read error here only
+    # skips the escrow record (hold still applied) instead of aborting the
+    # settlement. The payout weights below are read again and stay fail-loud.
+    _held = sybil_guard.hold_for_settlement(
+        conn, epoch, _all_ids,
+        weights=lambda: _get_epoch_enrolled_weights(conn, epoch),
+        record=record_escrow,
+    )
+
     # Select representative miner for each machine
     representative_map: Dict[str, str] = {}  # machine_identity -> representative_miner_id
     skipped_miners: Dict[str, str] = {}  # skipped_miner_id -> representative_miner_id
 
     for identity_hash, miner_ids in miner_groups.items():
         if len(miner_ids) > 1:
-            rep = select_representative_miner(conn, miner_ids, epoch=epoch)
+            rep = select_representative_miner(conn, miner_ids, epoch=epoch, held=_held)
             representative_map[identity_hash] = rep
             for mid in miner_ids:
                 if mid != rep:
@@ -868,7 +738,9 @@ def _calculate_anti_double_mining_rewards_conn(
     total_weight = 0.0
 
     for miner_id, device_arch, fingerprint_ok, identity_hash in machine_data:
-        if fingerprint_ok == 0:
+        if miner_id in _held:
+            weight = 0.0  # SYBIL-GUARD review hold (escrowed above)
+        elif fingerprint_ok == 0:
             weight = 0.0
         elif miner_id in enrolled_weights:
             # Preserve the canonical per-epoch weight snapshot used by the

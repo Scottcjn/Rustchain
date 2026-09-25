@@ -15,6 +15,12 @@ Key Changes:
 
 import hashlib
 import json
+# SYBIL-GUARD settlement guard. Hard import (round-2 review): a missing module
+# must fail loudly, never silently settle held miners.
+try:
+    import sybil_guard as _sybil_guard
+except ImportError:
+    from node import sybil_guard as _sybil_guard
 import logging
 import sqlite3
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -726,6 +732,21 @@ def calculate_epoch_rewards_time_aged(
                     WHERE ts_ok >= ? AND ts_ok <= ?
                 """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
             epoch_miners = cursor.fetchall()
+
+        # SYBIL-GUARD: needs_review / incident-cohort miners settle at 0 even
+        # if flagged after enrollment. Tuple index 3 is enrolled_weight (index
+        # 2 is fingerprint_passed). Setting it to 0 (not None) keeps the
+        # arch-multiplier fallback below from re-weighting the miner. Read-only
+        # here; the caller (settle_epoch_rip200) escrows on its settlement
+        # transaction, and this separate read connection runs while that
+        # transaction holds the write lock, so no hold can land in between.
+        # settlement_held_miners never raises.
+        _held = _sybil_guard.settlement_held_miners(conn, [m[0] for m in epoch_miners], epoch)
+        if _held:
+            epoch_miners = [
+                (m[0], m[1], m[2], 0) + tuple(m[4:]) if m[0] in _held else tuple(m)
+                for m in epoch_miners
+            ]
 
     if not epoch_miners:
         return {}
