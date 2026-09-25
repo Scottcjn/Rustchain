@@ -24,6 +24,7 @@ import time
 import hashlib
 import json
 import logging
+import math
 import os
 import tempfile
 from contextlib import closing
@@ -117,6 +118,277 @@ def normalize_fingerprint(fingerprint_data: Optional[Dict[str, Any]]) -> Dict[st
                 normalized["cpu_serial"] = serial
     
     return normalized
+
+
+# =============================================================================
+# ADM IDENTITY FIX (2026-09-25, round 2 after review)
+# =============================================================================
+# compute_machine_identity_hash(arch, profile) reads profile["checks"], but the
+# rows it was fed come from miner_fingerprint_history.profile_json, which holds
+# the flat 4-metric temporal profile ({clock_drift_cv, thermal_variance, ...}).
+# normalize_fingerprint therefore returned {} for EVERY miner and the identity
+# collapsed to hash(device_arch): ADM paid one miner per architecture (prod
+# epochs 250-295). Even if it parsed, a 4-float profile is not a machine
+# identity: honest legacy clients (the lab's G4s) all send the same constant.
+#
+# Identity is resolved from persisted MACHINE evidence only. Two enrolled
+# miners are DIRECTLY linked iff they
+#   * report a common miner_macs.mac_hash whose observation interval
+#     [first_ts, last_ts] overlaps [epoch_start - ADM_MAC_RECENCY_S, next_epoch_start)
+#     (first_ts is immutable, so a MAC first reported after the epoch ended can
+#     never regroup it; see NOTES "ADM IDENTITY FIX" for the last_ts caveat),
+#   * AND have the same node-recorded miner_attest_recent.source_ip (the only
+#     IP the node persists: latest attestation, no per-epoch history),
+#   * AND have the same device_arch.
+# Groups are formed ONLY from miners that are all pairwise directly linked
+# (no union-find chaining). A miner that links two miners which are not
+# directly linked to each other is a BRIDGE CONFLICT: it is returned in
+# `conflicts`, becomes its own identity, and the settlement holds it at 0 for
+# this epoch; the miners it bridged are not merged.
+# A miner with no such evidence is its OWN identity -- never its arch.
+ADM_MAC_RECENCY_S = 7 * 86400
+_ADM_IN_CHUNK = 500
+
+
+def _table_columns(conn: sqlite3.Connection, table: str) -> set:
+    """Columns of `table`; empty set when the table does not exist.
+
+    Not wrapped in try/except on purpose: PRAGMA on an absent table returns no
+    rows, so an exception here is a genuine database fault and must propagate
+    (settlement rolls back and the epoch stays unsettled for retry)."""
+    return {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}  # fetchall-ok: pragma-result
+
+
+def _chunks(items: List[str]):
+    for i in range(0, len(items), _ADM_IN_CHUNK):
+        yield items[i:i + _ADM_IN_CHUNK]
+
+
+def _as_ip(value) -> str:
+    """Normalise a stored source_ip of any SQLite type; '' when unusable."""
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        try:
+            value = value.decode("utf-8", "strict")
+        except UnicodeDecodeError:
+            return ""
+    if not isinstance(value, str):
+        # INTEGER/REAL in a TEXT-affinity column is not an address we recorded.
+        logger.warning("ADM identity: non-text source_ip %r ignored", value)
+        return ""
+    return value.strip()
+
+
+def _load_source_ips(conn: sqlite3.Connection, miners: List[str]) -> Dict[str, str]:
+    cols = _table_columns(conn, "miner_attest_recent")
+    if not {"miner", "source_ip"} <= cols:
+        return {}
+    order = "miner, ts_ok DESC, rowid DESC" if "ts_ok" in cols else "miner, rowid DESC"
+    ips: Dict[str, str] = {}
+    for chunk in _chunks(miners):
+        rows = conn.execute(
+            f"SELECT miner, source_ip FROM miner_attest_recent "
+            f"WHERE miner IN ({','.join('?' * len(chunk))}) ORDER BY {order}",
+            chunk,
+        ).fetchall()  # fetchall-ok: already-paginated (IN-chunk of <=500 miners, miner is PK)
+        for miner, raw in rows:
+            if miner in ips:
+                continue  # first row per miner wins (miner is PK in prod)
+            ip = _as_ip(raw)
+            if ip:
+                ips[miner] = ip
+    return ips
+
+
+def _epoch_next_start_ts(epoch: int) -> int:
+    """Start of epoch+1: the EXCLUSIVE upper bound of `epoch`'s evidence window.
+
+    Round-2 review: the old bound was the start of the epoch's LAST slot, so a
+    MAC first reported during that final 600 s slot was wrongly excluded."""
+    return GENESIS_TIMESTAMP + (int(epoch) + 1) * 144 * BLOCK_TIME
+
+
+def _load_epoch_macs(conn: sqlite3.Connection, miners: List[str],
+                     epoch_start_ts: int, epoch_until_ts: int) -> Dict[str, set]:
+    """MAC hashes observed in [epoch_start - ADM_MAC_RECENCY_S, epoch_until_ts).
+
+    `epoch_until_ts` is EXCLUSIVE (the next epoch's start)."""
+    cols = _table_columns(conn, "miner_macs")
+    if not {"miner", "mac_hash", "last_ts"} <= cols:
+        return {}
+    since = int(epoch_start_ts) - ADM_MAC_RECENCY_S
+    until = int(epoch_until_ts)
+    if "first_ts" in cols:
+        window = "last_ts >= ? AND first_ts < ?"
+    else:  # legacy schema: only last_ts, bound it on both sides
+        window = "last_ts >= ? AND last_ts < ?"
+    macs: Dict[str, set] = {}
+    for chunk in _chunks(miners):
+        rows = conn.execute(
+            f"SELECT miner, mac_hash FROM miner_macs "
+            f"WHERE miner IN ({','.join('?' * len(chunk))}) AND {window}",
+            list(chunk) + [since, until],
+        ).fetchall()  # fetchall-ok: already-paginated (IN-chunk of <=500 miners, window-bounded)
+        for miner, mac_hash in rows:
+            if mac_hash is None or str(mac_hash) == "":
+                continue
+            macs.setdefault(miner, set()).add(str(mac_hash))
+    return macs
+
+
+def resolve_machine_identities_ex(
+    conn: sqlite3.Connection,
+    miner_archs: Dict[str, str],
+    epoch_start_ts: int,
+    epoch_end_ts: Optional[int] = None,
+) -> Tuple[Dict[str, str], Dict[str, List[str]]]:
+    """(miner_id -> identity hash, {conflict_miner: [miners it bridged]}).
+
+    `epoch_end_ts` is the EXCLUSIVE upper bound of the evidence window (the
+    next epoch's start); default = epoch_start_ts + one epoch.
+
+    Never raises for a missing table/column (every miner is its own identity);
+    a sqlite error on a PRESENT table propagates (fail loud, settlement rolls
+    back)."""
+    if epoch_end_ts is None:
+        epoch_end_ts = int(epoch_start_ts) + 144 * BLOCK_TIME
+    miners = list(dict.fromkeys(miner_archs))
+    ips = _load_source_ips(conn, miners)
+    macs = _load_epoch_macs(conn, [m for m in miners if m in ips],
+                            epoch_start_ts, epoch_end_ts)
+
+    # Direct links: same (arch, ip) bucket and >= 1 common MAC.
+    buckets: Dict[Tuple[str, str], List[str]] = {}
+    for m in miners:
+        if m in ips and macs.get(m):
+            arch = str(miner_archs.get(m) or "unknown").lower()
+            buckets.setdefault((arch, ips[m]), []).append(m)
+    adj: Dict[str, set] = {m: set() for m in miners}
+    for members in buckets.values():
+        for i, a in enumerate(members):
+            for b in members[i + 1:]:
+                if macs[a] & macs[b]:
+                    adj[a].add(b)
+                    adj[b].add(a)
+
+    # Bridge conflicts: a miner with two neighbours that are not linked to
+    # each other would chain separate machines together.
+    conflicts: Dict[str, List[str]] = {}
+    for m in miners:
+        nbrs = sorted(adj[m])
+        bridged = set()
+        for i, a in enumerate(nbrs):
+            for b in nbrs[i + 1:]:
+                if b not in adj[a]:
+                    bridged.update((a, b))
+        if bridged:
+            conflicts[m] = sorted(bridged)
+
+    # Components of the graph without conflict miners. Every remaining
+    # component is a clique (a non-clique path u-v-w makes v a conflict).
+    seen: set = set()
+    identities: Dict[str, str] = {}
+    for m in sorted(miners):
+        if m in seen:
+            continue
+        if m in conflicts:
+            seen.add(m)
+            identities[m] = hashlib.sha256(("conflict|" + m).encode()).hexdigest()[:16]
+            continue
+        comp, stack = [], [m]
+        seen.add(m)
+        while stack:
+            x = stack.pop()
+            comp.append(x)
+            for y in adj[x]:
+                if y not in seen and y not in conflicts:
+                    seen.add(y)
+                    stack.append(y)
+        comp.sort()
+        if len(comp) > 1:
+            common = set.intersection(*(macs[x] for x in comp))
+            logger.info("ADM identity: %d miner ids share machine evidence "
+                        "(arch=%s ip=%s common_macs=%d): %s",
+                        len(comp), str(miner_archs.get(comp[0])).lower(), ips[comp[0]],
+                        len(common), comp)
+            basis = "machine|" + "|".join(comp)
+        else:
+            basis = "miner|" + comp[0]
+        ident = hashlib.sha256(basis.encode()).hexdigest()[:16]
+        for x in comp:
+            identities[x] = ident
+    for m, bridged in conflicts.items():
+        logger.critical("ADM identity: BRIDGE CONFLICT %s reports MACs linking miners that "
+                        "share no MAC with each other %s (same ip/arch); held at 0 for this "
+                        "epoch, bridged miners NOT merged", m, bridged)
+    return identities, conflicts
+
+
+def resolve_machine_identities(
+    conn: sqlite3.Connection,
+    miner_archs: Dict[str, str],
+    epoch_start_ts: int,
+    epoch_end_ts: Optional[int] = None,
+) -> Dict[str, str]:
+    """Map miner_id -> machine identity hash (see ADM IDENTITY FIX above)."""
+    return resolve_machine_identities_ex(conn, miner_archs, epoch_start_ts, epoch_end_ts)[0]
+
+
+def _safe_weight(value, miner_id: str = "?", what: str = "weight") -> float:
+    """Finite, non-negative float; anything else -> 0.0 with a log line. Never raises."""
+    try:
+        w = float(value if value is not None else 0.0)
+    except (TypeError, ValueError, OverflowError):
+        logger.error("ADM: non-numeric %s %r for %s treated as 0", what, value, miner_id)
+        return 0.0
+    if not math.isfinite(w) or w < 0:
+        logger.error("ADM: invalid %s %r for %s treated as 0", what, value, miner_id)
+        return 0.0
+    return w
+
+
+def _first_seen_map(conn: sqlite3.Connection, miners: List[str]) -> Dict[str, int]:
+    """Earliest node-recorded evidence of each miner (attestation history or
+    hardware binding). Missing tables contribute nothing."""
+    first: Dict[str, int] = {}
+    bad_logged = [False]
+
+    def _take(rows):
+        for m, ts in rows:
+            if ts is None:
+                continue
+            # Round-2 review: int(inf) raises OverflowError, which escaped and
+            # aborted settlement. Non-finite / negative / unparsable values are
+            # treated as missing evidence (logged once), never raised.
+            try:
+                f = float(ts)
+                ok = math.isfinite(f) and f >= 0
+                t = int(f) if ok else None
+            except (TypeError, ValueError, OverflowError):
+                t = None
+            if t is None:
+                if not bad_logged[0]:
+                    logger.error("ADM: invalid first-seen timestamp %r for %s treated as "
+                                 "missing (further invalid values not logged)", ts, m)
+                    bad_logged[0] = True
+                continue
+            if m not in first or t < first[m]:
+                first[m] = t
+
+    if {"miner", "ts_ok"} <= _table_columns(conn, "miner_attest_history"):
+        for chunk in _chunks(miners):
+            _take(conn.execute(
+                f"SELECT miner, MIN(ts_ok) FROM miner_attest_history "
+                f"WHERE miner IN ({','.join('?' * len(chunk))}) GROUP BY miner",
+                chunk).fetchall())  # fetchall-ok: already-paginated (IN-chunk of <=500, GROUP BY miner)
+    if {"bound_miner", "bound_at"} <= _table_columns(conn, "hardware_bindings"):
+        for chunk in _chunks(miners):
+            _take(conn.execute(
+                f"SELECT bound_miner, MIN(bound_at) FROM hardware_bindings "
+                f"WHERE bound_miner IN ({','.join('?' * len(chunk))}) GROUP BY bound_miner",
+                chunk).fetchall())  # fetchall-ok: already-paginated (IN-chunk of <=500, GROUP BY)
+    return first
 
 
 @dataclass
@@ -217,7 +489,12 @@ def detect_duplicate_identities(
 
     # Group miners by machine identity
     identity_map: Dict[str, List[Tuple[str, Dict]]] = {}  # identity_hash -> [(miner_id, attestation_data)]
-    
+    # ADM IDENTITY FIX: machine evidence, not hash(arch + unparsed profile).
+    _identities = resolve_machine_identities(
+        conn, {r[0]: (r[1] or "unknown") for r in rows}, epoch_start_ts,
+        _epoch_next_start_ts(epoch),   # exclusive evidence bound (round-2 review)
+    )
+
     for row in rows:
         miner_id, device_arch, fingerprint_passed, entropy_score, profile_json = row
         
@@ -229,8 +506,8 @@ def detect_duplicate_identities(
             except (json.JSONDecodeError, TypeError):
                 pass
         
-        # Compute machine identity
-        identity_hash = compute_machine_identity_hash(device_arch or "unknown", fingerprint_profile)
+        # Compute machine identity (ADM IDENTITY FIX)
+        identity_hash = _identities[miner_id]
         
         if identity_hash not in identity_map:
             identity_map[identity_hash] = []
@@ -300,55 +577,63 @@ def select_representative_miner(
 ) -> str:
     """
     Select one representative miner ID from a group of miner IDs belonging to the same machine.
-    
+
     Selection criteria (in order of priority):
-    1. Highest enrolled epoch weight (when epoch is provided)
-    2. Highest entropy score (most authentic attestation)
-    3. Most recent attestation timestamp
+    0. Unheld miners before held ones (a held alias cannot take the slot)
+    1. ESTABLISHED FIRST (ADM round 2, NAT copycat): the earliest node-recorded
+       first-seen (miner_attest_history / hardware_bindings). A newer identity
+       that copied an established miner's MAC behind the same egress cannot
+       displace it by enrolling heavier. Miners with no first-seen evidence
+       rank after those with evidence.
+    2. Highest enrolled epoch weight (when epoch is provided)
+    3. Highest entropy score, then most recent attestation
     4. First miner ID alphabetically (deterministic tie-breaker)
-    
-    This ensures consistent selection across re-runs.
     """
     if len(miner_ids) == 1:
         return miner_ids[0]
-    
-    cursor = conn.cursor()
-    
-    # Prefer the highest enrolled weight for this epoch so a low-weight alias on
-    # the same physical machine cannot displace the canonical rewarded miner.
-    if epoch is not None:
-        epoch_weights = _get_epoch_enrolled_weights(conn, epoch)
-        if held:
-            # SYBIL-GUARD: a held miner competes at weight 0, so it cannot
-            # displace an unheld alias of the same machine.
-            epoch_weights = {m: (0.0 if m in held else w) for m, w in epoch_weights.items()}
-        if epoch_weights:
-            best_weight = max(epoch_weights.get(miner_id, 0.0) for miner_id in miner_ids)
-            weighted_ids = [
-                miner_id for miner_id in miner_ids
-                if epoch_weights.get(miner_id, 0.0) == best_weight
-            ]
-            if len(weighted_ids) == 1:
-                return weighted_ids[0]
-            miner_ids = weighted_ids
 
-    # Get attestation details for the remaining candidate miner IDs
-    placeholders = ",".join("?" * len(miner_ids))
-    cursor.execute(f"""
-        SELECT miner, entropy_score, ts_ok
-        FROM miner_attest_recent
-        WHERE miner IN ({placeholders})
-        ORDER BY entropy_score DESC, ts_ok DESC, miner ASC
-    """, miner_ids)
-    
-    rows = cursor.fetchall()
-    
-    if not rows:
-        # Fallback: return first miner ID
-        return sorted(miner_ids)[0]
-    
-    # Return miner with highest entropy score (first row after ORDER BY)
-    return rows[0][0]
+    held = held or set()
+    candidates = [m for m in miner_ids if m not in held] or list(miner_ids)
+
+    first_seen = _first_seen_map(conn, candidates)
+    if first_seen:
+        earliest = min(first_seen.get(m, float("inf")) for m in candidates)
+        established = [m for m in candidates if first_seen.get(m, float("inf")) == earliest]
+    else:
+        established = list(candidates)
+
+    epoch_weights: Dict[str, float] = {}
+    if epoch is not None:
+        epoch_weights = {m: (0.0 if m in held else w)
+                         for m, w in _get_epoch_enrolled_weights(conn, epoch).items()}
+
+    def _by_weight(ids: List[str]) -> List[str]:
+        if not epoch_weights:
+            return ids
+        best = max(epoch_weights.get(m, 0.0) for m in ids)
+        return [m for m in ids if epoch_weights.get(m, 0.0) == best]
+
+    pool = _by_weight(established)
+    if len(pool) > 1:
+        placeholders = ",".join("?" * len(pool))
+        rows = conn.execute(f"""
+            SELECT miner, entropy_score, ts_ok
+            FROM miner_attest_recent
+            WHERE miner IN ({placeholders})
+            ORDER BY entropy_score DESC, ts_ok DESC, miner ASC
+        """, pool).fetchall()  # fetchall-ok: bounded-by-schema (one machine group, miner is PK)
+        choice = rows[0][0] if rows else sorted(pool)[0]
+    else:
+        choice = pool[0]
+
+    weight_only = sorted(_by_weight(candidates))[0] if epoch_weights else None
+    if weight_only is not None and weight_only != choice and first_seen:
+        logger.warning(
+            "ADM representative: kept established %s (first_seen=%s) over heavier/newer %s "
+            "(first_seen=%s) in group %s",
+            choice, first_seen.get(choice), weight_only, first_seen.get(weight_only),
+            sorted(miner_ids))
+    return choice
 
 
 def get_epoch_miner_groups(
@@ -361,6 +646,14 @@ def get_epoch_miner_groups(
     Returns:
         Dict mapping machine_identity_hash -> list of miner_ids
     """
+    return get_epoch_miner_groups_ex(conn, epoch)[0]
+
+
+def get_epoch_miner_groups_ex(
+    conn: sqlite3.Connection,
+    epoch: int
+) -> Tuple[Dict[str, List[str]], Dict[str, List[str]]]:
+    """(groups, bridge conflicts) -- see resolve_machine_identities_ex."""
     epoch_start_slot = epoch * 144
     epoch_end_slot = epoch_start_slot + 143
     epoch_start_ts = GENESIS_TIMESTAMP + (epoch_start_slot * BLOCK_TIME)
@@ -417,18 +710,16 @@ def get_epoch_miner_groups(
         """, (epoch_start_ts, epoch_end_ts))
         rows = cursor.fetchall()
     
-    # Group by machine identity
+    # Group by machine identity (ADM IDENTITY FIX: machine evidence only;
+    # a miner without evidence is its own identity, never its arch).
     groups: Dict[str, List[str]] = {}
-    
+    _identities, _conflicts = resolve_machine_identities_ex(
+        conn, {r[0]: (r[1] or "unknown") for r in rows}, epoch_start_ts,
+        _epoch_next_start_ts(epoch),   # exclusive evidence bound (round-2 review)
+    )
+
     for miner_id, device_arch, profile_json in rows:
-        fingerprint_profile = {}
-        if profile_json:
-            try:
-                fingerprint_profile = json.loads(profile_json)
-            except (json.JSONDecodeError, TypeError):
-                pass
-        
-        identity_hash = compute_machine_identity_hash(device_arch, fingerprint_profile)
+        identity_hash = _identities[miner_id]
         
         if identity_hash not in groups:
             groups[identity_hash] = []
@@ -436,7 +727,7 @@ def get_epoch_miner_groups(
         if miner_id not in groups[identity_hash]:
             groups[identity_hash].append(miner_id)
     
-    return groups
+    return groups, _conflicts
 
 
 def _get_epoch_enrolled_weights(conn: sqlite3.Connection, epoch: int) -> Dict[str, float]:
@@ -463,10 +754,9 @@ def _get_epoch_enrolled_weights(conn: sqlite3.Connection, epoch: int) -> Dict[st
 
     weights: Dict[str, float] = {}
     for miner_pk, weight in rows:
-        try:
-            weights[miner_pk] = max(float(weight or 0.0), 0.0)
-        except (TypeError, ValueError):
-            weights[miner_pk] = 0.0
+        # NaN / inf / negative / non-numeric -> 0 with a log line, never raise
+        # (SQLite's dynamic typing admits all of them in an INTEGER column).
+        weights[miner_pk] = _safe_weight(weight, miner_pk, "enrolled weight")
     return weights
 
 
@@ -688,7 +978,7 @@ def _calculate_anti_double_mining_rewards_conn(
     log_duplicate_detection(duplicates, epoch)
 
     # Get all miner groups by machine identity
-    miner_groups = get_epoch_miner_groups(conn, epoch)
+    miner_groups, identity_conflicts = get_epoch_miner_groups_ex(conn, epoch)
 
     # SYBIL-GUARD: needs_review / incident-cohort miners settle at 0, read on
     # the settlement connection. When record_escrow, each held miner's
@@ -703,6 +993,18 @@ def _calculate_anti_double_mining_rewards_conn(
         weights=lambda: _get_epoch_enrolled_weights(conn, epoch),
         record=record_escrow,
     )
+    # ADM round 2: bridge-conflict miners (MACs linking miners that share no
+    # MAC with each other) settle at 0 for this epoch, escrowed like a review
+    # hold. The miners they bridged stay separate and are paid normally.
+    if identity_conflicts:
+        _held = set(_held) | set(identity_conflicts)
+        if record_escrow:
+            _cw = _get_epoch_enrolled_weights(conn, epoch)
+            for _m in sorted(identity_conflicts):
+                _units = int(_cw.get(_m, 0.0))
+                if _units > 0:
+                    sybil_guard.record_review_escrow_safe(
+                        conn, epoch, _m, _units, "adm_identity_bridge_conflict")
 
     # Select representative miner for each machine
     representative_map: Dict[str, str] = {}  # machine_identity -> representative_miner_id
@@ -749,7 +1051,8 @@ def _calculate_anti_double_mining_rewards_conn(
             # filtered weights.
             weight = enrolled_weights[miner_id]
         else:
-            weight = get_time_aged_multiplier(device_arch, chain_age_years)
+            weight = _safe_weight(get_time_aged_multiplier(device_arch, chain_age_years),
+                                  miner_id, "arch multiplier")
 
         if weight > 0 and fingerprint_ok == 1:
             try:
@@ -757,15 +1060,16 @@ def _calculate_anti_double_mining_rewards_conn(
                     "SELECT warthog_bonus FROM miner_attest_recent WHERE miner=?",
                     (miner_id,)
                 ).fetchone()
-                # Apply capped warthog bonus (MAX = 2.0) to prevent reward inflation
-                if wart_row and wart_row[0]:
-                    bonus = float(wart_row[0])
-                    if 1.0 < bonus <= 2.0:
-                        weight *= bonus
-                    elif bonus > 2.0:
-                        weight *= 2.0
+                # Apply capped warthog bonus (MAX = 2.0) to prevent reward inflation.
+                # Non-finite / malformed values are treated as 0 (no bonus).
+                bonus = _safe_weight(wart_row[0], miner_id, "warthog_bonus") if wart_row else 0.0
+                if 1.0 < bonus <= 2.0:
+                    weight *= bonus
+                elif bonus > 2.0:
+                    weight *= 2.0
             except Exception:
                 pass
+        weight = _safe_weight(weight, miner_id, "settlement weight")
 
         weighted_machines.append((miner_id, weight))
         total_weight += weight
@@ -969,7 +1273,37 @@ def setup_test_scenario(db_path: str):
                 INSERT INTO miner_fingerprint_history (miner, ts, profile_json)
                 VALUES (?, ?, ?)
             """, (miner, current_ts, fingerprint_c))
-        
+
+        # Machine identity evidence. ADM groups miners as one machine only when
+        # they share a MAC hash seen in the epoch window AND the same
+        # node-observed source_ip AND the same arch; the fingerprint profiles
+        # above are not an identity signal.
+        conn.execute("ALTER TABLE miner_attest_recent ADD COLUMN source_ip TEXT")
+        conn.execute("""
+            CREATE TABLE miner_macs (
+                miner TEXT NOT NULL,
+                mac_hash TEXT NOT NULL,
+                first_ts INTEGER NOT NULL,
+                last_ts INTEGER NOT NULL,
+                count INTEGER DEFAULT 1,
+                PRIMARY KEY (miner, mac_hash)
+            )
+        """)
+        evidence = {
+            "miner-a1": ("192.0.2.10", "mac-machine-a"),
+            "miner-a2": ("192.0.2.10", "mac-machine-a"),
+            "miner-a3": ("192.0.2.10", "mac-machine-a"),
+            "miner-b1": ("192.0.2.20", "mac-machine-b"),
+            "miner-c1": ("192.0.2.30", "mac-machine-c"),
+            "miner-c2": ("192.0.2.30", "mac-machine-c"),
+        }
+        for miner, (ip, mac) in evidence.items():
+            conn.execute("UPDATE miner_attest_recent SET source_ip = ? WHERE miner = ?", (ip, miner))
+            conn.execute(
+                "INSERT INTO miner_macs VALUES (?, ?, ?, ?, 1)",
+                (miner, mac, epoch_start_ts + 60, epoch_start_ts + 60),
+            )
+
         conn.commit()
     
     print(f"Test database created at {db_path}")

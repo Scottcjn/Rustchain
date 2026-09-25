@@ -190,6 +190,19 @@ class TestDuplicateDetection(unittest.TestCase):
                 VALUES (?, ?, ?)
             """, (miner, current_ts, fingerprint))
         
+        # Machine identity = shared MAC hash + same node-observed source_ip +
+        # same arch (the fingerprint profile above is not an identity signal).
+        self.conn.execute("ALTER TABLE miner_attest_recent ADD COLUMN source_ip TEXT")
+        self.conn.execute(
+            "CREATE TABLE miner_macs (miner TEXT NOT NULL, mac_hash TEXT NOT NULL, "
+            "first_ts INTEGER NOT NULL, last_ts INTEGER NOT NULL, count INTEGER DEFAULT 1, "
+            "PRIMARY KEY (miner, mac_hash))"
+        )
+        for miner in miners:
+            self.conn.execute("UPDATE miner_attest_recent SET source_ip = ? WHERE miner = ?",
+                              ("192.0.2.10", miner))
+            self.conn.execute("INSERT INTO miner_macs VALUES (?, ?, ?, ?, 1)",
+                              (miner, "mac-same-machine", epoch_start_ts + 60, epoch_start_ts + 60))
         self.conn.commit()
         
         duplicates = detect_duplicate_identities(
