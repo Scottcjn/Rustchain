@@ -493,13 +493,20 @@ def utxo_box(box_id):
 @utxo_bp.route('/state_root')
 def utxo_state_root():
     """Current Merkle state root of the UTXO set."""
-    # One connection: the root and the count it is reported beside must describe
-    # the same UTXO set (#2819, robin1121).
+    # Pin a single read snapshot (#2819, #17058): with Python sqlite3, SELECTs alone
+    # do not begin a transaction, so an explicit BEGIN ensures that compute_state_root
+    # and count_unspent see the exact same committed database state even if another
+    # connection commits concurrently.
     conn = sqlite3.connect(_db_path)
     try:
+        conn.execute("BEGIN")
         root = _utxo_db.compute_state_root(conn=conn)
         count = _utxo_db.count_unspent(conn=conn)
     finally:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         conn.close()
     return jsonify({
         'state_root': root,
@@ -523,6 +530,7 @@ def utxo_integrity():
     try:
         conn = sqlite3.connect(_db_path)
         conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN")
         row = conn.execute(
             "SELECT COALESCE(SUM(amount_i64), 0) FROM balances"
         ).fetchone()
@@ -537,6 +545,10 @@ def utxo_integrity():
         result = _utxo_db.integrity_check(expected_total=account_total_nrtc, conn=conn)
     finally:
         if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             conn.close()
     if account_total is not None:
         result['account_total_i64'] = account_total
@@ -561,6 +573,7 @@ def utxo_stats():
     """UTXO set statistics."""
     conn = _utxo_db._conn()
     try:
+        conn.execute("BEGIN")
         unspent = conn.execute(
             "SELECT COUNT(*) AS n, COALESCE(SUM(value_nrtc),0) AS total FROM utxo_boxes WHERE spent_at IS NULL"
         ).fetchone()
@@ -584,6 +597,10 @@ def utxo_stats():
             'state_root': _utxo_db.compute_state_root(conn=conn),
         })
     finally:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         conn.close()
 
 
