@@ -16,7 +16,9 @@ Endpoints:
     POST /utxo/transfer            - UTXO-native signed transfer
 """
 
+import hmac
 import json
+import os
 import re
 import sqlite3
 import time
@@ -203,6 +205,26 @@ _addr_from_pk_fn = None    # address_from_pubkey(pubkey_hex) -> str
 _current_slot_fn = None    # current_slot() -> int
 _dual_write: bool = False
 _review_gate_fn = None     # wallet_review_gate_response(wallet) -> Response|None
+_is_admin_fn = None        # is_admin(request) -> bool (main server's X-Admin-Key check)
+
+
+def _request_is_admin() -> bool:
+    """Admin check for privileged UTXO diagnostics.
+
+    Uses the main server's is_admin() when wired in; otherwise falls back to
+    the same contract (X-Admin-Key / X-API-Key vs RC_ADMIN_KEY, constant-time).
+    An unset admin key never authorizes.
+    """
+    if _is_admin_fn is not None:
+        try:
+            return bool(_is_admin_fn(request))
+        except Exception:
+            return False
+    need = (os.environ.get("RC_ADMIN_KEY") or "").strip()
+    got = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if not need or not got:
+        return False
+    return hmac.compare_digest(need, got)
 
 
 def _selected_account_mirror_boxes(conn: sqlite3.Connection, selected: list) -> list:
@@ -367,13 +389,13 @@ def _transfer_string_field(data: dict, field: str):
 def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
                             verify_sig_fn, addr_from_pk_fn,
                             current_slot_fn, dual_write: bool = False,
-                            review_gate_fn=None):
+                            review_gate_fn=None, is_admin_fn=None):
     """
     Wire up the UTXO blueprint with dependencies from the main server.
     Call this after init_db().
     """
     global _utxo_db, _db_path, _verify_sig_fn, _addr_from_pk_fn
-    global _current_slot_fn, _dual_write, _review_gate_fn
+    global _current_slot_fn, _dual_write, _review_gate_fn, _is_admin_fn
 
     _utxo_db = utxo_db
     _db_path = db_path
@@ -382,6 +404,7 @@ def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
     _current_slot_fn = current_slot_fn
     _dual_write = dual_write
     _review_gate_fn = review_gate_fn
+    _is_admin_fn = is_admin_fn
 
     conn = sqlite3.connect(db_path)
     try:
@@ -389,6 +412,17 @@ def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
         conn.commit()
     finally:
         conn.close()
+
+    # Version triggers + memo for the cached state root (idempotent; a no-op
+    # until utxo_boxes exists -- init_tables() installs it then). Best-effort:
+    # without it, state_summary() falls back to a full recompute (correct, just
+    # uncached), so a failure here must not take the UTXO endpoints down.
+    ensure_memo = getattr(utxo_db, 'ensure_state_memo_schema', None)
+    if ensure_memo is not None:
+        try:
+            ensure_memo()
+        except Exception as e:
+            print(f"[UTXO] WARNING: state-root memo schema not installed: {e}")
 
     app.register_blueprint(utxo_bp)
     print(f"[UTXO] Endpoints registered at /utxo/* (dual_write={'ON' if dual_write else 'OFF'})")
@@ -497,11 +531,13 @@ def utxo_state_root():
     # do not begin a transaction, so an explicit BEGIN ensures that compute_state_root
     # and count_unspent see the exact same committed database state even if another
     # connection commits concurrently.
+    # Root and count come from ONE memo row (or one recompute) keyed by the
+    # DB state version read in this same snapshot, so an anonymous request is
+    # O(1) unless the UTXO set changed since the last computation.
     conn = sqlite3.connect(_db_path)
     try:
         conn.execute("BEGIN")
-        root = _utxo_db.compute_state_root(conn=conn)
-        count = _utxo_db.count_unspent(conn=conn)
+        summary = _utxo_db.state_summary(conn=conn)
     finally:
         try:
             conn.rollback()
@@ -509,15 +545,24 @@ def utxo_state_root():
             pass
         conn.close()
     return jsonify({
-        'state_root': root,
-        'unspent_count': count,
+        'state_root': summary['state_root'],
+        'unspent_count': summary['unspent_count'],
+        'state_version': summary['version'],
         'timestamp': int(time.time()),
     })
 
 
 @utxo_bp.route('/integrity')
 def utxo_integrity():
-    """Compare UTXO totals against account model."""
+    """Compare UTXO totals against account model.
+
+    Public callers get the root/UTXO totals from the state-version memo.
+    ``?force=1`` (admin only) forces a full O(N) recompute for verification.
+    """
+    force = request.args.get('force', '').strip().lower() in ('1', 'true', 'yes')
+    if force and not _request_is_admin():
+        return jsonify({'ok': False, 'reason': 'admin_required',
+                        'error': 'force=1 full recompute requires X-Admin-Key'}), 401
     # Get account model total and convert to nanoRTC (8 decimals).
     # balances.amount_i64 is stored at 6 decimals (ACCOUNT_UNIT),
     # so multiply by UNIT/ACCOUNT_UNIT (=100) to get nanoRTC.
@@ -542,7 +587,8 @@ def utxo_integrity():
         account_total_nrtc = None
 
     try:
-        result = _utxo_db.integrity_check(expected_total=account_total_nrtc, conn=conn)
+        result = _utxo_db.integrity_check(
+            expected_total=account_total_nrtc, conn=conn, use_memo=not force)
     finally:
         if conn is not None:
             try:
@@ -554,6 +600,7 @@ def utxo_integrity():
         result['account_total_i64'] = account_total
         result['account_total_nrtc'] = account_total_nrtc
         result['account_total_rtc'] = account_total_nrtc / UNIT
+    result['full_recompute'] = force
     return jsonify(result)
 
 
@@ -574,12 +621,8 @@ def utxo_stats():
     conn = _utxo_db._conn()
     try:
         conn.execute("BEGIN")
-        unspent = conn.execute(
-            "SELECT COUNT(*) AS n, COALESCE(SUM(value_nrtc),0) AS total FROM utxo_boxes WHERE spent_at IS NULL"
-        ).fetchone()
-        spent = conn.execute(
-            "SELECT COUNT(*) AS n FROM utxo_boxes WHERE spent_at IS NOT NULL"
-        ).fetchone()
+        # Box aggregates + root from the version-keyed memo (same snapshot).
+        summary = _utxo_db.state_summary(conn=conn)
         txs = conn.execute(
             "SELECT COUNT(*) AS n FROM utxo_transactions"
         ).fetchone()
@@ -588,13 +631,13 @@ def utxo_stats():
         ).fetchone()
 
         return jsonify({
-            'unspent_boxes': unspent['n'],
-            'total_value_nrtc': unspent['total'],
-            'total_value_rtc': unspent['total'] / UNIT,
-            'spent_boxes': spent['n'],
+            'unspent_boxes': summary['unspent_count'],
+            'total_value_nrtc': summary['total_unspent_nrtc'],
+            'total_value_rtc': summary['total_unspent_nrtc'] / UNIT,
+            'spent_boxes': summary['spent_count'],
             'total_transactions': txs['n'],
             'mempool_size': mempool['n'],
-            'state_root': _utxo_db.compute_state_root(conn=conn),
+            'state_root': summary['state_root'],
         })
     finally:
         try:
