@@ -86,6 +86,60 @@ def test_info_chain_summary(client):
     assert j["active_miners_24h"] == 1
 
 
+def test_sync_reports_synced_within_tolerance(client):
+    # fixture's current_slot is pinned to 1701, tip is also 1701 -> lag 0.
+    for path in ("/api/v1/sync", "/api/v1/sync-status", "/api/v1/health/sync"):
+        j = client.get(path).get_json()
+        assert j["is_synced"] is True
+        assert j["current_block"] == 1701 and j["network_block"] == 1701 and j["lag"] == 0
+
+
+def _sync_client(tmp_path, tip_slot, network_slot):
+    db = tmp_path / f"sync-{tip_slot}-{network_slot}.db"
+    conn = sqlite3.connect(db)
+    conn.executescript("""
+        CREATE TABLE schema_version (v INTEGER);
+        CREATE TABLE headers (slot INTEGER, miner_id TEXT, message_hex TEXT,
+            signature_hex TEXT, pubkey_hex TEXT, ts INTEGER);
+    """)
+    if tip_slot is not None:
+        conn.execute("INSERT INTO headers VALUES (?,'minerA','','','',0)", (tip_slot,))
+    conn.commit(); conn.close()
+
+    app = Flask(__name__)
+    api_v1.register_api_v1(
+        app, db_path=str(db),
+        current_slot=lambda: network_slot, slot_to_epoch=lambda s: 10,
+        app_version="test", app_start_ts=time.time(),
+        per_epoch_rtc=1.5, epoch_slots=144, total_supply_rtc=8388608,
+    )
+    app.config["TESTING"] = True
+    return app.test_client()
+
+
+def test_sync_reports_not_synced_when_behind(tmp_path):
+    j = _sync_client(tmp_path, tip_slot=1700, network_slot=1705).get("/api/v1/sync").get_json()
+    assert j["is_synced"] is False
+    assert j["current_block"] == 1700 and j["network_block"] == 1705 and j["lag"] == 5
+
+
+def test_sync_tolerance_boundary(tmp_path):
+    # lag == SYNC_LAG_TOLERANCE (1): the in-progress slot's block may not exist
+    # yet, so this still counts as synced.
+    j = _sync_client(tmp_path, tip_slot=1700, network_slot=1701).get("/api/v1/sync").get_json()
+    assert j["is_synced"] is True and j["lag"] == 1
+
+    # lag == SYNC_LAG_TOLERANCE + 1 (2): one full slot behind, no longer synced.
+    j = _sync_client(tmp_path, tip_slot=1700, network_slot=1702).get("/api/v1/sync").get_json()
+    assert j["is_synced"] is False and j["lag"] == 2
+
+
+def test_sync_fresh_node_with_no_blocks(tmp_path):
+    j = _sync_client(tmp_path, tip_slot=None, network_slot=1701).get("/api/v1/sync").get_json()
+    assert j["is_synced"] is False
+    assert j["current_block"] == 0 and j["network_block"] == 1701 and j["lag"] == 1701
+
+
 def test_epoch(client):
     j = client.get("/api/v1/epoch").get_json()
     assert j["epoch"] == 10 and j["enrolled_miners"] == 1 and j["settled"] is False
