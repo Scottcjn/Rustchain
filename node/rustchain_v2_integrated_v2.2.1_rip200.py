@@ -12957,6 +12957,7 @@ def confirm_pending():
     confirmed_count = 0
     confirmed_ids = []
     errors = []
+    failed_ids = []
 
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -13049,6 +13050,7 @@ def confirm_pending():
                     pass
                 print(f"[ERROR] confirm_pending {pid}: {e!r}")
                 errors.append({"id": pid, "error": "internal_error"})
+                failed_ids.append(pid)
 
         after_stats = _pending_overdue_stats(c, now)
         conn.commit()
@@ -13058,13 +13060,26 @@ def confirm_pending():
                 "confirmed_ids": str(confirmed_ids[:10]),  # First 10
                 "errors": len(errors)
             })
+        if failed_ids:
+            send_sophiacheck_alert("critical", f"{len(failed_ids)} pending transfer(s) FAILED to confirm", {
+                "failed_ids": str(failed_ids[:10]),  # First 10
+                "confirmed_count": confirmed_count,
+            })
 
+        # `ok` means "every selected transfer was resolved" (confirmed, or voided
+        # for insufficient balance). A row that raised is left 'pending' and was
+        # NOT delivered, so the pass is not ok. This used to be a hard-coded
+        # True: from 2026-09-22 every confirm raised (mirror_exceeds_balance)
+        # and the cron read `"ok": true, confirmed_count: 0` as a healthy empty
+        # pass while ~1,400 RTC of payouts sat undelivered for two days.
         return jsonify({
-            "ok": True,
+            "ok": not failed_ids,
             "limit": limit,
             "selected_count": len(ready),
             "confirmed_count": confirmed_count,
             "confirmed_ids": confirmed_ids,
+            "failed_count": len(failed_ids),
+            "failed_ids": failed_ids,
             "errors": errors if errors else None,
             "stale_pending_count_before": before_stats["stale_pending_count"],
             "max_confirm_overdue_seconds_before": before_stats["max_confirm_overdue_seconds"],
