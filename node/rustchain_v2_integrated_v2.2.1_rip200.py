@@ -12957,6 +12957,7 @@ def confirm_pending():
     confirmed_count = 0
     confirmed_ids = []
     errors = []
+    failed_ids = []
 
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -13049,6 +13050,7 @@ def confirm_pending():
                     pass
                 print(f"[ERROR] confirm_pending {pid}: {e!r}")
                 errors.append({"id": pid, "error": "internal_error"})
+                failed_ids.append(pid)
 
         after_stats = _pending_overdue_stats(c, now)
         conn.commit()
@@ -13058,13 +13060,26 @@ def confirm_pending():
                 "confirmed_ids": str(confirmed_ids[:10]),  # First 10
                 "errors": len(errors)
             })
+        if failed_ids:
+            send_sophiacheck_alert("critical", f"{len(failed_ids)} pending transfer(s) FAILED to confirm", {
+                "failed_ids": str(failed_ids[:10]),  # First 10
+                "confirmed_count": confirmed_count,
+            })
 
+        # `ok` means "every selected transfer was resolved" (confirmed, or voided
+        # for insufficient balance). A row that raised is left 'pending' and was
+        # NOT delivered, so the pass is not ok. This used to be a hard-coded
+        # True: from 2026-09-22 every confirm raised (mirror_exceeds_balance)
+        # and the cron read `"ok": true, confirmed_count: 0` as a healthy empty
+        # pass while ~1,400 RTC of payouts sat undelivered for two days.
         return jsonify({
-            "ok": True,
+            "ok": not failed_ids,
             "limit": limit,
             "selected_count": len(ready),
             "confirmed_count": confirmed_count,
             "confirmed_ids": confirmed_ids,
+            "failed_count": len(failed_ids),
+            "failed_ids": failed_ids,
             "errors": errors if errors else None,
             "stale_pending_count_before": before_stats["stale_pending_count"],
             "max_confirm_overdue_seconds_before": before_stats["max_confirm_overdue_seconds"],
@@ -13109,18 +13124,26 @@ def check_integrity():
         """).fetchall())
     
     mismatches = []
-    for miner_id, balance in balances.items():
-        ledger_sum = ledger_sums.get(miner_id, 0)
-        
+    # Walk the UNION of both sides. Iterating balances alone made a wallet that
+    # exists only in the ledger invisible: RTC credited in the ledger whose
+    # balance row is missing (never created, or deleted) reported ok=true.
+    for miner_id in sorted(set(balances) | set(ledger_sums), key=str):
+        balance_row_missing = miner_id not in balances
+        balance = int(balances.get(miner_id) or 0)
+        ledger_sum = int(ledger_sums.get(miner_id) or 0)
+
         # Balance should equal ledger sum (pending doesn't affect balance yet)
         if balance != ledger_sum:
-            mismatches.append({
+            mismatch = {
                 "miner_id": miner_id,
                 "balance_rtc": balance / 1000000,
                 "ledger_sum_rtc": ledger_sum / 1000000,
                 "diff_rtc": (balance - ledger_sum) / 1000000
-            })
-    
+            }
+            if balance_row_missing:
+                mismatch["balance_row_missing"] = True
+            mismatches.append(mismatch)
+
     integrity_ok = len(mismatches) == 0
     
     if not integrity_ok:
@@ -13131,7 +13154,7 @@ def check_integrity():
     
     return jsonify({
         "ok": integrity_ok,
-        "total_miners_checked": len(balances),
+        "total_miners_checked": len(set(balances) | set(ledger_sums)),
         "mismatches": mismatches if mismatches else None,
         "pending_transfers": len(pending)
     })
