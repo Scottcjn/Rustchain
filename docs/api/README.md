@@ -47,6 +47,7 @@ open http://localhost:8080/swagger.html
 | GET | `/ready` | Readiness probe |
 | GET | `/epoch` | Current epoch information |
 | GET | `/api/miners` | List active miners |
+| GET | `/api/balances/export` | Paginated export of every wallet balance |
 | GET | `/api/nodes` | List connected nodes |
 | GET | `/api/stats` | Network statistics |
 | GET | `/api/hall_of_fame/leaderboard` | Hall of Fame leaderboard |
@@ -61,6 +62,23 @@ open http://localhost:8080/swagger.html
 | GET | `/governance/proposal/{id}` | Proposal details |
 | GET | `/governance/ui` | Governance UI (HTML) |
 | GET | `/api/premium/reputation` | Reputation data |
+
+### Complete wallet balance export
+
+`GET /api/balances/export?limit=100&offset=0` returns a stable wallet-ordered
+page with `wallet`, `balance_rtc`, `is_founder`, `kind`, and `last_activity`.
+The endpoint is public, limited to 100 rows per page, rate-limited per client IP,
+and caches bounded pages for the current epoch.
+
+This transparency endpoint deliberately includes **every** row in the node's
+balances table. It therefore publishes hosted handles and other wallet
+identifiers together with their latest ledger activity timestamp; it must not be
+used as an active-miner filter. `last_activity` is `null` when the optional
+ledger table is absent or no activity exists.
+
+```bash
+curl -fsS 'https://rustchain.org/api/balances/export?limit=100&offset=0' | jq .
+```
 
 ### Signed Write Endpoints (Ed25519 Signature)
 
