@@ -93,6 +93,17 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
         }, block_height=height)
         self.assertTrue(ok, "Coinbase fixture should seed UTXO balance")
 
+    def _unspent_utxo_nrtc(self, address):
+        """Unspent UTXO value for an address — proves the UTXO side rolled back."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(value_nrtc), 0) FROM utxo_boxes "
+                "WHERE owner_address = ? AND spent_at IS NULL", (address,)).fetchone()
+            return row[0]
+        finally:
+            conn.close()
+
     def _get_account_balance_i64(self, miner_id):
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -105,7 +116,7 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
 
     # -- Core guard tests ----------------------------------------------------
 
-    def test_dual_write_skipped_when_shadow_balance_insufficient(self):
+    def test_dual_write_refused_when_shadow_balance_insufficient(self):
         """If sender shadow balance < transfer amount, dual-write must be
         skipped (not drive amount_i64 negative)."""
         sender = 'RTC_test_aabbccdd'
@@ -133,20 +144,23 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
             'nonce': int(time.time() * 1000),
         })
         data = r.get_json()
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(data['ok'])  # UTXO tx still succeeds
+        # #7928 made this FAIL CLOSED. Letting the UTXO spend through while
+        # skipping the account write is exactly the success-path divergence the
+        # dual-write model exists to prevent (/utxo/integrity would then report
+        # the models disagreeing while the endpoint returned ok=True).
+        self.assertEqual(r.status_code, 409, data)
+        self.assertEqual(data['code'], 'DUAL_WRITE_SHADOW_BALANCE')
+        self.assertEqual(data['shadow_balance_i64'], int(5.0 * ACCOUNT_UNIT))
 
-        # Shadow balance must be unchanged (dual-write was skipped)
-        sender_i64 = self._get_account_balance_i64(sender)
-        self.assertEqual(sender_i64, int(5.0 * ACCOUNT_UNIT))
+        # Nothing moved in either model.
+        self.assertEqual(self._get_account_balance_i64(sender), int(5.0 * ACCOUNT_UNIT))
+        self.assertEqual(self._get_account_balance_i64(recipient), 0)
+        self.assertEqual(self._unspent_utxo_nrtc(sender), 100 * UNIT,
+                         "UTXO side must be rolled back too")
 
-        # Recipient should NOT have been credited in shadow ledger
-        recipient_i64 = self._get_account_balance_i64(recipient)
-        self.assertEqual(recipient_i64, 0)
-
-    def test_dual_write_skipped_when_sender_missing_from_shadow(self):
-        """If sender has no row in balances at all, dual-write must be
-        skipped (shadow_balance = 0 < amount)."""
+    def test_dual_write_refused_when_sender_missing_from_shadow(self):
+        """A sender with no balances row cannot back the spend: the transfer is
+        refused and the UTXO side rolled back (not silently half-applied)."""
         sender = 'RTC_test_aabbccdd'
         recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
 
@@ -163,16 +177,17 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
             'nonce': int(time.time() * 1000),
         })
         data = r.get_json()
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(data['ok'])
+        # Fail closed (#7928): a sender with no account row cannot back the
+        # spend, so the UTXO application is rolled back rather than creating
+        # value that exists only in the UTXO model.
+        self.assertEqual(r.status_code, 409, data)
+        self.assertEqual(data['code'], 'DUAL_WRITE_SHADOW_BALANCE')
+        self.assertEqual(data['shadow_balance_i64'], 0)
 
-        # No shadow mutation for sender
-        sender_i64 = self._get_account_balance_i64(sender)
-        self.assertEqual(sender_i64, 0)
-
-        # Recipient should NOT have been credited (no valid debit source)
-        recipient_i64 = self._get_account_balance_i64(recipient)
-        self.assertEqual(recipient_i64, 0)
+        self.assertEqual(self._get_account_balance_i64(sender), 0)
+        self.assertEqual(self._get_account_balance_i64(recipient), 0)
+        self.assertEqual(self._unspent_utxo_nrtc(sender), 100 * UNIT,
+                         "UTXO side must be rolled back too")
 
     def test_dual_write_succeeds_when_shadow_sufficient(self):
         """Normal dual-write path still works when shadow balance is enough."""
