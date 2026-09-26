@@ -14316,6 +14316,7 @@ if HAVE_UTXO:
             current_slot_fn=current_slot,
             dual_write=UTXO_DUAL_WRITE,
             review_gate_fn=wallet_review_gate_response,
+            is_admin_fn=is_admin,
         )
     except ImportError as e:
         # Optional module genuinely absent: run without the UTXO layer.

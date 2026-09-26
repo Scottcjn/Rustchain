@@ -287,6 +287,74 @@ CREATE INDEX IF NOT EXISTS idx_mirror_wallet ON account_mirror_boxes(account_wal
 """
 
 
+# ---------------------------------------------------------------------------
+# State-version memo (state root cache)
+# ---------------------------------------------------------------------------
+#
+# compute_state_root() is O(N) over every unspent box (fetch + JSON + SHA-256
+# per leaf + tree fold), and the leaf hash mixes in the set cardinality, so it
+# cannot be maintained incrementally. Public read endpoints used to run it on
+# every anonymous request.
+#
+# Instead, a DB-level monotonic ``utxo_state_version`` is bumped by triggers on
+# EVERY insert/update/delete of utxo_boxes. Triggers run inside the writing
+# statement's own transaction, so the bump commits or rolls back atomically
+# with the mutation and covers every writer (UtxoDB, the node's dual-write
+# mirror, genesis migration/rollback, state pruning, manual SQL) without each
+# having to remember to do it. Mempool tables are deliberately NOT covered.
+#
+# ``utxo_state_memo`` stores the root plus the aggregates the endpoints return,
+# tagged with the version they were computed at. A reader in a pinned snapshot
+# reads the version; memo.version == version means the memo describes exactly
+# that snapshot. Kept outside SCHEMA_SQL because trigger bodies contain
+# semicolons, which _execute_schema splits on.
+STATE_VERSION_TRIGGERS = (
+    'trg_utxo_boxes_state_version_ins',
+    'trg_utxo_boxes_state_version_upd',
+    'trg_utxo_boxes_state_version_del',
+)
+
+_STATE_VERSION_BUMP = (
+    "BEGIN "
+    "INSERT OR IGNORE INTO utxo_state_version (id, version) VALUES (1, 0); "
+    "UPDATE utxo_state_version SET version = version + 1 WHERE id = 1; "
+    "END"
+)
+
+STATE_MEMO_STATEMENTS = (
+    """CREATE TABLE IF NOT EXISTS utxo_state_version (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        version INTEGER NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS utxo_state_memo (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        version INTEGER NOT NULL,
+        state_root TEXT NOT NULL,
+        unspent_count INTEGER NOT NULL,
+        total_unspent_nrtc INTEGER NOT NULL,
+        spent_count INTEGER NOT NULL,
+        invalid_value_boxes INTEGER NOT NULL,
+        computed_at INTEGER NOT NULL
+    )""",
+    "CREATE TRIGGER IF NOT EXISTS trg_utxo_boxes_state_version_ins "
+    "AFTER INSERT ON utxo_boxes " + _STATE_VERSION_BUMP,
+    "CREATE TRIGGER IF NOT EXISTS trg_utxo_boxes_state_version_upd "
+    "AFTER UPDATE ON utxo_boxes " + _STATE_VERSION_BUMP,
+    "CREATE TRIGGER IF NOT EXISTS trg_utxo_boxes_state_version_del "
+    "AFTER DELETE ON utxo_boxes " + _STATE_VERSION_BUMP,
+)
+
+_STATE_MEMO_OBJECTS = frozenset(
+    ('utxo_state_version', 'utxo_state_memo') + STATE_VERSION_TRIGGERS
+)
+
+
+def _execute_state_memo_schema(conn: sqlite3.Connection):
+    """Idempotently create the version/memo tables and version triggers."""
+    for statement in STATE_MEMO_STATEMENTS:
+        conn.execute(statement)
+
+
 def _execute_schema(conn: sqlite3.Connection):
     """Execute schema statements without implicitly committing a transaction."""
     for statement in SCHEMA_SQL.split(";"):
@@ -340,8 +408,35 @@ class UtxoDB:
         try:
             if own:
                 conn.executescript(SCHEMA_SQL)
+                _execute_state_memo_schema(conn)
+                conn.commit()
             else:
                 _execute_schema(conn)
+                _execute_state_memo_schema(conn)
+        finally:
+            if own:
+                conn.close()
+
+    def ensure_state_memo_schema(self, conn: Optional[sqlite3.Connection] = None) -> bool:
+        """Install the state-version triggers/memo on an existing DB.
+
+        Idempotent. No-op (returns False) when utxo_boxes does not exist yet,
+        since a trigger cannot be attached to a missing table; init_tables()
+        installs everything together in that case.
+        """
+        own = conn is None
+        if own:
+            conn = self._conn()
+        try:
+            exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='utxo_boxes'"
+            ).fetchone()
+            if not exists:
+                return False
+            _execute_state_memo_schema(conn)
+            if own:
+                conn.commit()
+            return True
         finally:
             if own:
                 conn.close()
@@ -1258,10 +1353,182 @@ class UtxoDB:
             if own:
                 conn.close()
 
+    # -- state summary memo ---------------------------------------------------
+
+    @staticmethod
+    def _state_memo_installed(conn: sqlite3.Connection) -> bool:
+        """True only when the version triggers AND memo tables all exist.
+
+        If any trigger is missing (e.g. utxo_boxes was rebuilt, dropping its
+        triggers) the version no longer tracks mutations, so the memo must not
+        be trusted and callers fall back to a full recompute.
+        """
+        names = {
+            row[0] for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type IN ('table','trigger') "
+                "AND name IN (%s)" % ",".join("?" * len(_STATE_MEMO_OBJECTS)),
+                tuple(_STATE_MEMO_OBJECTS),
+            )
+        }
+        return names == _STATE_MEMO_OBJECTS
+
+    @staticmethod
+    def get_state_version(conn: sqlite3.Connection) -> int:
+        """Current UTXO state version as seen by ``conn``'s snapshot.
+
+        A missing row means no mutation has happened since the triggers were
+        installed; the first trigger firing inserts 0 and bumps it to 1, so
+        treating "missing" as 0 never aliases two different states.
+        """
+        row = conn.execute(
+            "SELECT version FROM utxo_state_version WHERE id = 1"
+        ).fetchone()
+        return int(row[0]) if row else 0
+
+    def _compute_state_summary(self, conn: sqlite3.Connection) -> dict:
+        """Full O(N) recompute of root + aggregates on ``conn``'s snapshot."""
+        cur = conn.cursor()
+        cur.row_factory = sqlite3.Row
+        agg = cur.execute(
+            """SELECT
+                   COALESCE(SUM(spent_at IS NULL), 0) AS unspent_count,
+                   COALESCE(SUM(CASE WHEN spent_at IS NULL
+                                     THEN value_nrtc ELSE 0 END), 0) AS total,
+                   COALESCE(SUM(spent_at IS NOT NULL), 0) AS spent_count,
+                   COALESCE(SUM(spent_at IS NULL AND
+                                (typeof(value_nrtc) != 'integer'
+                                 OR value_nrtc <= 0)), 0) AS invalid
+               FROM utxo_boxes"""
+        ).fetchone()
+        return {
+            'state_root': self.compute_state_root(conn=conn),
+            'unspent_count': int(agg['unspent_count']),
+            'total_unspent_nrtc': agg['total'],
+            'spent_count': int(agg['spent_count']),
+            'invalid_value_boxes': int(agg['invalid']),
+        }
+
+    @staticmethod
+    def _store_state_memo(conn: sqlite3.Connection, summary: dict) -> bool:
+        """Best-effort write of ``summary`` to the memo. Never raises.
+
+        Written on a SEPARATE short-lived connection: the caller's connection
+        holds a read snapshot that it rolls back, which would discard the write
+        (and upgrading a stale WAL read snapshot to a writer fails anyway).
+
+        The write is only performed when the COMMITTED version equals the
+        summary's version, checked inside the same write transaction. If the
+        caller computed the summary inside its own uncommitted write
+        transaction, its view carries a version bump that is not committed, so
+        the versions differ and nothing is stored -- a later rollback can then
+        never leave a memo describing a state that did not happen.
+        """
+        try:
+            path = None
+            for row in conn.execute("PRAGMA database_list"):
+                if row[1] == 'main':
+                    path = row[2]
+                    break
+            if not path:  # :memory: / temp DB -- no second connection possible
+                return False
+            w = sqlite3.connect(path, timeout=0.25)
+            try:
+                mode = w.execute("PRAGMA journal_mode").fetchone()[0]
+                if str(mode).lower() != 'wal' and conn.in_transaction:
+                    # Rollback-journal mode: the caller's open read snapshot
+                    # holds a SHARED lock that blocks our commit; skip rather
+                    # than stall the request for the busy timeout.
+                    return False
+                w.execute("BEGIN IMMEDIATE")
+                committed = w.execute(
+                    "SELECT version FROM utxo_state_version WHERE id = 1"
+                ).fetchone()
+                committed = int(committed[0]) if committed else 0
+                if committed != summary['version']:
+                    w.rollback()
+                    return False
+                w.execute(
+                    """INSERT OR REPLACE INTO utxo_state_memo
+                       (id, version, state_root, unspent_count,
+                        total_unspent_nrtc, spent_count, invalid_value_boxes,
+                        computed_at)
+                       VALUES (1, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        summary['version'], summary['state_root'],
+                        summary['unspent_count'], summary['total_unspent_nrtc'],
+                        summary['spent_count'], summary['invalid_value_boxes'],
+                        int(time.time()),
+                    ),
+                )
+                w.commit()
+                return True
+            finally:
+                w.close()
+        except Exception as exc:  # cache fill must never fail the read
+            logger.debug("utxo state memo store skipped: %s", exc)
+            return False
+
+    def state_summary(self, conn: Optional[sqlite3.Connection] = None,
+                      force: bool = False) -> dict:
+        """State root + unspent/spent aggregates, memoized by state version.
+
+        Returns dict: version, state_root, unspent_count, total_unspent_nrtc,
+        spent_count, invalid_value_boxes, cached (bool).
+
+        Everything is read on ``conn`` so the caller's pinned snapshot is
+        honoured: the version, the memo and (on a miss) the recompute all see
+        the same committed state. On a memo hit no box is scanned. ``force``
+        always recomputes (the memo is still refreshed).
+        """
+        own = conn is None
+        if own:
+            conn = self._conn()
+            conn.execute("BEGIN")  # pin one read snapshot
+        try:
+            if not self._state_memo_installed(conn):
+                summary = self._compute_state_summary(conn)
+                summary['version'] = None
+                summary['cached'] = False
+                return summary
+
+            version = self.get_state_version(conn)
+            if not force:
+                cur = conn.cursor()
+                cur.row_factory = sqlite3.Row
+                memo = cur.execute(
+                    """SELECT version, state_root, unspent_count,
+                              total_unspent_nrtc, spent_count,
+                              invalid_value_boxes
+                       FROM utxo_state_memo WHERE id = 1"""
+                ).fetchone()
+                if memo is not None and memo['version'] == version:
+                    return {
+                        'version': version,
+                        'state_root': memo['state_root'],
+                        'unspent_count': memo['unspent_count'],
+                        'total_unspent_nrtc': memo['total_unspent_nrtc'],
+                        'spent_count': memo['spent_count'],
+                        'invalid_value_boxes': memo['invalid_value_boxes'],
+                        'cached': True,
+                    }
+
+            summary = self._compute_state_summary(conn)
+            summary['version'] = version
+            summary['cached'] = False
+            self._store_state_memo(conn, summary)
+            return summary
+        finally:
+            if own:
+                try:
+                    conn.rollback()
+                finally:
+                    conn.close()
+
     # -- integrity -----------------------------------------------------------
 
     def integrity_check(self, expected_total: Optional[int] = None,
-                        conn: Optional[sqlite3.Connection] = None) -> dict:
+                        conn: Optional[sqlite3.Connection] = None,
+                        use_memo: bool = False) -> dict:
         """
         Verify UTXO set integrity.
 
@@ -1269,6 +1536,10 @@ class UtxoDB:
         state_root, and optional comparison with expected_total. Unspent
         boxes whose value is not a positive integer set ok=False and are
         counted in invalid_value_boxes.
+
+        ``use_memo=True`` takes the root and UTXO aggregates from
+        state_summary() (memoized by state version, same snapshot) instead of
+        a full rescan; the default stays a full recompute for verification.
         """
         # SECURITY(#2819, robin1121): totals and the state root must come from ONE
         # snapshot. compute_state_root() used to open its own connection, so a
@@ -1283,19 +1554,26 @@ class UtxoDB:
             # the root read would still split the report across two states.
             conn.execute("BEGIN")
         try:
-            cur = conn.cursor()
-            cur.row_factory = sqlite3.Row
-            row = cur.execute(
-                """SELECT COALESCE(SUM(value_nrtc), 0) AS total,
-                          COUNT(*) AS cnt,
-                          COALESCE(SUM(typeof(value_nrtc) != 'integer'
-                                       OR value_nrtc <= 0), 0) AS invalid
-                   FROM utxo_boxes WHERE spent_at IS NULL"""
-            ).fetchone()
-            total = row['total']
-            cnt = row['cnt']
-            invalid = row['invalid']
-            root = self.compute_state_root(conn=conn)
+            if use_memo:
+                summary = self.state_summary(conn=conn)
+                total = summary['total_unspent_nrtc']
+                cnt = summary['unspent_count']
+                invalid = summary['invalid_value_boxes']
+                root = summary['state_root']
+            else:
+                cur = conn.cursor()
+                cur.row_factory = sqlite3.Row
+                row = cur.execute(
+                    """SELECT COALESCE(SUM(value_nrtc), 0) AS total,
+                              COUNT(*) AS cnt,
+                              COALESCE(SUM(typeof(value_nrtc) != 'integer'
+                                           OR value_nrtc <= 0), 0) AS invalid
+                       FROM utxo_boxes WHERE spent_at IS NULL"""
+                ).fetchone()
+                total = row['total']
+                cnt = row['cnt']
+                invalid = row['invalid']
+                root = self.compute_state_root(conn=conn)
 
             result = {
                 'ok': True,
