@@ -60,14 +60,20 @@ def confirm_failure_reason(out: dict) -> str | None:
     0 for any JSON object, so a pass in which every transfer raised (left
     pending, nothing delivered) exited green. Fail closed:
       * ``ok`` must be exactly True (a missing ``ok`` is an unexpected shape);
-      * ``overdue_stats_measured: false`` means the node could not measure the
-        queue, and "could not measure" is not "nothing to do".
+      * ``overdue_stats_measured`` must be exactly True. ``false`` means the
+        node could not measure the queue, and "could not measure" is not
+        "nothing to do". A missing or null field (a node older than #8233, or
+        a proxy/error body that dropped it) is equally unmeasured, so it fails
+        too rather than being read as healthy.
     """
     if out.get("ok") is not True:
         failed = out.get("failed_ids")
         return f"node reported ok={out.get('ok')!r} (failed_ids={failed!r})"
-    if out.get("overdue_stats_measured") is False:
-        return f"pending queue could not be measured: {out.get('overdue_stats_error')!r}"
+    measured = out.get("overdue_stats_measured")
+    if measured is not True:
+        if measured is False:
+            return f"pending queue could not be measured: {out.get('overdue_stats_error')!r}"
+        return f"pending queue measurement not reported (overdue_stats_measured={measured!r})"
     return None
 
 

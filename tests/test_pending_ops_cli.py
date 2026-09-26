@@ -119,7 +119,7 @@ def test_cmd_confirm_posts_empty_payload(capsys):
     module = load_module()
     args = argparse.Namespace(node="https://node.example/", admin_key="key", insecure=False)
 
-    with patch.object(module, "_req", return_value={"ok": True, "confirmed": 2}) as req:
+    with patch.object(module, "_req", return_value={"ok": True, "confirmed": 2, "overdue_stats_measured": True}) as req:
         assert module.cmd_confirm(args) == 0
 
     req.assert_called_once_with(
@@ -196,3 +196,18 @@ def test_cmd_confirm_exits_zero_on_healthy_pass():
         "ok": True, "confirmed_count": 3, "failed_count": 0, "failed_ids": [],
         "overdue_stats_measured": True, "stale_pending_count": 0,
     }) == 0
+
+
+def test_cmd_confirm_exits_nonzero_when_measurement_missing(capsys):
+    """No overdue_stats_measured field (old node / proxy body): fail closed."""
+    module = load_module()
+    assert _confirm_with(module, {"ok": True, "confirmed_count": 0}) == 1
+    assert "measurement not reported" in capsys.readouterr().err
+
+
+def test_cmd_confirm_exits_nonzero_when_measurement_null(capsys):
+    module = load_module()
+    assert _confirm_with(module, {
+        "ok": True, "confirmed_count": 0, "overdue_stats_measured": None,
+    }) == 1
+    assert "overdue_stats_measured=None" in capsys.readouterr().err
