@@ -383,6 +383,66 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         self.assertEqual(self.mod._derive_enroll_weight_device(verified, fp)["device_arch"], "default")
         self.assertEqual(verified, {"device_family": "x86", "device_arch": "486"})
 
+    # --- Adversarial regression tests for bounty #16271 ---
+
+    def test_spoofed_modern_cpu_claiming_vintage_is_clamped(self):
+        """A modern CPU brand claiming vintage arch must get default."""
+        fp = _fingerprint("Intel(R) Core(TM) i9-13900K", 6)
+        out = self.mod._derive_enroll_weight_device(
+            {"device_family": "x86", "device_arch": "486"}, fp,
+            fingerprint_passed=True, measurement_report_verified=True,
+        )
+        self.assertEqual(out["device_arch"], "default")
+
+    def test_honest_am486dx4_brand_is_accepted(self):
+        fp = _fingerprint("Am486DX4", 4)
+        self.assertEqual(self._reward("486", fp)["device_arch"], "486")
+
+    def test_honest_i486sx_brand_is_accepted(self):
+        fp = _fingerprint("i486SX", 4)
+        self.assertEqual(self._reward("486", fp)["device_arch"], "486")
+
+    def test_honest_cyrix_cx486dx2_brand_is_accepted(self):
+        fp = _fingerprint("Cyrix Cx486DX2", 4)
+        self.assertEqual(self._reward("486", fp)["device_arch"], "486")
+
+    def test_honest_ti486dx_brand_is_accepted(self):
+        fp = _fingerprint("TI486DX", 4)
+        self.assertEqual(self._reward("486", fp)["device_arch"], "486")
+
+    def test_honest_am386dx_brand_is_accepted(self):
+        fp = _fingerprint("AM386DX", 3)
+        self.assertEqual(self._reward("386", fp)["device_arch"], "386")
+
+    def test_honest_i386sx_brand_is_accepted(self):
+        fp = _fingerprint("i386SX", 3)
+        self.assertEqual(self._reward("386", fp)["device_arch"], "386")
+
+    def test_pentium_brand_does_not_match_pentium_pro(self):
+        """Plain 'Pentium' must not match Pentium Pro or Pentium III."""
+        fp = _fingerprint("Intel Pentium", 5)
+        self.assertEqual(self._reward("pentium", fp)["device_arch"], "pentium")
+        fp_pro = _fingerprint("Intel Pentium Pro", 6)
+        self.assertEqual(self._reward("pentium_pro", fp_pro)["device_arch"], "pentium_pro")
+
+    def test_arbitrary_arch_string_via_oracle_is_clamped(self):
+        """Even if brand matches, an arch not in the allowlist yields default."""
+        fp = _fingerprint("i486DX2", 4)
+        out = self.mod._derive_enroll_weight_device(
+            {"device_family": "x86", "device_arch": "fake_arch"}, fp,
+            fingerprint_passed=True, measurement_report_verified=True,
+        )
+        self.assertEqual(out["device_arch"], "default")
+
+    def test_pentium_m_speed_boundary_1700mhz_is_banias(self):
+        """Exactly 1700 MHz should classify as Banias (<=1700)."""
+        fp = _fingerprint("Intel(R) Pentium(R) M processor 1700MHz", 6)
+        self.assertEqual(self._reward("pentium_m_banias", fp)["device_arch"], "pentium_m_banias")
+
+    def test_pentium_m_missing_speed_defaults_to_yonah(self):
+        """Undifferentiated Pentium M without speed clamps to yonah."""
+        fp = _fingerprint("Intel Pentium M", 6)
+        self.assertEqual(self._reward("pentium_m_dothan", fp)["device_arch"], "pentium_m_yonah")
 
 if __name__ == "__main__":
     unittest.main()
