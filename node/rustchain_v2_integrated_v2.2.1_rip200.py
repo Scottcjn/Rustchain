@@ -13124,18 +13124,26 @@ def check_integrity():
         """).fetchall())
     
     mismatches = []
-    for miner_id, balance in balances.items():
-        ledger_sum = ledger_sums.get(miner_id, 0)
-        
+    # Walk the UNION of both sides. Iterating balances alone made a wallet that
+    # exists only in the ledger invisible: RTC credited in the ledger whose
+    # balance row is missing (never created, or deleted) reported ok=true.
+    for miner_id in sorted(set(balances) | set(ledger_sums), key=str):
+        balance_row_missing = miner_id not in balances
+        balance = int(balances.get(miner_id) or 0)
+        ledger_sum = int(ledger_sums.get(miner_id) or 0)
+
         # Balance should equal ledger sum (pending doesn't affect balance yet)
         if balance != ledger_sum:
-            mismatches.append({
+            mismatch = {
                 "miner_id": miner_id,
                 "balance_rtc": balance / 1000000,
                 "ledger_sum_rtc": ledger_sum / 1000000,
                 "diff_rtc": (balance - ledger_sum) / 1000000
-            })
-    
+            }
+            if balance_row_missing:
+                mismatch["balance_row_missing"] = True
+            mismatches.append(mismatch)
+
     integrity_ok = len(mismatches) == 0
     
     if not integrity_ok:
@@ -13146,7 +13154,7 @@ def check_integrity():
     
     return jsonify({
         "ok": integrity_ok,
-        "total_miners_checked": len(balances),
+        "total_miners_checked": len(set(balances) | set(ledger_sums)),
         "mismatches": mismatches if mismatches else None,
         "pending_transfers": len(pending)
     })
