@@ -24,7 +24,9 @@ try:
         get_or_create_keypair,
         sign_payload,
     )
-    CRYPTO_AVAILABLE = True
+    from miner_crypto import NACL_AVAILABLE
+    # miner_crypto imports fine without PyNaCl; only claim crypto when it loaded.
+    CRYPTO_AVAILABLE = bool(NACL_AVAILABLE)
 except ImportError:
     CRYPTO_AVAILABLE = False
     address_from_pubkey = canonical_json = None
