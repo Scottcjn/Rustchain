@@ -1,0 +1,14 @@
+[
+  {
+    "author": "Scottcjn",
+    "body": "amount: 33_RTC wallet: demo-wallet pending_id: pending-42 tx_hash: tx-demo-abc confirms_at: 2026-09-02T12:00:00Z"
+  },
+  {
+    "author": "helpful-stranger",
+    "body": "amount: 33_RTC wallet: demo-wallet pending_id: pending-99 tx_hash: tx-untrusted confirms_at: tomorrow"
+  },
+  {
+    "author": "AutoJanitor",
+    "body": "amount: 10_RTC pending_id: pending-77"
+  }
+]

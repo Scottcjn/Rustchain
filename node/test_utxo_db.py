@@ -659,6 +659,45 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(result['ok'])
         self.assertFalse(result['models_agree'])
 
+    def test_integrity_flags_non_positive_box_despite_matching_total(self):
+        self.db.add_box({
+            'box_id': 'good', 'value_nrtc': 200 * UNIT, 'proposition': '00',
+            'owner_address': 'alice', 'creation_height': 1,
+            'transaction_id': '11' * 32, 'output_index': 1,
+        })
+        insert = """INSERT INTO utxo_boxes
+               (box_id, value_nrtc, proposition, owner_address,
+                creation_height, transaction_id, output_index, created_at)
+               VALUES (?, ?, '00', 'alice', 1, ?, ?, 0)"""
+        conn = self.db._conn()
+        conn.execute(insert, ('neg', -50 * UNIT, '11' * 32, 0))
+        conn.commit()
+        result = self.db.integrity_check(expected_total=150 * UNIT)
+        self.assertTrue(result['models_agree'])
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['invalid_value_boxes'], 1)
+
+        conn.execute(insert, ('frac', 1.5, '11' * 32, 2))
+        conn.commit()
+        conn.close()
+        self.assertEqual(self.db.integrity_check()['invalid_value_boxes'], 2)
+
+    def test_add_box_rejects_invalid_value(self):
+        base = {
+            'proposition': '00', 'owner_address': 'alice',
+            'creation_height': 1, 'transaction_id': '11' * 32,
+        }
+        for i, bad in enumerate([-50, 0, '100', 1.5, True, 2 ** 63]):
+            with self.subTest(value=bad):
+                with self.assertRaises(ValueError):
+                    self.db.add_box({**base, 'box_id': f'bad{i}',
+                                     'value_nrtc': bad, 'output_index': i})
+        self.assertEqual(self.db.get_balance('alice'), 0)
+        self.db.add_box({**base, 'box_id': 'good',
+                         'value_nrtc': 200, 'output_index': 99})
+        self.assertEqual(self.db.get_balance('alice'), 200)
+        self.assertTrue(self.db.integrity_check(expected_total=200)['ok'])
+
     # -- mempool -------------------------------------------------------------
 
     def test_mempool_add_and_remove(self):
@@ -2164,6 +2203,42 @@ class TestUtxoDB(unittest.TestCase):
         self.assertFalse(ok)
         self.assertEqual(self.db.get_balance('alice'), 100 * UNIT)
         self.assertEqual(self.db.get_balance('bob'), 0)
+
+    def test_mempool_rejects_duplicate_inputs(self):
+        """Mempool must cleanly reject transactions with duplicate input box_ids."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+        box_id = boxes[0]['box_id']
+
+        tx = {
+            'tx_id': 'dupe' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': box_id}, {'box_id': box_id}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        # Verify no inputs or transactions were orphaned into mempool tables
+        self.assertFalse(self.db.mempool_check_double_spend(box_id))
+        self.assertEqual(len(self.db.mempool_get_block_candidates()), 0)
+
+    def test_mempool_rejects_invalid_timestamp_with_rollback(self):
+        """Mempool must rollback when rejecting an invalid negative timestamp."""
+        self._apply_coinbase('alice', 100 * UNIT)
+        boxes = self.db.get_unspent_for_address('alice')
+
+        tx = {
+            'tx_id': 'time' * 16,
+            'tx_type': 'transfer',
+            'inputs': [{'box_id': boxes[0]['box_id']}],
+            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'fee_nrtc': 0,
+            'timestamp': -1,
+        }
+        ok = self.db.mempool_add(tx)
+        self.assertFalse(ok)
+        self.assertFalse(self.db.mempool_check_double_spend(boxes[0]['box_id']))
 
 
 class TestCoinSelect(unittest.TestCase):

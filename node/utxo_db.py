@@ -27,9 +27,30 @@ Architectural boundary -- spending_proof validation:
 
 import hashlib
 import json
+import logging
 import sqlite3
+import threading
 import time
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+# Count of post-spend stale-mempool evictions that failed (#2819). A failure
+# never undoes a spend, but it must not be silent either: every one is logged
+# at ERROR and counted here so health/metrics code can alert on a non-zero
+# value. Process-local (per gunicorn worker).
+_mempool_eviction_failures = 0
+_mempool_eviction_failures_lock = threading.Lock()
+
+
+class _EvictionRollbackFailed(Exception):
+    """Eviction failed on a caller's connection AND could not be undone."""
+
+
+def mempool_eviction_failure_count() -> int:
+    """Number of stale-mempool evictions that failed after a spend (process-local)."""
+    with _mempool_eviction_failures_lock:
+        return _mempool_eviction_failures
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -248,7 +269,90 @@ CREATE TABLE IF NOT EXISTS utxo_mempool_inputs (
     tx_id TEXT NOT NULL,
     FOREIGN KEY (tx_id) REFERENCES utxo_mempool(tx_id)
 );
+
+-- account_mirror_boxes is the cross-model double-spend discriminator (bounty 2819).
+-- It records which UTXO boxes back account-model value and for whom, so the account
+-- and UTXO models cannot both spend the same value. Making it canonical schema (it
+-- was created lazily elsewhere) guarantees it exists for every dual-write writer,
+-- transfer AND epoch reward settlement, with no CREATE TABLE inside an open
+-- transaction that SQLite would implicit-commit. Keep this comment free of the
+-- semicolon character because _execute_schema splits SCHEMA_SQL on that character.
+CREATE TABLE IF NOT EXISTS account_mirror_boxes (
+    box_id TEXT PRIMARY KEY,
+    account_wallet TEXT NOT NULL,
+    value_nrtc INTEGER NOT NULL,
+    created_epoch INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mirror_wallet ON account_mirror_boxes(account_wallet);
 """
+
+
+# ---------------------------------------------------------------------------
+# State-version memo (state root cache)
+# ---------------------------------------------------------------------------
+#
+# compute_state_root() is O(N) over every unspent box (fetch + JSON + SHA-256
+# per leaf + tree fold), and the leaf hash mixes in the set cardinality, so it
+# cannot be maintained incrementally. Public read endpoints used to run it on
+# every anonymous request.
+#
+# Instead, a DB-level monotonic ``utxo_state_version`` is bumped by triggers on
+# EVERY insert/update/delete of utxo_boxes. Triggers run inside the writing
+# statement's own transaction, so the bump commits or rolls back atomically
+# with the mutation and covers every writer (UtxoDB, the node's dual-write
+# mirror, genesis migration/rollback, state pruning, manual SQL) without each
+# having to remember to do it. Mempool tables are deliberately NOT covered.
+#
+# ``utxo_state_memo`` stores the root plus the aggregates the endpoints return,
+# tagged with the version they were computed at. A reader in a pinned snapshot
+# reads the version; memo.version == version means the memo describes exactly
+# that snapshot. Kept outside SCHEMA_SQL because trigger bodies contain
+# semicolons, which _execute_schema splits on.
+STATE_VERSION_TRIGGERS = (
+    'trg_utxo_boxes_state_version_ins',
+    'trg_utxo_boxes_state_version_upd',
+    'trg_utxo_boxes_state_version_del',
+)
+
+_STATE_VERSION_BUMP = (
+    "BEGIN "
+    "INSERT OR IGNORE INTO utxo_state_version (id, version) VALUES (1, 0); "
+    "UPDATE utxo_state_version SET version = version + 1 WHERE id = 1; "
+    "END"
+)
+
+STATE_MEMO_STATEMENTS = (
+    """CREATE TABLE IF NOT EXISTS utxo_state_version (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        version INTEGER NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS utxo_state_memo (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        version INTEGER NOT NULL,
+        state_root TEXT NOT NULL,
+        unspent_count INTEGER NOT NULL,
+        total_unspent_nrtc INTEGER NOT NULL,
+        spent_count INTEGER NOT NULL,
+        invalid_value_boxes INTEGER NOT NULL,
+        computed_at INTEGER NOT NULL
+    )""",
+    "CREATE TRIGGER IF NOT EXISTS trg_utxo_boxes_state_version_ins "
+    "AFTER INSERT ON utxo_boxes " + _STATE_VERSION_BUMP,
+    "CREATE TRIGGER IF NOT EXISTS trg_utxo_boxes_state_version_upd "
+    "AFTER UPDATE ON utxo_boxes " + _STATE_VERSION_BUMP,
+    "CREATE TRIGGER IF NOT EXISTS trg_utxo_boxes_state_version_del "
+    "AFTER DELETE ON utxo_boxes " + _STATE_VERSION_BUMP,
+)
+
+_STATE_MEMO_OBJECTS = frozenset(
+    ('utxo_state_version', 'utxo_state_memo') + STATE_VERSION_TRIGGERS
+)
+
+
+def _execute_state_memo_schema(conn: sqlite3.Connection):
+    """Idempotently create the version/memo tables and version triggers."""
+    for statement in STATE_MEMO_STATEMENTS:
+        conn.execute(statement)
 
 
 def _execute_schema(conn: sqlite3.Connection):
@@ -304,8 +408,35 @@ class UtxoDB:
         try:
             if own:
                 conn.executescript(SCHEMA_SQL)
+                _execute_state_memo_schema(conn)
+                conn.commit()
             else:
                 _execute_schema(conn)
+                _execute_state_memo_schema(conn)
+        finally:
+            if own:
+                conn.close()
+
+    def ensure_state_memo_schema(self, conn: Optional[sqlite3.Connection] = None) -> bool:
+        """Install the state-version triggers/memo on an existing DB.
+
+        Idempotent. No-op (returns False) when utxo_boxes does not exist yet,
+        since a trigger cannot be attached to a missing table; init_tables()
+        installs everything together in that case.
+        """
+        own = conn is None
+        if own:
+            conn = self._conn()
+        try:
+            exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='utxo_boxes'"
+            ).fetchone()
+            if not exists:
+                return False
+            _execute_state_memo_schema(conn)
+            if own:
+                conn.commit()
+            return True
         finally:
             if own:
                 conn.close()
@@ -320,6 +451,13 @@ class UtxoDB:
         creation_height, transaction_id, output_index,
         tokens_json (opt), registers_json (opt)
         """
+        # Same amount invariant apply_transaction() enforces on outputs: a
+        # negative or non-int value would otherwise net against real boxes in
+        # get_balance()/integrity_check() and break coin_select().
+        if not _is_positive_int64(box['value_nrtc']):
+            raise ValueError(
+                f"value_nrtc must be a positive int64, got {box['value_nrtc']!r}"
+            )
         own = conn is None
         if own:
             conn = self._conn()
@@ -500,6 +638,21 @@ class UtxoDB:
         self.mempool_clear_expired()
         conn = self._conn()
         try:
+            # FIX(#8395): Exclude account-mirror boxes before bounding cheapest
+            # and dearest candidates. When a mirror box occupies a slice slot it
+            # hides the next eligible box outside the slice, causing coin_select
+            # to fail on a wallet with sufficient spendable boxes.
+            has_mirror_table = bool(
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_mirror_boxes'"
+                ).fetchone()
+            )
+            if has_mirror_table:
+                base += """ AND NOT EXISTS (
+                        SELECT 1 FROM account_mirror_boxes amb
+                        WHERE amb.box_id = utxo_boxes.box_id
+                    )"""
+
             # Smallest-first needs one extra row: it is the row that proves the
             # selection would have exceeded the cap, sending coin_select() down
             # its largest-first path.
@@ -551,16 +704,21 @@ class UtxoDB:
         finally:
             conn.close()
 
-    def count_unspent(self) -> int:
+    def count_unspent(self, conn: Optional[sqlite3.Connection] = None) -> int:
         """Total number of unspent boxes."""
-        conn = self._conn()
+        own = conn is None
+        if own:
+            conn = self._conn()
         try:
-            row = conn.execute(
+            cur = conn.cursor()
+            cur.row_factory = sqlite3.Row
+            row = cur.execute(
                 "SELECT COUNT(*) AS n FROM utxo_boxes WHERE spent_at IS NULL"
             ).fetchone()
             return row['n']
         finally:
-            conn.close()
+            if own:
+                conn.close()
 
     def _normalize_data_inputs(self, data_inputs: list) -> Optional[List[str]]:
         """Return validated read-only UTXO box IDs, or None on invalid input."""
@@ -829,6 +987,15 @@ class UtxoDB:
         if own:
             conn = self._conn()
 
+        # Reads below use row['col']. A caller-supplied connection may not have
+        # row_factory set (settle_epoch_rip200 opens a plain connection), which
+        # would raise "tuple indices must be integers". Set it for the duration
+        # and restore afterwards; sqlite3.Row still supports positional access,
+        # so the caller's own queries are unaffected either way.
+        _prev_row_factory = conn.row_factory
+        if _prev_row_factory is not sqlite3.Row:
+            conn.row_factory = sqlite3.Row
+
         manage_tx = own or not conn.in_transaction
 
         try:
@@ -979,6 +1146,13 @@ class UtxoDB:
                 tx_identity, sort_keys=True, separators=(',', ':')
             ).encode()
             tx_id_hex = hashlib.sha256(tx_seed).hexdigest()
+            # Expose the authoritative tx_id to the caller so it can locate the
+            # output boxes this transaction created (e.g. the dual-write path must
+            # register receiver/change outputs as account-mirror provenance —
+            # danaher-j #2819 receiver residual). Set on the caller's dict; the
+            # caller only reads it after a successful apply and discards on abort.
+            if isinstance(tx, dict):
+                tx['tx_id'] = tx_id_hex
 
             # -- assign box_ids to outputs -----------------------------------
             output_records = []
@@ -1059,25 +1233,38 @@ class UtxoDB:
             # Only regular inputs are spent by this transaction. Read-only
             # data_inputs remain unspent and must not evict other mempool
             # transactions that legitimately depend on the same reference box.
-            _spent_ids = list(set(input_box_ids))
+            _spent_ids = sorted(set(input_box_ids))
             if _spent_ids:
                 if not manage_tx:
                     # External-connection path: evict inside the caller's
                     # transaction so the DELETEs share the same write lock.
+                    # The helper wraps its DELETEs in a SAVEPOINT, so a
+                    # failure leaves the caller's spend writes intact.
                     try:
                         self._evict_stale_data_input_txs(_spent_ids, conn=conn)
-                    except Exception:
-                        pass  # best-effort; outer caller will commit the spend
+                    except Exception as exc:
+                        if (not conn.in_transaction
+                                or isinstance(exc, _EvictionRollbackFailed)):
+                            # SQLite aborted the caller's whole transaction
+                            # (e.g. RAISE(ROLLBACK), disk full): the spend
+                            # written above is gone. Or the eviction could
+                            # not be undone, so partial DELETEs (claims gone,
+                            # mempool row kept) would ride along on the
+                            # caller's COMMIT. Either way reporting success
+                            # would be a false green -- fail closed.
+                            raise
+                        self._report_eviction_failure(tx_id_hex, _spent_ids, exc)
             if manage_tx:
                 conn.execute("COMMIT")
-                # Own-transaction path: spend is committed. Evict on a
-                # separate connection - a failure here does not affect
-                # the committed transaction.
+                # Own-transaction path: spend is committed and durable.
+                # Evict on a separate connection - a failure here must not
+                # (and cannot) undo the spend, but it is surfaced, not
+                # swallowed.
                 if _spent_ids:
                     try:
                         self._evict_stale_data_input_txs(_spent_ids)
-                    except Exception:
-                        pass  # best-effort; already committed
+                    except Exception as exc:
+                        self._report_eviction_failure(tx_id_hex, _spent_ids, exc)
             return True
 
         except Exception:
@@ -1088,13 +1275,14 @@ class UtxoDB:
                 pass
             raise
         finally:
+            conn.row_factory = _prev_row_factory
             if own:
                 conn.close()
 
 
     # -- state root ----------------------------------------------------------
 
-    def compute_state_root(self) -> str:
+    def compute_state_root(self, conn: Optional[sqlite3.Connection] = None) -> str:
         """
         Merkle root of all unspent box contents (hex).
 
@@ -1110,9 +1298,13 @@ class UtxoDB:
         The leaf count is also mixed into each leaf hash so the tree
         is bound to a specific UTXO-set cardinality.
         """
-        conn = self._conn()
+        own = conn is None
+        if own:
+            conn = self._conn()
         try:
-            rows = conn.execute(
+            cur = conn.cursor()
+            cur.row_factory = sqlite3.Row  # caller conns may not set row_factory
+            rows = cur.execute(
                 """SELECT box_id, value_nrtc, proposition, owner_address,
                           creation_height, transaction_id, output_index,
                           tokens_json, registers_json
@@ -1158,27 +1350,230 @@ class UtxoDB:
 
             return hashes[0].hex()
         finally:
-            conn.close()
+            if own:
+                conn.close()
+
+    # -- state summary memo ---------------------------------------------------
+
+    @staticmethod
+    def _state_memo_installed(conn: sqlite3.Connection) -> bool:
+        """True only when the version triggers AND memo tables all exist.
+
+        If any trigger is missing (e.g. utxo_boxes was rebuilt, dropping its
+        triggers) the version no longer tracks mutations, so the memo must not
+        be trusted and callers fall back to a full recompute.
+        """
+        names = {
+            row[0] for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type IN ('table','trigger') "
+                "AND name IN (%s)" % ",".join("?" * len(_STATE_MEMO_OBJECTS)),
+                tuple(_STATE_MEMO_OBJECTS),
+            )
+        }
+        return names == _STATE_MEMO_OBJECTS
+
+    @staticmethod
+    def get_state_version(conn: sqlite3.Connection) -> int:
+        """Current UTXO state version as seen by ``conn``'s snapshot.
+
+        A missing row means no mutation has happened since the triggers were
+        installed; the first trigger firing inserts 0 and bumps it to 1, so
+        treating "missing" as 0 never aliases two different states.
+        """
+        row = conn.execute(
+            "SELECT version FROM utxo_state_version WHERE id = 1"
+        ).fetchone()
+        return int(row[0]) if row else 0
+
+    def _compute_state_summary(self, conn: sqlite3.Connection) -> dict:
+        """Full O(N) recompute of root + aggregates on ``conn``'s snapshot."""
+        cur = conn.cursor()
+        cur.row_factory = sqlite3.Row
+        agg = cur.execute(
+            """SELECT
+                   COALESCE(SUM(spent_at IS NULL), 0) AS unspent_count,
+                   COALESCE(SUM(CASE WHEN spent_at IS NULL
+                                     THEN value_nrtc ELSE 0 END), 0) AS total,
+                   COALESCE(SUM(spent_at IS NOT NULL), 0) AS spent_count,
+                   COALESCE(SUM(spent_at IS NULL AND
+                                (typeof(value_nrtc) != 'integer'
+                                 OR value_nrtc <= 0)), 0) AS invalid
+               FROM utxo_boxes"""
+        ).fetchone()
+        return {
+            'state_root': self.compute_state_root(conn=conn),
+            'unspent_count': int(agg['unspent_count']),
+            'total_unspent_nrtc': agg['total'],
+            'spent_count': int(agg['spent_count']),
+            'invalid_value_boxes': int(agg['invalid']),
+        }
+
+    @staticmethod
+    def _store_state_memo(conn: sqlite3.Connection, summary: dict) -> bool:
+        """Best-effort write of ``summary`` to the memo. Never raises.
+
+        Written on a SEPARATE short-lived connection: the caller's connection
+        holds a read snapshot that it rolls back, which would discard the write
+        (and upgrading a stale WAL read snapshot to a writer fails anyway).
+
+        The write is only performed when the COMMITTED version equals the
+        summary's version, checked inside the same write transaction. If the
+        caller computed the summary inside its own uncommitted write
+        transaction, its view carries a version bump that is not committed, so
+        the versions differ and nothing is stored -- a later rollback can then
+        never leave a memo describing a state that did not happen.
+        """
+        try:
+            path = None
+            for row in conn.execute("PRAGMA database_list"):
+                if row[1] == 'main':
+                    path = row[2]
+                    break
+            if not path:  # :memory: / temp DB -- no second connection possible
+                return False
+            w = sqlite3.connect(path, timeout=0.25)
+            try:
+                mode = w.execute("PRAGMA journal_mode").fetchone()[0]
+                if str(mode).lower() != 'wal' and conn.in_transaction:
+                    # Rollback-journal mode: the caller's open read snapshot
+                    # holds a SHARED lock that blocks our commit; skip rather
+                    # than stall the request for the busy timeout.
+                    return False
+                w.execute("BEGIN IMMEDIATE")
+                committed = w.execute(
+                    "SELECT version FROM utxo_state_version WHERE id = 1"
+                ).fetchone()
+                committed = int(committed[0]) if committed else 0
+                if committed != summary['version']:
+                    w.rollback()
+                    return False
+                w.execute(
+                    """INSERT OR REPLACE INTO utxo_state_memo
+                       (id, version, state_root, unspent_count,
+                        total_unspent_nrtc, spent_count, invalid_value_boxes,
+                        computed_at)
+                       VALUES (1, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        summary['version'], summary['state_root'],
+                        summary['unspent_count'], summary['total_unspent_nrtc'],
+                        summary['spent_count'], summary['invalid_value_boxes'],
+                        int(time.time()),
+                    ),
+                )
+                w.commit()
+                return True
+            finally:
+                w.close()
+        except Exception as exc:  # cache fill must never fail the read
+            logger.debug("utxo state memo store skipped: %s", exc)
+            return False
+
+    def state_summary(self, conn: Optional[sqlite3.Connection] = None,
+                      force: bool = False) -> dict:
+        """State root + unspent/spent aggregates, memoized by state version.
+
+        Returns dict: version, state_root, unspent_count, total_unspent_nrtc,
+        spent_count, invalid_value_boxes, cached (bool).
+
+        Everything is read on ``conn`` so the caller's pinned snapshot is
+        honoured: the version, the memo and (on a miss) the recompute all see
+        the same committed state. On a memo hit no box is scanned. ``force``
+        always recomputes (the memo is still refreshed).
+        """
+        own = conn is None
+        if own:
+            conn = self._conn()
+            conn.execute("BEGIN")  # pin one read snapshot
+        try:
+            if not self._state_memo_installed(conn):
+                summary = self._compute_state_summary(conn)
+                summary['version'] = None
+                summary['cached'] = False
+                return summary
+
+            version = self.get_state_version(conn)
+            if not force:
+                cur = conn.cursor()
+                cur.row_factory = sqlite3.Row
+                memo = cur.execute(
+                    """SELECT version, state_root, unspent_count,
+                              total_unspent_nrtc, spent_count,
+                              invalid_value_boxes
+                       FROM utxo_state_memo WHERE id = 1"""
+                ).fetchone()
+                if memo is not None and memo['version'] == version:
+                    return {
+                        'version': version,
+                        'state_root': memo['state_root'],
+                        'unspent_count': memo['unspent_count'],
+                        'total_unspent_nrtc': memo['total_unspent_nrtc'],
+                        'spent_count': memo['spent_count'],
+                        'invalid_value_boxes': memo['invalid_value_boxes'],
+                        'cached': True,
+                    }
+
+            summary = self._compute_state_summary(conn)
+            summary['version'] = version
+            summary['cached'] = False
+            self._store_state_memo(conn, summary)
+            return summary
+        finally:
+            if own:
+                try:
+                    conn.rollback()
+                finally:
+                    conn.close()
 
     # -- integrity -----------------------------------------------------------
 
-    def integrity_check(self, expected_total: Optional[int] = None) -> dict:
+    def integrity_check(self, expected_total: Optional[int] = None,
+                        conn: Optional[sqlite3.Connection] = None,
+                        use_memo: bool = False) -> dict:
         """
         Verify UTXO set integrity.
 
         Returns dict with ok, total_unspent_nrtc, total_unspent_boxes,
-        state_root, and optional comparison with expected_total.
+        state_root, and optional comparison with expected_total. Unspent
+        boxes whose value is not a positive integer set ok=False and are
+        counted in invalid_value_boxes.
+
+        ``use_memo=True`` takes the root and UTXO aggregates from
+        state_summary() (memoized by state version, same snapshot) instead of
+        a full rescan; the default stays a full recompute for verification.
         """
-        conn = self._conn()
+        # SECURITY(#2819, robin1121): totals and the state root must come from ONE
+        # snapshot. compute_state_root() used to open its own connection, so a
+        # concurrent write between the two reads produced a root that did not
+        # match the totals reported beside it (and a models_agree verdict drawn
+        # across two different database states).
+        own = conn is None
+        if own:
+            conn = self._conn()
+            # Pin a read snapshot: without an open transaction each SELECT sees
+            # the latest commit, so a settlement landing between the totals and
+            # the root read would still split the report across two states.
+            conn.execute("BEGIN")
         try:
-            row = conn.execute(
-                """SELECT COALESCE(SUM(value_nrtc), 0) AS total,
-                          COUNT(*) AS cnt
-                   FROM utxo_boxes WHERE spent_at IS NULL"""
-            ).fetchone()
-            total = row['total']
-            cnt = row['cnt']
-            root = self.compute_state_root()
+            if use_memo:
+                summary = self.state_summary(conn=conn)
+                total = summary['total_unspent_nrtc']
+                cnt = summary['unspent_count']
+                invalid = summary['invalid_value_boxes']
+                root = summary['state_root']
+            else:
+                cur = conn.cursor()
+                cur.row_factory = sqlite3.Row
+                row = cur.execute(
+                    """SELECT COALESCE(SUM(value_nrtc), 0) AS total,
+                              COUNT(*) AS cnt,
+                              COALESCE(SUM(typeof(value_nrtc) != 'integer'
+                                           OR value_nrtc <= 0), 0) AS invalid
+                       FROM utxo_boxes WHERE spent_at IS NULL"""
+                ).fetchone()
+                total = row['total']
+                cnt = row['cnt']
+                invalid = row['invalid']
+                root = self.compute_state_root(conn=conn)
 
             result = {
                 'ok': True,
@@ -1187,6 +1582,12 @@ class UtxoDB:
                 'total_unspent_boxes': cnt,
                 'state_root': root,
             }
+
+            # A matching aggregate can hide an impossible box (e.g. -50 and
+            # +200 summing to an expected 150), so check values individually.
+            if invalid:
+                result['ok'] = False
+                result['invalid_value_boxes'] = invalid
 
             if expected_total is not None:
                 match = total == expected_total
@@ -1208,7 +1609,11 @@ class UtxoDB:
 
             return result
         finally:
-            conn.close()
+            if own:
+                try:
+                    conn.rollback()  # read-only: release the snapshot
+                finally:
+                    conn.close()
 
     @staticmethod
     def _check_mirror_provenance(conn: sqlite3.Connection, result: dict) -> None:
@@ -1326,6 +1731,8 @@ class UtxoDB:
             now = int(time.time())
             timestamp = tx.get('timestamp', now)
             if not _is_nonnegative_int64(timestamp):
+                if manage_tx:
+                    conn.execute("ROLLBACK")
                 return False
 
             # Public mempool admission must never accept minting transactions.
@@ -1353,6 +1760,10 @@ class UtxoDB:
                     conn.execute("ROLLBACK")
                 return False
             input_box_ids = [i['box_id'] for i in inputs]
+            if len(input_box_ids) != len(set(input_box_ids)):
+                if manage_tx:
+                    conn.execute("ROLLBACK")
+                return False
             if set(input_box_ids) & set(data_inputs):
                 if manage_tx:
                     conn.execute("ROLLBACK")
@@ -1513,6 +1924,76 @@ class UtxoDB:
         finally:
             conn.close()
 
+    @staticmethod
+    def _report_eviction_failure(tx_id: str, spent_box_ids: List[str],
+                                 exc: BaseException) -> None:
+        """Surface a failed post-spend mempool eviction (#2819).
+
+        The spend itself stands; what may be left behind are mempool txs
+        that still reference the spent boxes. They cannot be mined (apply
+        and candidate selection re-validate every input) and expire after
+        MAX_TX_AGE_SECONDS, but until then they hold input claims and pool
+        capacity, so the failure is logged at ERROR and counted.
+        """
+        global _mempool_eviction_failures
+        with _mempool_eviction_failures_lock:
+            _mempool_eviction_failures += 1
+        logger.error(
+            "UTXO stale-mempool eviction FAILED after spend (spend kept): "
+            "tx_id=%s spent_box_ids=%s error=%r -- mempool txs depending on "
+            "these boxes may remain until expiry",
+            tx_id, spent_box_ids, exc,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
+
+    @staticmethod
+    def _mempool_row_references(tx_data_json: Any, spent_set: set) -> bool:
+        """True if a mempool row's stored tx reads or spends a spent box.
+
+        Checks data_inputs (never recorded in utxo_mempool_inputs) and, as
+        defense in depth, regular inputs too, so a row whose claim rows are
+        missing is still evicted. Malformed rows are left alone here; they
+        are handled by expiry / candidate re-validation.
+        """
+        try:
+            tx_data = json.loads(tx_data_json)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return False
+        if not isinstance(tx_data, dict):
+            return False
+        data_inputs = tx_data.get("data_inputs")
+        if isinstance(data_inputs, list):
+            for box_id in data_inputs:
+                if isinstance(box_id, str) and box_id in spent_set:
+                    return True
+        inputs = tx_data.get("inputs")
+        if isinstance(inputs, list):
+            for inp in inputs:
+                if isinstance(inp, dict):
+                    box_id = inp.get("box_id")
+                    if isinstance(box_id, str) and box_id in spent_set:
+                        return True
+        return False
+
+    @staticmethod
+    def _release_savepoint(conn: sqlite3.Connection, savepoint: str) -> None:
+        """RELEASE an eviction savepoint on a caller's connection.
+
+        A failed RELEASE is logged, never raised: it only leaves the
+        savepoint on SQLite's stack, and the caller's COMMIT (or ROLLBACK)
+        closes every open savepoint together with the outer transaction.
+        Raising here would make apply_transaction() fail a spend whose
+        writes are intact.
+        """
+        try:
+            conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+        except sqlite3.Error as exc:
+            logger.error(
+                "UTXO stale-mempool eviction: RELEASE SAVEPOINT %s failed "
+                "(%r); savepoint left open until the caller's COMMIT/ROLLBACK",
+                savepoint, exc,
+            )
+
     def _evict_stale_data_input_txs(self, spent_box_ids: List[str],
                               conn: Optional[sqlite3.Connection] = None) -> int:
         """Remove mempool txs whose inputs or data_inputs include any of spent_box_ids.
@@ -1526,67 +2007,98 @@ class UtxoDB:
         Search strategy:
         1. Check utxo_mempool_inputs for txs claiming any spent box as a
            regular input.
-        2. Scan utxo_mempool.tx_data_json for txs whose data_inputs
-           reference any spent box (since data_inputs are not recorded
+        2. Scan utxo_mempool.tx_data_json for txs whose data_inputs (or
+           inputs) reference any spent box (data_inputs are not recorded
            in utxo_mempool_inputs — they are read-only references).
+
+        Atomic: both DELETEs land or neither does. With our own connection
+        this is a BEGIN IMMEDIATE transaction; with a caller's connection it
+        is a SAVEPOINT, so a failure never discards the caller's other
+        writes (the spend) and never leaves claim rows deleted while the
+        mempool row survives.
+
+        Errors are RAISED, not swallowed (#2819): the caller decides how to
+        surface them. Raises _EvictionRollbackFailed if a failure on a
+        caller's connection could not be rolled back to the savepoint.
         """
         if not spent_box_ids:
             return 0
+        spent_box_ids = list(spent_box_ids)
         own_conn = conn is None
         if own_conn:
             conn = self._conn()
+        savepoint = "utxo_evict_stale_mempool"
         try:
-            spent_set = set(spent_box_ids)
-            stale_tx_ids = set()
+            if own_conn:
+                conn.execute("BEGIN IMMEDIATE")
+            else:
+                conn.execute(f"SAVEPOINT {savepoint}")
+            try:
+                spent_set = set(spent_box_ids)
+                stale_tx_ids = set()
 
-            # 1. Txs claiming spent boxes as regular inputs
-            placeholders = ",".join("?" for _ in spent_box_ids)
-            rows = conn.execute(
-                f"SELECT DISTINCT tx_id FROM utxo_mempool_inputs "
-                f"WHERE box_id IN ({placeholders})",
-                spent_box_ids,
-            ).fetchall()
-            for row in rows:
-                stale_tx_ids.add(row["tx_id"])
+                # 1. Txs claiming spent boxes as regular inputs
+                placeholders = ",".join("?" for _ in spent_box_ids)
+                rows = conn.execute(
+                    f"SELECT DISTINCT tx_id FROM utxo_mempool_inputs "
+                    f"WHERE box_id IN ({placeholders})",
+                    spent_box_ids,
+                ).fetchall()
+                for row in rows:
+                    stale_tx_ids.add(row["tx_id"])
 
-            # 2. Txs referencing spent boxes as data_inputs
-            #    (not stored in utxo_mempool_inputs, so parse tx_data_json)
-            for mp_row in conn.execute(
-                "SELECT tx_id, tx_data_json FROM utxo_mempool"
-            ):
-                if mp_row["tx_id"] in stale_tx_ids:
-                    continue  # already flagged
-                try:
-                    tx_data = json.loads(mp_row["tx_data_json"])
-                    di = tx_data.get("data_inputs", [])
-                    if di and spent_set & set(di):
+                # 2. Txs referencing spent boxes via tx_data_json
+                #    (cursor iteration: never load the whole pool)
+                for mp_row in conn.execute(
+                    "SELECT tx_id, tx_data_json FROM utxo_mempool"
+                ):
+                    if mp_row["tx_id"] in stale_tx_ids:
+                        continue  # already flagged
+                    if self._mempool_row_references(
+                        mp_row["tx_data_json"], spent_set
+                    ):
                         stale_tx_ids.add(mp_row["tx_id"])
-                except (json.JSONDecodeError, TypeError):
-                    continue
 
-            if not stale_tx_ids:
-                return 0
+                if stale_tx_ids:
+                    tx_ids = sorted(stale_tx_ids)
+                    tx_placeholders = ",".join("?" for _ in tx_ids)
+                    conn.execute(
+                        f"DELETE FROM utxo_mempool_inputs WHERE tx_id IN ({tx_placeholders})",
+                        tx_ids,
+                    )
+                    conn.execute(
+                        f"DELETE FROM utxo_mempool WHERE tx_id IN ({tx_placeholders})",
+                        tx_ids,
+                    )
+            except Exception as exc:
+                if own_conn:
+                    try:
+                        conn.execute("ROLLBACK")
+                    except sqlite3.Error:
+                        pass  # already rolled back by SQLite; nothing committed
+                    raise
+                if conn.in_transaction:
+                    # Only a failed ROLLBACK TO leaves the eviction's partial
+                    # DELETEs in the caller's transaction -- that alone is
+                    # fatal. Once it succeeds the caller's writes are safe,
+                    # so a RELEASE failure afterwards must not fail the spend.
+                    try:
+                        conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                    except sqlite3.Error as rb_exc:
+                        raise _EvictionRollbackFailed(
+                            f"eviction failed ({exc!r}) and savepoint "
+                            f"rollback failed ({rb_exc!r})"
+                        ) from exc
+                    self._release_savepoint(conn, savepoint)
+                # else: SQLite already aborted the caller's whole
+                # transaction; the caller checks conn.in_transaction.
+                raise
 
-            tx_ids = list(stale_tx_ids)
-            tx_placeholders = ",".join("?" for _ in tx_ids)
-            conn.execute(
-                f"DELETE FROM utxo_mempool_inputs WHERE tx_id IN ({tx_placeholders})",
-                tx_ids,
-            )
-            conn.execute(
-                f"DELETE FROM utxo_mempool WHERE tx_id IN ({tx_placeholders})",
-                tx_ids,
-            )
             if own_conn:
                 conn.commit()
-            return len(tx_ids)
-        except Exception:
-            if own_conn:
-                try:
-                    conn.execute("ROLLBACK")
-                except Exception:
-                    pass
-            return 0
+            else:
+                self._release_savepoint(conn, savepoint)
+            return len(stale_tx_ids)
         finally:
             if own_conn:
                 conn.close()

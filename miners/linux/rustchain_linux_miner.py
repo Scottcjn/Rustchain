@@ -24,7 +24,9 @@ try:
         get_or_create_keypair,
         sign_payload,
     )
-    CRYPTO_AVAILABLE = True
+    from miner_crypto import NACL_AVAILABLE
+    # miner_crypto imports fine without PyNaCl; only claim crypto when it loaded.
+    CRYPTO_AVAILABLE = bool(NACL_AVAILABLE)
 except ImportError:
     CRYPTO_AVAILABLE = False
     address_from_pubkey = canonical_json = None
@@ -265,13 +267,23 @@ class LocalMiner:
         self.keypair = {}
         self.public_key = ""
         if CRYPTO_AVAILABLE:
-            if persist_key:
-                self.keypair = get_or_create_keypair()
-            else:
-                self.keypair = generate_keypair()
-                if verbose:
-                    print("[CRYPTO] Using ephemeral keypair for dry-run; not saving miner_key.json")
-            self.public_key = self.keypair.get("public_key", "")
+            try:
+                if persist_key:
+                    self.keypair = get_or_create_keypair()
+                else:
+                    self.keypair = generate_keypair()
+                    if verbose:
+                        print("[CRYPTO] Using ephemeral keypair for dry-run; not saving miner_key.json")
+                self.public_key = self.keypair.get("public_key", "")
+            except Exception as e:
+                if not persist_key:
+                    if verbose:
+                        print(f"[WARN] Ed25519 crypto unavailable ({e}); falling back to legacy unsigned mode for dry-run")
+                    self.keypair = {}
+                    self.public_key = ""
+                else:
+                    print(f"[ERROR] Ed25519 crypto failed during real execution: {e}")
+                    raise
         self.wallet = wallet or (
             address_from_pubkey(self.public_key)
             if self.public_key and address_from_pubkey
@@ -300,7 +312,7 @@ class LocalMiner:
         print("="*70)
         print(f"Node: {self.node_url}")
         print(f"Wallet: {self.wallet}")
-        print(f"Serial: {self.serial}")
+        print(f"Serial present: {'yes' if self.serial else 'no'}")
         platform_warning = _linux_miner_platform_warning(platform.system())
         if platform_warning:
             print(f"[WARN] {platform_warning}")
@@ -823,7 +835,7 @@ class LocalMiner:
             resp = self._get(
                 "/wallet/balance",
                 "checking wallet balance",
-                params={"miner_id": self._miner_id()},
+                params={"miner_id": self.wallet},
                 timeout=10,
                 verify=TLS_VERIFY,
             )

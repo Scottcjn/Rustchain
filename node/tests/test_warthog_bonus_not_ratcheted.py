@@ -65,7 +65,7 @@ def _load_integrated_node(db_path: Path, warthog_verified: bool):
     module._check_oui_gate = lambda macs: (True, {"ok": True})
     module.wallet_review_gate_response = lambda miner: None
     module.record_macs = lambda *args, **kwargs: None
-    module._check_welcome_bonus = lambda miner: None
+    module._check_welcome_bonus = lambda *args, **kwargs: None
     module.current_slot = lambda: 12345
     module.slot_to_epoch = lambda slot: EPOCH
     module.validate_fingerprint_data = lambda fingerprint, claimed_device=None: (True, "ok")

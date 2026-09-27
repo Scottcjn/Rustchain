@@ -1,0 +1,21 @@
+{
+  "machine_name": "zaguzovmaksim0-hue POCO F6",
+  "model": "POCO F6 (2024)",
+  "model_identifier": "24069PC21G / peridot",
+  "year_manufactured": 2024,
+  "architecture": "ARM64 / aarch64 (Qualcomm SM8635)",
+  "cpu_cores": "8 (Cortex-A520 detected by RustChain miner)",
+  "memory_gb": 11,
+  "power_draw_watts": 8,
+  "usage": [
+    "RustChain miner on Android/Termux",
+    "PPA hardware fingerprint testing",
+    "AI coding and bounty automation",
+    "local development"
+  ],
+  "description": "POCO F6 Android phone kept in active compute use for RustChain mining, PPA fingerprint testing, AI coding, and bounty automation through Termux. The RustChain miner detects ARM/aarch64 and Cortex-A520, the current six fingerprint checks pass, and the live node accepted its attestation under the native RTC wallet. The 8 W power figure is a rough active-phone estimate rather than a wall-meter measurement.",
+  "wallet_name": "zaguzovmaksim0-hue",
+  "wallet_address": "RTC9190307a061e45c69134f4cabd55704599337161",
+  "contributor": "zaguzovmaksim0-hue",
+  "added_date": "2026-09-11"
+}

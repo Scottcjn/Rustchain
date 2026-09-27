@@ -257,6 +257,15 @@ class TestEnrollWeightDeviceSpoof(unittest.TestCase):
 
         miner = "RTC_LEGACY"
         miner_id = "miner_legacy_1"
+        # sybil_guard: a legacy miner is one that attested before the probation
+        # cutoff (grandfathered, today's weight rules). A brand-new identity
+        # would instead be capped at 1.0 while in probation.
+        with sqlite3.connect(db_path) as conn:
+            conn.execute(
+                "INSERT INTO miner_attest_history (miner, ts_ok, fingerprint_passed) VALUES (?, ?, 1)",
+                (miner, mod.sybil_guard.GRANDFATHER_CUTOFF_TS - 86400),
+            )
+            conn.commit()
         signing_key = self._attest(mod, miner, miner_id)
         # Simulate a legacy/pre-migration attestation row: no verified device.
         self._set_verified_device(db_path, miner, None, None)

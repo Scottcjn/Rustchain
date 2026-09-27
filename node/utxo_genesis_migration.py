@@ -19,15 +19,65 @@ Rules:
 import argparse
 from decimal import Decimal, InvalidOperation
 import hashlib
+import hmac
 import json
+import os
 import sqlite3
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 from utxo_db import (
     UtxoDB, address_to_proposition, compute_box_id, UNIT,
 )
+
+# ---------------------------------------------------------------------------
+# Rollback authorization (bounty #2819)
+# ---------------------------------------------------------------------------
+
+# rollback_genesis() is a destructive state mutation: it deletes every genesis
+# box and transaction and evicts mempool entries that depend on them. It was
+# reachable with no authorization at all -- a CLI flag or any code path that
+# imported it could wipe the UTXO genesis set and its pending spends.
+#
+# Fail closed: an unset admin key means the operator did not intend rollback to
+# be possible at all, so the call refuses instead of defaulting to open.
+_ROLLBACK_ADMIN_KEY_ENV = "RC_ADMIN_KEY"
+
+
+def _required_rollback_admin_key() -> str:
+    """Return the configured rollback admin key, or '' when none is set."""
+    return os.environ.get(_ROLLBACK_ADMIN_KEY_ENV, "").strip()
+
+
+def _constant_time_key_match(provided: str, required: str) -> bool:
+    try:
+        return hmac.compare_digest(
+            provided.encode("utf-8"),
+            required.encode("utf-8"),
+        )
+    except UnicodeError:
+        return False
+
+
+def _require_rollback_authorization(admin_key: Optional[str]) -> None:
+    """Raise RuntimeError unless *admin_key* matches the configured key.
+
+    - No key configured  -> refuse (fail closed, never default to open).
+    - Missing key arg  -> refuse.
+    - Wrong key         -> refuse (constant-time compare).
+    """
+    required = _required_rollback_admin_key()
+    if not required:
+        raise RuntimeError(
+            "rollback admin key is not configured; refusing unauthenticated "
+            "genesis rollback. Set RC_ADMIN_KEY to enable it."
+        )
+    if not admin_key or not isinstance(admin_key, str):
+        raise RuntimeError("admin_key is required for genesis rollback")
+    if not _constant_time_key_match(admin_key.strip(), required):
+        raise RuntimeError("genesis rollback unauthorized: invalid admin key")
 
 GENESIS_TX_PREFIX = "rustchain_genesis:"
 GENESIS_HEIGHT = 0
@@ -407,7 +457,7 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
     return result
 
 
-def rollback_genesis(db_path: str) -> int:
+def rollback_genesis(db_path: str, admin_key: Optional[str] = None) -> int:
     """Remove all genesis boxes and their transactions atomically.
 
     Wrapped in a single BEGIN IMMEDIATE transaction so no partial
@@ -422,7 +472,13 @@ def rollback_genesis(db_path: str) -> int:
     from before the rollback, blocking fresh spends and leaving the old
     transaction eligible for inclusion. Rolling back has to clear pending
     intent as well as state, or it is not a rollback.
+
+    Authorization (bounty #2819): rollback is a destructive state mutation
+    that deletes every genesis box/transaction and evicts pending mempool
+    claims. It was previously reachable unauthenticated, so it now requires
+    an admin key matching RC_ADMIN_KEY. Fail closed: an unset key refuses.
     """
+    _require_rollback_authorization(admin_key)
     utxo_db = UtxoDB(db_path)
     conn = utxo_db._conn()
     try:
@@ -468,6 +524,25 @@ def rollback_genesis(db_path: str) -> int:
             "DELETE FROM utxo_transactions WHERE tx_type = 'genesis'"
         )
 
+        # Drop account_mirror_boxes provenance that no longer backs a live box
+        # (#2819, Ondrej Nad). The table has no FK/cascade, so a rollback used to
+        # leave the migration's rows behind, and a re-migration over changed
+        # balances then added new rows beside the stale ones. Only done when a
+        # genesis existed: the guard above has then proven all UTXO state was
+        # genesis-only, so every unbacked row is migration debris (including
+        # orphans from earlier rollbacks). Without a genesis, the node's live
+        # dual-write mirror rows are left untouched. The table may not exist
+        # on DBs that predate it.
+        has_mirror_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'account_mirror_boxes'"
+        ).fetchone()
+        if has_genesis and has_mirror_table:
+            conn.execute(
+                "DELETE FROM account_mirror_boxes WHERE box_id NOT IN "
+                "(SELECT box_id FROM utxo_boxes)"
+            )
+
         conn.execute("COMMIT")
         return deleted
 
@@ -489,10 +564,16 @@ if __name__ == '__main__':
                         help='Preview migration without writing')
     parser.add_argument('--rollback', action='store_true',
                         help='Remove genesis boxes (rollback)')
+    parser.add_argument('--admin-key', default=None,
+                        help='Admin key for rollback (or set RC_ADMIN_KEY)')
     args = parser.parse_args()
 
     if args.rollback:
-        rollback_genesis(args.db)
+        try:
+            rollback_genesis(args.db, admin_key=args.admin_key)
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
     else:
         result = migrate(args.db, dry_run=args.dry_run)
         if 'error' in result:

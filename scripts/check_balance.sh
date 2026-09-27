@@ -14,10 +14,21 @@ RPC_ENDPOINT="${RUSTCHAIN_RPC:-https://rustchain.org}"
 TIMEOUT_SEC="${RUSTCHAIN_TIMEOUT:-10}"
 
 usage() {
-    echo "Usage: $0 <WALLET_ADDRESS>" >&2
-    echo "  WALLET_ADDRESS  Base58 RustChain wallet ID" >&2
+    cat <<'EOF' >&2
+Usage: $0 <WALLET_ADDRESS>
+
+Exit codes:
+  0  success (balance printed to stdout)
+  1  usage error (missing or invalid wallet address, or --help)
+  2  network error (DNS, timeout, connection refused)
+  3  bad response (non-200 HTTP, malformed JSON, missing fields, type mismatch)
+EOF
     exit 1
 }
+
+if [[ $# -eq 1 && "$1" == "--help" ]]; then
+    usage
+fi
 
 if [[ $# -ne 1 ]]; then
     usage
@@ -37,13 +48,26 @@ BODY=""
 TMPFILE=$(mktemp)
 trap 'rm -f "$TMPFILE"' EXIT
 
-if ! curl -sS --max-time "$TIMEOUT_SEC" -w "%{http_code}" -o "$TMPFILE" "$URL" >"$TMPFILE.code" 2>/dev/null; then
-    echo "Error: network request failed for ${URL}" >&2
+CURL_ERR=$(mktemp)
+trap 'rm -f "$TMPFILE" "$TMPFILE.code" "$CURL_ERR"' EXIT
+
+if ! curl -sS --max-time "$TIMEOUT_SEC" -w "%{http_code}" -o "$TMPFILE" "$URL" >"$TMPFILE.code" 2>"$CURL_ERR"; then
+    err_msg=$(cat "$CURL_ERR" 2>/dev/null | tr -d '\n' | head -c 200)
+    if [[ -n "$err_msg" ]]; then
+        echo "Error: network request failed for ${URL} -- ${err_msg}" >&2
+    else
+        echo "Error: network request failed for ${URL} (no further detail from curl)" >&2
+    fi
     exit 2
 fi
 
 HTTP_CODE=$(cat "$TMPFILE.code" 2>/dev/null || echo "000")
-BODY=$(cat "$TMPFILE" 2>/dev/null || echo "")
+BODY=$(cat "$TMPFILE" 2>/dev/null || true)
+
+if [[ -z "$BODY" ]]; then
+    echo "Error: empty response body from ${URL} (HTTP ${HTTP_CODE})" >&2
+    exit 3
+fi
 
 if [[ "$HTTP_CODE" != "200" ]]; then
     echo "Error: HTTP ${HTTP_CODE} from ${URL}" >&2
@@ -56,6 +80,11 @@ RETURNED_WALLET=$(echo "$BODY" | jq -r '.miner_id // .wallet // empty' 2>/dev/nu
 
 if [[ -z "$BALANCE" ]]; then
     echo "Error: response missing amount_rtc field" >&2
+    exit 3
+fi
+
+if ! [[ "$BALANCE" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
+    echo "Error: amount_rtc is not a valid number (got '${BALANCE}')" >&2
     exit 3
 fi
 

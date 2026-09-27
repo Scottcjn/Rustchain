@@ -16,7 +16,10 @@ Endpoints:
     POST /utxo/transfer            - UTXO-native signed transfer
 """
 
+import hmac
 import json
+import os
+import re
 import sqlite3
 import time
 from decimal import Decimal, InvalidOperation
@@ -42,6 +45,13 @@ _BOXES_MAX_LIMIT = 500
 # would raise OverflowError at parameter binding (a 500) instead of a clean 400.
 _INT64_MAX = (1 << 63) - 1
 _NONCE_MAX_DIGITS = len(str(_INT64_MAX))
+
+# Canonical = exactly what address derivation produces: "RTC" + the first 40
+# chars of sha256(pubkey).hexdigest(), which is always lower-case. Accepting
+# upper/mixed-case hex let a transfer create a box owned by a string that no
+# key derives to, so the recipient could never spend it (#2819, Ondrej Nad).
+_CANONICAL_RTC_ADDRESS_RE = re.compile(r"RTC[0-9a-f]{40}")
+
 
 
 def _parse_rtc_amount(raw) -> Decimal:
@@ -195,6 +205,26 @@ _addr_from_pk_fn = None    # address_from_pubkey(pubkey_hex) -> str
 _current_slot_fn = None    # current_slot() -> int
 _dual_write: bool = False
 _review_gate_fn = None     # wallet_review_gate_response(wallet) -> Response|None
+_is_admin_fn = None        # is_admin(request) -> bool (main server's X-Admin-Key check)
+
+
+def _request_is_admin() -> bool:
+    """Admin check for privileged UTXO diagnostics.
+
+    Uses the main server's is_admin() when wired in; otherwise falls back to
+    the same contract (X-Admin-Key / X-API-Key vs RC_ADMIN_KEY, constant-time).
+    An unset admin key never authorizes.
+    """
+    if _is_admin_fn is not None:
+        try:
+            return bool(_is_admin_fn(request))
+        except Exception:
+            return False
+    need = (os.environ.get("RC_ADMIN_KEY") or "").strip()
+    got = request.headers.get("X-Admin-Key", "") or request.headers.get("X-API-Key", "")
+    if not need or not got:
+        return False
+    return hmac.compare_digest(need, got)
 
 
 def _selected_account_mirror_boxes(conn: sqlite3.Connection, selected: list) -> list:
@@ -226,6 +256,37 @@ def _spendable_utxo_candidates(conn: sqlite3.Connection, candidates: list) -> tu
     if not mirrored:
         return candidates, []
     return [box for box in candidates if box.get('box_id') not in mirrored], sorted(mirrored)
+
+
+_MIRROR_BOX_IDS_IN_RESPONSE = 50
+
+
+def _unspent_account_mirror_boxes(conn: sqlite3.Connection, owner: str) -> tuple:
+    """(box_ids, total_nrtc) of the owner's unspent account-mirror boxes.
+
+    Wallet-wide (not the bounded coin-select candidate list), so it can tell
+    "short because funds are mirror-locked" apart from "short, period".
+    """
+    if not conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='account_mirror_boxes'"
+    ).fetchone():
+        return [], 0
+    join = """FROM utxo_boxes AS b
+              JOIN account_mirror_boxes AS m ON m.box_id = b.box_id
+              WHERE b.owner_address = ? AND b.spent_at IS NULL"""
+    # Total is aggregated in SQL so it is wallet-wide however many boxes exist;
+    # only the ids echoed back in the 409 body are capped.
+    total = conn.execute(
+        f"SELECT COALESCE(SUM(b.value_nrtc), 0) {join}", (owner,)
+    ).fetchone()[0]
+    box_ids = [
+        row[0]
+        for row in conn.execute(
+            f"SELECT b.box_id {join} ORDER BY b.box_id LIMIT ?",
+            (owner, _MIRROR_BOX_IDS_IN_RESPONSE),
+        )
+    ]
+    return box_ids, total
 
 
 def _account_mirror_blocked_response(box_ids: list):
@@ -328,13 +389,13 @@ def _transfer_string_field(data: dict, field: str):
 def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
                             verify_sig_fn, addr_from_pk_fn,
                             current_slot_fn, dual_write: bool = False,
-                            review_gate_fn=None):
+                            review_gate_fn=None, is_admin_fn=None):
     """
     Wire up the UTXO blueprint with dependencies from the main server.
     Call this after init_db().
     """
     global _utxo_db, _db_path, _verify_sig_fn, _addr_from_pk_fn
-    global _current_slot_fn, _dual_write, _review_gate_fn
+    global _current_slot_fn, _dual_write, _review_gate_fn, _is_admin_fn
 
     _utxo_db = utxo_db
     _db_path = db_path
@@ -343,6 +404,7 @@ def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
     _current_slot_fn = current_slot_fn
     _dual_write = dual_write
     _review_gate_fn = review_gate_fn
+    _is_admin_fn = is_admin_fn
 
     conn = sqlite3.connect(db_path)
     try:
@@ -350,6 +412,17 @@ def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
         conn.commit()
     finally:
         conn.close()
+
+    # Version triggers + memo for the cached state root (idempotent; a no-op
+    # until utxo_boxes exists -- init_tables() installs it then). Best-effort:
+    # without it, state_summary() falls back to a full recompute (correct, just
+    # uncached), so a failure here must not take the UTXO endpoints down.
+    ensure_memo = getattr(utxo_db, 'ensure_state_memo_schema', None)
+    if ensure_memo is not None:
+        try:
+            ensure_memo()
+        except Exception as e:
+            print(f"[UTXO] WARNING: state-root memo schema not installed: {e}")
 
     app.register_blueprint(utxo_bp)
     print(f"[UTXO] Endpoints registered at /utxo/* (dual_write={'ON' if dual_write else 'OFF'})")
@@ -454,40 +527,80 @@ def utxo_box(box_id):
 @utxo_bp.route('/state_root')
 def utxo_state_root():
     """Current Merkle state root of the UTXO set."""
-    root = _utxo_db.compute_state_root()
-    count = _utxo_db.count_unspent()
+    # Pin a single read snapshot (#2819, #17058): with Python sqlite3, SELECTs alone
+    # do not begin a transaction, so an explicit BEGIN ensures that compute_state_root
+    # and count_unspent see the exact same committed database state even if another
+    # connection commits concurrently.
+    # Root and count come from ONE memo row (or one recompute) keyed by the
+    # DB state version read in this same snapshot, so an anonymous request is
+    # O(1) unless the UTXO set changed since the last computation.
+    conn = sqlite3.connect(_db_path)
+    try:
+        conn.execute("BEGIN")
+        summary = _utxo_db.state_summary(conn=conn)
+    finally:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        conn.close()
     return jsonify({
-        'state_root': root,
-        'unspent_count': count,
+        'state_root': summary['state_root'],
+        'unspent_count': summary['unspent_count'],
+        'state_version': summary['version'],
         'timestamp': int(time.time()),
     })
 
 
 @utxo_bp.route('/integrity')
 def utxo_integrity():
-    """Compare UTXO totals against account model."""
+    """Compare UTXO totals against account model.
+
+    Public callers get the root/UTXO totals from the state-version memo.
+    ``?force=1`` (admin only) forces a full O(N) recompute for verification.
+    """
+    force = request.args.get('force', '').strip().lower() in ('1', 'true', 'yes')
+    if force and not _request_is_admin():
+        return jsonify({'ok': False, 'reason': 'admin_required',
+                        'error': 'force=1 full recompute requires X-Admin-Key'}), 401
     # Get account model total and convert to nanoRTC (8 decimals).
     # balances.amount_i64 is stored at 6 decimals (ACCOUNT_UNIT),
     # so multiply by UNIT/ACCOUNT_UNIT (=100) to get nanoRTC.
+    # SECURITY(#2819, robin1121): the account total, the UTXO totals and the
+    # state root must all come from ONE snapshot. Reading the account model on a
+    # separate connection let a concurrent settlement land between the reads, so
+    # models_agree compared two different database states.
     account_total = 0
+    conn = None
     try:
         conn = sqlite3.connect(_db_path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("BEGIN")
         row = conn.execute(
             "SELECT COALESCE(SUM(amount_i64), 0) FROM balances"
         ).fetchone()
         account_total = row[0] if row else 0
-        conn.close()
         # Convert from 6-decimal uRTC to 8-decimal nanoRTC for comparison
         account_total_nrtc = account_total * (UNIT // ACCOUNT_UNIT)
     except Exception:
         account_total = None
         account_total_nrtc = None
 
-    result = _utxo_db.integrity_check(expected_total=account_total_nrtc)
+    try:
+        result = _utxo_db.integrity_check(
+            expected_total=account_total_nrtc, conn=conn, use_memo=not force)
+    finally:
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            conn.close()
     if account_total is not None:
         result['account_total_i64'] = account_total
         result['account_total_nrtc'] = account_total_nrtc
         result['account_total_rtc'] = account_total_nrtc / UNIT
+    result['full_recompute'] = force
     return jsonify(result)
 
 
@@ -507,12 +620,9 @@ def utxo_stats():
     """UTXO set statistics."""
     conn = _utxo_db._conn()
     try:
-        unspent = conn.execute(
-            "SELECT COUNT(*) AS n, COALESCE(SUM(value_nrtc),0) AS total FROM utxo_boxes WHERE spent_at IS NULL"
-        ).fetchone()
-        spent = conn.execute(
-            "SELECT COUNT(*) AS n FROM utxo_boxes WHERE spent_at IS NOT NULL"
-        ).fetchone()
+        conn.execute("BEGIN")
+        # Box aggregates + root from the version-keyed memo (same snapshot).
+        summary = _utxo_db.state_summary(conn=conn)
         txs = conn.execute(
             "SELECT COUNT(*) AS n FROM utxo_transactions"
         ).fetchone()
@@ -521,15 +631,19 @@ def utxo_stats():
         ).fetchone()
 
         return jsonify({
-            'unspent_boxes': unspent['n'],
-            'total_value_nrtc': unspent['total'],
-            'total_value_rtc': unspent['total'] / UNIT,
-            'spent_boxes': spent['n'],
+            'unspent_boxes': summary['unspent_count'],
+            'total_value_nrtc': summary['total_unspent_nrtc'],
+            'total_value_rtc': summary['total_unspent_nrtc'] / UNIT,
+            'spent_boxes': summary['spent_count'],
             'total_transactions': txs['n'],
             'mempool_size': mempool['n'],
-            'state_root': _utxo_db.compute_state_root(),
+            'state_root': summary['state_root'],
         })
     finally:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         conn.close()
 
 
@@ -607,6 +721,17 @@ def utxo_transfer():
                          'signature', 'nonce']
         }), 400
 
+    # SECURITY (#2819, reported by @antoleod): the sender is bound to its public
+    # key below, but the recipient was accepted as any non-empty string. A typo
+    # or hostile value such as "not-a-wallet" became a persisted box owner that
+    # no wallet key can ever spend, permanently locking the RTC. Require the
+    # canonical RTC + 40 hex form before signature checks or state mutation.
+    if not _CANONICAL_RTC_ADDRESS_RE.fullmatch(to_address):
+        return jsonify({
+            'error': 'invalid_to_address_format',
+            'message': 'to_address must be a canonical RustChain address: RTC followed by 40 lower-case hex characters',
+        }), 400
+
     if amount_rtc <= 0:
         return jsonify({'error': 'Amount must be positive'}), 400
 
@@ -621,6 +746,7 @@ def utxo_transfer():
             amount_i64_for_dual_write = _decimal_to_account_i64(
                 amount_rtc, 'amount_rtc'
             )
+            _decimal_to_account_i64(fee_rtc, 'fee_rtc')
     except ValueError as e:
         return jsonify({'error': f'Invalid amount: {e}'}), 400
 
@@ -732,30 +858,42 @@ def utxo_transfer():
     # slice of a wallet, so loading every unspent box let a third party inflate
     # the cost of this call by sending dust to the sender's address.
     utxos = _utxo_db.get_coin_select_candidates(from_address)
-    all_candidate_total_nrtc = sum(u['value_nrtc'] for u in utxos)
-    # SECURITY(danaher-j / #2819 residual): exclude account-mirror boxes from
-    # UTXO coin selection in BOTH dual-write states. Under UTXO_DUAL_WRITE=1 the
-    # /utxo/transfer path mints receiver+change outputs with NO
-    # account_mirror_boxes provenance; a later rollback to dual_write=0 then
-    # leaves that migrated value spendable through BOTH the UTXO and account
-    # models (double spend). Migrated funds must always move via the account
-    # path, so the mirror-box exclusion cannot be gated on dual-write.
+    # SECURITY(danaher-j / #2819 residual, #8395): account-mirror boxes are
+    # excluded inside get_coin_select_candidates() before candidate bounding.
+    # We keep _spendable_utxo_candidates() as defense-in-depth and compute
+    # total spendable candidates post-filter so mirror boxes cannot cause a
+    # false 409 ACCOUNT_MIRROR_BOX_NOT_SPENDABLE.
     mirror_candidate_ids = []
     conn = sqlite3.connect(_db_path)
     try:
         utxos, mirror_candidate_ids = _spendable_utxo_candidates(conn, utxos)
     finally:
         conn.close()
+    all_candidate_total_nrtc = sum(u['value_nrtc'] for u in utxos)
     selected, change_nrtc = coin_select(utxos, target_nrtc)
 
     if not selected:
         if mirror_candidate_ids and all_candidate_total_nrtc >= target_nrtc:
             return _account_mirror_blocked_response(mirror_candidate_ids)
         utxo_balance = _utxo_db.get_balance(from_address)
+        # Mirror boxes are filtered out before candidate bounding (#8395), so
+        # the branch above no longer sees them. Decide from wallet totals: if
+        # the spendable (non-mirror) funds fall short but the mirror-locked
+        # ones would cover it, say so (409) instead of a misleading
+        # "Insufficient UTXO balance" that reports a balance >= the request.
+        conn = sqlite3.connect(_db_path)
+        try:
+            mirror_ids, mirror_total_nrtc = _unspent_account_mirror_boxes(conn, from_address)
+        finally:
+            conn.close()
+        spendable_nrtc = utxo_balance - mirror_total_nrtc
+        if mirror_ids and spendable_nrtc < target_nrtc <= utxo_balance:
+            return _account_mirror_blocked_response(mirror_ids)
         return jsonify({
             'error': 'Insufficient UTXO balance',
             'balance_nrtc': utxo_balance,
             'balance_rtc': utxo_balance / UNIT,
+            'spendable_nrtc': spendable_nrtc,
             'requested_nrtc': target_nrtc,
             'requested_rtc': target_nrtc / UNIT,
         }), 400
@@ -792,6 +930,22 @@ def utxo_transfer():
     conn = sqlite3.connect(_db_path)
     conn.row_factory = sqlite3.Row
     try:
+        if _dual_write:
+            # Ensure the mirror-provenance discriminator exists BEFORE the write
+            # transaction (DDL outside BEGIN IMMEDIATE). Schema matches the node's
+            # _ensure_and_backfill_account_mirror so both maintainers agree.
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS account_mirror_boxes (
+                       box_id TEXT PRIMARY KEY,
+                       account_wallet TEXT NOT NULL,
+                       value_nrtc INTEGER NOT NULL,
+                       created_epoch INTEGER NOT NULL
+                   )"""
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_mirror_wallet "
+                "ON account_mirror_boxes(account_wallet)"
+            )
         conn.execute("BEGIN IMMEDIATE")
 
         if not _reserve_transfer_nonce(conn, from_address, nonce):
@@ -881,6 +1035,59 @@ def utxo_transfer():
                 (now, slot, to_address, amount_i64,
                  f"utxo_transfer_in:{from_address[:20]}:{memo[:30]}")
             )
+
+            # SECURITY(danaher-j / #2819 receiver residual): the UTXO output boxes
+            # this transfer just created (receiver at index 0, change at index 1)
+            # hold value that is ALSO reflected in the account model by the writes
+            # above (receiver credited, sender debited-with-change-retained). Under
+            # the dual-write model `balances` is the primary ledger and mirror boxes
+            # are its UTXO shadow, so every such output MUST be registered as
+            # account-mirror provenance. Otherwise the box is spendable via the UTXO
+            # path AND the account value is spendable via the account path = the same
+            # value spent twice. Registering them makes the unconditional mirror-input
+            # exclusion (above) block the UTXO path, forcing the value through the
+            # account path (which consumes the mirror on settle). apply_transaction
+            # exposes tx['tx_id']; the outputs of this tx are exactly the new boxes.
+            tx_id = tx.get('tx_id')
+            if tx_id:
+                for b in conn.execute(
+                    "SELECT box_id, owner_address, value_nrtc FROM utxo_boxes "
+                    "WHERE transaction_id = ?",
+                    (tx_id,),
+                ).fetchall():  # fetchall-ok: bounded-by-schema (outputs of one transfer tx)
+                    conn.execute(
+                        "INSERT OR REPLACE INTO account_mirror_boxes "
+                        "(box_id, account_wallet, value_nrtc, created_epoch) "
+                        "VALUES (?,?,?,?)",
+                        (b['box_id'], b['owner_address'], b['value_nrtc'], slot),
+                    )
+
+            # Consensus invariant (#2819): a wallet's unspent mirror value must never
+            # exceed its account balance — mirror > balance IS the double-spend
+            # condition. Compare in nRTC (mirror value_nrtc vs balance amount_i64 *
+            # NRTC_PER_ACCOUNT, since account units are micro-RTC and boxes are
+            # nano-RTC). Fail closed (rollback) rather than commit money twice.
+            nrtc_per_account = UNIT // ACCOUNT_UNIT
+            for _w in (from_address, to_address):
+                mirror_nrtc = conn.execute(
+                    "SELECT COALESCE(SUM(b.value_nrtc), 0) FROM utxo_boxes b "
+                    "JOIN account_mirror_boxes m ON m.box_id = b.box_id "
+                    "WHERE m.account_wallet = ? AND b.spent_at IS NULL",
+                    (_w,),
+                ).fetchone()[0]
+                brow = conn.execute(
+                    "SELECT amount_i64 FROM balances WHERE miner_id = ?", (_w,)
+                ).fetchone()
+                bal_nrtc = (brow[0] if brow else 0) * nrtc_per_account
+                if int(mirror_nrtc) > bal_nrtc:
+                    conn.rollback()
+                    return jsonify({
+                        'error': 'dual-write mirror exceeds account balance (double-spend guard)',
+                        'code': 'MIRROR_EXCEEDS_BALANCE',
+                        'wallet': _w,
+                        'mirror_nrtc': int(mirror_nrtc),
+                        'account_balance_nrtc': bal_nrtc,
+                    }), 409
 
         conn.commit()
     except Exception:

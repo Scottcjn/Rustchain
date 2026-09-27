@@ -74,7 +74,7 @@ def seed_coinbase(utxo_db, address, value_nrtc):
 def transfer_payload(signature, fee_rtc=1.0):
     return {
         "from_address": "RTC_test_aabbccdd",
-        "to_address": "bob",
+        "to_address": "RTC" + "b" * 40,
         "amount_rtc": 10.0,
         "fee_rtc": fee_rtc,
         "public_key": "aabbccdd" * 8,
@@ -92,7 +92,7 @@ def test_account_style_signature_is_rejected_on_utxo_endpoint(tmp_path):
     assert response.status_code == 401
     assert response.get_json()["code"] == "UTXO_SIGNATURE_DOMAIN_REQUIRED"
     assert utxo_db.get_balance("RTC_test_aabbccdd") == 100 * UNIT
-    assert utxo_db.get_balance("bob") == 0
+    assert utxo_db.get_balance(("RTC" + "b" * 40)) == 0
 
 
 def test_account_style_signature_with_fee_is_rejected_for_domain(tmp_path):
@@ -103,7 +103,7 @@ def test_account_style_signature_with_fee_is_rejected_for_domain(tmp_path):
     assert response.status_code == 401
     assert response.get_json()["code"] == "UTXO_SIGNATURE_DOMAIN_REQUIRED"
     assert utxo_db.get_balance("RTC_test_aabbccdd") == 100 * UNIT
-    assert utxo_db.get_balance("bob") == 0
+    assert utxo_db.get_balance(("RTC" + "b" * 40)) == 0
 
 
 def test_utxo_domain_signature_still_accepts_fee(tmp_path):
@@ -113,4 +113,4 @@ def test_utxo_domain_signature_still_accepts_fee(tmp_path):
 
     assert response.status_code == 200
     assert response.get_json()["ok"] is True
-    assert utxo_db.get_balance("bob") == 10 * UNIT
+    assert utxo_db.get_balance(("RTC" + "b" * 40)) == 10 * UNIT

@@ -23,7 +23,7 @@ Welcome, agent! This guide is specifically for AI models trying to earn RTC boun
 ### Typo Fix (0.5 RTC)
 ```diff
 # Find a real typo in an existing file and fix it
-- This is an exmaple of bad spelling
+- This is an example of bad spelling
 + This is an example of bad spelling
 ```
 

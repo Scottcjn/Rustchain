@@ -278,7 +278,10 @@ class RustChainClient:
         await self._ensure_session()
         state = status if status in ("open", "closed", "all") else "open"
         url = f"{GITHUB_API_BASE}/repos/{GITHUB_BOUNTIES_OWNER}/{GITHUB_BOUNTIES_REPO}/issues"
-        params = {"state": state, "per_page": min(limit, 100)}
+        # Filter at the source so administrative issues (wallet registrations,
+        # payout claims, retired notices, etc.) do not consume the result limit
+        # before real bounties are considered.
+        params = {"state": state, "labels": "bounty", "per_page": min(limit, 100)}
         headers = {"Accept": "application/vnd.github.v3+json", "User-Agent": "RustChain-Bounties-MCP/0.1"}
 
         try:
@@ -307,6 +310,9 @@ class RustChainClient:
     @staticmethod
     def _parse_github_issue(issue: dict[str, Any]) -> Optional[BountyInfo]:
         """Parse a GitHub issue into a BountyInfo, or None if not a bounty."""
+        if "pull_request" in issue:
+            return None
+
         title = issue.get("title", "")
         number = issue.get("number", 0)
         html_url = issue.get("html_url", "")
@@ -339,14 +345,15 @@ class RustChainClient:
             tags.append(label.get("name", ""))
 
         # Try to extract reward from title (e.g. "Bounty: MCP Server (500 RTC)")
-        title_match = re.search(r"(\d+)\s*RTC", title, re.IGNORECASE)
+        title_match = re.search(r"(\d+(?:\.\d+)?)\s*RTC", title, re.IGNORECASE)
         if title_match and reward_rtc == 0:
             reward_rtc = float(title_match.group(1))
 
         # If no reward found in labels or title, skip non-bounty issues
-        if reward_rtc == 0 and not any("bounty" in (lbl.get("name", "") or "").lower() for lbl in labels):
-            # Still include it but with 0 reward — better than nothing for discovery
-            pass
+        if reward_rtc == 0 and not any(
+            "bounty" in (lbl.get("name", "") or "").lower() for lbl in labels
+        ):
+            return None
 
         return BountyInfo(
             issue_number=number,

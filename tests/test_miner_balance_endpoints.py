@@ -48,7 +48,7 @@ def test_linux_miner_balance_uses_current_wallet_endpoint(monkeypatch):
     assert miner.check_balance() == 2.5
     assert calls[0][0] == "/wallet/balance"
     assert calls[0][1] == "checking wallet balance"
-    assert calls[0][2]["params"] == {"miner_id": "x86_64-test-host"}
+    assert calls[0][2]["params"] == {"miner_id": "RTC-test-wallet"}
 
 
 def test_power8_miner_balance_uses_current_wallet_endpoint(monkeypatch):
