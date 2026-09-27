@@ -47,7 +47,7 @@ from utxo_endpoints import register_utxo_blueprint
 NRTC_PER_ACCOUNT_UNIT = UNIT // 1_000_000  # 100
 
 ALICE = "RTC_test_aabbccdd"
-RECEIVER = "RTC_test_receiver0"
+RECEIVER = "RTC" + "f" * 40  # canonical recipient; format-checked since #2819
 PUBKEY = "aabbccdd" * 8
 GENESIS_HEIGHT = 0
 

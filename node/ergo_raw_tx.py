@@ -8,7 +8,18 @@ from hashlib import blake2b
 import requests
 
 ERGO_NODE = "http://localhost:9053"
-ERGO_API_KEY = os.environ.get("ERGO_API_KEY", "")
+def _ergo_key_from_env_file(path=None):
+    """Fallback: read ERGO_API_KEY from the node's .env when not exported (cron does not source it)."""
+    try:
+        for line in open(path or os.environ.get("RUSTCHAIN_ENV_FILE", "/root/rustchain/.env")):
+            if line.startswith("ERGO_API_KEY="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return ""
+
+
+ERGO_API_KEY = os.environ.get("ERGO_API_KEY") or _ergo_key_from_env_file()
 DB_PATH = "/root/rustchain/rustchain_v2.db"
 REQUEST_TIMEOUT = 30
 

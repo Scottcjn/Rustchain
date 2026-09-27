@@ -126,9 +126,9 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(r.get_json()['utxo_count'], 1)
 
     def test_boxes_endpoint(self):
-        self._seed_coinbase('bob', 50 * UNIT, height=1)
-        self._seed_coinbase('bob', 30 * UNIT, height=2)
-        r = self.client.get('/utxo/boxes/bob')
+        self._seed_coinbase(('RTC' + 'b' * 40), 50 * UNIT, height=1)
+        self._seed_coinbase(('RTC' + 'b' * 40), 30 * UNIT, height=2)
+        r = self.client.get('/utxo/boxes/RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
         data = r.get_json()
         self.assertEqual(data['count'], 2)
         self.assertEqual(len(data['boxes']), 2)
@@ -136,11 +136,11 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(values, [30 * UNIT, 50 * UNIT])
 
     def test_boxes_endpoint_is_paginated(self):
-        self._seed_coinbase('bob', 10 * UNIT, height=1)
-        self._seed_coinbase('bob', 20 * UNIT, height=2)
-        self._seed_coinbase('bob', 30 * UNIT, height=3)
+        self._seed_coinbase(('RTC' + 'b' * 40), 10 * UNIT, height=1)
+        self._seed_coinbase(('RTC' + 'b' * 40), 20 * UNIT, height=2)
+        self._seed_coinbase(('RTC' + 'b' * 40), 30 * UNIT, height=3)
 
-        first = self.client.get('/utxo/boxes/bob?limit=2').get_json()
+        first = self.client.get('/utxo/boxes/RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?limit=2').get_json()
         self.assertEqual(first['count'], 2)
         self.assertTrue(first['has_more'])
         self.assertEqual([box['value_nrtc'] for box in first['boxes']],
@@ -148,7 +148,7 @@ class TestUtxoEndpoints(unittest.TestCase):
 
         cursor = first['next_cursor']
         second = self.client.get(
-            '/utxo/boxes/bob?limit=2&after_value_nrtc={}&after_box_id={}'.format(
+            '/utxo/boxes/RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?limit=2&after_value_nrtc={}&after_box_id={}'.format(
                 cursor['after_value_nrtc'], cursor['after_box_id']))
         second = second.get_json()
         self.assertEqual(second['count'], 1)
@@ -157,37 +157,37 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(second['boxes'][0]['value_nrtc'], 30 * UNIT)
 
     def test_boxes_cursor_handles_equal_values(self):
-        self._seed_coinbase('bob', 10 * UNIT, height=1)
-        self._seed_coinbase('bob', 10 * UNIT, height=2)
-        self._seed_coinbase('bob', 10 * UNIT, height=3)
+        self._seed_coinbase(('RTC' + 'b' * 40), 10 * UNIT, height=1)
+        self._seed_coinbase(('RTC' + 'b' * 40), 10 * UNIT, height=2)
+        self._seed_coinbase(('RTC' + 'b' * 40), 10 * UNIT, height=3)
 
-        first = self.client.get('/utxo/boxes/bob?limit=2').get_json()
+        first = self.client.get('/utxo/boxes/RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?limit=2').get_json()
         cursor = first['next_cursor']
         second = self.client.get(
-            '/utxo/boxes/bob?limit=2&after_value_nrtc={}&after_box_id={}'.format(
+            '/utxo/boxes/RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?limit=2&after_value_nrtc={}&after_box_id={}'.format(
                 cursor['after_value_nrtc'], cursor['after_box_id'])).get_json()
         ids = [box['box_id'] for box in first['boxes'] + second['boxes']]
         self.assertEqual(len(ids), 3)
         self.assertEqual(len(set(ids)), 3)
 
     def test_boxes_endpoint_rejects_invalid_pagination(self):
-        self.assertEqual(self.client.get('/utxo/boxes/bob?limit=0').status_code, 400)
-        self.assertEqual(self.client.get('/utxo/boxes/bob?limit=501').status_code, 400)
-        self.assertEqual(self.client.get('/utxo/boxes/bob?after_value_nrtc=1').status_code, 400)
-        self.assertEqual(self.client.get('/utxo/boxes/bob?after_box_id=x').status_code, 400)
-        self.assertEqual(self.client.get('/utxo/boxes/bob?limit=nope').status_code, 400)
+        self.assertEqual(self.client.get('/utxo/boxes/RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?limit=0').status_code, 400)
+        self.assertEqual(self.client.get('/utxo/boxes/RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?limit=501').status_code, 400)
+        self.assertEqual(self.client.get('/utxo/boxes/RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?after_value_nrtc=1').status_code, 400)
+        self.assertEqual(self.client.get('/utxo/boxes/RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?after_box_id=x').status_code, 400)
+        self.assertEqual(self.client.get('/utxo/boxes/RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?limit=nope').status_code, 400)
 
     def test_boxes_endpoint_rejects_out_of_range_cursor(self):
         # after_value_nrtc past SQLite's signed 64-bit range must be a clean 400,
         # not an OverflowError 500 at parameter binding.
         over = (1 << 63)
         self.assertEqual(
-            self.client.get(f'/utxo/boxes/bob?after_value_nrtc={over}&after_box_id=x').status_code,
+            self.client.get(f'/utxo/boxes/RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?after_value_nrtc={over}&after_box_id=x').status_code,
             400,
         )
         # The boundary value itself is in range and forms a valid (empty-result) cursor.
         self.assertEqual(
-            self.client.get(f'/utxo/boxes/bob?after_value_nrtc={over - 1}&after_box_id=x').status_code,
+            self.client.get(f'/utxo/boxes/RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb?after_value_nrtc={over - 1}&after_box_id=x').status_code,
             200,
         )
 
@@ -241,7 +241,7 @@ class TestUtxoEndpoints(unittest.TestCase):
                 'box_id': box['box_id'],
                 'spending_proof': 'ab' * 64,
             }],
-            'outputs': [{'address': 'bob', 'value_nrtc': 100 * UNIT}],
+            'outputs': [{'address': ('RTC' + 'b' * 40), 'value_nrtc': 100 * UNIT}],
             'fee_nrtc': 0,
             'timestamp': int(time.time()),
             '_allow_minting': True,
@@ -271,7 +271,7 @@ class TestUtxoEndpoints(unittest.TestCase):
 
         r = self.client.post('/utxo/transfer', json={
             'from_address': 'RTC_test_aabbccdd',
-            'to_address': 'bob',
+            'to_address': ('RTC' + 'b' * 40),
             'amount_rtc': 60.0,
             'public_key': 'aabbccdd' * 8,
             'signature': 'sig' * 22,
@@ -286,7 +286,7 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertGreaterEqual(data['outputs_created'], 1)
 
         # Check balances
-        self.assertEqual(self.utxo_db.get_balance('bob'), 60 * UNIT)
+        self.assertEqual(self.utxo_db.get_balance(('RTC' + 'b' * 40)), 60 * UNIT)
         sender_bal = self.utxo_db.get_balance('RTC_test_aabbccdd')
         self.assertEqual(sender_bal, 40 * UNIT)
 
@@ -313,7 +313,7 @@ class TestUtxoEndpoints(unittest.TestCase):
 
         r = self.client.post('/utxo/transfer', json={
             'from_address': sender,
-            'to_address': 'bob',
+            'to_address': ('RTC' + 'b' * 40),
             'amount_rtc': 10.0,
             'public_key': 'aabbccdd' * 8,
             'signature': 'sig' * 22,
@@ -322,7 +322,7 @@ class TestUtxoEndpoints(unittest.TestCase):
 
         self.assertEqual(r.status_code, 200, r.get_json())
         self.assertEqual(r.get_json()['inputs_consumed'], 1)
-        self.assertEqual(self.utxo_db.get_balance('bob'), 10 * UNIT)
+        self.assertEqual(self.utxo_db.get_balance(('RTC' + 'b' * 40)), 10 * UNIT)
         self.assertEqual(self.utxo_db.get_balance(sender), 41 * UNIT)
         self.assertTrue(self.utxo_db.mempool_check_double_spend(claimed_box['box_id']))
 
@@ -341,7 +341,7 @@ class TestUtxoEndpoints(unittest.TestCase):
 
         r = self.client.post('/utxo/transfer', json={
             'from_address': 'RTC_test_aabbccdd',
-            'to_address': 'bob',
+            'to_address': ('RTC' + 'b' * 40),
             'amount_rtc': 100.0,
             'public_key': 'aabbccdd' * 8,
             'signature': 'sig' * 22,
@@ -354,7 +354,7 @@ class TestUtxoEndpoints(unittest.TestCase):
     def test_transfer_missing_fields(self):
         r = self.client.post('/utxo/transfer', json={
             'from_address': 'alice',
-            'to_address': 'bob',
+            'to_address': ('RTC' + 'b' * 40),
         })
         self.assertEqual(r.status_code, 400)
 
@@ -367,7 +367,7 @@ class TestUtxoEndpoints(unittest.TestCase):
     def test_transfer_zero_amount(self):
         r = self.client.post('/utxo/transfer', json={
             'from_address': 'RTC_test_aabbccdd',
-            'to_address': 'bob',
+            'to_address': ('RTC' + 'b' * 40),
             'amount_rtc': 0,
             'public_key': 'aabbccdd' * 8,
             'signature': 'sig' * 22,
@@ -378,7 +378,7 @@ class TestUtxoEndpoints(unittest.TestCase):
     def test_transfer_pubkey_mismatch(self):
         r = self.client.post('/utxo/transfer', json={
             'from_address': 'wrong_address',
-            'to_address': 'bob',
+            'to_address': ('RTC' + 'b' * 40),
             'amount_rtc': 10.0,
             'public_key': 'aabbccdd' * 8,
             'signature': 'sig' * 22,
@@ -396,7 +396,7 @@ class TestUtxoEndpoints(unittest.TestCase):
             with self.subTest(nonce=bad_nonce):
                 r = self.client.post('/utxo/transfer', json={
                     'from_address': sender,
-                    'to_address': 'bob',
+                    'to_address': ('RTC' + 'b' * 40),
                     'amount_rtc': 10.0,
                     'public_key': 'aabbccdd' * 8,
                     'signature': 'sig' * 22,
@@ -412,7 +412,7 @@ class TestUtxoEndpoints(unittest.TestCase):
 
     def test_transfer_rejects_stale_nonce_after_newer_nonce(self):
         sender = 'RTC_test_aabbccdd'
-        recipient = 'bob'
+        recipient = ('RTC' + 'b' * 40)
         self._seed_coinbase(sender, 100 * UNIT)
 
         first = self.client.post('/utxo/transfer', json={
@@ -462,7 +462,7 @@ class TestUtxoEndpoints(unittest.TestCase):
 
         r = client.post('/utxo/transfer', json={
             'from_address': sender,
-            'to_address': 'bob',
+            'to_address': ('RTC' + 'b' * 40),
             'amount_rtc': 10.0,
             'public_key': 'aabbccdd' * 8,
             'signature': 'sig' * 22,
@@ -475,7 +475,7 @@ class TestUtxoEndpoints(unittest.TestCase):
 
         r = self.client.post('/utxo/transfer', json={
             'from_address': 'RTC_test_aabbccdd',
-            'to_address': 'bob',
+            'to_address': ('RTC' + 'b' * 40),
             'amount_rtc': 90.0,
             'fee_rtc': 1.0,
             'public_key': 'aabbccdd' * 8,
@@ -494,7 +494,7 @@ class TestUtxoEndpoints(unittest.TestCase):
 
         r = self.client.post('/utxo/transfer', json={
             'from_address': sender,
-            'to_address': 'bob',
+            'to_address': ('RTC' + 'b' * 40),
             'amount_rtc': 100.0,
             'public_key': 'aabbccdd' * 8,
             'signature': 'sig' * 22,
@@ -511,7 +511,7 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(data['absorbed_fee_nrtc'], 500)
         self.assertEqual(data['absorbed_fee_rtc'], self._rtc_float(500))
         self.assertEqual(self.utxo_db.get_balance(sender), 0)
-        self.assertEqual(self.utxo_db.get_balance('bob'), 100 * UNIT)
+        self.assertEqual(self.utxo_db.get_balance(('RTC' + 'b' * 40)), 100 * UNIT)
 
         conn = self.utxo_db._conn()
         try:
@@ -530,7 +530,7 @@ class TestUtxoEndpoints(unittest.TestCase):
 
         r = self.client.post('/utxo/transfer', json={
             'from_address': sender,
-            'to_address': 'bob',
+            'to_address': ('RTC' + 'b' * 40),
             'amount_rtc': 100.0,
             'fee_rtc': self._rtc_float(requested_fee_nrtc),
             'public_key': 'aabbccdd' * 8,
@@ -559,7 +559,7 @@ class TestUtxoEndpoints(unittest.TestCase):
 
         r = self.client.post('/utxo/transfer', json={
             'from_address': 'RTC_test_aabbccdd',
-            'to_address': 'bob',
+            'to_address': ('RTC' + 'b' * 40),
             'amount_rtc': 0.1,
             'public_key': 'aabbccdd' * 8,
             'signature': 'sig' * 22,
@@ -570,7 +570,7 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertTrue(data['ok'])
 
         # Bob must have exactly 0.1 RTC = 10_000_000 nanoRTC
-        bob_bal = self.utxo_db.get_balance('bob')
+        bob_bal = self.utxo_db.get_balance(('RTC' + 'b' * 40))
         self.assertEqual(bob_bal, 10_000_000,
                          f"Expected 10_000_000 nanoRTC, got {bob_bal} "
                          f"(float truncation bug)")
@@ -578,7 +578,7 @@ class TestUtxoEndpoints(unittest.TestCase):
     def test_transfer_rejects_below_dust_amount(self):
         """Recipient outputs below DUST_THRESHOLD must be rejected cleanly."""
         sender = 'RTC_test_aabbccdd'
-        recipient = 'bob'
+        recipient = ('RTC' + 'b' * 40)
         self._seed_coinbase(sender, UNIT)
 
         r = self.client.post('/utxo/transfer', json={
@@ -600,7 +600,7 @@ class TestUtxoEndpoints(unittest.TestCase):
 
     def test_transfer_allows_exact_dust_threshold_amount(self):
         sender = 'RTC_test_aabbccdd'
-        recipient = 'bob'
+        recipient = ('RTC' + 'b' * 40)
         self._seed_coinbase(sender, UNIT)
 
         r = self.client.post('/utxo/transfer', json={
@@ -619,7 +619,7 @@ class TestUtxoEndpoints(unittest.TestCase):
 
     def test_transfer_preserves_nano_precision_above_dust_threshold(self):
         sender = 'RTC_test_aabbccdd'
-        recipient = 'bob'
+        recipient = ('RTC' + 'b' * 40)
         amount_nrtc = DUST_THRESHOLD + 3
         self._seed_coinbase(sender, UNIT)
 
@@ -649,7 +649,7 @@ class TestUtxoEndpoints(unittest.TestCase):
         self.assertEqual(float(base_amount), float(mutated_amount))
 
         sender = 'RTC_test_aabbccdd'
-        recipient = 'bob'
+        recipient = ('RTC' + 'b' * 40)
         self._seed_existing_box(sender, int(mutated_amount * UNIT))
 
         signed_message = json.dumps({
@@ -693,7 +693,7 @@ class TestUtxoEndpoints(unittest.TestCase):
         before any fee handling, and balances stay untouched.
         """
         sender = 'RTC_test_aabbccdd'
-        recipient = 'bob'
+        recipient = ('RTC' + 'b' * 40)
         self._seed_coinbase(sender, 100 * UNIT)
 
         signed_message = json.dumps({
@@ -736,7 +736,7 @@ class TestUtxoEndpoints(unittest.TestCase):
         import sqlite3
 
         sender = 'RTC_test_aabbccdd'
-        recipient = 'bob'
+        recipient = ('RTC' + 'b' * 40)
         self._seed_coinbase(sender, 100 * UNIT)
 
         conn = sqlite3.connect(self.db_path)
@@ -801,6 +801,96 @@ class TestUtxoEndpoints(unittest.TestCase):
                 self.assertEqual(balances[sender], 100_000_000)
                 self.assertNotIn(recipient, balances)
                 self.assertEqual(ledger_count, 0)
+
+    def test_coin_select_candidates_exclude_mirror_boxes_before_bounding(self):
+        """Fix #8395 regression test:
+        1 mirror box (1,000,000 nRTC) + 20 independent boxes (100,000...99,981) + 21 small boxes (1,000...1,020).
+        Transfer target: 1,999,810 nRTC.
+        Mirror box must be filtered out at candidate SQL level so the 20 independent boxes
+        fill the bounded dearest slice and successfully fund the transfer without false 409.
+        """
+        sender = 'RTC_test_aabbccdd'
+        recipient = ('RTC' + 'c' * 40)
+
+        # 1 mirror box
+        mirror_box = {
+            'box_id': 'mirror_box_1',
+            'value_nrtc': 1_000_000,
+            'owner_address': sender,
+            'proposition': address_to_proposition(sender),
+            'creation_height': 1,
+            'transaction_id': 'tx_mirror',
+            'output_index': 0,
+        }
+        self.utxo_db.add_box(mirror_box)
+
+        # Create account_mirror_boxes table and record mirror box
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS account_mirror_boxes (
+                    box_id TEXT PRIMARY KEY, account_wallet TEXT NOT NULL,
+                    value_nrtc INTEGER NOT NULL, created_epoch INTEGER NOT NULL)"""
+            )
+            conn.execute(
+                "INSERT INTO account_mirror_boxes (box_id, account_wallet, value_nrtc, created_epoch) "
+                "VALUES (?, ?, ?, 0)",
+                ('mirror_box_1', sender, 1_000_000),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        # 20 independent boxes of 100,000 ... 99,981 (sum = 1,999,810)
+        for i, val in enumerate(range(100_000, 99_980, -1)):
+            self.utxo_db.add_box({
+                'box_id': f'indep_box_{i}',
+                'value_nrtc': val,
+                'owner_address': sender,
+                'proposition': address_to_proposition(sender),
+                'creation_height': 1,
+                'transaction_id': f'tx_indep_{i}',
+                'output_index': 0,
+            })
+
+        # 21 small boxes of 1,000 ... 1,020
+        for i, val in enumerate(range(1_000, 1_021)):
+            self.utxo_db.add_box({
+                'box_id': f'small_box_{i}',
+                'value_nrtc': val,
+                'owner_address': sender,
+                'proposition': address_to_proposition(sender),
+                'creation_height': 1,
+                'transaction_id': f'tx_small_{i}',
+                'output_index': 0,
+            })
+
+        # Verify candidate selection directly: mirror must NOT be present
+        candidates = self.utxo_db.get_coin_select_candidates(sender)
+        candidate_ids = {c['box_id'] for c in candidates}
+        self.assertNotIn('mirror_box_1', candidate_ids)
+
+        # Perform transfer requesting exactly 1,999,810 nRTC
+        target_rtc = 1_999_810 / Decimal(UNIT)
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': recipient,
+            'amount_rtc': str(target_rtc),
+            'fee_rtc': 0,
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000) + 12345,
+        })
+        self.assertEqual(r.status_code, 200, r.get_json())
+        data = r.get_json()
+        self.assertEqual(data['inputs_consumed'], 20)
+
+        # Verify mirror box is untouched
+        with sqlite3.connect(self.db_path) as c:
+            spent = c.execute(
+                "SELECT spent_at FROM utxo_boxes WHERE box_id = 'mirror_box_1'"
+            ).fetchone()[0]
+            self.assertIsNone(spent, "Mirror box must remain unspent")
 
 
 class TestUtxoDualWrite(unittest.TestCase):
@@ -893,7 +983,7 @@ class TestUtxoDualWrite(unittest.TestCase):
         balance was 9 RTC, letting the legacy model retain spendable value.
         """
         sender = 'RTC_test_aabbccdd'
-        recipient = 'bob'
+        recipient = ('RTC' + 'b' * 40)
         self._seed_sender(sender, rtc_amount=100)
 
         r = self.client.post('/utxo/transfer', json={
@@ -921,7 +1011,7 @@ class TestUtxoDualWrite(unittest.TestCase):
     def test_dual_write_debits_absorbed_dust_fee_from_shadow_balance(self):
         """dual_write must mirror dust absorbed into the effective UTXO fee."""
         sender = 'RTC_test_aabbccdd'
-        recipient = 'bob'
+        recipient = ('RTC' + 'b' * 40)
         absorbed_fee_nrtc = 500
         self._seed_sender_nrtc(sender, 10 * UNIT + absorbed_fee_nrtc)
 
@@ -959,7 +1049,7 @@ class TestUtxoDualWrite(unittest.TestCase):
 
         r = self.client.post('/utxo/transfer', json={
             'from_address': sender,
-            'to_address': 'bob',
+            'to_address': ('RTC' + 'b' * 40),
             'amount_rtc': '0.00000001',
             'fee_rtc': 0,
             'public_key': 'aabbccdd' * 8,
@@ -969,7 +1059,30 @@ class TestUtxoDualWrite(unittest.TestCase):
 
         self.assertEqual(r.status_code, 400)
         self.assertIn('dual-write', r.get_json()['error'])
-        self.assertEqual(self.utxo_db.get_balance('bob'), 0)
+        self.assertEqual(self.utxo_db.get_balance(('RTC' + 'b' * 40)), 0)
+        self.assertEqual(
+            self._account_balance(sender),
+            100 * utxo_endpoints.ACCOUNT_UNIT,
+        )
+
+    def test_dual_write_rejects_sub_micro_fee(self):
+        """dual_write cannot safely mirror nanoRTC fee values below 1 microRTC."""
+        sender = 'RTC_test_aabbccdd'
+        self._seed_sender(sender, rtc_amount=100)
+
+        r = self.client.post('/utxo/transfer', json={
+            'from_address': sender,
+            'to_address': ('RTC' + 'b' * 40),
+            'amount_rtc': 10.0,
+            'fee_rtc': '0.00000001',
+            'public_key': 'aabbccdd' * 8,
+            'signature': 'sig' * 22,
+            'nonce': int(time.time() * 1000),
+        })
+
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('dual-write', r.get_json()['error'])
+        self.assertEqual(self.utxo_db.get_balance(('RTC' + 'b' * 40)), 0)
         self.assertEqual(
             self._account_balance(sender),
             100 * utxo_endpoints.ACCOUNT_UNIT,
@@ -983,7 +1096,7 @@ class TestUtxoDualWrite(unittest.TestCase):
         ok=True with /utxo/integrity permanently diverged.
         """
         sender = 'RTC_test_aabbccdd'
-        recipient = 'bob'
+        recipient = ('RTC' + 'b' * 40)
         self.utxo_db.apply_transaction({
             'tx_type': 'mining_reward',
             'inputs': [],

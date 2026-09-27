@@ -96,3 +96,32 @@ def test_resolve_bcn_wallet_reports_inactive_status():
         result = module.resolve_bcn_wallet("bcn_inactive")
 
     assert result == {"found": False, "error": "beacon_agent_status:suspended"}
+
+
+def _atlas_with(atlas_path, rows):
+    with sqlite3.connect(atlas_path) as conn:
+        conn.execute(
+            "CREATE TABLE relay_agents (agent_id TEXT PRIMARY KEY, pubkey_hex TEXT NOT NULL, "
+            "name TEXT NOT NULL, status TEXT)"
+        )
+        conn.executemany(
+            "INSERT INTO relay_agents(agent_id, pubkey_hex, name, status) VALUES (?, ?, ?, ?)", rows
+        )
+
+
+def test_resolve_bcn_wallet_accepts_heartbeat_statuses_and_refuses_barred():
+    """/relay/heartbeat sets "alive" or "degraded". Those agents must stay payable;
+    only administrator-barred statuses are refused (same set as beacon_api)."""
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
+        module = load_integrated_node(Path(tmpdir) / "node.db")
+        atlas = Path(tmpdir) / "atlas.db"
+        module.BEACON_ATLAS_DB = str(atlas)
+        statuses = ["active", "alive", "degraded", None, "banned", "suspended", "revoked"]
+        _atlas_with(atlas, [(f"bcn_s{i}", f"{i:02x}" * 32, f"agent {i}", s) for i, s in enumerate(statuses)])
+
+        results = {s: module.resolve_bcn_wallet(f"bcn_s{i}") for i, s in enumerate(statuses)}
+
+    for ok in ("active", "alive", "degraded", None):
+        assert results[ok]["found"] is True, (ok, results[ok])
+    for barred in ("banned", "suspended", "revoked"):
+        assert results[barred] == {"found": False, "error": f"beacon_agent_status:{barred}"}

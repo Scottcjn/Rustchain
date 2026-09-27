@@ -20,6 +20,10 @@ import threading
 import time
 import sqlite3
 
+# rollback_genesis() is a destructive state mutation and now requires an
+# admin key (bounty #2819). This demo script configures a test key.
+os.environ["RC_ADMIN_KEY"] = "demo-rollback-admin-key-2819"
+
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
@@ -144,7 +148,7 @@ def test_genesis_migration_rollback():
         migrate(db_path, dry_run=False)
         
         # Rollback
-        deleted = rollback_genesis(db_path)
+        deleted = rollback_genesis(db_path, admin_key="demo-rollback-admin-key-2819")
         
         # Verify rollback
         conn = sqlite3.connect(db_path)

@@ -315,10 +315,10 @@ A G4 PowerBook (base 2.5x) decays as follows:
 | Year 0 | 2.50x | +150% |
 | Year 1 | 2.275x | +127.5% |
 | Year 5 | 1.375x | +37.5% |
+| Year 6.67 | 1.0x | Bonus fully decayed |
 | Year 10 | 1.0x | +0% (floor) |
-| Year 16.67 | 1.0x | Bonus fully decayed |
 
-The decay function ensures that the vintage bonus window is finite. After approximately 16.67 years of chain operation, all multipliers converge to 1.0x, creating a level playing field. The incentive to preserve hardware persists because new hardware entering the network starts below 1.0x and must age into bonus territory.
+The decay function ensures that the vintage bonus window is finite. After approximately 6.67 years of chain operation, all multipliers converge to 1.0x, creating a level playing field. The incentive to preserve hardware persists because new hardware entering the network starts below 1.0x and must age into bonus territory.
 
 ### Economic Implications
 

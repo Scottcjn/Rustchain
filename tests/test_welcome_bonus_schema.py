@@ -5,6 +5,19 @@ import sqlite3
 import integrated_node
 
 
+TRUSTED = {"state": "trusted"}
+
+
+def _graduate(db_path, miner):
+    """sybil_guard: the bonus is paid at probation exit, authorised from the
+    persisted miner_probation row. Persist a graduated (trusted) row."""
+    integrated_node.sybil_guard.init_schema(str(db_path))
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO miner_probation (miner, state, first_seen, last_seen, updated_at) "
+            "VALUES (?, 'trusted', 1, 1, 1)", (miner,))
+
+
 def _create_history(conn, miner="miner_welcome"):
     conn.execute("CREATE TABLE miner_attest_history (miner TEXT NOT NULL)")
     conn.execute("INSERT INTO miner_attest_history (miner) VALUES (?)", (miner,))
@@ -44,10 +57,11 @@ def test_welcome_bonus_credits_current_account_ledger_schema(tmp_path, monkeypat
         conn.commit()
 
     monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+    _graduate(db_path, miner)
     monkeypatch.setattr(integrated_node, "current_slot", lambda: 144 * 7)
     monkeypatch.setattr(integrated_node, "slot_to_epoch", lambda slot: slot // 144)
 
-    integrated_node._check_welcome_bonus(miner)
+    integrated_node._check_welcome_bonus(miner, TRUSTED)
 
     with sqlite3.connect(db_path) as conn:
         balances = dict(conn.execute("SELECT miner_id, amount_i64 FROM balances").fetchall())
@@ -62,7 +76,7 @@ def test_welcome_bonus_credits_current_account_ledger_schema(tmp_path, monkeypat
             (7, miner, bonus_i64, f"welcome_bonus:{integrated_node.WELCOME_BONUS_RTC}_rtc"),
         ]
 
-    integrated_node._check_welcome_bonus(miner)
+    integrated_node._check_welcome_bonus(miner, TRUSTED)
 
     with sqlite3.connect(db_path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM ledger").fetchone()[0] == 2
@@ -99,8 +113,9 @@ def test_welcome_bonus_keeps_legacy_transfer_ledger_schema(tmp_path, monkeypatch
         conn.commit()
 
     monkeypatch.setattr(integrated_node, "DB_PATH", str(db_path))
+    _graduate(db_path, miner)
 
-    integrated_node._check_welcome_bonus(miner)
+    integrated_node._check_welcome_bonus(miner, TRUSTED)
 
     with sqlite3.connect(db_path) as conn:
         balances = dict(conn.execute("SELECT miner_id, amount_i64 FROM balances").fetchall())

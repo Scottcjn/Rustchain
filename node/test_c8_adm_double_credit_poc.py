@@ -1,20 +1,12 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 """
-PoC: Epoch settlement double-credit bug (C8)
+Regression Test: Epoch settlement double-credit on ADM failure (C8)
 
-Demonstrates that when anti-double-mining settlement writes rewards but
-then raises an exception, the fallback to standard rewards on the same
-database connection results in double-crediting miners.
-
-Bug chain in rewards_implementation_rip200.py settle_epoch_rip200():
-1. Calls settle_epoch_with_anti_double_mining(existing_conn=db)
-2. That function writes rewards + marks epoch_state on the SHARED conn
-3. If it crashes AFTER writing rewards (e.g. in telemetry or metadata),
-   the exception is caught at line 175
-4. NO rollback is issued on the shared conn
-5. Standard rewards fallback writes miners AGAIN on the same conn
-6. Both sets committed at db.commit() → double-credit
+Demonstrates and verifies that when anti-double-mining settlement writes
+partial rewards on the shared connection and then raises an exception,
+settle_epoch_rip200() issues a db.rollback() before proceeding to the
+standard fallback path, preventing duplicate credit to miners.
 """
 
 import os
@@ -29,9 +21,6 @@ import unittest
 os.environ.setdefault("RC_REQUIRE_ADM", "0")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-
-# We'll construct the scenario manually since importing the live module
-# requires Flask and database setup
 
 
 class TestEpochSettlementDoubleCredit(unittest.TestCase):
@@ -81,49 +70,83 @@ class TestEpochSettlementDoubleCredit(unittest.TestCase):
 
     def test_double_credit_on_adm_fallback(self):
         """
-        Simulate: anti-double-mining writes rewards, then raises.
-        Standard fallback writes rewards on same connection.
-        Result should be a SINGLE credit per miner, not double.
+        Verify settle_epoch_rip200 rolls back partial ADM writes before standard fallback.
+        When ADM writes partial rewards on the shared connection and then raises,
+        settle_epoch_rip200 must roll back those uncommitted writes so that the
+        standard path produces a single credit, not double.
         """
         PER_EPOCH_URTC = 1_500_000
+        EPOCH = 0
 
-        conn = sqlite3.connect(self.db_path)
-        conn.execute("BEGIN IMMEDIATE")
+        import node.rewards_implementation_rip200 as rip200
 
-        # Phase 1: Simulate ADM writes (rewards credited)
-        conn.execute(
-            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?) "
-            "ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = amount_i64 + ?",
-            ("RTC_miner_a", PER_EPOCH_URTC, PER_EPOCH_URTC),
-        )
-        # Mark epoch_state (ADM writes this)
-        conn.execute(
-            "UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ?",
-            (int(time.time()), 1),
-        )
+        orig_adm_avail = rip200.ANTI_DOUBLE_MINING_AVAILABLE
+        orig_adm_fn = getattr(rip200, "settle_epoch_with_anti_double_mining", None)
+        orig_calc = rip200.calculate_epoch_rewards_time_aged
+        orig_age = rip200.get_chain_age_years
+        orig_mult = rip200.get_time_aged_multiplier
 
-        # ADM crashes AFTER writes (before telemetry/metadata lines)
-        # We simulate this by raising - the caller catches and falls through
+        rip200.ANTI_DOUBLE_MINING_AVAILABLE = True
 
-        # Phase 2: Standard rewards fallback (same connection, no rollback)
-        conn.execute(
-            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?) "
-            "ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = amount_i64 + ?",
-            ("RTC_miner_a", PER_EPOCH_URTC, PER_EPOCH_URTC),
-        )
+        def crashing_adm(db_path, epoch, budget, current_slot, existing_conn=None):
+            # Simulate ADM writing partial rewards to the shared connection, then crashing
+            conn = existing_conn if existing_conn is not None else sqlite3.connect(db_path)
+            conn.execute(
+                "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?) "
+                "ON CONFLICT(miner_id) DO UPDATE SET amount_i64 = amount_i64 + ?",
+                ("RTC_miner_a", PER_EPOCH_URTC, PER_EPOCH_URTC),
+            )
+            conn.execute(
+                "INSERT INTO ledger (ts, epoch, miner_id, delta_i64, reason) VALUES (?, ?, ?, ?, ?)",
+                (int(time.time()), epoch, "RTC_miner_a", PER_EPOCH_URTC, "adm_partial_write"),
+            )
+            raise RuntimeError("simulated ADM crash after partial write")
 
-        bal = conn.execute(
-            "SELECT amount_i64 FROM balances WHERE miner_id = ?",
-            ("RTC_miner_a",),
-        ).fetchone()
-        conn.close()
+        rip200.settle_epoch_with_anti_double_mining = crashing_adm
+        rip200.calculate_epoch_rewards_time_aged = lambda *_a, **_k: {"RTC_miner_a": PER_EPOCH_URTC}
+        rip200.get_chain_age_years = lambda *_a, **_k: 1.0
+        rip200.get_time_aged_multiplier = lambda *_a, **_k: 1.0
 
-        # BUG: If both writes took effect, balance = 2 * PER_EPOCH_URTC
-        self.assertEqual(
-            bal[0], PER_EPOCH_URTC,
-            f"BALANCE: {bal[0]} uRTC — expected {PER_EPOCH_URTC} uRTC"
-            f"\n{'🔴 BUG: DOUBLE CREDIT — fallback wrote on top of ADM writes!' if bal[0] != PER_EPOCH_URTC else '✅ Single credit only'}"
-        )
+        try:
+            # Under RC_REQUIRE_ADM=0 (fallback enabled), settle_epoch_rip200 must rollback
+            # the crashing ADM partial write and credit exactly once via standard path.
+            old_req = os.environ.get("RC_REQUIRE_ADM")
+            os.environ["RC_REQUIRE_ADM"] = "0"
+            try:
+                res = rip200.settle_epoch_rip200(self.db_path, epoch=EPOCH)
+            finally:
+                if old_req is None:
+                    os.environ.pop("RC_REQUIRE_ADM", None)
+                else:
+                    os.environ["RC_REQUIRE_ADM"] = old_req
+
+            self.assertTrue(res.get("ok"), f"settlement failed: {res}")
+
+            conn = sqlite3.connect(self.db_path)
+            bal = conn.execute(
+                "SELECT amount_i64 FROM balances WHERE miner_id = ?",
+                ("RTC_miner_a",),
+            ).fetchone()
+            ledger_rows = conn.execute(
+                "SELECT delta_i64, reason FROM ledger WHERE epoch = ?",
+                (EPOCH,),
+            ).fetchall()
+            conn.close()
+
+            self.assertIsNotNone(bal, "miner balance row missing")
+            self.assertEqual(
+                bal[0], PER_EPOCH_URTC,
+                f"BALANCE: {bal[0]} uRTC — expected {PER_EPOCH_URTC} uRTC (single credit only)",
+            )
+            # Ensure the ADM partial ledger write was rolled back and only standard remains
+            self.assertEqual(len(ledger_rows), 1, f"expected 1 ledger row, got {ledger_rows}")
+            self.assertEqual(ledger_rows[0][1], f"epoch_{EPOCH}_reward")
+        finally:
+            rip200.ANTI_DOUBLE_MINING_AVAILABLE = orig_adm_avail
+            rip200.settle_epoch_with_anti_double_mining = orig_adm_fn
+            rip200.calculate_epoch_rewards_time_aged = orig_calc
+            rip200.get_chain_age_years = orig_age
+            rip200.get_time_aged_multiplier = orig_mult
 
 
 if __name__ == '__main__':

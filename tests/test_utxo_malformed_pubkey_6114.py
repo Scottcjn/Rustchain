@@ -43,7 +43,7 @@ def test_malformed_public_key_returns_400(client):
     """Non-hex public_key should return 400, not 500."""
     resp = client.post("/utxo/transfer", json={
         "from_address": "RTC1aaaa",
-        "to_address": "RTC1bbbb",
+        "to_address": "RTC" + "b" * 40,
         "public_key": "not-hex-at-all!!",
         "signature": "abcd1234",
         "nonce": "n1",
@@ -58,7 +58,7 @@ def test_short_public_key_returns_400(client):
     """Too-short hex public_key should return 400."""
     resp = client.post("/utxo/transfer", json={
         "from_address": "RTC1aaaa",
-        "to_address": "RTC1bbbb",
+        "to_address": "RTC" + "b" * 40,
         "public_key": "abcd",
         "signature": "abcd1234",
         "nonce": "n1",
@@ -72,7 +72,7 @@ def test_valid_hex_length_passes_hex_check(client):
     valid_pk = "a" * 64
     resp = client.post("/utxo/transfer", json={
         "from_address": "RTC1aaaa",
-        "to_address": "RTC1bbbb",
+        "to_address": "RTC" + "b" * 40,
         "public_key": valid_pk,
         "signature": "b" * 128,
         "nonce": "n1",
