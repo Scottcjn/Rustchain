@@ -1,6 +1,19 @@
 const DEFAULT_BASE_URL = "https://rustchain.org";
 const DEFAULT_TIMEOUT_MS = 30000;
 
+export const AGENT_JOB_CATEGORIES = Object.freeze([
+  "research",
+  "code",
+  "video",
+  "audio",
+  "writing",
+  "translation",
+  "data",
+  "design",
+  "testing",
+  "other"
+]);
+
 export class RustChainError extends Error {
   constructor(message, options = {}) {
     super(message);
@@ -127,6 +140,119 @@ export class RustChainClient {
     return [];
   }
 
+  async listJobs(options = {}) {
+    const params = new URLSearchParams();
+    if (options.category !== undefined) {
+      assertAgentJobCategory(options.category);
+      params.set("category", options.category);
+    }
+    if (options.status !== undefined) {
+      assertNonEmptyString(options.status, "status");
+      params.set("status", options.status);
+    }
+    if (options.limit !== undefined) {
+      const limit = validateNonNegativeInteger(options.limit, "limit");
+      if (limit > 100) throw new RustChainValidationError("limit must be at most 100");
+      params.set("limit", String(limit));
+    }
+    if (options.offset !== undefined) {
+      params.set("offset", String(validateNonNegativeInteger(options.offset, "offset")));
+    }
+    if (options.minReward !== undefined) {
+      params.set("min_reward", String(validateNonNegativeNumber(options.minReward, "minReward")));
+    }
+    return this.request("GET", withQuery("/agent/jobs", params));
+  }
+
+  async getJob(jobId) {
+    assertNonEmptyString(jobId, "jobId");
+    return this.request("GET", `/agent/jobs/${encodeURIComponent(jobId)}`);
+  }
+
+  async postJob(options = {}) {
+    assertObject(options, "postJob options");
+    assertNonEmptyString(options.posterWallet, "posterWallet");
+    assertMinLength(options.title, 5, "title");
+    assertMinLength(options.description, 20, "description");
+    assertAgentJobCategory(options.category ?? "other");
+    const rewardRtc = validateRangeNumber(options.rewardRtc, "rewardRtc", 0.01, 10000);
+    const ttlSeconds = validatePositiveInteger(options.ttlSeconds, "ttlSeconds");
+
+    return this.request("POST", "/agent/jobs", {
+      poster_wallet: options.posterWallet,
+      title: options.title,
+      description: options.description,
+      category: options.category ?? "other",
+      reward_rtc: rewardRtc,
+      ttl_seconds: ttlSeconds,
+      ...(options.tags !== undefined ? { tags: normalizeTags(options.tags) } : {})
+    });
+  }
+
+  async claimJob(jobId, workerWallet) {
+    assertNonEmptyString(jobId, "jobId");
+    assertNonEmptyString(workerWallet, "workerWallet");
+    return this.request("POST", `/agent/jobs/${encodeURIComponent(jobId)}/claim`, {
+      worker_wallet: workerWallet
+    });
+  }
+
+  async deliverJob(jobId, options = {}) {
+    assertNonEmptyString(jobId, "jobId");
+    assertObject(options, "deliverJob options");
+    assertNonEmptyString(options.workerWallet, "workerWallet");
+    if (options.deliverableUrl === undefined && options.resultSummary === undefined) {
+      throw new RustChainValidationError("deliverableUrl or resultSummary is required");
+    }
+    const body = {
+      worker_wallet: options.workerWallet,
+      ...(options.deliverableUrl !== undefined ? { deliverable_url: String(options.deliverableUrl) } : {}),
+      ...(options.deliverableHash !== undefined ? { deliverable_hash: String(options.deliverableHash) } : {}),
+      ...(options.resultSummary !== undefined ? { result_summary: String(options.resultSummary) } : {})
+    };
+    return this.request("POST", `/agent/jobs/${encodeURIComponent(jobId)}/deliver`, body);
+  }
+
+  async acceptJob(jobId, options = {}) {
+    assertNonEmptyString(jobId, "jobId");
+    assertObject(options, "acceptJob options");
+    assertNonEmptyString(options.posterWallet, "posterWallet");
+    const body = { poster_wallet: options.posterWallet };
+    if (options.rating !== undefined) {
+      const rating = validateRangeNumber(options.rating, "rating", 1, 5);
+      if (!Number.isInteger(rating)) throw new RustChainValidationError("rating must be an integer from 1 to 5");
+      body.rating = rating;
+    }
+    return this.request("POST", `/agent/jobs/${encodeURIComponent(jobId)}/accept`, body);
+  }
+
+  async disputeJob(jobId, posterWallet, reason) {
+    assertNonEmptyString(jobId, "jobId");
+    assertNonEmptyString(posterWallet, "posterWallet");
+    assertNonEmptyString(reason, "reason");
+    return this.request("POST", `/agent/jobs/${encodeURIComponent(jobId)}/dispute`, {
+      poster_wallet: posterWallet,
+      reason
+    });
+  }
+
+  async cancelJob(jobId, posterWallet) {
+    assertNonEmptyString(jobId, "jobId");
+    assertNonEmptyString(posterWallet, "posterWallet");
+    return this.request("POST", `/agent/jobs/${encodeURIComponent(jobId)}/cancel`, {
+      poster_wallet: posterWallet
+    });
+  }
+
+  async reputation(walletId) {
+    assertNonEmptyString(walletId, "walletId");
+    return this.request("GET", `/agent/reputation/${encodeURIComponent(walletId)}`);
+  }
+
+  async agentStats() {
+    return this.request("GET", "/agent/stats");
+  }
+
   async request(method, endpoint, body) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -211,6 +337,31 @@ function assertNonEmptyString(value, name) {
   }
 }
 
+function assertObject(value, name) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new RustChainValidationError(`${name} must be an object`);
+  }
+}
+
+function assertMinLength(value, minLength, name) {
+  assertNonEmptyString(value, name);
+  if (value.trim().length < minLength) {
+    throw new RustChainValidationError(`${name} must be at least ${minLength} characters`);
+  }
+}
+
+function assertAgentJobCategory(value) {
+  assertNonEmptyString(value, "category");
+  if (!AGENT_JOB_CATEGORIES.includes(value)) {
+    throw new RustChainValidationError(`category must be one of: ${AGENT_JOB_CATEGORIES.join(", ")}`);
+  }
+}
+
+function normalizeTags(value) {
+  if (Array.isArray(value)) return value.map((tag) => String(tag));
+  return String(value);
+}
+
 function isRtcAddress(value) {
   return typeof value === "string" && /^RTC[0-9a-fA-F]{40}$/.test(value);
 }
@@ -243,6 +394,14 @@ function validateNonNegativeNumber(value, name) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) {
     throw new RustChainValidationError(`${name} must be a non-negative number`);
+  }
+  return number;
+}
+
+function validateRangeNumber(value, name, minimum, maximum) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < minimum || number > maximum) {
+    throw new RustChainValidationError(`${name} must be between ${minimum} and ${maximum}`);
   }
   return number;
 }

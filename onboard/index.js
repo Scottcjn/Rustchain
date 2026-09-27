@@ -183,7 +183,7 @@ async function summary(wallet) {
   console.log(bold("  What's next:"));
   console.log(info("  • Check open bounties: https://github.com/Scottcjn/rustchain-bounties/issues"));
   console.log(info("  • Agent Economy jobs: https://50.28.86.131/agent/jobs"));
-  console.log(info("  • Join Discord: https://discord.gg/rustchain"));
+  console.log(info("  • Join Discord: https://discord.gg/XnRp7M5gBW"));
   console.log(info("  • BoTTube: https://bottube.ai"));
   console.log();
   console.log(info(`  ${C.bold}Happy building! ⛏️${C.reset}`));

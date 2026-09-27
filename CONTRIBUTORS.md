@@ -11,3 +11,4 @@
 | @508704820 | Xeophon#0000 | AI automation, bounty hunting, multi-agent orchestration, open source |
 | @Munir2029 | Munir2029 |Interested in open source and testing |
 | @SimplyRayYZL | RaYy Cave | AI agents, automation, testing, and open source bounties |
+| @tl-star | telelenker#0000 | AI automation, bounty hunting, open source contributions, and documentation |

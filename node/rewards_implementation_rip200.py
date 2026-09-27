@@ -61,6 +61,12 @@ except ImportError:
         )
         RIP200_AVAILABLE = True
 
+# SYBIL-GUARD: review-hold escrow on the standard settlement path. Hard import.
+try:
+    import sybil_guard
+except ImportError:
+    from node import sybil_guard
+
 # Import Issue #1449: Anti-Double-Mining (optional - falls back to standard rewards)
 try:
     from anti_double_mining import (
@@ -88,9 +94,42 @@ DATABASE_LOCKED_ERROR_MESSAGE = "Service unavailable due to database issues"
 UNEXPECTED_DATABASE_ERROR_MESSAGE = "An unexpected database error occurred"
 
 # Constants
+# Runtimes where fail-closed defaults are relaxed. MUST stay identical to
+# _MOCK_SIG_ALLOWED_ENVS in rustchain_v2_integrated_v2.2.1_rip200.py.
+NON_PRODUCTION_RUNTIMES = frozenset({"test", "testing", "dev", "development", "local", "testnet"})
+
 UNIT = 1_000_000  # uRTC per 1 RTC
 DB_PATH = "/root/rustchain/rustchain_v2.db"
+def _db_path_from(db_path):
+    """Filesystem path of the database the caller is ACTUALLY using.
+
+    settle_epoch_rip200() accepts either a path string or a live sqlite3
+    Connection. When handed a Connection, substituting the module-level
+    DB_PATH constant points the reward calculation at a DIFFERENT database
+    than the one the caller holds open. That is only harmless when the
+    process happens to run with cwd=/root/rustchain, which is true on the
+    production unit and false for tests, staging, and any relocated deploy —
+    rewards would then be computed from one database and written to another.
+
+    Ask the connection where it lives instead. Falls back to DB_PATH only if
+    the connection cannot answer, preserving the previous behaviour rather
+    than raising.
+    """
+    if isinstance(db_path, str):
+        return db_path
+    try:
+        for _seq, name, filename in db_path.execute("PRAGMA database_list"):
+            if name == "main" and filename:
+                return filename
+    except Exception:
+        pass
+    return DB_PATH
 PER_EPOCH_URTC = int(1.5 * UNIT)  # 1,500,000 uRTC
+# RIP-0004 supply cap (ENFORCED, not just declared). Emission is clamped so total
+# balances can never exceed the fixed 8,388,608 RTC supply. At 1.5 RTC/epoch this
+# clamp is inert for ~14,000 years -- it makes the immutable-supply claim a code-
+# enforced invariant. total_balances() is the path-agnostic source and fails open.
+TOTAL_SUPPLY_URTC = 8_388_608 * UNIT
 BLOCK_TIME = 600
 GENESIS_TIMESTAMP = 1764706927  # Production chain launch (Dec 2, 2025)
 
@@ -101,6 +140,89 @@ def current_slot():
 def slot_to_epoch(slot):
     """Convert slot to epoch (144 blocks per epoch)"""
     return slot // 144
+
+# --- UTXO dual-write support (off unless UTXO_DUAL_WRITE=1) -----------------
+# finalize_epoch() mints UTXO reward boxes under dual-write, but production
+# settles through THIS function (cron -> POST /rewards/settle -> settle_epoch),
+# which minted nothing: accounts grew every epoch while the UTXO side stood
+# still, so the two models diverged by the whole epoch pot per epoch.
+UTXO_DUAL_WRITE = os.environ.get("UTXO_DUAL_WRITE", "0") == "1"
+try:
+    from utxo_db import UtxoDB as _UtxoDB, DUST_THRESHOLD as _UTXO_DUST, MAX_OUTPUTS as _UTXO_MAX_OUTPUTS
+    HAVE_UTXO = True
+except ImportError:
+    _UtxoDB = None
+    _UTXO_DUST = 1_000
+    _UTXO_MAX_OUTPUTS = 100
+    HAVE_UTXO = False
+
+NRTC_PER_ACCOUNT_UNIT = 100  # balances.amount_i64 is uRTC (6dp); boxes are nRTC (8dp)
+EPOCH_SLOTS_FOR_MINT = 144
+
+
+def _dual_write_mint_rewards(db, epoch, db_path):
+    """Mint one UTXO reward box per credited miner and register it as an
+    account mirror, inside the caller's open transaction.
+
+    Amounts come from epoch_rewards, which BOTH settlement paths write (the
+    standard path and the anti-double-mining path, which returns early), so the
+    mint cannot miss the branch production actually takes.
+
+    Value is derived from the credited uRTC amount (x100), never re-truncated,
+    so each box equals its account credit exactly (#2819). Mirrors are
+    registered so the same reward is not also spendable through the UTXO path.
+    Raises on failure: the caller rolls back and the epoch stays unsettled.
+    """
+    if not (UTXO_DUAL_WRITE and HAVE_UTXO):
+        return {"minted_boxes": 0, "skipped_dust_nrtc": 0}
+    rewards = {
+        row[0]: int(row[1])
+        for row in db.execute(
+            "SELECT miner_id, share_i64 FROM epoch_rewards WHERE epoch = ?", (epoch,)
+        ).fetchall()  # fetchall-ok: bounded-by-schema (one row per settled miner)
+    }
+    if not rewards:
+        return {"minted_boxes": 0, "skipped_dust_nrtc": 0}
+    outputs, skipped = [], 0
+    for miner_id, share_urtc in rewards.items():
+        value_nrtc = int(share_urtc) * NRTC_PER_ACCOUNT_UNIT
+        if value_nrtc >= _UTXO_DUST:
+            outputs.append({"address": miner_id, "value_nrtc": value_nrtc})
+        else:
+            skipped += max(0, value_nrtc)
+    if not outputs:
+        return {"minted_boxes": 0, "skipped_dust_nrtc": skipped}
+
+    batches = [outputs[i:i + _UTXO_MAX_OUTPUTS] for i in range(0, len(outputs), _UTXO_MAX_OUTPUTS)]
+    if len(batches) > EPOCH_SLOTS_FOR_MINT:
+        raise RuntimeError("UTXO reward settlement exceeds epoch mint capacity")
+    utxo = _UtxoDB(db_path)
+    minted = 0
+    for batch_index, batch in enumerate(batches):
+        height = epoch * EPOCH_SLOTS_FOR_MINT + batch_index
+        tx = {"tx_type": "mining_reward", "inputs": [], "outputs": batch, "_allow_minting": True}
+        if not utxo.apply_transaction(tx, height, conn=db):
+            raise RuntimeError(
+                f"UTXO reward settlement failed for batch {batch_index + 1}/{len(batches)}"
+            )
+        # Register exactly this batch's mint outputs as account-mirror provenance.
+        # Joined on the mining_reward tx: /utxo/transfer boxes use slot heights in
+        # the same number space, and tagging one of those would lock a user's box.
+        rows = list(db.execute(
+            "SELECT b.box_id, b.owner_address, b.value_nrtc FROM utxo_boxes AS b "
+            "JOIN utxo_transactions AS t ON t.tx_id = b.transaction_id "
+            "WHERE b.creation_height = ? AND t.tx_type = 'mining_reward'",
+            (height,),
+        ))
+        for box_id, owner, value in rows:
+            db.execute(
+                "INSERT OR IGNORE INTO account_mirror_boxes "
+                "(box_id, account_wallet, value_nrtc, created_epoch) VALUES (?,?,?,?)",
+                (box_id, owner, value, epoch),
+            )
+        minted += len(rows)
+    return {"minted_boxes": minted, "skipped_dust_nrtc": skipped}
+
 
 def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = True):
     """
@@ -167,6 +289,16 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
         # Calculate current slot for age calculation
         current = current_slot()
 
+        # RIP-0004: clamp this epoch's mining budget to remaining supply headroom
+        # so total emission can never exceed TOTAL_SUPPLY_URTC (inert ~14,000y).
+        _epoch_budget = min(PER_EPOCH_URTC, max(0, TOTAL_SUPPLY_URTC - total_balances(db)))
+        if _epoch_budget <= 0:
+            _cap_ts = int(time.time())
+            if db.execute("UPDATE epoch_state SET settled = 1, settled_ts = ? WHERE epoch = ?", (_cap_ts, epoch)).rowcount == 0:
+                db.execute("INSERT INTO epoch_state (epoch, settled, settled_ts) VALUES (?, 1, ?)", (epoch, _cap_ts))
+            db.commit()
+            return {"ok": True, "epoch": epoch, "distributed_rtc": 0, "distributed_urtc": 0, "miners": [], "note": "supply_cap_reached"}
+
         # T3.3: opt-in fail-closed anti-double-mining. RC_REQUIRE_ADM makes ADM
         # MANDATORY for this (admin/operator) settlement path — if ADM is unavailable or
         # fails, do NOT silently settle with the standard non-grouping path (which drops
@@ -177,7 +309,12 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
         # adding ADM grouping there would break the live fleet (each fingerprinted miner
         # is paid per epoch; ADM is an admin-path defense-in-depth measure, not the
         # external-Sybil control).
-        require_adm = os.environ.get("RC_REQUIRE_ADM", "0") == "1"
+        # Production default is ON (fail closed); test/dev runtimes default OFF so
+        # fixtures without the ADM module keep working. RC_REQUIRE_ADM=0/1 always wins.
+        _runtime_env = (os.environ.get("RC_RUNTIME_ENV") or os.environ.get("RUSTCHAIN_ENV") or "production").strip().lower()
+        _adm_default = "0" if _runtime_env in NON_PRODUCTION_RUNTIMES else "1"
+        # Fail closed on anything that is not an explicit "0": "1", "true", "" or a typo all mean REQUIRED.
+        require_adm = os.environ.get("RC_REQUIRE_ADM", _adm_default).strip().lower() not in ("0", "false", "no", "off")
         if require_adm and not (enable_anti_double_mining and ANTI_DOUBLE_MINING_AVAILABLE):
             db.rollback()
             return {
@@ -194,14 +331,20 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
                 # the race window where a concurrent caller could open a separate
                 # connection and also pass the already_settled check.
                 result = settle_epoch_with_anti_double_mining(
-                    db_path if isinstance(db_path, str) else DB_PATH,
+                    _db_path_from(db_path),
                     epoch,
-                    PER_EPOCH_URTC,
+                    _epoch_budget,
                     current,
                     existing_conn=db,
                 )
                 # The callee wrote rewards + settled flag on our connection but
-                # does NOT commit (caller owns the transaction).  Commit now.
+                # does NOT commit (caller owns the transaction).  Mirror those
+                # credits into the UTXO model first (no-op when dual-write is
+                # off), then commit both together: this branch is the one
+                # production takes, and it used to return before any mint.
+                adm_utxo = _dual_write_mint_rewards(db, epoch, _db_path_from(db_path))
+                if isinstance(result, dict):
+                    result["utxo_dual_write"] = adm_utxo
                 db.commit()
                 return result
             except Exception as e:
@@ -234,12 +377,23 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
 
         # Standard RIP-200 rewards (no anti-double-mining)
         rewards = calculate_epoch_rewards_time_aged(
-            db_path if isinstance(db_path, str) else DB_PATH,
+            _db_path_from(db_path),
             epoch,
-            PER_EPOCH_URTC,
+            _epoch_budget,
             current,
             b""  # prev_block_hash fallback for standard path
         )
+
+        # SYBIL-GUARD: calculate_epoch_rewards_time_aged zeroed held miners on
+        # its read connection; record their would-be weight here, on `db`,
+        # inside this settlement transaction (never raises).
+        try:
+            _enrolled = dict(db.execute(
+                "SELECT miner_pk, weight FROM epoch_enroll WHERE epoch = ?", (epoch,)
+            ).fetchall())  # fetchall-ok: bounded-by-schema (one row per enrolled miner)
+        except sqlite3.Error:
+            _enrolled = {}
+        sybil_guard.hold_for_settlement(db, epoch, list(_enrolled), weights=_enrolled)
 
         if not rewards:
             db.rollback()
@@ -287,6 +441,9 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
                 "device_arch": device_arch
             })
 
+        # Dual-write: mirror each credit as a UTXO reward box (no-op when off).
+        utxo_result = _dual_write_mint_rewards(db, epoch, _db_path_from(db_path))
+
         # Mark epoch as settled without replacing the whole row.
         # INSERT OR REPLACE deletes any existing epoch_state metadata columns
         # (for example finalized/accepted_blocks/pot) before inserting the
@@ -306,10 +463,11 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
         return {
             "ok": True,
             "epoch": epoch,
-            "distributed_rtc": PER_EPOCH_URTC / UNIT,
-            "distributed_urtc": PER_EPOCH_URTC,
+            "distributed_rtc": _epoch_budget / UNIT,
+            "distributed_urtc": _epoch_budget,
             "miners": miners_data,
-            "chain_age_years": round(get_chain_age_years(current), 2)
+            "chain_age_years": round(get_chain_age_years(current), 2),
+            "utxo_dual_write": utxo_result,
         }
     except Exception:
         # Any failure after BEGIN IMMEDIATE should release the lock and avoid partial writes.

@@ -33,9 +33,14 @@ class TestRollbackAtomicity(unittest.TestCase):
     """Test rollback atomicity and re-run safety."""
 
     def setUp(self):
-        """Create a temporary database with test balances."""
+        """Create a temporary database with test data."""
         self.tmpdir = tempfile.mkdtemp()
         self.db_path = os.path.join(self.tmpdir, "test_rollback.db")
+
+        # rollback_genesis() is a destructive state mutation and now requires
+        # an admin key (bounty #2819). Configure a test key for this suite.
+        self.admin_key = "test-rollback-admin-key-2819"
+        os.environ["RC_ADMIN_KEY"] = self.admin_key
 
         # Create balances table with test data
         conn = sqlite3.connect(self.db_path)
@@ -60,6 +65,7 @@ class TestRollbackAtomicity(unittest.TestCase):
 
     def tearDown(self):
         """Clean up temporary database."""
+        os.environ.pop("RC_ADMIN_KEY", None)
         if os.path.exists(self.db_path):
             os.unlink(self.db_path)
         # Remove WAL and SHM files
@@ -138,7 +144,7 @@ class TestRollbackAtomicity(unittest.TestCase):
         migrate(self.db_path, dry_run=False)
 
         # Then rollback
-        deleted = rollback_genesis(self.db_path)
+        deleted = rollback_genesis(self.db_path, admin_key=self.admin_key)
         self.assertEqual(deleted, 3)
 
         # Verify no genesis boxes remain
@@ -161,11 +167,11 @@ class TestRollbackAtomicity(unittest.TestCase):
         UtxoDB(self.db_path).init_tables()
 
         # Rollback on empty DB should not raise
-        deleted = rollback_genesis(self.db_path)
+        deleted = rollback_genesis(self.db_path, admin_key=self.admin_key)
         self.assertEqual(deleted, 0)
 
         # Second rollback should also be safe
-        deleted = rollback_genesis(self.db_path)
+        deleted = rollback_genesis(self.db_path, admin_key=self.admin_key)
         self.assertEqual(deleted, 0)
 
     def test_04_rerun_after_rollback(self):
@@ -175,7 +181,7 @@ class TestRollbackAtomicity(unittest.TestCase):
         self.assertEqual(result1['boxes_created'], 3)
 
         # Rollback
-        rollback_genesis(self.db_path)
+        rollback_genesis(self.db_path, admin_key=self.admin_key)
 
         # Re-migrate should succeed (not fail due to partial state)
         result2 = migrate(self.db_path, dry_run=False)
@@ -209,7 +215,7 @@ class TestRollbackAtomicity(unittest.TestCase):
             self.assertEqual(tx_count, 3)
 
             # Perform rollback
-            rollback_genesis(self.db_path)
+            rollback_genesis(self.db_path, admin_key=self.admin_key)
 
             # Verify BOTH boxes and transactions are gone (atomic)
             box_count_after = conn.execute(
@@ -233,7 +239,7 @@ class TestRollbackAtomicity(unittest.TestCase):
         # - PRAGMA foreign_keys=ON
         # We verify by checking the DB state after rollback
         migrate(self.db_path, dry_run=False)
-        rollback_genesis(self.db_path)
+        rollback_genesis(self.db_path, admin_key=self.admin_key)
 
         # Verify WAL mode is active
         conn = sqlite3.connect(self.db_path)
@@ -249,7 +255,7 @@ class TestRollbackAtomicity(unittest.TestCase):
 
         self.assertFalse(check_existing_genesis(UtxoDB(self.db_path)))
 
-        deleted = rollback_genesis(self.db_path)
+        deleted = rollback_genesis(self.db_path, admin_key=self.admin_key)
         self.assertEqual(deleted, 0)
 
         conn = UtxoDB(self.db_path)._conn()
@@ -414,7 +420,7 @@ class TestRollbackAtomicity(unittest.TestCase):
             conn.close()
 
         with self.assertRaisesRegex(RuntimeError, "non-genesis UTXO state"):
-            rollback_genesis(self.db_path)
+            rollback_genesis(self.db_path, admin_key=self.admin_key)
 
         conn = UtxoDB(self.db_path)._conn()
         try:
@@ -436,6 +442,66 @@ class TestRollbackAtomicity(unittest.TestCase):
         finally:
             conn.close()
 
+
+
+class TestRollbackClearsMirrorProvenance(unittest.TestCase):
+    """#2819 (Ondrej Nad): rollback must also remove account_mirror_boxes rows."""
+
+    setUp = TestRollbackAtomicity.setUp
+    tearDown = TestRollbackAtomicity.tearDown
+
+    def _mirror_count(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            return conn.execute("SELECT COUNT(*) FROM account_mirror_boxes").fetchone()[0]
+        finally:
+            conn.close()
+
+    def test_rollback_removes_mirror_rows(self):
+        migrate(self.db_path, dry_run=False)
+        self.assertGreater(self._mirror_count(), 0)
+        rollback_genesis(self.db_path, admin_key=self.admin_key)
+        self.assertEqual(self._mirror_count(), 0)
+
+    def test_rollback_also_clears_preexisting_orphans(self):
+        migrate(self.db_path, dry_run=False)
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "INSERT INTO account_mirror_boxes (box_id, account_wallet, value_nrtc, created_epoch) "
+            "VALUES ('stale-box-from-earlier-run', 'wallet_a', 1, 0)"
+        )
+        conn.commit(); conn.close()
+        rollback_genesis(self.db_path, admin_key=self.admin_key)
+        self.assertEqual(self._mirror_count(), 0)
+
+    def test_rollback_without_genesis_leaves_mirror_rows_alone(self):
+        migrate(self.db_path, dry_run=False)
+        rollback_genesis(self.db_path, admin_key=self.admin_key)
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            "INSERT INTO account_mirror_boxes (box_id, account_wallet, value_nrtc, created_epoch) "
+            "VALUES ('live-dual-write-box', 'wallet_a', 1, 5)"
+        )
+        conn.commit(); conn.close()
+        rollback_genesis(self.db_path, admin_key=self.admin_key)  # no genesis now
+        self.assertEqual(self._mirror_count(), 1)
+
+    def test_remigration_after_balance_change_leaves_no_orphans(self):
+        migrate(self.db_path, dry_run=False)
+        rollback_genesis(self.db_path, admin_key=self.admin_key)
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("UPDATE balances SET amount_i64 = amount_i64 + 1")
+        conn.commit(); conn.close()
+        migrate(self.db_path, dry_run=False)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            orphans = conn.execute(
+                "SELECT COUNT(*) FROM account_mirror_boxes m "
+                "WHERE NOT EXISTS (SELECT 1 FROM utxo_boxes b WHERE b.box_id = m.box_id)"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(orphans, 0)
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

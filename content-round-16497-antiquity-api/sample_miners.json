@@ -1,0 +1,29 @@
+{
+  "miners": [
+    {
+      "miner": "eafc6f14eab6d5c5362fe651e5e6c23581892a37RTC",
+      "device_arch": "G4",
+      "device_family": "PowerPC",
+      "hardware_type": "PowerPC G4 (Vintage)",
+      "antiquity_multiplier": 2.5,
+      "entropy_score": 0.0,
+      "last_attest": 1770112912
+    },
+    {
+      "miner": "g5-selena-179",
+      "device_arch": "G5",
+      "device_family": "PowerPC",
+      "hardware_type": "PowerPC G5 (Vintage)",
+      "antiquity_multiplier": 2.0,
+      "entropy_score": 0.0,
+      "last_attest": 1770112865
+    }
+  ],
+  "pagination": {
+    "count": 2,
+    "limit": 50,
+    "offset": 0,
+    "total": 2,
+    "total_enrolled": 2
+  }
+}

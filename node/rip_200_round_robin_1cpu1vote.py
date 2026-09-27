@@ -15,6 +15,12 @@ Key Changes:
 
 import hashlib
 import json
+# SYBIL-GUARD settlement guard. Hard import (round-2 review): a missing module
+# must fail loudly, never silently settle held miners.
+try:
+    import sybil_guard as _sybil_guard
+except ImportError:
+    from node import sybil_guard as _sybil_guard
 import logging
 import sqlite3
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -468,7 +474,7 @@ ANTIQUITY_MULTIPLIERS = {
 }
 
 # Time decay parameters
-DECAY_RATE_PER_YEAR = 0.15  # 15% decay per year (vintage bonus → 0 after ~16.67 years)
+DECAY_RATE_PER_YEAR = 0.15  # 15% decay per year (vintage bonus → 0 after ~6.67 years)
 
 
 def get_chain_age_years(current_slot: int) -> float:
@@ -483,8 +489,8 @@ def get_time_aged_multiplier(device_arch: str, chain_age_years: float) -> float:
 
     Vintage hardware bonus decays linearly over time:
     - Year 0: Full multiplier (e.g., G4 = 2.5x)
-    - Year 10: Equal to modern (1.0x)
-    - Year 16.67: Vintage bonus fully decayed (0 additional reward)
+    - Year 3.33: Vintage bonus halved (e.g., G4 = 1.75x)
+    - Year 6.67: Vintage bonus fully decayed (0 additional reward)
 
     Modern hardware always stays at 1.0x (becomes optimal over time)
     """
@@ -726,6 +732,21 @@ def calculate_epoch_rewards_time_aged(
                     WHERE ts_ok >= ? AND ts_ok <= ?
                 """, (epoch_start_ts - ATTESTATION_TTL, epoch_end_ts))
             epoch_miners = cursor.fetchall()
+
+        # SYBIL-GUARD: needs_review / incident-cohort miners settle at 0 even
+        # if flagged after enrollment. Tuple index 3 is enrolled_weight (index
+        # 2 is fingerprint_passed). Setting it to 0 (not None) keeps the
+        # arch-multiplier fallback below from re-weighting the miner. Read-only
+        # here; the caller (settle_epoch_rip200) escrows on its settlement
+        # transaction, and this separate read connection runs while that
+        # transaction holds the write lock, so no hold can land in between.
+        # settlement_held_miners never raises.
+        _held = _sybil_guard.settlement_held_miners(conn, [m[0] for m in epoch_miners], epoch)
+        if _held:
+            epoch_miners = [
+                (m[0], m[1], m[2], 0) + tuple(m[4:]) if m[0] in _held else tuple(m)
+                for m in epoch_miners
+            ]
 
     if not epoch_miners:
         return {}

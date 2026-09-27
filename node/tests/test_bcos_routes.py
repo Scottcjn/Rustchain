@@ -234,3 +234,31 @@ def test_bcos_verify_tolerates_corrupt_stored_report(tmp_path):
     assert body["commitment_valid"] is False
     assert body["score_breakdown"] == {}
     assert body["checks"] == {}
+
+
+def test_bcos_badge_svg_escapes_stored_tier(tmp_path, monkeypatch):
+    """A crafted tier must not break out of <text> into active SVG content."""
+    from bcos_routes import _generate_badge_svg
+    svg = _generate_badge_svg('L1</text><script>alert(1)</script><text>', 42)
+    assert "<script>" not in svg
+    assert "&lt;script&gt;" in svg
+
+
+def test_bcos_attest_rejects_tier_outside_enum(tmp_path, monkeypatch):
+    monkeypatch.setenv("RC_ADMIN_KEY", "test-admin")
+    app = Flask(__name__)
+    register_bcos_routes(app, str(tmp_path / "bcos.db"))
+    app.config["TESTING"] = True
+    report = _with_commitment({
+        "cert_id": "cert-tier-enum",
+        "repo": "Scottcjn/example",
+        "tier": 'L1</text><script>alert(1)</script><text>',
+        "trust_score": 42,
+    })
+    response = app.test_client().post(
+        "/bcos/attest",
+        headers={"X-Admin-Key": "test-admin"},
+        json={"report": report},
+    )
+    assert response.status_code == 400
+    assert "tier" in response.get_json()["error"].lower()

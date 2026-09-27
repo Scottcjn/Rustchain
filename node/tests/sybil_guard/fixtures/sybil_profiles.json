@@ -1,0 +1,954 @@
+[
+{
+"miner": "RTCaf5b745bba356cda6f34a25c4e5ba7c67f2ee382",
+"ts": 1790275507,
+"profile_json": "{\"clock_drift_cv\":0.0085,\"thermal_variance\":5.1316,\"jitter_cv\":0.1925,\"cache_hierarchy_ratio\":2.0821}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC6a63ea02f6863152ab9b084ba1b8aafbd928dd78",
+"ts": 1790275706,
+"profile_json": "{\"clock_drift_cv\":0.0299,\"thermal_variance\":3.1217,\"jitter_cv\":0.1665,\"cache_hierarchy_ratio\":2.6652}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC8b1a736365ad9c02356be7670bd5377a7e423c30",
+"ts": 1790275857,
+"profile_json": "{\"clock_drift_cv\":0.0105,\"thermal_variance\":0.8515,\"jitter_cv\":0.2092,\"cache_hierarchy_ratio\":2.2763}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC0a5aee7551721b7ca0d8c0c11a636318d8bc07ce",
+"ts": 1790276042,
+"profile_json": "{\"clock_drift_cv\":0.0248,\"thermal_variance\":5.9022,\"jitter_cv\":0.1186,\"cache_hierarchy_ratio\":2.5918}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC36cdadf2dbb0a31735fc7354f5113e04b7cdcb79",
+"ts": 1790276209,
+"profile_json": "{\"clock_drift_cv\":0.0134,\"thermal_variance\":5.6258,\"jitter_cv\":0.0153,\"cache_hierarchy_ratio\":1.8368}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCfd02bac18e67a85ac08e6b5f5305fe6f58d357b7",
+"ts": 1790276300,
+"profile_json": "{\"clock_drift_cv\":0.009,\"thermal_variance\":3.586,\"jitter_cv\":0.2473,\"cache_hierarchy_ratio\":2.2199}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC277528748bc77ae29f39d4eab6a39c3e9a1c3f90",
+"ts": 1790276413,
+"profile_json": "{\"clock_drift_cv\":0.0131,\"thermal_variance\":2.9835,\"jitter_cv\":0.022,\"cache_hierarchy_ratio\":1.8034}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCff53f4467db180c5415f45db0172bdb657dbdbba",
+"ts": 1790276619,
+"profile_json": "{\"clock_drift_cv\":0.0179,\"thermal_variance\":3.3557,\"jitter_cv\":0.0694,\"cache_hierarchy_ratio\":2.8961}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCaf5b745bba356cda6f34a25c4e5ba7c67f2ee382",
+"ts": 1790276707,
+"profile_json": "{\"clock_drift_cv\":0.0085,\"thermal_variance\":5.1316,\"jitter_cv\":0.1925,\"cache_hierarchy_ratio\":2.0821}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC7838ed02c0beedabdc88c32d6cfbe6e4837eff2c",
+"ts": 1790276777,
+"profile_json": "{\"clock_drift_cv\":0.0132,\"thermal_variance\":3.1728,\"jitter_cv\":0.0825,\"cache_hierarchy_ratio\":1.8269}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC9b840c5d162548ed8e45df7d6db3d9e7c29ed112",
+"ts": 1790276889,
+"profile_json": "{\"clock_drift_cv\":0.0264,\"thermal_variance\":3.662,\"jitter_cv\":0.1643,\"cache_hierarchy_ratio\":2.0065}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC5796f238e863e12b52f0f2faaa8b9afd20f6eec0",
+"ts": 1790277021,
+"profile_json": "{\"clock_drift_cv\":0.0297,\"thermal_variance\":5.1948,\"jitter_cv\":0.0433,\"cache_hierarchy_ratio\":2.1669}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC8937a6b74550532e6a239821b999a50bdf87caec",
+"ts": 1790277108,
+"profile_json": "{\"clock_drift_cv\":0.0239,\"thermal_variance\":4.4435,\"jitter_cv\":0.2326,\"cache_hierarchy_ratio\":2.2646}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCda93e09e70656a1f58ce5080568775209426b888",
+"ts": 1790277174,
+"profile_json": "{\"clock_drift_cv\":0.0263,\"thermal_variance\":4.237,\"jitter_cv\":0.0857,\"cache_hierarchy_ratio\":2.4454}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCcb4375ce2eb6555dc49427b3daf34abbe449961e",
+"ts": 1790277264,
+"profile_json": "{\"clock_drift_cv\":0.0274,\"thermal_variance\":5.1254,\"jitter_cv\":0.1325,\"cache_hierarchy_ratio\":2.447}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC0f6979d82b098d5cc1a1a467e7f52c8f265740bc",
+"ts": 1790277469,
+"profile_json": "{\"clock_drift_cv\":0.0092,\"thermal_variance\":2.0775,\"jitter_cv\":0.2003,\"cache_hierarchy_ratio\":2.2561}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCd3fddde88fee7b22ce3d488e3d968a269a62e813",
+"ts": 1790277532,
+"profile_json": "{\"clock_drift_cv\":0.0122,\"thermal_variance\":3.6233,\"jitter_cv\":0.1784,\"cache_hierarchy_ratio\":2.5404}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCc167dea420da0012e3836fdc8f92729238d952d3",
+"ts": 1790277731,
+"profile_json": "{\"clock_drift_cv\":0.0165,\"thermal_variance\":3.0686,\"jitter_cv\":0.1333,\"cache_hierarchy_ratio\":2.654}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCff53f4467db180c5415f45db0172bdb657dbdbba",
+"ts": 1790277819,
+"profile_json": "{\"clock_drift_cv\":0.0179,\"thermal_variance\":3.3557,\"jitter_cv\":0.0694,\"cache_hierarchy_ratio\":2.8961}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC49fc41c7dfc8c0b85689ad2836f2b091e22f6e09",
+"ts": 1790277866,
+"profile_json": "{\"clock_drift_cv\":0.0196,\"thermal_variance\":2.8377,\"jitter_cv\":0.1289,\"cache_hierarchy_ratio\":1.8357}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCaf5b745bba356cda6f34a25c4e5ba7c67f2ee382",
+"ts": 1790277907,
+"profile_json": "{\"clock_drift_cv\":0.0085,\"thermal_variance\":5.1316,\"jitter_cv\":0.1925,\"cache_hierarchy_ratio\":2.0821}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC5b195156d0b14ca787a56bf786326570128ea3a6",
+"ts": 1790278098,
+"profile_json": "{\"clock_drift_cv\":0.0094,\"thermal_variance\":4.4041,\"jitter_cv\":0.2434,\"cache_hierarchy_ratio\":2.4516}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC9a81117d336f765074d836ff4af88659afde2370",
+"ts": 1790278324,
+"profile_json": "{\"clock_drift_cv\":0.0169,\"thermal_variance\":1.7119,\"jitter_cv\":0.1318,\"cache_hierarchy_ratio\":2.8765}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCbb715d1a21c3cfea22b808b8fc1286aebe56538b",
+"ts": 1790278418,
+"profile_json": "{\"clock_drift_cv\":0.025,\"thermal_variance\":3.5769,\"jitter_cv\":0.2149,\"cache_hierarchy_ratio\":2.0571}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC15bcdfa72666734786d7a455488bc786e09508d5",
+"ts": 1790278497,
+"profile_json": "{\"clock_drift_cv\":0.0195,\"thermal_variance\":5.6621,\"jitter_cv\":0.1493,\"cache_hierarchy_ratio\":2.3051}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC0f6979d82b098d5cc1a1a467e7f52c8f265740bc",
+"ts": 1790278669,
+"profile_json": "{\"clock_drift_cv\":0.0092,\"thermal_variance\":2.0775,\"jitter_cv\":0.2003,\"cache_hierarchy_ratio\":2.2561}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC3978703c37b9ecdb39101496f00e7bcbc2e559e1",
+"ts": 1790278685,
+"profile_json": "{\"clock_drift_cv\":0.0143,\"thermal_variance\":3.6193,\"jitter_cv\":0.2374,\"cache_hierarchy_ratio\":1.8096}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCbe2662ad47ac1d1dbfac0695b04d1c62c37cf9dc",
+"ts": 1790278840,
+"profile_json": "{\"clock_drift_cv\":0.0253,\"thermal_variance\":4.9955,\"jitter_cv\":0.2209,\"cache_hierarchy_ratio\":2.6125}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCff53f4467db180c5415f45db0172bdb657dbdbba",
+"ts": 1790279019,
+"profile_json": "{\"clock_drift_cv\":0.0179,\"thermal_variance\":3.3557,\"jitter_cv\":0.0694,\"cache_hierarchy_ratio\":2.8961}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC45ca8effefdeb5d8bdfcdd6be88a76bcbfaaa3ca",
+"ts": 1790279046,
+"profile_json": "{\"clock_drift_cv\":0.0258,\"thermal_variance\":3.4712,\"jitter_cv\":0.1455,\"cache_hierarchy_ratio\":2.269}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC712a770f3f9b558c3b92563a4f994cd7ef865e53",
+"ts": 1790279185,
+"profile_json": "{\"clock_drift_cv\":0.0097,\"thermal_variance\":5.2457,\"jitter_cv\":0.1475,\"cache_hierarchy_ratio\":2.0218}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC5728099f64adb6afb381d63f87c15481020059de",
+"ts": 1790279356,
+"profile_json": "{\"clock_drift_cv\":0.0193,\"thermal_variance\":3.3007,\"jitter_cv\":0.0981,\"cache_hierarchy_ratio\":2.1816}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCeef02f38c54abac9a169ca005204c262c9326f14",
+"ts": 1790279544,
+"profile_json": "{\"clock_drift_cv\":0.02,\"thermal_variance\":4.0006,\"jitter_cv\":0.1574,\"cache_hierarchy_ratio\":2.304}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC15bcdfa72666734786d7a455488bc786e09508d5",
+"ts": 1790279697,
+"profile_json": "{\"clock_drift_cv\":0.0195,\"thermal_variance\":5.6621,\"jitter_cv\":0.1493,\"cache_hierarchy_ratio\":2.3051}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC49514292857680c682eb80df744955276b9d2491",
+"ts": 1790279777,
+"profile_json": "{\"clock_drift_cv\":0.0091,\"thermal_variance\":2.0112,\"jitter_cv\":0.0564,\"cache_hierarchy_ratio\":2.442}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC0f6979d82b098d5cc1a1a467e7f52c8f265740bc",
+"ts": 1790279869,
+"profile_json": "{\"clock_drift_cv\":0.0092,\"thermal_variance\":2.0775,\"jitter_cv\":0.2003,\"cache_hierarchy_ratio\":2.2561}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC9337f4a13f7e437f1c3436eaba3b4f27509bef1f",
+"ts": 1790279928,
+"profile_json": "{\"clock_drift_cv\":0.0269,\"thermal_variance\":4.8842,\"jitter_cv\":0.2002,\"cache_hierarchy_ratio\":2.6955}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC3a9ac6e23b85a0d06460d04aa0b0d3be1cdaac11",
+"ts": 1790280123,
+"profile_json": "{\"clock_drift_cv\":0.014,\"thermal_variance\":5.1029,\"jitter_cv\":0.1715,\"cache_hierarchy_ratio\":1.8943}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCe2e9341d53c125210763173b287cac7c193de5d3",
+"ts": 1790280265,
+"profile_json": "{\"clock_drift_cv\":0.0089,\"thermal_variance\":0.925,\"jitter_cv\":0.1906,\"cache_hierarchy_ratio\":2.0761}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC75082cc0c1176212070bca45ec55f4d49f5fdd07",
+"ts": 1790280325,
+"profile_json": "{\"clock_drift_cv\":0.0108,\"thermal_variance\":4.0072,\"jitter_cv\":0.0952,\"cache_hierarchy_ratio\":1.8794}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC84b79b60887e414671f890d9501633a208707a32",
+"ts": 1790280416,
+"profile_json": "{\"clock_drift_cv\":0.0119,\"thermal_variance\":3.5151,\"jitter_cv\":0.0543,\"cache_hierarchy_ratio\":2.1016}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCd115c7f7ed247fcda74e607b0ae2764768ef85b2",
+"ts": 1790280589,
+"profile_json": "{\"clock_drift_cv\":0.0237,\"thermal_variance\":3.1481,\"jitter_cv\":0.09,\"cache_hierarchy_ratio\":2.3211}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCaef1c90db7ab6db5b2b0e961a08009d9fb5d4b12",
+"ts": 1790280764,
+"profile_json": "{\"clock_drift_cv\":0.009,\"thermal_variance\":2.8039,\"jitter_cv\":0.113,\"cache_hierarchy_ratio\":2.0089}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC15bcdfa72666734786d7a455488bc786e09508d5",
+"ts": 1790280897,
+"profile_json": "{\"clock_drift_cv\":0.0195,\"thermal_variance\":5.6621,\"jitter_cv\":0.1493,\"cache_hierarchy_ratio\":2.3051}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCa66b0fcfd92ff9df13a72a67451f9c0711e7ae5c",
+"ts": 1790280913,
+"profile_json": "{\"clock_drift_cv\":0.0108,\"thermal_variance\":5.3962,\"jitter_cv\":0.1336,\"cache_hierarchy_ratio\":2.0319}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC49514292857680c682eb80df744955276b9d2491",
+"ts": 1790280977,
+"profile_json": "{\"clock_drift_cv\":0.0091,\"thermal_variance\":2.0112,\"jitter_cv\":0.0564,\"cache_hierarchy_ratio\":2.442}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCeeb4473611ca8d8e1cd98b193fc0110f73f5f1ae",
+"ts": 1790281051,
+"profile_json": "{\"clock_drift_cv\":0.0215,\"thermal_variance\":4.9781,\"jitter_cv\":0.0201,\"cache_hierarchy_ratio\":1.8229}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC1432bed68b5e4fb7c4fb056d5668ab57cbb1e9b5",
+"ts": 1790281249,
+"profile_json": "{\"clock_drift_cv\":0.0116,\"thermal_variance\":4.4821,\"jitter_cv\":0.0525,\"cache_hierarchy_ratio\":2.5733}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC2f88fa83f61ef1202d9f9dbad0c1d2f7ac1cb730",
+"ts": 1790281411,
+"profile_json": "{\"clock_drift_cv\":0.023,\"thermal_variance\":3.6026,\"jitter_cv\":0.0665,\"cache_hierarchy_ratio\":2.8694}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC5cc4f1a8a9d93d6c41847ee0177595905da298a0",
+"ts": 1790281557,
+"profile_json": "{\"clock_drift_cv\":0.0256,\"thermal_variance\":3.4607,\"jitter_cv\":0.0671,\"cache_hierarchy_ratio\":2.512}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC0b3ffa0f6b65bd8cf173c09d348a822af6f45a0f",
+"ts": 1790281791,
+"profile_json": "{\"clock_drift_cv\":0.017,\"thermal_variance\":3.7599,\"jitter_cv\":0.0898,\"cache_hierarchy_ratio\":2.4928}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCaef1c90db7ab6db5b2b0e961a08009d9fb5d4b12",
+"ts": 1790281964,
+"profile_json": "{\"clock_drift_cv\":0.009,\"thermal_variance\":2.8039,\"jitter_cv\":0.113,\"cache_hierarchy_ratio\":2.0089}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCa1dc4cd5b3d81a084c83d67bf4660fb62695b647",
+"ts": 1790281997,
+"profile_json": "{\"clock_drift_cv\":0.0098,\"thermal_variance\":2.3597,\"jitter_cv\":0.2399,\"cache_hierarchy_ratio\":2.7601}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC49514292857680c682eb80df744955276b9d2491",
+"ts": 1790282177,
+"profile_json": "{\"clock_drift_cv\":0.0091,\"thermal_variance\":2.0112,\"jitter_cv\":0.0564,\"cache_hierarchy_ratio\":2.442}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC7cd55b71d9987599edceaa62196b51b68050c72f",
+"ts": 1790282183,
+"profile_json": "{\"clock_drift_cv\":0.0151,\"thermal_variance\":5.1876,\"jitter_cv\":0.0873,\"cache_hierarchy_ratio\":2.8298}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCf3ca83ef310846d083427ce6b55c2cd7c6b51b53",
+"ts": 1790282271,
+"profile_json": "{\"clock_drift_cv\":0.0244,\"thermal_variance\":2.9535,\"jitter_cv\":0.0738,\"cache_hierarchy_ratio\":1.8127}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC048bbdc9122fdd695eebd51016af7e17dc675c8d",
+"ts": 1790282496,
+"profile_json": "{\"clock_drift_cv\":0.0273,\"thermal_variance\":1.043,\"jitter_cv\":0.2054,\"cache_hierarchy_ratio\":2.8548}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCee06a7954a80965ed7b3aa7f129cc6dbf09200b7",
+"ts": 1790282652,
+"profile_json": "{\"clock_drift_cv\":0.0207,\"thermal_variance\":1.7178,\"jitter_cv\":0.2166,\"cache_hierarchy_ratio\":2.8674}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCa631ab2b749075fc6060e56f4e75c17122f2c9a3",
+"ts": 1790282809,
+"profile_json": "{\"clock_drift_cv\":0.0236,\"thermal_variance\":3.4217,\"jitter_cv\":0.103,\"cache_hierarchy_ratio\":2.1825}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCf43a7dc14329b835d0f45b4ec9dbc8809796ada9",
+"ts": 1790282921,
+"profile_json": "{\"clock_drift_cv\":0.0129,\"thermal_variance\":4.2564,\"jitter_cv\":0.1157,\"cache_hierarchy_ratio\":2.0155}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCfc5c81d42f95f7de20301c5eece7d4d71d4ad3f9",
+"ts": 1790283123,
+"profile_json": "{\"clock_drift_cv\":0.0107,\"thermal_variance\":4.2151,\"jitter_cv\":0.084,\"cache_hierarchy_ratio\":2.3495}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCaef1c90db7ab6db5b2b0e961a08009d9fb5d4b12",
+"ts": 1790283164,
+"profile_json": "{\"clock_drift_cv\":0.009,\"thermal_variance\":2.8039,\"jitter_cv\":0.113,\"cache_hierarchy_ratio\":2.0089}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC8ef5de373e70f974d637c83f0cfbe10dfa8de2ed",
+"ts": 1790283183,
+"profile_json": "{\"clock_drift_cv\":0.0155,\"thermal_variance\":5.2538,\"jitter_cv\":0.224,\"cache_hierarchy_ratio\":1.8232}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCa1dc4cd5b3d81a084c83d67bf4660fb62695b647",
+"ts": 1790283197,
+"profile_json": "{\"clock_drift_cv\":0.0098,\"thermal_variance\":2.3597,\"jitter_cv\":0.2399,\"cache_hierarchy_ratio\":2.7601}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC74c30651c7621a4cd7c5b41c731885f8c4dd18e0",
+"ts": 1790283314,
+"profile_json": "{\"clock_drift_cv\":0.0128,\"thermal_variance\":2.5068,\"jitter_cv\":0.2443,\"cache_hierarchy_ratio\":2.6587}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC6e943dcfd9e9aedc45cdb972c62e027d1c3ac23f",
+"ts": 1790283536,
+"profile_json": "{\"clock_drift_cv\":0.0158,\"thermal_variance\":1.9274,\"jitter_cv\":0.1718,\"cache_hierarchy_ratio\":2.7188}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCb6d8e67df9777e13d923dab1ae22ae1fb211f207",
+"ts": 1790283749,
+"profile_json": "{\"clock_drift_cv\":0.0284,\"thermal_variance\":2.5882,\"jitter_cv\":0.22,\"cache_hierarchy_ratio\":2.5542}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC569e112ad4963c6bb79086c924ea07ffd5ae9f50",
+"ts": 1790283939,
+"profile_json": "{\"clock_drift_cv\":0.0189,\"thermal_variance\":5.829,\"jitter_cv\":0.0697,\"cache_hierarchy_ratio\":2.5961}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCad5ebde93fc0780a8610bcefb11d01d8ad5deada",
+"ts": 1790284049,
+"profile_json": "{\"clock_drift_cv\":0.0103,\"thermal_variance\":1.7086,\"jitter_cv\":0.2266,\"cache_hierarchy_ratio\":2.0361}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC0e62bb8c049d071f1460319169cf8a3259f3203f",
+"ts": 1790284227,
+"profile_json": "{\"clock_drift_cv\":0.0247,\"thermal_variance\":3.883,\"jitter_cv\":0.2104,\"cache_hierarchy_ratio\":2.2056}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCfc5c81d42f95f7de20301c5eece7d4d71d4ad3f9",
+"ts": 1790284323,
+"profile_json": "{\"clock_drift_cv\":0.0107,\"thermal_variance\":4.2151,\"jitter_cv\":0.084,\"cache_hierarchy_ratio\":2.3495}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCa1dc4cd5b3d81a084c83d67bf4660fb62695b647",
+"ts": 1790284397,
+"profile_json": "{\"clock_drift_cv\":0.0098,\"thermal_variance\":2.3597,\"jitter_cv\":0.2399,\"cache_hierarchy_ratio\":2.7601}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC71d709f38fbc2c79371d17b806efaa8bc453e771",
+"ts": 1790284440,
+"profile_json": "{\"clock_drift_cv\":0.0158,\"thermal_variance\":2.3223,\"jitter_cv\":0.2165,\"cache_hierarchy_ratio\":2.4634}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCecfcfbcfd6845627a7bc8cc6c2fc1cfafbf5712e",
+"ts": 1790284632,
+"profile_json": "{\"clock_drift_cv\":0.0289,\"thermal_variance\":5.3328,\"jitter_cv\":0.0467,\"cache_hierarchy_ratio\":2.4057}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTCbca0af25e98fb1b75f9274d6ae2026236ae804cf",
+"ts": 1790284796,
+"profile_json": "{\"clock_drift_cv\":0.0107,\"thermal_variance\":1.0492,\"jitter_cv\":0.0323,\"cache_hierarchy_ratio\":2.7499}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC6b2c509406752f7ac03f0480a5c965234265487c",
+"ts": 1790284934,
+"profile_json": "{\"clock_drift_cv\":0.0254,\"thermal_variance\":5.036,\"jitter_cv\":0.0944,\"cache_hierarchy_ratio\":2.4756}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC52098cb47e4e81cc4e088a2f439685fb807a6b25",
+"ts": 1790285173,
+"profile_json": "{\"clock_drift_cv\":0.0252,\"thermal_variance\":2.7609,\"jitter_cv\":0.1477,\"cache_hierarchy_ratio\":2.0479}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC065f73f2840eee3e90c96b9066692edf9bea7979",
+"ts": 1790285276,
+"profile_json": "{\"clock_drift_cv\":0.0102,\"thermal_variance\":2.1986,\"jitter_cv\":0.222,\"cache_hierarchy_ratio\":2.4202}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCeb56c43a48d6874588ec555acdc9b397ada08a18",
+"ts": 1790285451,
+"profile_json": "{\"clock_drift_cv\":0.0283,\"thermal_variance\":3.1636,\"jitter_cv\":0.0796,\"cache_hierarchy_ratio\":2.6634}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCfc5c81d42f95f7de20301c5eece7d4d71d4ad3f9",
+"ts": 1790285523,
+"profile_json": "{\"clock_drift_cv\":0.0107,\"thermal_variance\":4.2151,\"jitter_cv\":0.084,\"cache_hierarchy_ratio\":2.3495}",
+"source_ip": "203.0.113.10",
+"device_arch": "G4"
+},
+{
+"miner": "RTC54e60fbc77d9f8473c514bf7d722d52356d02698",
+"ts": 1790285669,
+"profile_json": "{\"clock_drift_cv\":0.0262,\"thermal_variance\":0.914,\"jitter_cv\":0.1708,\"cache_hierarchy_ratio\":1.9036}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC032b8ba07d46898a229c38eae14c0363c7333397",
+"ts": 1790285900,
+"profile_json": "{\"clock_drift_cv\":0.011,\"thermal_variance\":5.3217,\"jitter_cv\":0.0246,\"cache_hierarchy_ratio\":2.0652}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC086a089026f341bf0922a7906a0dbffab647ae40",
+"ts": 1790286095,
+"profile_json": "{\"clock_drift_cv\":0.0296,\"thermal_variance\":2.9779,\"jitter_cv\":0.0421,\"cache_hierarchy_ratio\":1.9863}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC9c8901d9acad1aae925a20e425337a3c1dc29a7a",
+"ts": 1790286205,
+"profile_json": "{\"clock_drift_cv\":0.0137,\"thermal_variance\":4.6093,\"jitter_cv\":0.0392,\"cache_hierarchy_ratio\":2.7986}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCb87226437e133ba9da5914f2dfa84ab7319eaecd",
+"ts": 1790286357,
+"profile_json": "{\"clock_drift_cv\":0.0166,\"thermal_variance\":5.752,\"jitter_cv\":0.2262,\"cache_hierarchy_ratio\":2.1247}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC899d97c08bed6c82c198f979cf27668604350329",
+"ts": 1790286551,
+"profile_json": "{\"clock_drift_cv\":0.0139,\"thermal_variance\":3.2607,\"jitter_cv\":0.0385,\"cache_hierarchy_ratio\":2.5159}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC60e4858af9cf254168d3032773f38bc46ebb2665",
+"ts": 1790286611,
+"profile_json": "{\"clock_drift_cv\":0.0093,\"thermal_variance\":0.9046,\"jitter_cv\":0.2433,\"cache_hierarchy_ratio\":2.1263}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC287ad6d568edc4e4214f97167e32cf4ebb381584",
+"ts": 1790286844,
+"profile_json": "{\"clock_drift_cv\":0.0213,\"thermal_variance\":3.1235,\"jitter_cv\":0.088,\"cache_hierarchy_ratio\":1.8722}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCd9ecf02fc562f14f9c4bd292460e6c0d67f374d5",
+"ts": 1790287003,
+"profile_json": "{\"clock_drift_cv\":0.028,\"thermal_variance\":5.7497,\"jitter_cv\":0.2403,\"cache_hierarchy_ratio\":1.9251}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC2c5054a8d6548c097f018cea395b085cf215179f",
+"ts": 1790287211,
+"profile_json": "{\"clock_drift_cv\":0.0131,\"thermal_variance\":3.9719,\"jitter_cv\":0.2426,\"cache_hierarchy_ratio\":2.3966}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC5c616069e125a5cbdf14da8acf51a8037b2a8742",
+"ts": 1790287380,
+"profile_json": "{\"clock_drift_cv\":0.0232,\"thermal_variance\":4.1942,\"jitter_cv\":0.0754,\"cache_hierarchy_ratio\":2.3952}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCe9ee116b6ca0172f25155946b843810ea29f9779",
+"ts": 1790287543,
+"profile_json": "{\"clock_drift_cv\":0.0151,\"thermal_variance\":2.0959,\"jitter_cv\":0.0342,\"cache_hierarchy_ratio\":2.1102}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC12677170bc3eee64b288b51fb8dd288264674503",
+"ts": 1790287689,
+"profile_json": "{\"clock_drift_cv\":0.0295,\"thermal_variance\":3.1137,\"jitter_cv\":0.1666,\"cache_hierarchy_ratio\":2.5065}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCee241985e0f2ee04942f5a10764a59117f695916",
+"ts": 1790287908,
+"profile_json": "{\"clock_drift_cv\":0.0286,\"thermal_variance\":2.8237,\"jitter_cv\":0.0865,\"cache_hierarchy_ratio\":2.161}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC44ffd09c89a9c9438c9281df141dd38570f0f387",
+"ts": 1790288117,
+"profile_json": "{\"clock_drift_cv\":0.0153,\"thermal_variance\":5.1301,\"jitter_cv\":0.2226,\"cache_hierarchy_ratio\":2.1343}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC9e1730039edd38df989a57b13fca83e0268654f8",
+"ts": 1790288356,
+"profile_json": "{\"clock_drift_cv\":0.0157,\"thermal_variance\":3.6002,\"jitter_cv\":0.1496,\"cache_hierarchy_ratio\":2.4546}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCf3a9da9dd67bd464bbae18c13583890c14e5b81a",
+"ts": 1790288433,
+"profile_json": "{\"clock_drift_cv\":0.0137,\"thermal_variance\":0.9544,\"jitter_cv\":0.0719,\"cache_hierarchy_ratio\":1.8824}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCb7c89d01f5abef18feb1f4e44db47e854d2a5349",
+"ts": 1790288619,
+"profile_json": "{\"clock_drift_cv\":0.0203,\"thermal_variance\":1.2097,\"jitter_cv\":0.0327,\"cache_hierarchy_ratio\":2.4977}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC0d53e3b68bf1c9a6bd344b52e8815e3ad2cbcc4c",
+"ts": 1790288742,
+"profile_json": "{\"clock_drift_cv\":0.0147,\"thermal_variance\":4.8526,\"jitter_cv\":0.1297,\"cache_hierarchy_ratio\":2.746}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC30239409d78aeb0cd04ec31105c6c6c653ce4b95",
+"ts": 1790288965,
+"profile_json": "{\"clock_drift_cv\":0.0118,\"thermal_variance\":3.3841,\"jitter_cv\":0.1997,\"cache_hierarchy_ratio\":1.8877}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC9cd19b51c3c58e93990b7c04ce7e41c9058ad371",
+"ts": 1790289191,
+"profile_json": "{\"clock_drift_cv\":0.0288,\"thermal_variance\":1.7265,\"jitter_cv\":0.1954,\"cache_hierarchy_ratio\":2.8796}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCbcfdc1de5ccf9ed05a6590b86149361592daa58d",
+"ts": 1790289325,
+"profile_json": "{\"clock_drift_cv\":0.0261,\"thermal_variance\":2.4666,\"jitter_cv\":0.0401,\"cache_hierarchy_ratio\":2.3654}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC3225699505920fb9b064f8443dad5964027e8f07",
+"ts": 1790289546,
+"profile_json": "{\"clock_drift_cv\":0.0282,\"thermal_variance\":2.3338,\"jitter_cv\":0.2227,\"cache_hierarchy_ratio\":1.9582}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC834cbe55452ab786f3b85c449b888cf935613da0",
+"ts": 1790289611,
+"profile_json": "{\"clock_drift_cv\":0.028,\"thermal_variance\":1.0119,\"jitter_cv\":0.0886,\"cache_hierarchy_ratio\":2.7902}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCfe6c67fb996dc67d99072a02da0f1c954215f77b",
+"ts": 1790289775,
+"profile_json": "{\"clock_drift_cv\":0.0257,\"thermal_variance\":5.4333,\"jitter_cv\":0.2103,\"cache_hierarchy_ratio\":2.6188}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC3ff9e1d17798d98199ea03c42831dc12b9a2c8d1",
+"ts": 1790289996,
+"profile_json": "{\"clock_drift_cv\":0.0233,\"thermal_variance\":1.7513,\"jitter_cv\":0.1157,\"cache_hierarchy_ratio\":1.9759}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCe291740b62fb4fb11fc52120aff033424f6aecb4",
+"ts": 1790290095,
+"profile_json": "{\"clock_drift_cv\":0.0238,\"thermal_variance\":4.2243,\"jitter_cv\":0.0739,\"cache_hierarchy_ratio\":1.8738}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC954e7ac516b4cf773961f67ad3f3c88b6419b99c",
+"ts": 1790290317,
+"profile_json": "{\"clock_drift_cv\":0.0291,\"thermal_variance\":4.9337,\"jitter_cv\":0.1427,\"cache_hierarchy_ratio\":2.395}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC06ad58b068acdcbb958926526475a5523acb5378",
+"ts": 1790290478,
+"profile_json": "{\"clock_drift_cv\":0.0267,\"thermal_variance\":3.141,\"jitter_cv\":0.1071,\"cache_hierarchy_ratio\":2.1735}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCe62c960558eb595e63252d30ac373c7ad0f34da6",
+"ts": 1790290607,
+"profile_json": "{\"clock_drift_cv\":0.014,\"thermal_variance\":0.9748,\"jitter_cv\":0.1653,\"cache_hierarchy_ratio\":2.2587}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC01c9a1429c1cb97efed26d897edf8fabefb90017",
+"ts": 1790290712,
+"profile_json": "{\"clock_drift_cv\":0.0207,\"thermal_variance\":1.1663,\"jitter_cv\":0.0976,\"cache_hierarchy_ratio\":1.9545}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCd1d1c1d6e1bd14ce7aceb598e8c8bf236d96be28",
+"ts": 1790290790,
+"profile_json": "{\"clock_drift_cv\":0.0112,\"thermal_variance\":2.1602,\"jitter_cv\":0.2076,\"cache_hierarchy_ratio\":2.2381}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCc11f7d5d5a13566a5549da64777065ed6c843b4e",
+"ts": 1790291004,
+"profile_json": "{\"clock_drift_cv\":0.0171,\"thermal_variance\":3.9448,\"jitter_cv\":0.0695,\"cache_hierarchy_ratio\":1.8116}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC7cc581dca67665c6ca1ec764140e3d7a8681524d",
+"ts": 1790291066,
+"profile_json": "{\"clock_drift_cv\":0.0198,\"thermal_variance\":3.3814,\"jitter_cv\":0.1658,\"cache_hierarchy_ratio\":2.2823}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC4176c97922bf7140eb18882d0d08753d3eeea2a2",
+"ts": 1790291215,
+"profile_json": "{\"clock_drift_cv\":0.0232,\"thermal_variance\":4.5457,\"jitter_cv\":0.0706,\"cache_hierarchy_ratio\":2.3444}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC6f840af10b0f91ba400ab601d6bbefa670fce621",
+"ts": 1790291342,
+"profile_json": "{\"clock_drift_cv\":0.0187,\"thermal_variance\":1.9882,\"jitter_cv\":0.1109,\"cache_hierarchy_ratio\":2.4158}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC19948cfc1bdbb989567d1b64147e4093788e306b",
+"ts": 1790291507,
+"profile_json": "{\"clock_drift_cv\":0.0279,\"thermal_variance\":5.4866,\"jitter_cv\":0.0792,\"cache_hierarchy_ratio\":2.5097}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC760704240ab61bc28e972aee965f4c3da78ff82d",
+"ts": 1790291742,
+"profile_json": "{\"clock_drift_cv\":0.0095,\"thermal_variance\":1.2129,\"jitter_cv\":0.134,\"cache_hierarchy_ratio\":2.7622}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTCbccb40f2ad900e9d10cf82be2a26402aaaf35292",
+"ts": 1790291941,
+"profile_json": "{\"clock_drift_cv\":0.0119,\"thermal_variance\":4.7205,\"jitter_cv\":0.2202,\"cache_hierarchy_ratio\":2.1441}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC3744642e306cfd52262f2ffd74008af78a438dfc",
+"ts": 1790292078,
+"profile_json": "{\"clock_drift_cv\":0.0233,\"thermal_variance\":5.1395,\"jitter_cv\":0.1015,\"cache_hierarchy_ratio\":2.5697}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC97b5bb89da2b5ca6aa2c99a8cf59222e38224f68",
+"ts": 1790292176,
+"profile_json": "{\"clock_drift_cv\":0.0243,\"thermal_variance\":3.8545,\"jitter_cv\":0.214,\"cache_hierarchy_ratio\":2.7831}",
+"source_ip": "198.51.100.20",
+"device_arch": "G4"
+},
+{
+"miner": "RTC294f0fc129b741cfc2ebe9c74dfb0a4e6cedbcee",
+"ts": 1790292354,
+"profile_json": "{\"clock_drift_cv\":0.029,\"thermal_variance\":3.7366,\"jitter_cv\":0.0562,\"cache_hierarchy_ratio\":2.0772}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+},
+{
+"miner": "RTC9a9e9fad5e523b37eec321f0bc905ddac314875f",
+"ts": 1790292480,
+"profile_json": "{\"clock_drift_cv\":0.0132,\"thermal_variance\":3.728,\"jitter_cv\":0.1911,\"cache_hierarchy_ratio\":1.8604}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+},
+{
+"miner": "RTCae5c5b79df7cdc2301bf7b6854060eb6eb345fa3",
+"ts": 1790292664,
+"profile_json": "{\"clock_drift_cv\":0.0231,\"thermal_variance\":4.4736,\"jitter_cv\":0.096,\"cache_hierarchy_ratio\":2.3662}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+},
+{
+"miner": "RTCd51d689c4e8e7c85dadb4b9812413d198d7eccae",
+"ts": 1790292767,
+"profile_json": "{\"clock_drift_cv\":0.012,\"thermal_variance\":4.538,\"jitter_cv\":0.0247,\"cache_hierarchy_ratio\":2.8756}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+},
+{
+"miner": "RTC5c492135ec1cbf328e642ce09b419d71ae1bffbf",
+"ts": 1790292946,
+"profile_json": "{\"clock_drift_cv\":0.0258,\"thermal_variance\":4.0256,\"jitter_cv\":0.0774,\"cache_hierarchy_ratio\":2.8009}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+},
+{
+"miner": "RTC3c062866fc89d8519af0153becf1b22af84b0325",
+"ts": 1790293136,
+"profile_json": "{\"clock_drift_cv\":0.029,\"thermal_variance\":1.5542,\"jitter_cv\":0.1953,\"cache_hierarchy_ratio\":2.7234}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+},
+{
+"miner": "RTC417552d59baac33b7fa8998ddcdbe569f22da47d",
+"ts": 1790293207,
+"profile_json": "{\"clock_drift_cv\":0.0226,\"thermal_variance\":4.389,\"jitter_cv\":0.1186,\"cache_hierarchy_ratio\":2.8134}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+},
+{
+"miner": "RTC6ab7afb258967efaedc70fcd9db8d2f3efd71d48",
+"ts": 1790293336,
+"profile_json": "{\"clock_drift_cv\":0.0293,\"thermal_variance\":2.7827,\"jitter_cv\":0.2015,\"cache_hierarchy_ratio\":2.2765}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+},
+{
+"miner": "RTC66017003b8ea03b46c7836d7f618039c3a086769",
+"ts": 1790293526,
+"profile_json": "{\"clock_drift_cv\":0.012,\"thermal_variance\":2.4953,\"jitter_cv\":0.0446,\"cache_hierarchy_ratio\":2.7965}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+},
+{
+"miner": "RTC6e6271ba90169f6798d4034e6bbe913e2d4c37c6",
+"ts": 1790293611,
+"profile_json": "{\"clock_drift_cv\":0.029,\"thermal_variance\":1.4535,\"jitter_cv\":0.1547,\"cache_hierarchy_ratio\":2.2495}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+},
+{
+"miner": "RTC4230f6b0717c049c905295a49b6e97cf3674bf96",
+"ts": 1790293822,
+"profile_json": "{\"clock_drift_cv\":0.011,\"thermal_variance\":2.3439,\"jitter_cv\":0.0729,\"cache_hierarchy_ratio\":2.6225}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+},
+{
+"miner": "RTC3bc8cdc02b4585ba371ca7fd4c5002ab50ecb41c",
+"ts": 1790293990,
+"profile_json": "{\"clock_drift_cv\":0.0086,\"thermal_variance\":1.8103,\"jitter_cv\":0.1171,\"cache_hierarchy_ratio\":1.8264}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+},
+{
+"miner": "RTCbe7ffe677c62b8fee8b8f044ba4f5d2d77180dbb",
+"ts": 1790294067,
+"profile_json": "{\"clock_drift_cv\":0.0219,\"thermal_variance\":3.9103,\"jitter_cv\":0.2091,\"cache_hierarchy_ratio\":2.0292}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+},
+{
+"miner": "RTC583b3514ddfb06f477e4bbb375e4047875c98b6e",
+"ts": 1790294217,
+"profile_json": "{\"clock_drift_cv\":0.0146,\"thermal_variance\":3.5907,\"jitter_cv\":0.0787,\"cache_hierarchy_ratio\":2.4434}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+},
+{
+"miner": "RTCd99fd936b2075f5f23709613de5659dff11dfbe4",
+"ts": 1790294294,
+"profile_json": "{\"clock_drift_cv\":0.0139,\"thermal_variance\":4.3038,\"jitter_cv\":0.1988,\"cache_hierarchy_ratio\":2.687}",
+"source_ip": "198.51.100.21",
+"device_arch": "G4"
+}
+]

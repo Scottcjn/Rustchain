@@ -10,10 +10,21 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-from .config import Config, load_config
-from .github_client import RateLimitExceeded
-from .models import VerificationStatus
-from .verifier import BountyVerifier
+if __package__:
+    from .config import Config, load_config
+    from .github_client import RateLimitExceeded
+    from .models import ClaimComment, VerificationStatus
+    from .verifier import BountyVerifier
+else:
+    # Preserve the executable-script contract implied by this file's shebang.
+    # Direct invocation puts ``tools/bounty_verifier`` on sys.path, while the
+    # imports below need its parent directory so ``bounty_verifier`` resolves
+    # as a package.
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from bounty_verifier.config import Config, load_config
+    from bounty_verifier.github_client import RateLimitExceeded
+    from bounty_verifier.models import ClaimComment, VerificationStatus
+    from bounty_verifier.verifier import BountyVerifier
 
 
 def setup_logging(level: str) -> None:
@@ -147,7 +158,6 @@ def cmd_check_rate_limit(verifier: BountyVerifier) -> int:
 
 def cmd_parse_comment(verifier: BountyVerifier, text: str) -> int:
     """Parse a claim comment and extract data."""
-    from .models import ClaimComment
     from datetime import datetime
     
     # Create a mock comment

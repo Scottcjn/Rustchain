@@ -1819,12 +1819,28 @@ def register_p2p_endpoints(app, p2p_node: RustChainP2PNode):
         """Require the shared P2P secret for sensitive read-only sync endpoints."""
         provided = request.headers.get("X-P2P-Key", "")
         if not provided or not hmac.compare_digest(provided, P2P_SECRET):
-            return jsonify({"error": "unauthorized", "message": "valid X-P2P-Key required"}), 401
+            return jsonify({
+                "error": "unauthorized",
+                "message": "valid X-P2P-Key required",
+                # Onboarding: external operators kept hitting this with a
+                # self-generated secret. The header must carry the SAME
+                # RC_P2P_SECRET as this node, which is fleet-only.
+                "hint": ("/p2p/* is the authenticated fleet mesh: X-P2P-Key must equal "
+                         "this node's RC_P2P_SECRET, which is issued privately to "
+                         "settlement-node operators. Sync nodes do not need it; use the "
+                         "public endpoints (/health, /epoch, /api/miners, /wallet/balance)."),
+            }), 401
         return None
 
     @app.route('/p2p/gossip', methods=['POST'])
     def receive_gossip():
         """Receive and process gossip message"""
+        # Auth: every other P2P endpoint requires X-P2P-Key. The gossip
+        # POST feeds CRDT merges, so it needs the same gate.
+        auth_error = _require_p2p_read_auth()
+        if auth_error:
+            return auth_error
+
         # FIX(#2867 M5): per-IP rate limit BEFORE expensive verify+CRDT work.
         remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or 'unknown').split(',')[0].strip()
         if not _gossip_rate_check(remote_ip):

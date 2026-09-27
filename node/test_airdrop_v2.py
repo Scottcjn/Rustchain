@@ -141,7 +141,11 @@ class TestEligibilityChecks(unittest.TestCase):
                 return mock_user
             elif "starred" in url:
                 return mock_stars
-            elif "search/commits" in url:
+            elif "search/issues" in url:
+                self.assertEqual(
+                    kwargs["params"]["q"],
+                    "author:testuser org:Scottcjn is:pr is:merged",
+                )
                 return mock_contrib
             return Mock(status_code=404)
 
@@ -155,10 +159,54 @@ class TestEligibilityChecks(unittest.TestCase):
             skip_antisybil=True,  # Skip wallet checks, but still determine tier from GitHub
         )
 
-        # With mock returning 3 PRs, user should be eligible for Builder tier
+        # With mock returning 3 org-scoped merged PRs, user should be eligible for Builder tier
         self.assertTrue(result.eligible)
-        self.assertEqual(result.tier, "builder")  # 3 PRs = Builder tier
+        self.assertEqual(result.tier, "builder")  # 3 merged PRs in Scottcjn org = Builder tier
         self.assertEqual(result.reward_uwrtc, 100 * 1_000_000)
+
+    @patch("requests.get")
+    def test_tier_search_ignores_global_commit_history(self, mock_get):
+        """Tiering must use org-scoped merged PRs, not global commit counts."""
+        mock_user = Mock(status_code=200)
+        mock_user.json.return_value = {
+            "login": "octocat",
+            "created_at": "2020-01-01T00:00:00Z",
+        }
+        mock_user.headers = {}
+
+        mock_contrib = Mock(status_code=200)
+        mock_contrib.json.return_value = {"total_count": 0}
+
+        mock_stars = Mock(status_code=200)
+        mock_stars.headers = {
+            "Link": '<https://api.github.com/user/starred?page=12>; rel="last"'
+        }
+        mock_stars.json.return_value = []
+
+        seen = []
+
+        def side_effect(url, *args, **kwargs):
+            seen.append((url, kwargs.get("params")))
+            if url.endswith("/users/octocat"):
+                return mock_user
+            if url.endswith("/search/issues"):
+                return mock_contrib
+            if url.endswith("/users/octocat/starred"):
+                return mock_stars
+            return Mock(status_code=404)
+
+        mock_get.side_effect = side_effect
+
+        tier = self.airdrop._determine_tier("octocat")
+
+        self.assertEqual(tier, EligibilityTier.STARGAZER)
+        self.assertIn(
+            (
+                "https://api.github.com/search/issues",
+                {"q": "author:octocat org:Scottcjn is:pr is:merged", "per_page": 1},
+            ),
+            seen,
+        )
 
     def test_invalid_chain(self):
         """Test eligibility check with invalid chain."""
@@ -250,6 +298,67 @@ class TestEligibilityChecks(unittest.TestCase):
         self.assertFalse(success)
         self.assertIn("ownership verification required", message)
         self.assertIsNone(claim)
+
+    def test_concurrent_claim_same_username_no_double_allocate(self):
+        """Regression #8245: concurrent claims for the SAME github_username
+        with DIFFERENT wallets must not both insert (double-allocate).
+
+        The dedup rule is `github_username OR wallet_address`, but the schema's
+        UNIQUE constraint only covers the composite (github_username,
+        wallet_address, chain). So two racing claims with the same username and
+        different wallets could both pass the early SELECT and both INSERT.
+        The fix serializes the insert via BEGIN IMMEDIATE plus an in-transaction
+        re-check. We exercise the race with real threads against a file-backed
+        DB (the :memory: path shares a single connection and cannot race).
+        """
+        import tempfile
+        import threading
+
+        wallet_a = "RTC1234567890123456789012345678901234567890"
+        wallet_b = "RTC2234567890123456789012345678901234567890"
+
+        for _ in range(10):
+            tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+            tmp.close()
+            db_path = tmp.name
+            try:
+                airdrop = AirdropV2(db_path=db_path)
+                username = "raceuser"
+                results = []
+                barrier = threading.Barrier(2)
+
+                def worker(wallet):
+                    try:
+                        barrier.wait()
+                        ok, _, _ = airdrop.claim_airdrop(
+                            github_username=username,
+                            wallet_address=wallet,
+                            chain="base",
+                            tier="contributor",
+                            skip_antisybil=True,
+                        )
+                        results.append(ok)
+                    except Exception as e:  # pragma: no cover
+                        results.append(f"exc:{e}")
+
+                t1 = threading.Thread(target=worker, args=(wallet_a,))
+                t2 = threading.Thread(target=worker, args=(wallet_b,))
+                t1.start()
+                t2.start()
+                t1.join(timeout=10)
+                t2.join(timeout=10)
+
+                # Exactly one of the two concurrent claims may succeed; never both.
+                self.assertEqual(
+                    sum(1 for r in results if r is True),
+                    1,
+                    f"expected exactly 1 successful claim, got {results}",
+                )
+            finally:
+                try:
+                    os.remove(db_path)
+                except OSError:
+                    pass
 
     def test_duplicate_github_with_different_wallet_rejected(self):
         """A GitHub account cannot claim again with a different wallet."""

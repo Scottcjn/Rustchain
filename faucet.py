@@ -1,9 +1,26 @@
 #!/usr/bin/env python3
 """
-RustChain Testnet Faucet
-A simple Flask web application that dispenses test RTC tokens.
+RustChain Testnet Faucet -- DEMO ONLY, DOES NOT PAY.
 
-Features:
+    #############################################################
+    # DEMO - records requests, does not pay.                    #
+    # This module contains NO node call. Every "successful"      #
+    # drip only writes a row into drip_requests; no RTC ever     #
+    # leaves any wallet.                                         #
+    #                                                            #
+    # The supported, paying faucet is faucet_service/            #
+    # faucet_service.py (POST /wallet/transfer with X-Admin-Key, #
+    # records tx_hash, shipped as                                #
+    # testnet/systemd/rustchain-testnet-faucet.service).         #
+    # See FAUCET.md.                                             #
+    #############################################################
+
+Kept in-tree as a minimal reference implementation of the rate-limiting /
+validation logic. Do not deploy it as a faucet: it answers every caller with
+a success payload, so operators and users alike are told tokens were sent
+when nothing was sent (issue #8243, fallout from #8240).
+
+Features (all local, none of them transfer value):
 - IP-based rate limiting
 - SQLite backend for tracking
 - Simple HTML form for requesting tokens
@@ -21,6 +38,16 @@ app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 DATABASE = 'faucet.db'
 RTC_WALLET_RE = re.compile(r'^RTC[0-9a-fA-F]{40}$')
+
+# DEMO - records requests, does not pay.
+# Nothing in this module talks to a node. Exposed in the API payload and in
+# the UI so that neither a caller nor an operator can mistake a recorded
+# request for a settled transfer.
+DEMO_MODE = True
+DEMO_NOTICE = (
+    'DEMO faucet: your request was recorded, but no RTC was sent. '
+    'The paying faucet is faucet_service/faucet_service.py (see FAUCET.md).'
+)
 
 # Rate limiting settings (per 24 hours)
 MAX_DRIP_AMOUNT = 0.5  # RTC
@@ -286,14 +313,20 @@ HTML_TEMPLATE = """
     </style>
 </head>
 <body>
-    <h1>💧 RustChain Testnet Faucet</h1>
-    
+    <h1>💧 RustChain Testnet Faucet <small>(DEMO)</small></h1>
+
+    <div class="result error">
+        <strong>DEMO ONLY — this page does not pay.</strong>
+        Requests are recorded for rate-limit testing; no RTC is transferred.
+        The paying faucet is <code>faucet_service/faucet_service.py</code>.
+    </div>
+
     <div class="form-section">
-        <p>Get free test RTC tokens for development.</p>
+        <p>Record a test drip request. <strong>No tokens are sent.</strong></p>
         <form id="faucetForm">
             <label for="wallet">Your RTC Wallet Address:</label>
             <input type="text" id="wallet" name="wallet" placeholder="0x..." required>
-            <button type="submit" id="submitBtn">Get Test RTC</button>
+            <button type="submit" id="submitBtn">Record Demo Request</button>
         </form>
         
         <div id="result"></div>
@@ -330,7 +363,8 @@ HTML_TEMPLATE = """
                     result.textContent = '';
                     const successDiv = document.createElement('div');
                     successDiv.className = 'result success';
-                    successDiv.textContent = '✅ Success! Sent ' + data.amount + ' RTC to ' + wallet;
+                    successDiv.textContent = '📝 Request recorded for ' + wallet
+                        + ' (' + data.amount + ' RTC). DEMO — no RTC was sent.';
                     result.appendChild(successDiv);
                     if (data.next_available) {
                         const infoDiv = document.createElement('div');
@@ -360,7 +394,7 @@ HTML_TEMPLATE = """
             }
             
             submitBtn.disabled = false;
-            submitBtn.textContent = 'Get Test RTC';
+            submitBtn.textContent = 'Record Demo Request';
         });
     </script>
 </body>
@@ -383,13 +417,19 @@ def faucet_page():
 @app.route('/faucet/drip', methods=['POST'])
 def drip():
     """
-    Handle drip requests.
-    
+    Record a drip request. DEMO - records requests, does not pay.
+
+    No transfer is attempted: `ok` means "request accepted and recorded",
+    NOT "tokens sent". `sent` is always False here so that callers can tell
+    the two apart; the paying implementation lives in faucet_service/.
+
     Request body:
         {"wallet": "0x..."}
-    
+
     Response:
-        {"ok": true, "amount": 0.5, "next_available": "2026-03-08T12:00:00Z"}
+        {"ok": true, "sent": false, "demo": true, "amount": 0.5,
+         "notice": "DEMO faucet: ... no RTC was sent",
+         "next_available": "2026-03-08T12:00:00Z"}
     """
     data = request.get_json(silent=True)
 
@@ -426,6 +466,12 @@ def drip():
 
     return jsonify({
         'ok': True,
+        # DEMO - records requests, does not pay. `amount` is the amount that
+        # was charged against the rate limit, not an amount that was sent.
+        'sent': False,
+        'demo': DEMO_MODE,
+        'tx_hash': None,
+        'notice': DEMO_NOTICE,
         'amount': amount,
         'wallet': wallet,
         'next_available': (datetime.now(timezone.utc) + timedelta(hours=RATE_LIMIT_HOURS)).isoformat()
@@ -440,5 +486,12 @@ if __name__ == '__main__':
         init_db()  # Ensure table exists
     
     # Run the server
-    print("Starting RustChain Faucet on http://0.0.0.0:8090/faucet")
+    print("=" * 70)
+    print("DEMO FAUCET - records requests, DOES NOT PAY.")
+    print("No RTC is transferred by this process. Callers are told so in the")
+    print("JSON payload ('sent': false) and on the web page.")
+    print("The supported paying faucet is faucet_service/faucet_service.py")
+    print("(see FAUCET.md). Do not deploy this file as a public faucet.")
+    print("=" * 70)
+    print("Starting RustChain DEMO Faucet on http://0.0.0.0:8090/faucet")
     app.run(host='0.0.0.0', port=8090, debug=False)

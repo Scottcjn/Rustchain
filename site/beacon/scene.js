@@ -15,6 +15,9 @@ let autoRotate = true;
 let autoRotateSpeed = 0.001; // radians per frame (~0.06°)
 let lerpTarget = null;
 let lerpAlpha = 0;
+let rendererPixelRatioCap = 2;
+
+const PERFORMANCE_PIXEL_RATIO_CAP = 1.25;
 
 // Day/Night Cycle - Lighting references
 let ambientLight, dirLight;
@@ -27,6 +30,11 @@ export function getClock() { return clock; }
 export function registerClickable(mesh) { clickables.push(mesh); }
 export function registerHoverable(mesh) { hoverables.push(mesh); }
 export function onAnimate(fn) { animationCallbacks.push(fn); }
+
+export function setAgentPerformanceMode(enabled) {
+  rendererPixelRatioCap = enabled ? PERFORMANCE_PIXEL_RATIO_CAP : 2;
+  updateRendererPixelRatio();
+}
 
 export function initScene(canvas) {
   clock = new THREE.Clock();
@@ -44,7 +52,7 @@ export function initScene(canvas) {
   // Renderer
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  updateRendererPixelRatio();
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.8;
 
@@ -55,6 +63,15 @@ export function initScene(canvas) {
   controls.minDistance = 30;
   controls.maxDistance = 600;
   controls.maxPolarAngle = Math.PI * 0.48;
+  // Make the gesture contract explicit so touch behavior stays stable when
+  // OrbitControls defaults change between Three.js releases.
+  controls.touches.ONE = THREE.TOUCH.ROTATE;
+  controls.touches.TWO = THREE.TOUCH.DOLLY_PAN;
+  controls.screenSpacePanning = true;
+  if (window.matchMedia?.('(pointer: coarse)').matches) {
+    controls.rotateSpeed = 0.65;
+    controls.panSpeed = 0.8;
+  }
   controls.target.set(0, 0, 0);
 
   controls.addEventListener('start', () => { autoRotate = false; });
@@ -99,6 +116,12 @@ function onResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  updateRendererPixelRatio();
+}
+
+function updateRendererPixelRatio() {
+  if (!renderer) return;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, rendererPixelRatioCap));
 }
 
 // --- Click detection ---
@@ -111,9 +134,20 @@ export function setHoverHandler(fn) { onHoverHandler = fn; }
 export function setMissHandler(fn) { onMissHandler = fn; }
 
 export function setupInteraction(canvas) {
-  canvas.addEventListener('click', (e) => {
-    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  // OrbitControls uses Pointer Events for mouse, pen, and touch. Handle taps
+  // on the same event stream so a swipe/drag never opens an agent by accident.
+  canvas.style.touchAction = 'none';
+  const tapDistance = 10;
+  let pointerStart = null;
+
+  const updatePointer = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  };
+
+  const selectAt = (e) => {
+    updatePointer(e);
 
     raycaster.setFromCamera(mouse, camera);
     const hits = raycaster.intersectObjects(clickables, false);
@@ -123,11 +157,30 @@ export function setupInteraction(canvas) {
     } else if (onMissHandler) {
       onMissHandler();
     }
+  };
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.isPrimary && e.button === 0) {
+      pointerStart = { x: e.clientX, y: e.clientY };
+    }
   });
 
-  canvas.addEventListener('mousemove', (e) => {
-    mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-    mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  canvas.addEventListener('pointerup', (e) => {
+    if (!pointerStart || !e.isPrimary || e.button !== 0) return;
+    const distance = Math.hypot(e.clientX - pointerStart.x, e.clientY - pointerStart.y);
+    pointerStart = null;
+    if (distance <= tapDistance) selectAt(e);
+  });
+
+  canvas.addEventListener('pointercancel', () => {
+    pointerStart = null;
+  });
+
+  canvas.addEventListener('pointermove', (e) => {
+    // Touch screens do not have hover; avoiding raycasts while dragging keeps
+    // the gesture responsive and prevents tooltip flicker.
+    if (e.pointerType === 'touch') return;
+    updatePointer(e);
 
     raycaster.setFromCamera(mouse, camera);
     const hits = raycaster.intersectObjects(hoverables, false);

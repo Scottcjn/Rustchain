@@ -1,0 +1,11 @@
+{
+  "fixture_version": 1,
+  "operation_id": "getWalletBalance",
+  "status": 200,
+  "content_type": "application/json",
+  "body": {
+    "miner_id": "fixture-wallet",
+    "amount_i64": 42500000,
+    "amount_rtc": 42.5
+  }
+}

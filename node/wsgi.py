@@ -23,6 +23,7 @@ spec = importlib.util.spec_from_file_location(
 rustchain_main = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rustchain_main)
 rustchain_main.enforce_mock_signature_runtime_guard()
+rustchain_main.enforce_hardware_binding_runtime_guard()
 
 # Get the Flask app
 app = rustchain_main.app
@@ -63,6 +64,17 @@ try:
     register_tokenomics(app, DB_PATH)
 except Exception as _tok_err:
     print(f"[tokenomics] route registration failed: {_tok_err}")
+
+# /catalog — RTC service catalog (non-custodial listings + order receipts).
+# Registered here so it runs under gunicorn. A missing module degrades to no
+# /catalog; errors during registration are caught and logged inside
+# register_service_catalog(), which returns False rather than blocking startup.
+try:
+    from service_catalog import register_service_catalog
+except ImportError as _cat_err:
+    print(f"[catalog] module unavailable, /catalog not mounted: {_cat_err}")
+else:
+    register_service_catalog(app, DB_PATH)
 
 # Expose the app for gunicorn
 application = app

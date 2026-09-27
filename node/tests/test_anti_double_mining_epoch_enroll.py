@@ -10,7 +10,12 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from anti_double_mining import detect_duplicate_identities, get_epoch_miner_groups
+from anti_double_mining import (
+    BLOCK_TIME,
+    GENESIS_TIMESTAMP,
+    detect_duplicate_identities,
+    get_epoch_miner_groups,
+)
 
 
 def _conn():
@@ -26,6 +31,26 @@ def _conn():
         "id INTEGER PRIMARY KEY AUTOINCREMENT, miner TEXT, ts INTEGER, profile_json TEXT)"
     )
     return conn
+
+
+def _machine_evidence(conn, epoch, evidence):
+    """Record node-observed machine evidence: {miner: (source_ip, mac_hash)}.
+
+    ADM identifies one physical machine by a shared MAC hash seen in the
+    epoch window AND the same server-observed source_ip AND the same arch.
+    The fingerprint profile is NOT an identity (the node stores a flat
+    4-metric profile there, which made every miner hash to its arch).
+    """
+    ts = GENESIS_TIMESTAMP + epoch * 144 * BLOCK_TIME + 60
+    conn.execute("ALTER TABLE miner_attest_recent ADD COLUMN source_ip TEXT")
+    conn.execute(
+        "CREATE TABLE miner_macs (miner TEXT NOT NULL, mac_hash TEXT NOT NULL, "
+        "first_ts INTEGER NOT NULL, last_ts INTEGER NOT NULL, count INTEGER DEFAULT 1, "
+        "PRIMARY KEY (miner, mac_hash))"
+    )
+    for miner, (ip, mac) in evidence.items():
+        conn.execute("UPDATE miner_attest_recent SET source_ip=? WHERE miner=?", (ip, miner))
+        conn.execute("INSERT INTO miner_macs VALUES (?, ?, ?, ?, 1)", (miner, mac, ts, ts))
 
 
 def _profile(serial):
@@ -44,6 +69,8 @@ def test_detect_duplicates_prefers_epoch_enroll_when_attestation_is_stale():
             "INSERT INTO miner_fingerprint_history (miner, ts, profile_json) VALUES (?, ?, ?)",
             (miner, 99, _profile("same-machine")),
         )
+    _machine_evidence(conn, 7, {"miner-a": ("192.0.2.10", "mac-same"),
+                                "miner-b": ("192.0.2.10", "mac-same")})
     conn.commit()
 
     duplicates = detect_duplicate_identities(conn, 7, epoch_start_ts=1000, epoch_end_ts=2000)
@@ -69,6 +96,9 @@ def test_get_epoch_miner_groups_uses_epoch_enroll_for_stale_attestations():
             "INSERT INTO miner_fingerprint_history (miner, ts, profile_json) VALUES (?, ?, ?)",
             (miner, 99, _profile(serial)),
         )
+    _machine_evidence(conn, 3, {"miner-a": ("192.0.2.10", "mac-same"),
+                                "miner-b": ("192.0.2.10", "mac-same"),
+                                "miner-c": ("192.0.2.10", "mac-other")})
     conn.commit()
 
     groups = get_epoch_miner_groups(conn, 3)

@@ -39,8 +39,8 @@ VALID_CLOCK_DRIFT = {
 class TestHardwareIDUniqueness:
     """Test that hardware IDs are unique for different inputs."""
 
-    def test_different_serial_numbers_produce_different_ids(self):
-        """Verify that different CPU serials produce different hardware IDs."""
+    def test_different_serial_numbers_do_not_mint_hardware_ids(self):
+        """Client-controlled CPU serials must not mint distinct hardware IDs."""
         device1 = {
             "device_model": "G4",
             "device_arch": "ppc",
@@ -59,7 +59,7 @@ class TestHardwareIDUniqueness:
         id1 = _compute_hardware_id(device1, source_ip="1.1.1.1")
         id2 = _compute_hardware_id(device2, source_ip="1.1.1.1")
 
-        assert id1 != id2, "Different serial numbers should produce different IDs"
+        assert id1 == id2, "Different serial numbers should not produce different IDs"
         assert len(id1) == 32, "Hardware ID should be 32 characters"
 
     def test_different_core_counts_produce_different_ids(self):

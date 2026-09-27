@@ -53,10 +53,38 @@ def cmd_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def confirm_failure_reason(out: dict) -> str | None:
+    """Return why a /pending/confirm response is NOT a success, or None.
+
+    The exit code is the only signal a cron/CI caller gets. This used to return
+    0 for any JSON object, so a pass in which every transfer raised (left
+    pending, nothing delivered) exited green. Fail closed:
+      * ``ok`` must be exactly True (a missing ``ok`` is an unexpected shape);
+      * ``overdue_stats_measured`` must be exactly True. ``false`` means the
+        node could not measure the queue, and "could not measure" is not
+        "nothing to do". A missing or null field (a node older than #8233, or
+        a proxy/error body that dropped it) is equally unmeasured, so it fails
+        too rather than being read as healthy.
+    """
+    if out.get("ok") is not True:
+        failed = out.get("failed_ids")
+        return f"node reported ok={out.get('ok')!r} (failed_ids={failed!r})"
+    measured = out.get("overdue_stats_measured")
+    if measured is not True:
+        if measured is False:
+            return f"pending queue could not be measured: {out.get('overdue_stats_error')!r}"
+        return f"pending queue measurement not reported (overdue_stats_measured={measured!r})"
+    return None
+
+
 def cmd_confirm(args: argparse.Namespace) -> int:
     url = f"{args.node.rstrip('/')}/pending/confirm"
     out = _req("POST", url, args.admin_key, payload={}, insecure=args.insecure)
     print(json.dumps(out, indent=2, sort_keys=True))
+    reason = confirm_failure_reason(out)
+    if reason:
+        print(f"error: confirm pass not healthy: {reason}", file=sys.stderr)
+        return 1
     return 0
 
 

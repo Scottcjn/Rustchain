@@ -274,4 +274,4 @@ See the main [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
 
 - Documentation: [RustChain Docs](https://github.com/Scottcjn/rustchain-bounties/tree/main/docs)
 - Issues: [GitHub Issues](https://github.com/Scottcjn/Rustchain/issues)
-- Discord: [RustChain Discord](https://discord.gg/rustchain)
+- Discord: [RustChain Discord](https://discord.gg/XnRp7M5gBW)

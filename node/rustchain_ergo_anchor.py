@@ -355,7 +355,7 @@ class AnchorService:
 
             _cols = _anchor_columns(cursor)
             cursor.execute(
-                f"SELECT * FROM ergo_anchors ORDER BY {_cols['height']} DESC LIMIT 1"
+                f"SELECT * FROM ergo_anchors ORDER BY {_cols['height']} DESC, id DESC LIMIT 1"
             )
 
             row = cursor.fetchone()
@@ -368,7 +368,16 @@ class AnchorService:
         if not last:
             return current_height >= self.interval_blocks
 
-        blocks_since = current_height - last["rustchain_height"]
+        # Legacy/prod schema stores the height as rc_slot (see _ANCHOR_COLUMN_ALIASES).
+        # No `or 0` default: an unreadable height must not silently look like
+        # "last anchored at height 0" (which would read as "anchor is overdue").
+        last_height = last.get("rustchain_height")
+        if last_height is None:
+            last_height = last.get("rc_slot")
+        if last_height is None:
+            logger.warning("last anchor row has no height column; treating as due")
+            return True
+        blocks_since = current_height - last_height
         return blocks_since >= self.interval_blocks
 
     def create_commitment(self, block: Dict) -> AnchorCommitment:
@@ -457,7 +466,7 @@ class AnchorService:
             _cols = _anchor_columns(cursor)
             cursor.execute(
                 f"SELECT * FROM ergo_anchors WHERE {_cols['height']} <= ? "
-                f"ORDER BY {_cols['height']} DESC LIMIT 1",
+                f"ORDER BY {_cols['height']} DESC, id DESC LIMIT 1",
                 (rustchain_height,),
             )
 
@@ -468,7 +477,9 @@ class AnchorService:
             anchor = dict(row)
 
             # Get Ergo transaction details
-            tx = self.ergo.get_transaction(anchor["ergo_tx_id"])
+            # Legacy/prod schema names the column tx_id (see _ANCHOR_COLUMN_ALIASES).
+            tx_id = anchor.get("ergo_tx_id") or anchor.get("tx_id")
+            tx = self.ergo.get_transaction(tx_id) if tx_id else None
             if tx:
                 anchor["ergo_transaction"] = tx
 
@@ -598,7 +609,7 @@ def create_anchor_api_routes(app, anchor_service: AnchorService):
 
             _cols = _anchor_columns(cursor)
             cursor.execute(
-                f"SELECT * FROM ergo_anchors ORDER BY {_cols['height']} DESC "
+                f"SELECT * FROM ergo_anchors ORDER BY {_cols['height']} DESC, id DESC "
                 f"LIMIT ? OFFSET ?",
                 (limit, offset),
             )

@@ -473,7 +473,7 @@ This MCP server implementation is submitted for the **RustChain MCP Server bount
 ## 🆘 Support
 
 - **Issues:** [GitHub Issues](https://github.com/Scottcjn/RustChain/issues)
-- **Discord:** [RustChain Discord](https://discord.gg/rustchain)
+- **Discord:** [RustChain Discord](https://discord.gg/XnRp7M5gBW)
 - **Twitter:** [@RustChain](https://twitter.com/RustChain)
 
 ---

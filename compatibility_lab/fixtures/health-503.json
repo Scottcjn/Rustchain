@@ -1,0 +1,14 @@
+{
+  "fixture_version": 1,
+  "operation_id": "getHealth",
+  "status": 503,
+  "content_type": "application/json",
+  "body": {
+    "ok": false,
+    "version": "2.2.1-rip200",
+    "uptime_s": 12,
+    "db_rw": false,
+    "backup_age_hours": null,
+    "tip_age_slots": null
+  }
+}

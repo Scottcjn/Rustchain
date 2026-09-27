@@ -116,12 +116,11 @@ def compute_state_hash(state: Dict[str, Any]) -> str:
 
 def _bridged_supply_committed(state: Dict[str, Any]) -> float:
     """Per FEDERATION_BRIDGED_SUPPLY_SPEC.md section 3:
-        bridged_supply_committed = locked_in + completed_in - voided_in
+        bridged_supply_committed = locked_in + completed_in
     """
     return (
         float(state.get("locked_in_rtc", 0.0))
         + float(state.get("completed_in_rtc", 0.0))
-        - float(state.get("voided_in_rtc", 0.0))
     )
 
 

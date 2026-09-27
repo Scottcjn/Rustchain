@@ -794,19 +794,41 @@ class WebSocketFeed:
         return None
 
     def payload_references_address(self, payload: Any, address: str) -> bool:
-        target = address.casefold()
-        return any(value.casefold() == target for value in self.iter_address_values(payload))
+        if not isinstance(address, str) or not address.strip():
+            return False
+        target = address.strip().casefold()
+        try:
+            return any(
+                isinstance(value, str) and value.casefold() == target
+                for value in self.iter_address_values(payload)
+            )
+        except Exception as e:
+            logger.warning("[WebSocket] Error checking address reference in payload: %s", e)
+            return False
 
-    def iter_address_values(self, payload: Any):
+    def iter_address_values(self, payload: Any, max_depth: int = 32, seen: Optional[set] = None):
+        if seen is None:
+            seen = set()
+        if max_depth <= 0:
+            return
+
         if isinstance(payload, dict):
+            obj_id = id(payload)
+            if obj_id in seen:
+                return
+            seen.add(obj_id)
             for key, value in payload.items():
                 if isinstance(key, str) and key.casefold() in ADDRESS_FILTER_FIELDS and isinstance(value, str):
                     yield value
                 if isinstance(value, (dict, list)):
-                    yield from self.iter_address_values(value)
+                    yield from self.iter_address_values(value, max_depth=max_depth - 1, seen=seen)
         elif isinstance(payload, list):
+            obj_id = id(payload)
+            if obj_id in seen:
+                return
+            seen.add(obj_id)
             for item in payload:
-                yield from self.iter_address_values(item)
+                yield from self.iter_address_values(item, max_depth=max_depth - 1, seen=seen)
 
     def first_present(self, payload: Dict[str, Any], keys: Tuple[str, ...]) -> Any:
         for key in keys:
@@ -819,13 +841,15 @@ class WebSocketFeed:
             return None
         if isinstance(value, int):
             return value if value >= 0 else None
+        if isinstance(value, float):
+            return None
         if isinstance(value, str):
             value = value.strip()
             if not value:
                 return None
             try:
                 parsed = int(value, 0)
-            except ValueError:
+            except (ValueError, TypeError):
                 return None
             return parsed if parsed >= 0 else None
         return None

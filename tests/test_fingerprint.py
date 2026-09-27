@@ -25,15 +25,15 @@ VALID_CLOCK_DRIFT = {
 }
 
 
-def test_compute_hardware_id_uniqueness():
-    """Verify that different inputs produce different hardware IDs."""
+def test_compute_hardware_id_ignores_client_controlled_cpu_serial():
+    """Changing spoofable cpu_serial must not create a distinct hardware ID."""
     device1 = {"device_model": "G4", "device_arch": "ppc", "device_family": "7447", "cores": 1, "cpu_serial": "123"}
     device2 = {"device_model": "G4", "device_arch": "ppc", "device_family": "7447", "cores": 1, "cpu_serial": "456"}
 
     id1 = _compute_hardware_id(device1, source_ip="1.1.1.1")
     id2 = _compute_hardware_id(device2, source_ip="1.1.1.1")
 
-    assert id1 != id2
+    assert id1 == id2
     assert len(id1) == 32
 
 def test_compute_hardware_id_consistency():

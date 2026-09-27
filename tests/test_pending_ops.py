@@ -147,7 +147,7 @@ def test_cmd_confirm_posts_empty_payload(monkeypatch, capsys):
                 "insecure": insecure,
             }
         )
-        return {"confirmed": 2}
+        return {"ok": True, "confirmed": 2, "overdue_stats_measured": True}
 
     monkeypatch.setattr(pending_ops, "_req", fake_req)
     args = argparse.Namespace(node="https://node.test", admin_key="admin-secret", insecure=False)
@@ -160,7 +160,7 @@ def test_cmd_confirm_posts_empty_payload(monkeypatch, capsys):
         "payload": {},
         "insecure": False,
     }
-    assert json.loads(capsys.readouterr().out) == {"confirmed": 2}
+    assert json.loads(capsys.readouterr().out) == {"ok": True, "confirmed": 2, "overdue_stats_measured": True}
 
 
 def test_main_rejects_missing_admin_key(monkeypatch, capsys):

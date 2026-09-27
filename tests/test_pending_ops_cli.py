@@ -119,7 +119,7 @@ def test_cmd_confirm_posts_empty_payload(capsys):
     module = load_module()
     args = argparse.Namespace(node="https://node.example/", admin_key="key", insecure=False)
 
-    with patch.object(module, "_req", return_value={"confirmed": 2}) as req:
+    with patch.object(module, "_req", return_value={"ok": True, "confirmed": 2, "overdue_stats_measured": True}) as req:
         assert module.cmd_confirm(args) == 0
 
     req.assert_called_once_with(
@@ -155,3 +155,59 @@ def test_main_reports_http_error(capsys):
         assert module.main(["--admin-key", "key", "confirm"]) == 1
 
     assert "HTTP 403: denied" in capsys.readouterr().err
+
+
+def _confirm_with(module, response):
+    args = argparse.Namespace(node="https://node.example/", admin_key="key", insecure=False)
+    with patch.object(module, "_req", return_value=response):
+        return module.cmd_confirm(args)
+
+
+def test_cmd_confirm_exits_nonzero_when_rows_failed(capsys):
+    """Every row raised and stayed pending: must not exit 0 (false green)."""
+    module = load_module()
+    rc = _confirm_with(module, {
+        "ok": False, "confirmed_count": 0, "failed_count": 2, "failed_ids": [1, 2],
+        "errors": [{"id": 1, "error": "internal_error"}, {"id": 2, "error": "internal_error"}],
+        "overdue_stats_measured": True,
+    })
+    assert rc == 1
+    assert "failed_ids=[1, 2]" in capsys.readouterr().err
+
+
+def test_cmd_confirm_exits_nonzero_on_unexpected_shape():
+    module = load_module()
+    assert _confirm_with(module, {"confirmed_count": 0}) == 1
+
+
+def test_cmd_confirm_exits_nonzero_when_queue_unmeasured(capsys):
+    module = load_module()
+    rc = _confirm_with(module, {
+        "ok": True, "confirmed_count": 0, "stale_pending_count": None,
+        "overdue_stats_measured": False, "overdue_stats_error": "OperationalError: database is locked",
+    })
+    assert rc == 1
+    assert "could not be measured" in capsys.readouterr().err
+
+
+def test_cmd_confirm_exits_zero_on_healthy_pass():
+    module = load_module()
+    assert _confirm_with(module, {
+        "ok": True, "confirmed_count": 3, "failed_count": 0, "failed_ids": [],
+        "overdue_stats_measured": True, "stale_pending_count": 0,
+    }) == 0
+
+
+def test_cmd_confirm_exits_nonzero_when_measurement_missing(capsys):
+    """No overdue_stats_measured field (old node / proxy body): fail closed."""
+    module = load_module()
+    assert _confirm_with(module, {"ok": True, "confirmed_count": 0}) == 1
+    assert "measurement not reported" in capsys.readouterr().err
+
+
+def test_cmd_confirm_exits_nonzero_when_measurement_null(capsys):
+    module = load_module()
+    assert _confirm_with(module, {
+        "ok": True, "confirmed_count": 0, "overdue_stats_measured": None,
+    }) == 1
+    assert "overdue_stats_measured=None" in capsys.readouterr().err

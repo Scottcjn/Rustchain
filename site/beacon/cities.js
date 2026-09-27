@@ -5,8 +5,12 @@
 import * as THREE from 'three';
 import {
   REGIONS, CITIES, regionPosition, cityPosition,
-  buildingHeight, buildingCount, seededRandom, cityRegion,
+  cityRegion,
 } from './data.js';
+import {
+  citySkylineRadius,
+  generateSkylineLayout,
+} from './city-skyline-layout.mjs';
 import { getScene, registerClickable, registerHoverable } from './scene.js';
 
 const cityGroups = new Map();   // cityId -> THREE.Group
@@ -70,14 +74,14 @@ export function buildCities() {
     group.userData = { type: 'city', cityId: city.id };
 
     const color = new THREE.Color(region.color);
-    const maxH = buildingHeight(city.population);
-    const count = buildingCount(city.population);
-    const rng = seededRandom(hashCode(city.id));
+    const skyline = createCitySkyline(city, color);
+    const maxH = skyline.userData.maxHeight;
+    group.add(skyline);
 
     // City ground ring
     const ringGeo = new THREE.RingGeometry(
-      cityTypeRadius(city.type) - 0.5,
-      cityTypeRadius(city.type),
+      citySkylineRadius(city.type) - 0.5,
+      citySkylineRadius(city.type),
       24
     );
     const ringMat = new THREE.MeshBasicMaterial({
@@ -88,28 +92,8 @@ export function buildCities() {
     ring.position.y = 0.1;
     group.add(ring);
 
-    // Buildings
-    for (let i = 0; i < count; i++) {
-      const bw = 1.2 + rng() * 2.5;
-      const bd = 1.2 + rng() * 2.5;
-      const bh = 4 + rng() * (maxH - 4);
-      const bx = (rng() - 0.5) * cityTypeRadius(city.type) * 1.4;
-      const bz = (rng() - 0.5) * cityTypeRadius(city.type) * 1.4;
-
-      const geo = new THREE.BoxGeometry(bw, bh, bd);
-      const edges = new THREE.EdgesGeometry(geo);
-      const line = new THREE.LineSegments(edges,
-        new THREE.LineBasicMaterial({
-          color, transparent: true,
-          opacity: 0.3 + rng() * 0.4,
-        })
-      );
-      line.position.set(bx, bh / 2, bz);
-      group.add(line);
-    }
-
     // Clickable invisible sphere over city
-    const hitGeo = new THREE.SphereGeometry(cityTypeRadius(city.type), 8, 8);
+    const hitGeo = new THREE.SphereGeometry(citySkylineRadius(city.type), 8, 8);
     const hitMat = new THREE.MeshBasicMaterial({ visible: false });
     const hitMesh = new THREE.Mesh(hitGeo, hitMat);
     hitMesh.position.y = maxH / 2;
@@ -129,22 +113,196 @@ export function buildCities() {
   }
 }
 
-function cityTypeRadius(type) {
-  switch (type) {
-    case 'megalopolis': return 16;
-    case 'city': return 12;
-    case 'township': return 9;
-    case 'outpost': return 6;
-    default: return 8;
-  }
+function createCitySkyline(city, color) {
+  const layout = generateSkylineLayout(city);
+  const group = new THREE.Group();
+  group.name = `city-skyline-${city.id}`;
+
+  const segments = layout.flatMap(buildingSegments);
+  const unitBox = new THREE.BoxGeometry(1, 1, 1);
+  const facades = new THREE.InstancedMesh(
+    unitBox,
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0.10,
+      depthWrite: false,
+    }),
+    segments.length,
+  );
+  facades.name = `city-skyline-facades-${city.id}`;
+
+  const outlines = new THREE.InstancedMesh(
+    unitBox,
+    new THREE.MeshBasicMaterial({
+      color,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.46,
+    }),
+    segments.length,
+  );
+  outlines.name = `city-skyline-outlines-${city.id}`;
+
+  const matrix = new THREE.Matrix4();
+  const quaternion = new THREE.Quaternion();
+  const position = new THREE.Vector3();
+  const scale = new THREE.Vector3();
+  const yAxis = new THREE.Vector3(0, 1, 0);
+
+  segments.forEach((segment, index) => {
+    position.set(segment.x, segment.y, segment.z);
+    quaternion.setFromAxisAngle(yAxis, segment.rotation);
+    scale.set(segment.width, segment.height, segment.depth);
+    matrix.compose(position, quaternion, scale);
+    facades.setMatrixAt(index, matrix);
+    outlines.setMatrixAt(index, matrix);
+  });
+  facades.instanceMatrix.needsUpdate = true;
+  outlines.instanceMatrix.needsUpdate = true;
+  group.add(facades, outlines);
+
+  const windows = makeWindowMesh(layout, color, city.id);
+  if (windows) group.add(windows);
+
+  const spires = makeSpireMeshes(layout, color, city.id);
+  if (spires) group.add(...spires);
+
+  const tallest = Math.max(...layout.map(building => (
+    building.height + (building.hasSpire ? Math.min(8, building.height * 0.22) : 0)
+  )));
+  group.userData = {
+    buildingCount: layout.length,
+    segmentCount: segments.length,
+    maxHeight: tallest,
+  };
+  return group;
 }
 
-function hashCode(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+function buildingSegments(building) {
+  if (building.tiers === 1) {
+    return [{ ...building, y: building.height / 2 }];
   }
-  return Math.abs(h);
+
+  const lowerHeight = building.height * 0.62;
+  const upperHeight = building.height - lowerHeight;
+  return [
+    {
+      ...building,
+      y: lowerHeight / 2,
+      height: lowerHeight,
+    },
+    {
+      ...building,
+      y: lowerHeight + upperHeight / 2,
+      width: building.width * 0.68,
+      depth: building.depth * 0.68,
+      height: upperHeight,
+    },
+  ];
+}
+
+function makeWindowMesh(layout, color, cityId) {
+  const windows = [];
+  for (const building of layout) {
+    for (let band = 0; band < building.windowBands; band += 1) {
+      const y = 2.3 + band * ((building.height - 3.4) / Math.max(1, building.windowBands - 1));
+      if (y >= building.height - 0.8) continue;
+
+      const upperTier = building.tiers > 1 && y > building.height * 0.62;
+      const tierScale = upperTier ? 0.68 : 1;
+      const width = building.width * tierScale;
+      const depth = building.depth * tierScale;
+      windows.push(
+        windowTransform(building, 0, y, depth / 2 + 0.04, width * 0.50, 0.18, 0.07),
+        windowTransform(building, width / 2 + 0.04, y, 0, 0.07, 0.18, depth * 0.50),
+      );
+    }
+  }
+
+  if (windows.length === 0) return null;
+
+  const mesh = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshBasicMaterial({
+      color: color.clone().lerp(new THREE.Color(0xffffff), 0.34),
+      transparent: true,
+      opacity: 0.78,
+      toneMapped: false,
+    }),
+    windows.length,
+  );
+  mesh.name = `city-skyline-windows-${cityId}`;
+
+  const matrix = new THREE.Matrix4();
+  const quaternion = new THREE.Quaternion();
+  const yAxis = new THREE.Vector3(0, 1, 0);
+  windows.forEach((window, index) => {
+    quaternion.setFromAxisAngle(yAxis, window.rotation);
+    matrix.compose(
+      new THREE.Vector3(window.x, window.y, window.z),
+      quaternion,
+      new THREE.Vector3(window.width, window.height, window.depth),
+    );
+    mesh.setMatrixAt(index, matrix);
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  return mesh;
+}
+
+function windowTransform(building, localX, y, localZ, width, height, depth) {
+  const sin = Math.sin(building.rotation);
+  const cos = Math.cos(building.rotation);
+  return {
+    x: building.x + localX * cos + localZ * sin,
+    y,
+    z: building.z - localX * sin + localZ * cos,
+    rotation: building.rotation,
+    width,
+    height,
+    depth,
+  };
+}
+
+function makeSpireMeshes(layout, color, cityId) {
+  const towers = layout.filter(building => building.hasSpire);
+  if (towers.length === 0) return null;
+
+  const spires = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.10, 0.22, 1, 6),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.74 }),
+    towers.length,
+  );
+  spires.name = `city-skyline-spires-${cityId}`;
+
+  const beacons = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(1, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }),
+    towers.length,
+  );
+  beacons.name = `city-skyline-beacons-${cityId}`;
+
+  const identity = new THREE.Quaternion();
+  const matrix = new THREE.Matrix4();
+  towers.forEach((building, index) => {
+    const spireHeight = Math.min(8, building.height * 0.22);
+    matrix.compose(
+      new THREE.Vector3(building.x, building.height + spireHeight / 2, building.z),
+      identity,
+      new THREE.Vector3(1, spireHeight, 1),
+    );
+    spires.setMatrixAt(index, matrix);
+
+    matrix.compose(
+      new THREE.Vector3(building.x, building.height + spireHeight, building.z),
+      identity,
+      new THREE.Vector3(0.20, 0.20, 0.20),
+    );
+    beacons.setMatrixAt(index, matrix);
+  });
+  spires.instanceMatrix.needsUpdate = true;
+  beacons.instanceMatrix.needsUpdate = true;
+  return [spires, beacons];
 }
 
 // --- Text sprite helper ---

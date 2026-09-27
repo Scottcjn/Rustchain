@@ -157,12 +157,12 @@ Multiplicadores de antiguidade não são permanentes. Eles decaem lentamente ao 
 ## A Fórmula
 
 ```
-effective_multiplier = 1.0 + (base_multiplier - 1.0) * (1 - 0.15 * chain_age_years)
+effective_multiplier = 1.0 + max(0, (base_multiplier - 1.0) * (1 - 0.15 * chain_age_years))
 ```
 
 ## Exemplos de Decaimento
 
-| Dispositivo | Base | Ano 0 | Ano 1 | Ano 5 | Ano 10 | Ano 16.67 |
+| Dispositivo | Base | Ano 0 | Ano 1 | Ano 5 | Ano 6.67 | Ano 10 |
 |-------------|------|-------|-------|-------|--------|-----------|
 | G4 | 2.5x | 2.50x | 2.275x | 1.375x | 1.0x | 1.0x |
 | G5 | 2.0x | 2.00x | 1.85x | 1.25x | 1.0x | 1.0x |
@@ -170,7 +170,7 @@ effective_multiplier = 1.0 + (base_multiplier - 1.0) * (1 - 0.15 * chain_age_yea
 | SPARC | 2.9x | 2.90x | 2.615x | 1.475x | 1.0x | 1.0x |
 | ARM2 | 4.0x | 4.00x | 3.55x | 1.75x | 1.0x | 1.0x |
 
-Após aproximadamente 16.67 anos, todos os bônus vintage decaem para zero e toda arquitetura ganha igualmente. Nesse ponto, o hardware "moderno" de hoje será ele mesmo vintage, e o ciclo continua.
+Após aproximadamente 6.67 anos, todos os bônus vintage decaem para zero e toda arquitetura ganha igualmente. Nesse ponto, o hardware "moderno" de hoje será ele mesmo vintage, e o ciclo continua.
 
 A cadeia foi lançada em dezembro de 2025. Em março de 2026, a idade da cadeia é aproximadamente 0.3 anos. Multiplicadores atuais ainda estão muito próximos dos seus valores base.
 

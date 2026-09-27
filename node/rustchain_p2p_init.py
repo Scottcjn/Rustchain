@@ -10,15 +10,17 @@ import ipaddress
 import os
 from urllib.parse import urlparse
 
-# All RustChain nodes - includes both Tailscale and public URLs
+# Live RustChain attestation nodes - includes both Tailscale and public URLs.
+# 2026-09-03: node3 (Ryan's Proxmox, 76.8.228.245 / 100.88.109.32) has been
+# offline for ~3 months and node4 (POWER8 Funnel / 100.94.28.32) is down; both
+# were removed so the sync loop stops posting the P2P secret to dead hosts.
+# node2 now uses https:// - 50.28.86.153 serves /health over TLS (verified
+# 2026-09-03) and plain http://...:8099 is not reachable from outside.
+# Extra peers belong in RC_P2P_PEERS, not in this list.
 PEER_NODES = {
     "node1": "https://rustchain.org",           # VPS Primary (public)
     "node1_ts": "http://100.125.31.50:8099",       # VPS via Tailscale
-    "node2": "http://50.28.86.153:8099",           # VPS Secondary / Ergo Anchor
-    "node3": "http://100.88.109.32:8099",          # Ryan's (Tailscale)
-    "node3_public": "http://76.8.228.245:8099",    # Ryan's (public)
-    "node4": "http://100.94.28.32:8099",           # POWER8 S824 (Tailscale)
-    "node4_public": "https://sophiapower8.tailbac22e.ts.net"  # POWER8 (Funnel - public!)
+    "node2": "https://50.28.86.153",               # VPS Secondary / Ergo Anchor
 }
 
 
@@ -102,7 +104,46 @@ def resolve_advertised_url(local_ip, local_port=8099):
     return None
 
 
+def _p2p_secret_configured():
+    """True when the operator supplied a (non-empty) fleet P2P secret."""
+    return bool(os.environ.get("RC_P2P_SECRET", "").strip())
+
+
+def _node_role():
+    """RC_NODE_ROLE: 'settlement' (default, fail-closed: requires RC_P2P_SECRET)
+    or 'sync' (external operator, no fleet secrets, no P2P mesh).
+
+    Settlement is the default on purpose: a fleet node that loses its secret
+    must die loudly, not silently degrade into a public-API-only node
+    (Grok once-over 2026-09-02)."""
+    return os.environ.get("RC_NODE_ROLE", "settlement").strip().lower() or "settlement"
+
+
 def init_p2p(app, db_path, node_id=None):
+    # Onboarding gate: the authenticated gossip mesh (rustchain_p2p_gossip) needs
+    # the fleet-wide RC_P2P_SECRET and hard-exits at import when it is missing.
+    # A new operator running a SYNC node (the documented default) does not hold
+    # that secret and cannot obtain it from the docs -- it is issued privately to
+    # settlement-node operators. Without this gate the whole node process dies
+    # at startup with "[P2P] FATAL: RC_P2P_SECRET ...", or, if the operator
+    # invents a secret, every /p2p/* call to the fleet answers 401
+    # "valid X-P2P-Key required". So: no secret + sync role -> run the public
+    # API without the mesh. Settlement nodes keep the fail-closed behaviour.
+    if not _p2p_secret_configured():
+        role = _node_role()
+        if role == "sync":
+            print("[P2P] RC_P2P_SECRET is not set: running as a SYNC node without "
+                  "the authenticated P2P mesh (no authenticated /p2p mesh endpoints, no gossip). "
+                  "The mesh is fleet-only; sync nodes serve the public read API "
+                  "(/health, /epoch, /api/miners, /wallet/balance) and accept "
+                  "attestations.")
+            return None
+        raise SystemExit(
+            f"[P2P] FATAL: RC_NODE_ROLE={role!r} requires RC_P2P_SECRET (the fleet "
+            "P2P secret issued to verified settlement-node operators). Unset "
+            "RC_NODE_ROLE=sync to run an external sync node without the P2P mesh."
+        )
+
     try:
         from rustchain_p2p_gossip import RustChainP2PNode, register_p2p_endpoints
     except ImportError:

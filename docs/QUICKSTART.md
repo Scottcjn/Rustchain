@@ -57,6 +57,16 @@ On Windows, choose one of these installer paths instead of the Bash one-liner:
 - **Build a custom installer (for developers):** follow
   `miners/windows/installer/README.md` to build a `.exe` installer with Inno Setup 6.
 
+To copy-paste the quick bootstrap on Windows, open PowerShell and run:
+
+```powershell
+curl.exe -sSL -o rustchain_miner_setup.bat https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/windows/rustchain_miner_setup.bat
+.\rustchain_miner_setup.bat
+```
+
+This downloads the self-bootstrapping setup script and runs it (it installs Python if
+needed), giving Windows users a copy-paste-ready entry point like the Linux/macOS one-liner.
+
 **What this does:**
 
 1. Detects your operating system and CPU architecture

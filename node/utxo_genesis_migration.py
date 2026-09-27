@@ -19,14 +19,65 @@ Rules:
 import argparse
 from decimal import Decimal, InvalidOperation
 import hashlib
+import hmac
 import json
+import os
 import sqlite3
 import sys
 import time
+from pathlib import Path
+from typing import Optional
 
 from utxo_db import (
     UtxoDB, address_to_proposition, compute_box_id, UNIT,
 )
+
+# ---------------------------------------------------------------------------
+# Rollback authorization (bounty #2819)
+# ---------------------------------------------------------------------------
+
+# rollback_genesis() is a destructive state mutation: it deletes every genesis
+# box and transaction and evicts mempool entries that depend on them. It was
+# reachable with no authorization at all -- a CLI flag or any code path that
+# imported it could wipe the UTXO genesis set and its pending spends.
+#
+# Fail closed: an unset admin key means the operator did not intend rollback to
+# be possible at all, so the call refuses instead of defaulting to open.
+_ROLLBACK_ADMIN_KEY_ENV = "RC_ADMIN_KEY"
+
+
+def _required_rollback_admin_key() -> str:
+    """Return the configured rollback admin key, or '' when none is set."""
+    return os.environ.get(_ROLLBACK_ADMIN_KEY_ENV, "").strip()
+
+
+def _constant_time_key_match(provided: str, required: str) -> bool:
+    try:
+        return hmac.compare_digest(
+            provided.encode("utf-8"),
+            required.encode("utf-8"),
+        )
+    except UnicodeError:
+        return False
+
+
+def _require_rollback_authorization(admin_key: Optional[str]) -> None:
+    """Raise RuntimeError unless *admin_key* matches the configured key.
+
+    - No key configured  -> refuse (fail closed, never default to open).
+    - Missing key arg  -> refuse.
+    - Wrong key         -> refuse (constant-time compare).
+    """
+    required = _required_rollback_admin_key()
+    if not required:
+        raise RuntimeError(
+            "rollback admin key is not configured; refusing unauthenticated "
+            "genesis rollback. Set RC_ADMIN_KEY to enable it."
+        )
+    if not admin_key or not isinstance(admin_key, str):
+        raise RuntimeError("admin_key is required for genesis rollback")
+    if not _constant_time_key_match(admin_key.strip(), required):
+        raise RuntimeError("genesis rollback unauthorized: invalid admin key")
 
 GENESIS_TX_PREFIX = "rustchain_genesis:"
 GENESIS_HEIGHT = 0
@@ -151,6 +202,62 @@ def check_existing_non_genesis_utxo_state(utxo_db: UtxoDB, conn=None) -> bool:
             conn.close()
 
 
+def _open_readonly(db_path: str) -> sqlite3.Connection:
+    """Open the migration target without creating journals or schema objects."""
+    uri = Path(db_path).resolve().as_uri() + "?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _has_complete_utxo_schema(conn: sqlite3.Connection) -> bool:
+    """Return whether both UTXO tables exist; reject a partial schema."""
+    required = {"utxo_boxes", "utxo_transactions"}
+    present = {
+        row["name"]
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' "
+            "AND name IN ('utxo_boxes', 'utxo_transactions')"
+        )
+    }
+    if present and present != required:
+        raise RuntimeError(
+            "incomplete UTXO schema: expected utxo_boxes and utxo_transactions"
+        )
+    return present == required
+
+
+def _state_root_from_boxes(boxes: list[dict]) -> str:
+    """Compute the same Merkle root as UtxoDB.compute_state_root, in memory."""
+    rows = sorted(boxes, key=lambda box: box["box_id"])
+    if not rows:
+        return hashlib.sha256(b"empty").hexdigest()
+    count_bytes = len(rows).to_bytes(8, "big")  # must match UtxoDB.compute_state_root (big-endian)
+    hashes = []
+    for row in rows:
+        leaf = {
+            "box_id": row["box_id"],
+            "value_nrtc": row["value_nrtc"],
+            "proposition": row["proposition"],
+            "owner_address": row["owner_address"],
+            "creation_height": row["creation_height"],
+            "transaction_id": row["transaction_id"],
+            "output_index": row["output_index"],
+            "tokens_json": row["tokens_json"],
+            "registers_json": row["registers_json"],
+        }
+        leaf_bytes = json.dumps(leaf, sort_keys=True, separators=(",", ":")).encode()
+        hashes.append(hashlib.sha256(count_bytes + leaf_bytes).digest())
+    while len(hashes) > 1:
+        if len(hashes) % 2:
+            hashes.append(hashlib.sha256(b"\x01" + hashes[-1]).digest())
+        hashes = [
+            hashlib.sha256(hashes[i] + hashes[i + 1]).digest()
+            for i in range(0, len(hashes), 2)
+        ]
+    return hashes[0].hex()
+
+
 def migrate(db_path: str, dry_run: bool = False) -> dict:
     """
     Run the genesis migration.
@@ -161,7 +268,6 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
     utxo_db = UtxoDB(db_path)
 
     if dry_run:
-        _retry_locked(utxo_db.init_tables)
         print("=== DRY RUN — computing what would be created ===")
         print()
 
@@ -169,23 +275,30 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
     conn = None
     now = int(time.time())
     boxes_created = 0
+    preview_boxes = []
 
     try:
-        if not dry_run:
+        if dry_run:
+            # A preview must be observational only: do not call UtxoDB._conn()
+            # (it enables WAL) and do not initialize missing UTXO tables.
+            conn = _open_readonly(db_path)
+            has_utxo_schema = _has_complete_utxo_schema(conn)
+        else:
             conn = _retry_locked(utxo_db._conn)
             conn.execute("BEGIN IMMEDIATE")
             utxo_db.init_tables(conn=conn)
+            has_utxo_schema = True
 
-        # For real migrations, this check runs under the same write
-        # transaction that will insert the genesis boxes.
-        if check_existing_genesis(utxo_db, conn=conn):
+        # Real migrations check under the write transaction. Dry runs only
+        # inspect UTXO tables when they already exist.
+        if has_utxo_schema and check_existing_genesis(utxo_db, conn=conn):
             if not dry_run:
                 conn.execute("ROLLBACK")
             print("ERROR: Genesis boxes already exist. Aborting.")
             print("To re-run, use rollback_genesis() first.")
             return {'error': 'genesis_already_exists'}
 
-        if check_existing_non_genesis_utxo_state(utxo_db, conn=conn):
+        if has_utxo_schema and check_existing_non_genesis_utxo_state(utxo_db, conn=conn):
             if not dry_run:
                 conn.execute("ROLLBACK")
             print("ERROR: Non-genesis UTXO state already exists. Aborting.")
@@ -214,7 +327,19 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
                 amount_nrtc, prop, GENESIS_HEIGHT, tx_id, 0
             )
 
+            registers_json = json.dumps({"R4": "genesis"})
             if dry_run:
+                preview_boxes.append({
+                    "box_id": box_id,
+                    "value_nrtc": amount_nrtc,
+                    "proposition": prop,
+                    "owner_address": miner_id,
+                    "creation_height": GENESIS_HEIGHT,
+                    "transaction_id": tx_id,
+                    "output_index": 0,
+                    "tokens_json": "[]",
+                    "registers_json": registers_json,
+                })
                 print(f"  {miner_id:40s} | {amount_nrtc / UNIT:>14.6f} RTC | box={box_id[:16]}...")
             else:
                 # Insert box
@@ -228,7 +353,7 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
                         box_id, amount_nrtc, prop, miner_id,
                         GENESIS_HEIGHT, tx_id, 0,
                         '[]',
-                        json.dumps({'R4': 'genesis'}),
+                        registers_json,
                         now,
                     ),
                 )
@@ -287,8 +412,12 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
         if conn is not None:
             conn.close()
 
-    # Compute and verify state root
-    state_root = utxo_db.compute_state_root()
+    # A dry-run hashes the boxes it would create, not current disk state.
+    state_root = (
+        _state_root_from_boxes(preview_boxes)
+        if dry_run
+        else utxo_db.compute_state_root()
+    )
 
     # Integrity check
     if not dry_run:
@@ -328,7 +457,7 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
     return result
 
 
-def rollback_genesis(db_path: str) -> int:
+def rollback_genesis(db_path: str, admin_key: Optional[str] = None) -> int:
     """Remove all genesis boxes and their transactions atomically.
 
     Wrapped in a single BEGIN IMMEDIATE transaction so no partial
@@ -343,7 +472,13 @@ def rollback_genesis(db_path: str) -> int:
     from before the rollback, blocking fresh spends and leaving the old
     transaction eligible for inclusion. Rolling back has to clear pending
     intent as well as state, or it is not a rollback.
+
+    Authorization (bounty #2819): rollback is a destructive state mutation
+    that deletes every genesis box/transaction and evicts pending mempool
+    claims. It was previously reachable unauthenticated, so it now requires
+    an admin key matching RC_ADMIN_KEY. Fail closed: an unset key refuses.
     """
+    _require_rollback_authorization(admin_key)
     utxo_db = UtxoDB(db_path)
     conn = utxo_db._conn()
     try:
@@ -389,6 +524,25 @@ def rollback_genesis(db_path: str) -> int:
             "DELETE FROM utxo_transactions WHERE tx_type = 'genesis'"
         )
 
+        # Drop account_mirror_boxes provenance that no longer backs a live box
+        # (#2819, Ondrej Nad). The table has no FK/cascade, so a rollback used to
+        # leave the migration's rows behind, and a re-migration over changed
+        # balances then added new rows beside the stale ones. Only done when a
+        # genesis existed: the guard above has then proven all UTXO state was
+        # genesis-only, so every unbacked row is migration debris (including
+        # orphans from earlier rollbacks). Without a genesis, the node's live
+        # dual-write mirror rows are left untouched. The table may not exist
+        # on DBs that predate it.
+        has_mirror_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'account_mirror_boxes'"
+        ).fetchone()
+        if has_genesis and has_mirror_table:
+            conn.execute(
+                "DELETE FROM account_mirror_boxes WHERE box_id NOT IN "
+                "(SELECT box_id FROM utxo_boxes)"
+            )
+
         conn.execute("COMMIT")
         return deleted
 
@@ -410,10 +564,16 @@ if __name__ == '__main__':
                         help='Preview migration without writing')
     parser.add_argument('--rollback', action='store_true',
                         help='Remove genesis boxes (rollback)')
+    parser.add_argument('--admin-key', default=None,
+                        help='Admin key for rollback (or set RC_ADMIN_KEY)')
     args = parser.parse_args()
 
     if args.rollback:
-        rollback_genesis(args.db)
+        try:
+            rollback_genesis(args.db, admin_key=args.admin_key)
+        except RuntimeError as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            sys.exit(1)
     else:
         result = migrate(args.db, dry_run=args.dry_run)
         if 'error' in result:

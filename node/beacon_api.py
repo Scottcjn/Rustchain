@@ -8,11 +8,15 @@ import html
 import hmac
 import math
 import os
+import re
 import time
 import hashlib
 import sqlite3
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime
-from flask import Blueprint, jsonify, request, g
+from flask import Blueprint, Response, jsonify, request, g
 
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -23,6 +27,25 @@ beacon_api = Blueprint('beacon_api', __name__)
 
 DB_PATH = 'rustchain_v2.db'
 BEACON_AUTH_WINDOW_SECONDS = 300
+# Signed timestamps may run slightly ahead of server time (clock skew), but not
+# far: a far-future timestamp would outlive its nonce record and be replayable.
+BEACON_AUTH_MAX_FUTURE_SECONDS = 30
+BOTTUBE_AVATAR_BASE_URL = 'https://bottube.ai/avatar/'
+BOTTUBE_AVATAR_MAX_BYTES = 1024 * 1024
+BOTTUBE_AVATAR_FILENAME = re.compile(
+    r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,126}\.(?:svg|png|jpe?g|webp)$',
+    re.IGNORECASE,
+)
+BOTTUBE_AVATAR_CONTENT_TYPES = frozenset({
+    'image/svg+xml', 'image/png', 'image/jpeg', 'image/webp',
+})
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Keep the avatar proxy pinned to its configured upstream origin."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 # Statuses an administrator uses to bar an agent. A rejoin via /beacon/join
 # must never silently lift one of these — otherwise any holder of the
@@ -74,6 +97,18 @@ def _positive_float_field(data, field_name):
 def _coinbase_addresses_match(left, right):
     """Compare optional EVM-style payment addresses without case sensitivity."""
     return (left or '').strip().casefold() == (right or '').strip().casefold()
+
+
+def _prefunded_balance_i64(db, wallet_id):
+    """RTC (i64 micro-units) already credited to `wallet_id` in the shared
+    balances table, or 0 when the table is absent (standalone Beacon DB)."""
+    try:
+        row = db.execute(
+            "SELECT amount_i64 FROM balances WHERE miner_id = ?", (wallet_id,)
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return 0
+    return int(row[0] or 0) if row else 0
 
 
 def get_db():
@@ -265,7 +300,8 @@ def _authenticate_contract_agent(db, allowed_agents, body_bytes):
         return None, (jsonify({'error': 'Invalid X-Agent-Timestamp'}), 400)
 
     now = int(time.time())
-    if abs(now - timestamp) > BEACON_AUTH_WINDOW_SECONDS:
+    if (timestamp < now - BEACON_AUTH_WINDOW_SECONDS
+            or timestamp > now + BEACON_AUTH_MAX_FUTURE_SECONDS):
         return None, (jsonify({'error': 'Stale Beacon signature timestamp'}), 401)
 
     if not isinstance(nonce, str) or not nonce.strip() or len(nonce) > 128:
@@ -285,9 +321,11 @@ def _authenticate_contract_agent(db, allowed_agents, body_bytes):
     cutoff = now - BEACON_AUTH_WINDOW_SECONDS
     db.execute("DELETE FROM beacon_agent_nonces WHERE created_at < ?", (cutoff,))
     try:
+        # Keep the nonce until its signature can no longer pass the timestamp
+        # check: record the later of now and the signed timestamp.
         db.execute(
             "INSERT INTO beacon_agent_nonces (agent_id, nonce, created_at) VALUES (?, ?, ?)",
-            (agent_id, nonce, now)
+            (agent_id, nonce, max(now, timestamp))
         )
         db.commit()
     except sqlite3.IntegrityError:
@@ -635,6 +673,21 @@ def beacon_join():
                 WHERE agent_id = ?
             """, (name, new_status, now, agent_id))
         else:
+            # SECURITY (#398 Step 3, reported privately 2026-08-29): a
+            # noncanonical bcn_ id skips the pubkey->id binding above, so the
+            # first caller to register such a name installs their own key. If
+            # RTC was already credited to that name (legacy payouts, hosted
+            # handles), the signed-transfer path would then treat the squatter's
+            # key as the spending authority for a balance they never owned.
+            # Fail closed: a pre-funded noncanonical id needs operator-assisted
+            # migration, never anonymous first registration.
+            if not _is_canonical_agent_id(agent_id) and _prefunded_balance_i64(db, agent_id) > 0:
+                return jsonify({
+                    'error': 'This bcn_ id already holds RTC but has no registered key; '
+                             'anonymous first registration is refused. Contact the '
+                             'operators for an ownership migration.',
+                    'code': 'PREFUNDED_ID_REQUIRES_MIGRATION',
+                }), 409
             # New agent — insert with pubkey_hex
             new_status = 'active'
             db.execute("""
@@ -1414,6 +1467,57 @@ def relay_discover():
     # In production, query the relay registry
     # For demo, return empty array
     return jsonify([])
+
+
+# ============================================================
+# AGENT AVATAR TEXTURE PROXY
+# ============================================================
+
+def _fetch_bottube_avatar(filename):
+    """Fetch one bounded image from BoTTube's fixed public avatar origin."""
+    upstream_url = BOTTUBE_AVATAR_BASE_URL + urllib.parse.quote(filename, safe='')
+    upstream_request = urllib.request.Request(
+        upstream_url,
+        headers={
+            'Accept': 'image/svg+xml,image/png,image/jpeg,image/webp',
+            'User-Agent': 'RustChain-Beacon-Atlas/1.0',
+        },
+    )
+    opener = urllib.request.build_opener(_NoRedirectHandler)
+    with opener.open(upstream_request, timeout=5) as upstream:
+        content_type = upstream.headers.get_content_type().lower()
+        if content_type not in BOTTUBE_AVATAR_CONTENT_TYPES:
+            raise ValueError('unsupported avatar content type')
+
+        payload = upstream.read(BOTTUBE_AVATAR_MAX_BYTES + 1)
+        if not payload or len(payload) > BOTTUBE_AVATAR_MAX_BYTES:
+            raise ValueError('invalid avatar size')
+        return payload, content_type
+
+
+@beacon_api.route('/api/avatar/<filename>', methods=['GET'])
+def get_bottube_avatar(filename):
+    """Return a WebGL-safe, same-origin copy of a public BoTTube avatar."""
+    if not BOTTUBE_AVATAR_FILENAME.fullmatch(filename):
+        return jsonify({'error': 'invalid avatar filename'}), 400
+
+    try:
+        payload, content_type = _fetch_bottube_avatar(filename)
+    except urllib.error.HTTPError as exc:
+        status = 404 if exc.code == 404 else 502
+        return jsonify({'error': 'avatar unavailable'}), status
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        return jsonify({'error': 'avatar unavailable'}), 502
+
+    response = Response(payload, content_type=content_type)
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Cache-Control'] = 'public, max-age=86400'
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'none'; script-src 'none'; object-src 'none'; "
+        "base-uri 'none'; frame-ancestors 'none'; sandbox"
+    )
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
 
 
 # ============================================================

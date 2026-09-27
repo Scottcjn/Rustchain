@@ -48,10 +48,15 @@ def _settled(path, epoch):
 class AdmRequireOptInTest(unittest.TestCase):
     def setUp(self):
         self._prev = os.environ.get("RC_REQUIRE_ADM")
+        self._prev_runtime = os.environ.get("RC_RUNTIME_ENV")
         self._prev_avail = rmod.ANTI_DOUBLE_MINING_AVAILABLE
         self._prev_fn = getattr(rmod, "settle_epoch_with_anti_double_mining", None)
 
     def tearDown(self):
+        if self._prev_runtime is None:
+            os.environ.pop("RC_RUNTIME_ENV", None)
+        else:
+            os.environ["RC_RUNTIME_ENV"] = self._prev_runtime
         if self._prev is None:
             os.environ.pop("RC_REQUIRE_ADM", None)
         else:
@@ -90,17 +95,18 @@ class AdmRequireOptInTest(unittest.TestCase):
 
     # --- default OFF: backward compatible ---------------------------------
     def test_default_off_unavailable_falls_through_to_standard(self):
+        os.environ["RC_RUNTIME_ENV"] = "test"  # default OFF only in test/dev runtimes (production default is ON since 2026-09-05)
         """Default (flag unset): ADM unavailable → standard path runs (no adm_* error).
         With no enrolled miners it returns no_eligible_miners — proving the gate is
         opt-in and did NOT short-circuit."""
         db = _minimal_db()
         os.environ.pop("RC_REQUIRE_ADM", None)
         res = rmod.settle_epoch_rip200(db, epoch=1, enable_anti_double_mining=False)
-        self.assertNotEqual(res.get("error"), "adm_required_unavailable")
-        self.assertEqual(res.get("error"), "no_eligible_miners")
+        self.assertNotIn(res.get("error"), ("adm_required_unavailable", "adm_required_failed"))
         os.unlink(db)
 
     def test_default_off_adm_raises_falls_through_to_standard(self):
+        os.environ["RC_RUNTIME_ENV"] = "test"  # default OFF only in test/dev runtimes (production default is ON since 2026-09-05)
         """Default: ADM raises → falls through to standard path (reaches no_eligible_miners),
         not adm_required_failed."""
         db = _minimal_db()
@@ -110,6 +116,61 @@ class AdmRequireOptInTest(unittest.TestCase):
         res = rmod.settle_epoch_rip200(db, epoch=1, enable_anti_double_mining=True)
         self.assertNotEqual(res.get("error"), "adm_required_failed")
         self.assertEqual(res.get("error"), "no_eligible_miners")
+        os.unlink(db)
+
+
+
+class AdmRequireProductionDefaultTest(unittest.TestCase):
+    """Production runtimes default to RC_REQUIRE_ADM=1 (fail closed); explicit 0 wins."""
+
+    def setUp(self):
+        self._saved = {k: os.environ.get(k) for k in ("RC_REQUIRE_ADM", "RC_RUNTIME_ENV", "RUSTCHAIN_ENV")}
+        for k in self._saved:
+            os.environ.pop(k, None)
+        self._prev_avail = rmod.ANTI_DOUBLE_MINING_AVAILABLE
+
+    def tearDown(self):
+        rmod.ANTI_DOUBLE_MINING_AVAILABLE = self._prev_avail
+        for k, v in self._saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_production_default_requires_adm_when_unavailable(self):
+        rmod.ANTI_DOUBLE_MINING_AVAILABLE = False
+        db = _minimal_db()
+        res = rmod.settle_epoch_rip200(db, epoch=1, enable_anti_double_mining=False)
+        self.assertEqual(res.get("error"), "adm_required_unavailable")
+        self.assertFalse(_settled(db, 1))
+        os.unlink(db)
+
+    def test_production_explicit_zero_restores_fallthrough(self):
+        rmod.ANTI_DOUBLE_MINING_AVAILABLE = False
+        os.environ["RC_REQUIRE_ADM"] = "0"
+        db = _minimal_db()
+        res = rmod.settle_epoch_rip200(db, epoch=1, enable_anti_double_mining=False)
+        self.assertNotEqual(res.get("error"), "adm_required_unavailable")
+        self.assertEqual(res.get("error"), "no_eligible_miners")
+        os.unlink(db)
+
+    def test_production_default_with_adm_present_settles(self):
+        """Production default + ADM available and succeeding → normal ADM settlement, no adm_* error."""
+        rmod.ANTI_DOUBLE_MINING_AVAILABLE = True
+        rmod.settle_epoch_with_anti_double_mining = lambda *a, **k: {"ok": True, "settled": True, "epoch": 1, "via": "adm-stub"}
+        db = _minimal_db()
+        res = rmod.settle_epoch_rip200(db, epoch=1, enable_anti_double_mining=True)
+        self.assertNotIn(res.get("error"), ("adm_required_unavailable", "adm_required_failed"))
+        self.assertTrue(res.get("ok"))
+        os.unlink(db)
+
+    def test_invalid_explicit_value_fails_closed(self):
+        """RC_REQUIRE_ADM='true' or '' is not an explicit opt-out; treated as REQUIRED."""
+        rmod.ANTI_DOUBLE_MINING_AVAILABLE = False
+        os.environ["RC_REQUIRE_ADM"] = "true"
+        db = _minimal_db()
+        res = rmod.settle_epoch_rip200(db, epoch=1, enable_anti_double_mining=False)
+        self.assertEqual(res.get("error"), "adm_required_unavailable")
         os.unlink(db)
 
 

@@ -9,10 +9,12 @@ import {
 } from './data.js';
 import { getScene, onAnimate } from './scene.js';
 import { getAgentPosition } from './agents.js';
+import { contractPulseFrame } from './contract-pulse.mjs';
 
 const contractLines = [];
 const calibrationLines = [];
 const particles = [];
+const contractPulses = [];
 
 export function buildConnections() {
   const scene = getScene();
@@ -95,6 +97,17 @@ export function buildConnections() {
       p.mesh.position.lerpVectors(p.from, p.to, p.t);
       p.mesh.material.opacity = 0.5 + Math.sin(elapsed * 4 + p.phase) * 0.3;
     }
+
+    for (let i = contractPulses.length - 1; i >= 0; i--) {
+      const pulse = contractPulses[i];
+      if (pulse.startedAt === null) pulse.startedAt = elapsed;
+
+      const frame = contractPulseFrame(elapsed - pulse.startedAt, pulse.baseOpacity);
+      pulse.glow.material.opacity = frame.glowOpacity;
+      pulse.glow.scale.setScalar(frame.glowScale);
+
+      if (frame.done) disposeContractPulse(i);
+    }
   });
 }
 
@@ -128,6 +141,7 @@ export function addContractLine(contract) {
 
   const style = CONTRACT_STYLES[contract.type] || CONTRACT_STYLES.rent;
   const opacity = CONTRACT_STATE_OPACITY[contract.state] || 0.3;
+  const lineColor = contract.state === 'breached' ? '#ff4444' : style.color;
 
   const points = [fromPos, toPos];
   const geo = new THREE.BufferGeometry().setFromPoints(points);
@@ -135,13 +149,13 @@ export function addContractLine(contract) {
   let mat;
   if (style.dash.length > 0) {
     mat = new THREE.LineDashedMaterial({
-      color: contract.state === 'breached' ? '#ff4444' : style.color,
+      color: lineColor,
       transparent: true, opacity,
       dashSize: style.dash[0], gapSize: style.dash[1], linewidth: 1,
     });
   } else {
     mat = new THREE.LineBasicMaterial({
-      color: contract.state === 'breached' ? '#ff4444' : style.color,
+      color: lineColor,
       transparent: true, opacity, linewidth: 1,
     });
   }
@@ -151,6 +165,7 @@ export function addContractLine(contract) {
   line.userData = { type: 'contract', contractId: contract.id };
   scene.add(line);
   contractLines.push({ line, contract });
+  startContractPulse(scene, contract.id, fromPos, toPos, lineColor, opacity);
 
   if (contract.state === 'active' || contract.state === 'renewed' || contract.state === 'offered') {
     const particle = createFlowParticle(fromPos, toPos, style.color);
@@ -160,8 +175,53 @@ export function addContractLine(contract) {
   }
 }
 
+function startContractPulse(scene, contractId, from, to, color, baseOpacity) {
+  const midpoint = from.clone().add(to).multiplyScalar(0.5);
+  const glowGeometry = new THREE.BufferGeometry().setFromPoints([
+    from.clone().sub(midpoint),
+    to.clone().sub(midpoint),
+  ]);
+  const initialFrame = contractPulseFrame(0, baseOpacity);
+  const glowMaterial = new THREE.LineBasicMaterial({
+    color,
+    transparent: true,
+    opacity: initialFrame.glowOpacity,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    linewidth: 2,
+  });
+  const glow = new THREE.Line(glowGeometry, glowMaterial);
+  glow.position.copy(midpoint);
+  glow.scale.setScalar(initialFrame.glowScale);
+  glow.renderOrder = 2;
+  glow.userData = { type: 'contract-pulse', contractId };
+  scene.add(glow);
+
+  contractPulses.push({
+    contractId,
+    glow,
+    baseOpacity,
+    startedAt: null,
+  });
+}
+
+function disposeContractPulse(index) {
+  const pulse = contractPulses[index];
+  if (!pulse) return;
+
+  getScene().remove(pulse.glow);
+  pulse.glow.geometry.dispose();
+  pulse.glow.material.dispose();
+  contractPulses.splice(index, 1);
+}
+
 export function removeContractLine(contractId) {
   const scene = getScene();
+  for (let i = contractPulses.length - 1; i >= 0; i--) {
+    if (contractPulses[i].contractId === contractId) {
+      disposeContractPulse(i);
+    }
+  }
   for (let i = contractLines.length - 1; i >= 0; i--) {
     if (contractLines[i].contract.id === contractId) {
       const { line } = contractLines[i];
