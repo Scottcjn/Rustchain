@@ -661,7 +661,19 @@ def register_agent_economy(app: Flask, db_path: str):
         require_signed = 1 if _rss else 0
         # Don't create a job that could never be settled: signed settlement needs a
         # usable verifier (pinned pubkey + PyNaCl). Fail closed at POST time.
-        if require_signed and not _settlement_verifier_ready():
+        #
+        # The gate keys off _settlement_enforced(), NOT the request flag. Every
+        # job created after SETTLEMENT_ENFORCEMENT_CUTOFF_TS is enforced whatever
+        # the client sent (see _settlement_enforced), so a job posted with
+        # require_signed_settlement=false on a node with no usable verifier
+        # would lock escrow that accept/dispute/cancel could never release —
+        # only the TTL auto-refund would ever get it back, and a worker who
+        # delivered could never be paid. Reject at POST time instead.
+        _will_be_enforced = _settlement_enforced({
+            "require_signed_settlement": require_signed,
+            "created_at": int(time.time()),
+        })
+        if _will_be_enforced and not _settlement_verifier_ready():
             return jsonify({"error": "signed_settlement_unavailable: "
                             "RC_SETTLEMENT_PUBKEY not configured on this node"}), 400
 
