@@ -627,7 +627,17 @@ def register_agent_economy(app: Flask, db_path: str):
             return False
 
         _refund_escrow(c, job)
-        _update_reputation(c, job["poster_wallet"], "jobs_expired")
+        # Reputation: a CLAIMED job that runs out the clock is the WORKER's
+        # miss (they took it and never delivered). It used to be booked against
+        # the poster, so any worker could poison a poster's trust score by
+        # claiming their jobs and walking away — and the actual no-show kept a
+        # clean record. An OPEN job that nobody claimed stays on the poster,
+        # as before.
+        worker = job.get("worker_wallet")
+        if job["status"] == STATUS_CLAIMED and worker:
+            _update_reputation(c, worker, "jobs_expired")
+        else:
+            _update_reputation(c, job["poster_wallet"], "jobs_expired")
         _log_job_action(c, job["job_id"], "expired", job["poster_wallet"],
                        f"status={job['status']}")
         return True
