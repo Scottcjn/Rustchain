@@ -30,6 +30,12 @@ try:
     import sybil_guard
 except ImportError:
     from node import sybil_guard
+# Frozen baseline of historical balance-vs-ledger differences, so
+# /pending/integrity reports only NEW drift. Hard import, like sybil_guard.
+try:
+    import integrity_baseline
+except ImportError:
+    from node import integrity_baseline
 
 # Hardware Binding v2.0 - Anti-Spoof with Entropy Validation
 try:
@@ -13124,6 +13130,7 @@ def check_integrity():
         """).fetchall())
     
     mismatches = []
+    known_legacy = []
     # Walk the UNION of both sides. Iterating balances alone made a wallet that
     # exists only in the ledger invisible: RTC credited in the ledger whose
     # balance row is missing (never created, or deleted) reported ok=true.
@@ -13134,6 +13141,15 @@ def check_integrity():
 
         # Balance should equal ledger sum (pending doesn't affect balance yet)
         if balance != ledger_sum:
+            known = integrity_baseline.classify(miner_id, balance - ledger_sum)
+            if known is not None:
+                # Exactly the frozen historical difference: listed, not alarmed.
+                known_legacy.append({
+                    "miner_id": miner_id,
+                    "diff_rtc": (balance - ledger_sum) / 1000000,
+                    "reason": known[0],
+                })
+                continue
             mismatch = {
                 "miner_id": miner_id,
                 "balance_rtc": balance / 1000000,
@@ -13142,6 +13158,11 @@ def check_integrity():
             }
             if balance_row_missing:
                 mismatch["balance_row_missing"] = True
+            baseline = integrity_baseline.KNOWN_LEGACY_DRIFT.get(miner_id)
+            if baseline is not None:
+                # A known wallet that MOVED: new drift on top of old.
+                mismatch["baseline_diff_rtc"] = baseline[0] / 1000000
+                mismatch["drift_since_baseline_rtc"] = (balance - ledger_sum - baseline[0]) / 1000000
             mismatches.append(mismatch)
 
     integrity_ok = len(mismatches) == 0
@@ -13156,6 +13177,8 @@ def check_integrity():
         "ok": integrity_ok,
         "total_miners_checked": len(set(balances) | set(ledger_sums)),
         "mismatches": mismatches if mismatches else None,
+        "known_legacy_count": len(known_legacy),
+        "known_legacy": known_legacy if known_legacy else None,
         "pending_transfers": len(pending)
     })
 
