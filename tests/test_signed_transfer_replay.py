@@ -128,6 +128,10 @@ def _payload(amount_rtc: float = 1.5, nonce: int = 1733420000000) -> dict:
         "signature": "11" * 64,
         "public_key": "22" * 32,
         "memo": "test replay protection",
+        # Signed transfers must bind the active chain_id (cross-network replay
+        # protection); omitting it is rejected with CHAIN_ID_REQUIRED, which is
+        # covered by node/tests/test_signed_transfer_chain_id_required.py.
+        "chain_id": integrated_node.CHAIN_ID,
     }
 
 
@@ -266,6 +270,7 @@ def test_signed_transfer_rejects_nonzero_fee_until_fee_settlement(
         1.5,
         fee=0.25,
         memo="fee-bound",
+        chain_id=integrated_node.CHAIN_ID,
         nonce=1733420001234,
     )
     payload = {
@@ -277,6 +282,7 @@ def test_signed_transfer_rejects_nonzero_fee_until_fee_settlement(
         "signature": transfer["signature"],
         "public_key": transfer["public_key"],
         "memo": transfer["memo"],
+        "chain_id": transfer["chain_id"],
     }
     captured = {}
 
@@ -306,6 +312,7 @@ def test_signed_transfer_rejects_nonzero_fee_until_fee_settlement(
     expected_message = json.dumps(
         {
             "amount": 1.5,
+            "chain_id": integrated_node.CHAIN_ID,
             "fee": 0.25,
             "from": wallet.address,
             "memo": "fee-bound",
@@ -353,6 +360,8 @@ def test_signed_transfer_keeps_legacy_zero_fee_signature_compatible(
     assert response.status_code == 200
     assert "fee" in seen_messages[0]
     assert "fee" not in seen_messages[1]
+    # The legacy (fee-less) fallback message must still carry the chain binding.
+    assert seen_messages[1]["chain_id"] == integrated_node.CHAIN_ID
 
 
 def test_pending_confirm_updates_fresh_init_db_legacy_balances(monkeypatch):
