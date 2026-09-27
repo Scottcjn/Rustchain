@@ -67,7 +67,7 @@ class PayoutWorker:
 
     @staticmethod
     def _balance_columns(conn) -> set:
-        return {row[1] for row in conn.execute("PRAGMA table_info(balances)").fetchall()}
+        return {row[1] for row in conn.execute("PRAGMA table_info(balances)").fetchall()}  # fetchall-ok: pragma-result
 
     def _credit_balance_micro(self, conn, wallet_id: str, delta_i64: int) -> None:
         """Credit ``delta_i64`` micro-RTC to the canonical `balances` ledger, schema-
