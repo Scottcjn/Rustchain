@@ -162,24 +162,39 @@ def test_failed_fingerprint_miner_gets_no_welcome_bonus(tmp_path):
 
 
 def test_passing_miner_gets_exactly_one_welcome_bonus(tmp_path):
+    """sybil_guard changes WHEN the bonus is paid: not on first sight, but when
+    the miner graduates from new-miner probation. Still exactly once."""
     db_path = tmp_path / "welcome_gate_pass.sqlite3"
     node = _load_integrated_node(db_path, "pass")
     bonus_i64 = int(node.WELCOME_BONUS_RTC * 1_000_000)
     start = 10 * bonus_i64
     miner = "honest-baremetal-miner"
-    _prepare_db(node, db_path, ["nonce-ok-1", "nonce-ok-2"], start)
+    _prepare_db(node, db_path, ["nonce-ok-1", "nonce-ok-2", "nonce-ok-3"], start)
+    node.sybil_guard.init_schema(str(db_path))
 
     with node.app.test_client() as client:
         resp = client.post("/attest/submit", json=_payload(miner, "nonce-ok-1", fingerprint_ok=True))
         assert resp.status_code == 200, resp.get_json()
         source, miner_bal, bonus_rows, fp = _state(db_path, miner)
         assert fp == 1
+        assert bonus_rows == 0, "bonus must wait for probation exit, not first attestation"
+        assert miner_bal == 0
+        assert source == start
+
+        # Graduation (normally N attestations over H hours with varying profiles).
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("UPDATE miner_probation SET state = 'trusted' WHERE miner = ?", (miner,))
+            conn.commit()
+
+        resp = client.post("/attest/submit", json=_payload(miner, "nonce-ok-2", fingerprint_ok=True))
+        assert resp.status_code == 200, resp.get_json()
+        source, miner_bal, bonus_rows, _ = _state(db_path, miner)
         assert bonus_rows == 1
         assert miner_bal == bonus_i64
         assert source == start - bonus_i64
 
-        # Second attestation: no second bonus.
-        resp = client.post("/attest/submit", json=_payload(miner, "nonce-ok-2", fingerprint_ok=True))
+        # Further attestation: no second bonus.
+        resp = client.post("/attest/submit", json=_payload(miner, "nonce-ok-3", fingerprint_ok=True))
         assert resp.status_code == 200, resp.get_json()
     source, miner_bal, bonus_rows, _ = _state(db_path, miner)
     assert bonus_rows == 1

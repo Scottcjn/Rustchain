@@ -15,6 +15,7 @@ from pathlib import Path
 from flask import Flask
 
 import rip302_agent_economy
+from tests.rip302_auth_helpers import rip302_authorized  # noqa: F401  (autouse: operator-authorised client)
 
 
 def _make_app(tmp_path: Path, poster_balance: int = 5_000_000):

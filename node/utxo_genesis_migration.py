@@ -524,6 +524,25 @@ def rollback_genesis(db_path: str, admin_key: Optional[str] = None) -> int:
             "DELETE FROM utxo_transactions WHERE tx_type = 'genesis'"
         )
 
+        # Drop account_mirror_boxes provenance that no longer backs a live box
+        # (#2819, Ondrej Nad). The table has no FK/cascade, so a rollback used to
+        # leave the migration's rows behind, and a re-migration over changed
+        # balances then added new rows beside the stale ones. Only done when a
+        # genesis existed: the guard above has then proven all UTXO state was
+        # genesis-only, so every unbacked row is migration debris (including
+        # orphans from earlier rollbacks). Without a genesis, the node's live
+        # dual-write mirror rows are left untouched. The table may not exist
+        # on DBs that predate it.
+        has_mirror_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+            "AND name = 'account_mirror_boxes'"
+        ).fetchone()
+        if has_genesis and has_mirror_table:
+            conn.execute(
+                "DELETE FROM account_mirror_boxes WHERE box_id NOT IN "
+                "(SELECT box_id FROM utxo_boxes)"
+            )
+
         conn.execute("COMMIT")
         return deleted
 

@@ -63,8 +63,8 @@ This implementation adds real-time WebSocket push functionality to the RustChain
 ```
 rustchain/
 ├── node/
-│   ├── sophia_elya_service.py   # Main node server (updated)
-│   └── websocket_feed.py        # WebSocket feed module (new)
+│   └── sophia_elya_service.py   # LEGACY RIP-0005 prototype -- NOT the node (see warning below)
+├── websocket_feed.py            # WebSocket feed module (repo root)
 ├── explorer/
 │   ├── index.html               # Explorer HTML (updated)
 │   ├── requirements.txt         # Dependencies (includes Flask-SocketIO)
@@ -87,12 +87,21 @@ cd explorer
 pip install -r requirements.txt
 ```
 
-2. The WebSocket module is automatically imported by `sophia_elya_service.py`
-
-3. Start the node server:
+2. Run the feed standalone against a node (see the `websocket_feed.py` docstring
+   for embedding it in an existing Flask app instead):
 ```bash
-python node/sophia_elya_service.py
+python3 websocket_feed.py --port 5001 --node https://rustchain.org
 ```
+
+> **Warning — do not run `node/sophia_elya_service.py` as a node.** An earlier
+> version of this page called it the "main node server". It is a legacy
+> RIP-0005 prototype with its own epoch enrollment and settlement that bypass
+> the real node's probation/Sybil holds, anti-double-mining and fingerprint
+> checks, and it defaults to the same `./rustchain_v2.db` filename. Its
+> enrollment/settlement paths now refuse to run unless
+> `RUSTCHAIN_SOPHIA_ELYA_LEGACY_SETTLEMENT=1` is set, and never against a real
+> node database. The node is `node/rustchain_v2_integrated_v2.2.1_rip200.py`,
+> served via `node/wsgi.py` (gunicorn).
 
 ### Frontend Setup
 

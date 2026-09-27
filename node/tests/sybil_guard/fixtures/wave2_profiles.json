@@ -1,0 +1,122 @@
+[
+{
+"miner": "RTCfd664ecfa1607b38e3cbeea0e28d18a1ddabc857",
+"profile_json": "{\"clock_drift_cv\":0.029,\"thermal_variance\":5.6387,\"jitter_cv\":0.0284,\"cache_hierarchy_ratio\":1.8961}",
+"source_ip": "203.0.113.10"
+},
+{
+"miner": "RTC52ae6f9953e1fe743f4008358752eec46aaec3ce",
+"profile_json": "{\"clock_drift_cv\":0.0264,\"thermal_variance\":4.5687,\"jitter_cv\":0.1707,\"cache_hierarchy_ratio\":2.1401}",
+"source_ip": "198.51.100.20"
+},
+{
+"miner": "RTCe1c83bc98fa6ceae834b8f390a376ad7726fd09d",
+"profile_json": "{\"clock_drift_cv\":0.0215,\"thermal_variance\":3.9163,\"jitter_cv\":0.1501,\"cache_hierarchy_ratio\":1.9765}",
+"source_ip": "203.0.113.10"
+},
+{
+"miner": "RTC1f0eb0f3fc026799047ac0ed6353b9f3baf5664e",
+"profile_json": "{\"clock_drift_cv\":0.0177,\"thermal_variance\":2.8391,\"jitter_cv\":0.183,\"cache_hierarchy_ratio\":2.8904}",
+"source_ip": "198.51.100.20"
+},
+{
+"miner": "RTCcc4ecd190f24b669d0bb6c10a322d2fe516e9c00",
+"profile_json": "{\"clock_drift_cv\":0.0288,\"thermal_variance\":3.6,\"jitter_cv\":0.1185,\"cache_hierarchy_ratio\":2.0965}",
+"source_ip": "203.0.113.10"
+},
+{
+"miner": "RTC2a82678a496d3db3634b78d60e7c4725e9feb660",
+"profile_json": "{\"clock_drift_cv\":0.0093,\"thermal_variance\":0.9901,\"jitter_cv\":0.1232,\"cache_hierarchy_ratio\":2.1514}",
+"source_ip": "198.51.100.20"
+},
+{
+"miner": "RTC559d48a02333c48f962baacf6b68a8ec025959dd",
+"profile_json": "{\"clock_drift_cv\":0.008,\"thermal_variance\":1.2322,\"jitter_cv\":0.2056,\"cache_hierarchy_ratio\":2.5966}",
+"source_ip": "203.0.113.10"
+},
+{
+"miner": "RTC5a86d7510d404390b08ada8efe08d9c0108ed853",
+"profile_json": "{\"clock_drift_cv\":0.0081,\"thermal_variance\":1.8182,\"jitter_cv\":0.1881,\"cache_hierarchy_ratio\":1.8676}",
+"source_ip": "198.51.100.20"
+},
+{
+"miner": "RTCb3aeaddc8c490723d1e5a8ed245d4dfbb937f5a7",
+"profile_json": "{\"clock_drift_cv\":0.0166,\"thermal_variance\":5.3557,\"jitter_cv\":0.1373,\"cache_hierarchy_ratio\":2.4159}",
+"source_ip": "203.0.113.10"
+},
+{
+"miner": "RTC5487ea678cab85780d9228ab5c79a00376fdeb0f",
+"profile_json": "{\"clock_drift_cv\":0.0136,\"thermal_variance\":0.972,\"jitter_cv\":0.0907,\"cache_hierarchy_ratio\":1.9528}",
+"source_ip": "198.51.100.20"
+},
+{
+"miner": "RTC552c912f8d31192896f21d4132cc11ecb65c8011",
+"profile_json": "{\"clock_drift_cv\":0.0194,\"thermal_variance\":5.8956,\"jitter_cv\":0.1718,\"cache_hierarchy_ratio\":2.0021}",
+"source_ip": "203.0.113.10"
+},
+{
+"miner": "RTCb7b076572fb84eebf0a4aa9ea3821ba8d4147aa7",
+"profile_json": "{\"clock_drift_cv\":0.0276,\"thermal_variance\":4.8757,\"jitter_cv\":0.1857,\"cache_hierarchy_ratio\":2.794}",
+"source_ip": "198.51.100.20"
+},
+{
+"miner": "RTCbde9a806ff5bf33735249bb2b5d520d277498d79",
+"profile_json": "{\"clock_drift_cv\":0.0248,\"thermal_variance\":4.8403,\"jitter_cv\":0.0974,\"cache_hierarchy_ratio\":2.8753}",
+"source_ip": "203.0.113.10"
+},
+{
+"miner": "RTC3117c87a0f7a019a1fefbc68c394f7b26dfdc1ef",
+"profile_json": "{\"clock_drift_cv\":0.0291,\"thermal_variance\":1.6656,\"jitter_cv\":0.1902,\"cache_hierarchy_ratio\":2.5848}",
+"source_ip": "198.51.100.20"
+},
+{
+"miner": "RTCc1f27a9a52316f73a816ab596c317cf03b4c704e",
+"profile_json": "{\"clock_drift_cv\":0.0184,\"thermal_variance\":3.5302,\"jitter_cv\":0.129,\"cache_hierarchy_ratio\":2.814}",
+"source_ip": "203.0.113.10"
+},
+{
+"miner": "RTC333c67c67b276e22ebef979b5409f5ce33e81967",
+"profile_json": "{\"clock_drift_cv\":0.0192,\"thermal_variance\":5.0513,\"jitter_cv\":0.0974,\"cache_hierarchy_ratio\":2.7681}",
+"source_ip": "198.51.100.20"
+},
+{
+"miner": "RTCefbecb5e9bfa4c4820eb02a99c461acc948a379d",
+"profile_json": "{\"clock_drift_cv\":0.0083,\"thermal_variance\":2.2308,\"jitter_cv\":0.0679,\"cache_hierarchy_ratio\":2.76}",
+"source_ip": "203.0.113.10"
+},
+{
+"miner": "RTCf94273239f1210bad369389c9664aa8297d8a65a",
+"profile_json": "{\"clock_drift_cv\":0.0108,\"thermal_variance\":0.8123,\"jitter_cv\":0.2134,\"cache_hierarchy_ratio\":2.0709}",
+"source_ip": "198.51.100.20"
+},
+{
+"miner": "RTC3d39bb1205797a4d9b128870646571a8beca5c5b",
+"profile_json": "{\"clock_drift_cv\":0.0278,\"thermal_variance\":3.1799,\"jitter_cv\":0.147,\"cache_hierarchy_ratio\":2.809}",
+"source_ip": "203.0.113.10"
+},
+{
+"miner": "RTC7377f843fdacea2e041ee0c0d2cf310557ea11b7",
+"profile_json": "{\"clock_drift_cv\":0.024,\"thermal_variance\":3.3092,\"jitter_cv\":0.0668,\"cache_hierarchy_ratio\":2.1582}",
+"source_ip": "198.51.100.20"
+},
+{
+"miner": "RTCe9abf2a01957f8285c0da4e512c08123681ef85a",
+"profile_json": "{\"clock_drift_cv\":0.0235,\"thermal_variance\":1.6903,\"jitter_cv\":0.2259,\"cache_hierarchy_ratio\":2.0964}",
+"source_ip": "203.0.113.10"
+},
+{
+"miner": "RTC14d3c9f74c32190aa140fd302a8e2c1dcd26076d",
+"profile_json": "{\"clock_drift_cv\":0.028,\"thermal_variance\":2.415,\"jitter_cv\":0.2374,\"cache_hierarchy_ratio\":2.5751}",
+"source_ip": "198.51.100.20"
+},
+{
+"miner": "RTC9abd3e2dec079bee31ea49449798f9443fa9940d",
+"profile_json": "{\"clock_drift_cv\":0.0193,\"thermal_variance\":3.4665,\"jitter_cv\":0.1664,\"cache_hierarchy_ratio\":2.4458}",
+"source_ip": "203.0.113.10"
+},
+{
+"miner": "RTCa411c409a22ef33156fc925fb138bd4c13e7b57d",
+"profile_json": "{\"clock_drift_cv\":0.0152,\"thermal_variance\":1.9011,\"jitter_cv\":0.1341,\"cache_hierarchy_ratio\":2.8242}",
+"source_ip": "198.51.100.20"
+}
+]

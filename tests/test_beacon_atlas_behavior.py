@@ -172,6 +172,22 @@ class TestBeaconAtlasAPIBehavior(unittest.TestCase):
             'X-Agent-Signature': signature,
         }
 
+    def test_far_future_signature_timestamp_is_refused(self):
+        """A far-future timestamp would outlive its nonce record and be
+        replayable after the nonce is pruned, so it is refused up front."""
+        body = json.dumps({'from': 'bcn_alice_test', 'to': 'bcn_bob_test',
+                           'type': 'rent', 'amount': 1.0, 'term': '1d'})
+        headers = self._signed_headers('bcn_alice_test', 'POST', '/api/contracts', body)
+        future = str(int(time.time()) + 120)
+        headers['X-Agent-Timestamp'] = future
+        message = '\n'.join(['POST', '/api/contracts', hashlib.sha256(body.encode()).hexdigest(),
+                             future, headers['X-Agent-Nonce'], 'bcn_alice_test']).encode()
+        headers['X-Agent-Signature'] = self.agent_keys['bcn_alice_test'].sign(message).hex()
+        response = self.client.post('/api/contracts', data=body,
+                                    content_type='application/json', headers=headers)
+        self.assertEqual(response.status_code, 401)
+        self.assertIn('Stale', response.get_json()['error'])
+
     def test_health_endpoint_returns_ok(self):
         """Health check endpoint returns status ok."""
         response = self.client.get('/api/health')

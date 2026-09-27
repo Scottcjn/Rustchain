@@ -146,7 +146,12 @@ class PhaseZeroIsObserveOnlyTest(unittest.TestCase):
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
             and n.func.id == "verify_measurement_binding"
         ]
-        self.assertEqual(len(calls), 1, "expected exactly one phase-0 call site")
+        # sybil_guard records the binding STATE for new-miner probation (a
+        # second call site). It gates weight only behind
+        # REQUIRE_MEASUREMENT_BINDING_FOR_NEW_PREMIUM, which ships OFF.
+        self.assertEqual(len(calls), 2, "expected the phase-0 site + the sybil_guard state site")
+        self.assertIn("REQUIRE_MEASUREMENT_BINDING_FOR_NEW_PREMIUM = False",
+                      open(os.path.join(os.path.dirname(self.SRC), "sybil_guard.py")).read())
         self.assertNotIn("measurement_binding_verdict) *", src)
         self.assertNotIn("hw_weight * measurement_binding", src)
 

@@ -213,7 +213,11 @@ class TestDualWriteShadowBalanceGuard(unittest.TestCase):
         sender = 'RTC_test_aabbccdd'
         recipient = 'RTC' + 'e' * 40  # canonical form; recipients are format-checked since #2819
 
-        self._seed_coinbase(sender, 100 * UNIT)
+        # Consistent dual-write state: the sender's UTXO value equals its account
+        # balance. (With 100 RTC of UTXO against a 10 RTC account, the 90 RTC
+        # change output is registered as an account mirror and the
+        # MIRROR_EXCEEDS_BALANCE guard correctly fails closed.)
+        self._seed_coinbase(sender, 10 * UNIT)
 
         conn = sqlite3.connect(self.db_path)
         conn.execute(
@@ -388,6 +392,19 @@ class TestTransferRecipientFormat(unittest.TestCase):
             self.assertEqual(resp.status_code, 400, bad)
             self.assertEqual(resp.get_json()['error'], 'invalid_to_address_format', bad)
         self.assertEqual(self.utxo_db.get_balance('not-a-wallet') if hasattr(self.utxo_db, 'get_balance') else 0, 0)
+
+    def test_rejects_non_canonical_case_recipient(self):
+        """#2819 (Ondrej Nad): derivation yields lower-case hex, and ownership is
+        matched case-sensitively, so an upper/mixed-case recipient would create a
+        box no key can ever spend. It must be rejected before any state change."""
+        canonical = 'RTC' + 'abcdef0123' * 4
+        for bad in ('RTC' + 'Abcdef0123' * 4, 'RTC' + 'ABCDEF0123' * 4,
+                    canonical[:-1] + 'F'):
+            resp = self._post(bad)
+            self.assertEqual(resp.status_code, 400, bad)
+            self.assertEqual(resp.get_json()['error'], 'invalid_to_address_format', bad)
+        resp = self._post(canonical)
+        self.assertNotEqual((resp.get_json() or {}).get('error'), 'invalid_to_address_format')
 
     def test_canonical_recipient_passes_format_check(self):
         resp = self._post('RTC' + 'c' * 40)

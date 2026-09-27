@@ -4,6 +4,15 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _opt_in_legacy_settlement(monkeypatch):
+    # These tests exercise the legacy RIP-0005 prototype's own settlement logic
+    # against throwaway DBs; its money paths are fail-closed unless opted in.
+    monkeypatch.setenv("RUSTCHAIN_SOPHIA_ELYA_LEGACY_SETTLEMENT", "1")
+
 
 def load_service(tmp_path):
     module_path = Path(__file__).resolve().parents[1] / "sophia_elya_service.py"
