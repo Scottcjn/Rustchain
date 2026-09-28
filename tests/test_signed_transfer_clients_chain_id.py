@@ -486,3 +486,336 @@ def test_secure_wallet_gui_send_fails_explicitly_without_chain_id(monkeypatch, t
 
     assert _secure_wallet_gui(monkeypatch, tmp_path, _CryptoWallet(18), fetch)() is False
     assert posted == []
+
+
+# --------------------------------------------------------------------------
+# Non-ASCII memos. The node signs json.dumps(...) with ensure_ascii=True: every
+# UTF-16 code unit outside 0x20-0x7e (DEL, accents, emoji as a surrogate pair)
+# becomes lowercase \uxxxx. Raw UTF-8 in the signed bytes fails verification.
+# --------------------------------------------------------------------------
+
+UNICODE_MEMO = "caf\u00e9 \u2615 \U0001F600 \x7f \n"
+UNICODE_MEMO_JSON = r'"caf\u00e9 \u2615 \ud83d\ude00 \u007f \n"'
+
+
+def test_unicode_memo_golden_matches_node_encoding():
+    assert json.dumps(UNICODE_MEMO) == UNICODE_MEMO_JSON
+
+
+@needs_node
+@pytest.mark.parametrize("module_path,light,seed", [
+    (LIGHT_SIGNING_JS, True, 31), (NODEJS_BOT_SIGNING_JS, False, 32)])
+def test_js_signers_unicode_memo_verifies_on_node(node, module_path, light, seed):
+    _, _, addr = _key(seed)
+    node.fund(addr)
+    out = _js_signed_body(module_path, seed, 1.5, UNICODE_MEMO, 1733420000031, node.chain_id, light)
+    assert UNICODE_MEMO_JSON in out["message"]
+    _, legacy = _node_messages(addr, TO, 1.5, UNICODE_MEMO, 1733420000031, node.chain_id)
+    assert out["message"].encode() == legacy
+    assert out["body"]["memo"] == UNICODE_MEMO  # raw memo in the request; node re-encodes
+    node.assert_chain_bound_and_accepted(out["body"])
+
+
+@needs_node
+@pytest.mark.parametrize("module_path", [LIGHT_SIGNING_JS, NODEJS_BOT_SIGNING_JS])
+def test_js_string_encoding_matches_python_json(module_path):
+    rng = random.Random(8533)
+    alphabet = ([chr(c) for c in range(0x00, 0x100)]
+                + ["\u2028", "\u2029", "\ufeff", "\uffff", "\u2615", "\U0001F600", "\U0010FFFF"])
+    values = [UNICODE_MEMO, "", '"\\/', "".join(chr(c) for c in range(0x20))]
+    values += ["".join(rng.choice(alphabet) for _ in range(rng.randint(1, 24))) for _ in range(400)]
+    script = f"""
+const s = require({json.dumps(str(module_path))});
+const vals = JSON.parse(require("fs").readFileSync(0, "utf8"));
+console.log(JSON.stringify(vals.map(s.pyJsonString)));
+"""
+    out = subprocess.run(["node", "-e", script], input=json.dumps(values), capture_output=True,
+                         text=True, timeout=60, check=False)
+    assert out.returncode == 0, out.stderr
+    assert json.loads(out.stdout) == [json.dumps(v) for v in values]
+
+
+@pytest.mark.parametrize("seed", [33])
+def test_python_signers_unicode_memo_verify_on_node(node, monkeypatch, tmp_path, seed):
+    """Secure-wallet helper, Telegram bot, wallet CLI, a2a: json.dumps defaults."""
+    wallet = _CryptoWallet(seed)
+    node.fund(wallet.address)
+    node.assert_chain_bound_and_accepted(wallet_signing.build_signed_transfer(
+        wallet, TO, 1.0, UNICODE_MEMO, node.chain_id, nonce=1733420000033))
+
+    bot = _load_telegram_bot(monkeypatch, tmp_path)
+    priv, pub, addr = bot.derive_keypair(77, "test-secret")
+    node.fund(addr)
+    seen = {}
+    monkeypatch.setattr(bot, "api_get", lambda ep, params=None: node.client.get(ep).get_json())
+    monkeypatch.setattr(bot, "api_post", lambda ep, data: seen.setdefault(ep, data))
+    bot.send_signed_transfer(addr, TO, 1.0, priv, pub, memo=UNICODE_MEMO)
+    node.assert_chain_bound_and_accepted(seen["/wallet/transfer/signed"])
+
+    cli = _load("rustchain_wallet_cli_unicode", ROOT / "tools" / "rustchain_wallet_cli.py")
+    _, _, cli_addr = _key(34)
+    node.fund(cli_addr)
+    node.assert_chain_bound_and_accepted(cli._sign_transfer(
+        (bytes([34]) * 32).hex(), cli_addr, TO, 1.0, UNICODE_MEMO, 1733420000034,
+        chain_id=node.chain_id))
+
+    a2a = _load("a2a_transfer_unicode", ROOT / "tools" / "a2a_transfer" / "a2a_transfer.py")
+    signer = a2a.Ed25519Signer.from_hex((bytes([35]) * 32).hex())
+    node.fund(signer.address)
+    node.assert_chain_bound_and_accepted(a2a.build_payload(
+        signer, TO, 1.0, 1733420000035, memo=UNICODE_MEMO, chain_id=node.chain_id))
+
+
+RUST_UNICODE_GOLDEN = {
+    # rustchain-wallet/src/transaction.rs,
+    # test_non_ascii_memo_matches_python_ensure_ascii_golden_vector
+    "message": '{"amount":1.5,"chain_id":"rustchain-mainnet-v2","from":"RTCfe812c12f3ab4ce6ac5db69ac352f906cb1b11ef","memo":"caf\\u00e9 \\u2615 \\ud83d\\ude00 \\u007f \\n","nonce":"1733420000124","to":"RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}',
+    "signature": "c6761c58404ae8fc4de8ed30eb65d328ec8a08db075addf3b92713fa7b5cd837ae2d09f5b819f28ce85a42941d5db012fd0ae5777e924e765a77b6bdae5ea400",
+}
+
+
+def test_rust_wallet_unicode_golden_vector_verifies_on_node(node, monkeypatch):
+    monkeypatch.setattr(integrated_node, "CHAIN_ID", "rustchain-mainnet-v2")
+    node.chain_id = "rustchain-mainnet-v2"
+    _, legacy = _node_messages(RUST_GOLDEN["from"], TO, 1.5, UNICODE_MEMO,
+                               1733420000124, "rustchain-mainnet-v2")
+    assert legacy == RUST_UNICODE_GOLDEN["message"].encode()
+    node.fund(RUST_GOLDEN["from"])
+    node.assert_chain_bound_and_accepted({
+        "from_address": RUST_GOLDEN["from"], "to_address": TO, "amount_rtc": 1.5,
+        "nonce": "1733420000124", "memo": UNICODE_MEMO,
+        "signature": RUST_UNICODE_GOLDEN["signature"],
+        "public_key": RUST_GOLDEN["public_key"], "chain_id": "rustchain-mainnet-v2",
+    })
+
+
+# --------------------------------------------------------------------------
+# Fail closed on chain_id; validate its shape everywhere.
+# --------------------------------------------------------------------------
+
+class _FakeApi:
+    def __init__(self, info):
+        self.info = info
+
+    async def network_info(self):
+        return self.info
+
+
+@pytest.mark.parametrize("override,info,expected", [
+    ("", None, None),                                        # node unreachable
+    ("", {"network": "mainnet"}, None),                      # no chain_id
+    ("", {"chain_id": "bad id"}, None),                      # malformed
+    ("", {"chain_id": "rustchain-testnet-v2"}, "rustchain-testnet-v2"),
+    ("rustchain-mainnet-v2", None, "rustchain-mainnet-v2"),  # explicit override
+    ("bad id", {"chain_id": "rustchain-mainnet-v2"}, None),  # malformed override
+])
+def test_python_discord_bot_chain_id_fails_closed(monkeypatch, override, info, expected):
+    import asyncio
+
+    bot = _load_python_discord_bot(monkeypatch)
+    monkeypatch.setattr(bot, "CHAIN_ID_OVERRIDE", override)
+    assert asyncio.run(bot.resolve_chain_id(_FakeApi(info))) == expected
+
+
+def test_python_discord_bot_tip_refuses_without_chain_id(monkeypatch):
+    import asyncio
+
+    bot = _load_python_discord_bot(monkeypatch)
+    monkeypatch.setattr(bot, "CHAIN_ID_OVERRIDE", "")
+    monkeypatch.setattr(bot, "bot", types.SimpleNamespace(api=_FakeApi(None)), raising=False)
+    sent = []
+
+    async def defer(**_):
+        return None
+
+    async def send(*args, **kwargs):
+        sent.append((args, kwargs))
+
+    interaction = types.SimpleNamespace(
+        response=types.SimpleNamespace(defer=defer),
+        followup=types.SimpleNamespace(send=send))
+    asyncio.run(bot.cmd_tip(interaction, "RTC" + "c" * 40, 1.0))
+    assert len(sent) == 1
+    assert "chain_id" in sent[0][0][0] and "embed" not in sent[0][1]
+
+
+@pytest.mark.parametrize("nonce", ["001", "5", 1.5, True, 0, -3, None.__class__])
+def test_secure_wallet_helper_rejects_bad_nonce(nonce):
+    with pytest.raises((TypeError, ValueError)):
+        wallet_signing.build_signed_transfer(_CryptoWallet(13), TO, 1.0, "", "rustchain-mainnet-v2",
+                                             nonce=nonce)
+
+
+@pytest.mark.parametrize("chain_id", [None, "", "bad id", "x" * 65])
+def test_a2a_build_payload_requires_chain_id(chain_id):
+    a2a = _load("a2a_transfer_chain_required", ROOT / "tools" / "a2a_transfer" / "a2a_transfer.py")
+    signer = a2a.Ed25519Signer.from_hex((bytes([16]) * 32).hex())
+    with pytest.raises(a2a.A2AError, match="chain_id"):
+        a2a.build_payload(signer, TO, 1.0, 1733420000006, chain_id=chain_id)
+
+
+# --------------------------------------------------------------------------
+# Stale cached chain_id: on "chain_id does not match active network" the client
+# refetches once and re-signs (the node never recorded the rejected nonce).
+# --------------------------------------------------------------------------
+
+STALE_CHAIN = "rustchain-old-network"
+
+
+def test_telegram_bot_refetches_stale_chain_id_once(node, monkeypatch, tmp_path):
+    bot = _load_telegram_bot(monkeypatch, tmp_path)
+    priv, pub, addr = bot.derive_keypair(43, "test-secret")
+    node.fund(addr)
+    monkeypatch.setattr(bot, "_chain_id_cache", STALE_CHAIN)
+    monkeypatch.setattr(bot, "api_get", lambda ep, params=None: node.client.get(ep).get_json())
+    posted = []
+
+    class _Resp:  # requests.Response shape, backed by the node app
+        def __init__(self, r):
+            self.status_code, self.ok, self._json = r.status_code, r.status_code < 400, r.get_json()
+
+        def json(self):
+            return self._json
+
+    def post(url, json=None, **_):
+        posted.append(json["chain_id"])
+        return _Resp(node.post(json))
+
+    monkeypatch.setattr(bot.requests, "post", post)
+    result = bot.send_signed_transfer(addr, TO, 1.0, priv, pub, memo="stale")
+    assert result.get("ok") is True, result
+    assert posted == [STALE_CHAIN, node.chain_id]
+
+
+def test_telegram_bot_api_post_keeps_node_error_body(node, monkeypatch, tmp_path):
+    bot = _load_telegram_bot(monkeypatch, tmp_path)
+
+    class _Resp:
+        status_code, ok = 400, False
+
+        def json(self):
+            return {"error": "chain_id does not match active network", "expected_chain_id": "x"}
+
+    monkeypatch.setattr(bot.requests, "post", lambda *a, **k: _Resp())
+    result = bot.api_post("/wallet/transfer/signed", {})
+    assert result["error"].startswith("chain_id does not match")
+    assert result["http_status"] == 400
+
+
+def test_python_sdk_refetches_stale_chain_id_once(node):
+    import asyncio
+
+    import respx
+
+    wallet = SdkWallet.create(strength=128)
+    node.fund(wallet.address)
+    posted = []
+
+    def transfer(request):
+        body = json.loads(request.content)
+        posted.append(body["chain_id"])
+        r = node.post(body)
+        return httpx.Response(r.status_code, json=r.get_json())
+
+    async def run():
+        with respx.mock(base_url="https://rustchain.org") as mock:
+            mock.get("/network/info").mock(return_value=httpx.Response(
+                200, json=node.client.get("/network/info").get_json()))
+            mock.post("/wallet/transfer/signed").mock(side_effect=transfer)
+            async with RustChainClient() as client:
+                client._chain_id = STALE_CHAIN
+                return await client.wallet_transfer_with_wallet(wallet, TO, 1.0, memo="sdk")
+
+    assert asyncio.run(run())["ok"] is True
+    assert posted == [STALE_CHAIN, node.chain_id]
+
+
+def test_python_sdk_explicit_chain_id_is_not_silently_replaced(node):
+    import asyncio
+
+    import respx
+
+    from rustchain_sdk.exceptions import APIError
+
+    wallet = SdkWallet.create(strength=128)
+    node.fund(wallet.address)
+
+    def transfer(request):
+        r = node.post(json.loads(request.content))
+        return httpx.Response(r.status_code, json=r.get_json())
+
+    async def run():
+        with respx.mock(base_url="https://rustchain.org") as mock:
+            mock.post("/wallet/transfer/signed").mock(side_effect=transfer)
+            async with RustChainClient() as client:
+                await client.wallet_transfer_with_wallet(wallet, TO, 1.0, chain_id=STALE_CHAIN)
+
+    with pytest.raises(APIError) as exc:
+        asyncio.run(run())
+    assert exc.value.status_code == 400
+
+
+def _run_nodejs_tip(script_body, env=None):
+    """Load discord-bot-nodejs-v2/commands/tip.js with discord.js/tweetnacl stubbed."""
+    tip = ROOT / "discord-bot-nodejs-v2" / "commands" / "tip.js"
+    script = f"""
+const Module = require("module");
+const nacl = require({json.dumps(str(NACL_JS))});
+const origLoad = Module._load;
+Module._load = function (req, parent, isMain) {{
+  if (req === "discord.js") {{
+    class B {{ constructor() {{ const px = new Proxy(this, {{ get: (t, k) => (k in t ? t[k] : () => px) }}); return px; }} }}
+    return {{ SlashCommandBuilder: B, EmbedBuilder: B }};
+  }}
+  if (req === "tweetnacl") return nacl;
+  if (req === "tweetnacl-util") return {{ decodeBase64: (s) => new Uint8Array(Buffer.from(s, "base64")) }};
+  return origLoad.apply(this, arguments);
+}};
+const tip = require({json.dumps(str(tip))});
+(async () => {{ {script_body} }})().then(
+  (r) => console.log(JSON.stringify(r)),
+  (e) => console.log(JSON.stringify({{ thrown: e.message }})));
+"""
+    import os
+    out = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=60,
+                         check=False, env={**os.environ, **(env or {})})
+    assert out.returncode == 0, out.stderr
+    return json.loads(out.stdout.strip().splitlines()[-1])
+
+
+@needs_node
+def test_nodejs_tip_rejects_malformed_chain_id_override():
+    out = _run_nodejs_tip("return await tip._internal.getChainId();",
+                          env={"RUSTCHAIN_CHAIN_ID": "bad id"})
+    assert "RUSTCHAIN_CHAIN_ID" in out["thrown"]
+
+
+@needs_node
+def test_nodejs_tip_refetches_stale_chain_id_once(node):
+    _, _, addr = _key(36)
+    node.fund(addr)
+    # Scripted node: /network/info reports first STALE (cached), then the real chain;
+    # the transfer endpoint answers with what the real node answers for each body.
+    js = f"""
+const nacl = require({json.dumps(str(NACL_JS))});
+const kp = nacl.sign.keyPair.fromSeed(new Uint8Array(32).fill(36));
+const infos = [{json.dumps(STALE_CHAIN)}, {json.dumps(node.chain_id)}];
+const posted = [];
+global.fetch = async (url, opts) => {{
+  if (url.endsWith("/network/info")) return {{ ok: true, status: 200, json: async () => ({{ chain_id: infos.shift() }}) }};
+  const body = JSON.parse(opts.body);
+  posted.push(body);
+  const mismatch = body.chain_id !== {json.dumps(node.chain_id)};
+  return {{ ok: !mismatch, status: mismatch ? 400 : 200,
+           json: async () => (mismatch ? {{ error: "chain_id does not match active network" }} : {{ ok: true }}) }};
+}};
+const res = await tip._internal.sendChainBoundTransfer({{
+  secretKeyBytes: kp.secretKey, toAddress: {json.dumps(TO)}, amountRtc: 1.0, memo: "stale" }});
+return {{ res, posted }};
+"""
+    out = _run_nodejs_tip(js)
+    assert out["res"] == {"ok": True}
+    assert [b["chain_id"] for b in out["posted"]] == [STALE_CHAIN, node.chain_id]
+    # The re-signed request is one the real node verifier accepts.
+    assert out["posted"][1]["from_address"] == addr
+    node.assert_chain_bound_and_accepted(out["posted"][1])

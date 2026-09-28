@@ -210,14 +210,27 @@ def api_get(endpoint: str, params: dict = None) -> dict:
 
 
 def api_post(endpoint: str, data: dict) -> dict:
-    """Make POST request to RustChain node."""
+    """Make POST request to RustChain node.
+
+    On an HTTP error the node's JSON error body is returned (always with an
+    "error" key) so callers can tell e.g. a chain_id mismatch from a network error.
+    """
     url = f"{NODE_URL}{endpoint}"
     try:
         resp = requests.post(url, json=data, verify=VERIFY_SSL, timeout=15)
-        resp.raise_for_status()
-        return resp.json()
     except Exception as e:
         return {"error": str(e)}
+    try:
+        body = resp.json()
+    except ValueError:
+        body = None
+    if resp.ok and isinstance(body, dict):
+        return body
+    if not isinstance(body, dict):
+        body = {}
+    body.setdefault("error", f"HTTP {resp.status_code}")
+    body["http_status"] = resp.status_code
+    return body
 
 
 def get_balance(address: str) -> float:
@@ -231,9 +244,11 @@ def get_balance(address: str) -> float:
 _chain_id_cache: Optional[str] = None
 
 
-def get_chain_id() -> str:
+def get_chain_id(refresh: bool = False) -> str:
     """chain_id to sign for: RUSTCHAIN_CHAIN_ID, else the node's GET /network/info."""
     global _chain_id_cache
+    if refresh:
+        _chain_id_cache = None
     if CHAIN_ID_OVERRIDE:
         if not _CHAIN_ID_RE.fullmatch(CHAIN_ID_OVERRIDE):
             raise RuntimeError(f"RUSTCHAIN_CHAIN_ID is not a valid chain_id: {CHAIN_ID_OVERRIDE!r}")
@@ -250,30 +265,40 @@ def get_chain_id() -> str:
     return chain_id
 
 
+def _is_chain_mismatch(result: dict) -> bool:
+    return "chain_id does not match" in str(result.get("error", ""))
+
+
 def send_signed_transfer(from_addr: str, to_addr: str, amount: float,
                          priv_key: str, pub_key: str, memo: str = "") -> dict:
-    """Send Ed25519-signed, chain-bound transfer via node API."""
-    try:
-        chain_id = get_chain_id()
-    except RuntimeError as e:
-        return {"error": str(e)}
-    nonce = int(time.time() * 1000)
+    """Send Ed25519-signed, chain-bound transfer via node API.
+
+    If the node rejects a cached chain_id as not its network, refetch it once and
+    re-sign with a fresh nonce (not for an explicit RUSTCHAIN_CHAIN_ID).
+    """
     amount = float(amount)
-    message = canonical_transfer_message(from_addr, to_addr, amount, memo, nonce, chain_id)
-    signature = sign_transaction(priv_key, message)
-
-    payload = {
-        "from_address": from_addr,
-        "to_address": to_addr,
-        "amount_rtc": amount,
-        "memo": memo,
-        "nonce": nonce,
-        "chain_id": chain_id,
-        "signature": signature,
-        "public_key": pub_key,
-    }
-
-    return api_post("/wallet/transfer/signed", payload)
+    result: dict = {}
+    for attempt in range(2):
+        try:
+            chain_id = get_chain_id(refresh=attempt > 0)
+        except RuntimeError as e:
+            return {"error": str(e)}
+        nonce = int(time.time() * 1000) + attempt
+        message = canonical_transfer_message(from_addr, to_addr, amount, memo, nonce, chain_id)
+        payload = {
+            "from_address": from_addr,
+            "to_address": to_addr,
+            "amount_rtc": amount,
+            "memo": memo,
+            "nonce": nonce,
+            "chain_id": chain_id,
+            "signature": sign_transaction(priv_key, message),
+            "public_key": pub_key,
+        }
+        result = api_post("/wallet/transfer/signed", payload)
+        if not (_is_chain_mismatch(result) and not CHAIN_ID_OVERRIDE):
+            return result
+    return result
 
 
 # =============================================================================

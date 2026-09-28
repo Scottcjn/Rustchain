@@ -228,30 +228,39 @@
     if (!to.startsWith("RTC") || to.length !== 43) throw new Error("invalid_to_address");
     if (!Number.isFinite(amount) || amount <= 0) throw new Error("invalid_amount");
 
-    // Replay protection is per (from_address, nonce). Use ms to avoid collisions.
-    const nonceInt = Date.now();
-    const chainId = await fetchChainId();
+    // Two attempts: if the node says our cached chain_id is not its network
+    // (it was switched), refetch chain_id once and re-sign with a fresh nonce.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      // Replay protection is per (from_address, nonce). Use ms to avoid collisions.
+      const nonceInt = Date.now() + attempt;
+      const chainId = await fetchChainId();
 
-    // Signed message must match server reconstruction exactly (see signing.js).
-    const { message: msgStr, body } = signing.buildSignedTransfer(nacl, {
-      secretKey: state.secretKey,
-      publicKey: state.publicKey,
-      fromAddress: state.address,
-      toAddress: to,
-      amountRtc: amount,
-      memo,
-      nonce: nonceInt,
-      chainId,
-    });
+      // Signed message must match server reconstruction exactly (see signing.js).
+      const { message: msgStr, body } = signing.buildSignedTransfer(nacl, {
+        secretKey: state.secretKey,
+        publicKey: state.publicKey,
+        fromAddress: state.address,
+        toAddress: to,
+        amountRtc: amount,
+        memo,
+        nonce: nonceInt,
+        chainId,
+      });
 
-    setLog(sendLog, `message=${msgStr}\n\nposting...`);
-    const resp = await fetch("/wallet/transfer/signed", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const text = await resp.text();
-    setLog(sendLog, `message=${msgStr}\n\nresponse_http=${resp.status}\n${text}`);
+      setLog(sendLog, `message=${msgStr}\n\nposting...`);
+      const resp = await fetch("/wallet/transfer/signed", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await resp.text();
+      setLog(sendLog, `message=${msgStr}\n\nresponse_http=${resp.status}\n${text}`);
+      if (attempt === 0 && resp.status === 400 && text.includes("chain_id does not match")) {
+        state.chainId = "";
+        continue;
+      }
+      return;
+    }
   }
 
   async function generateMnemonic24() {

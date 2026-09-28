@@ -303,7 +303,9 @@ TO_ADDRESS="RTC0987654321098765432109876543210987654321"
 AMOUNT=1.0
 MEMO="Test transfer"
 NONCE=$(date +%s%3N)
-CHAIN_ID=$(curl -sk "$NODE_URL/network/info" | jq -r .chain_id)
+# chain_id binds the signature to this network: fetch it over verified TLS and
+# stop if the node did not return one.
+CHAIN_ID=$(curl -sf "$NODE_URL/network/info" | jq -er .chain_id) || { echo "no chain_id from $NODE_URL" >&2; exit 1; }
 
 # Generate Ed25519 key (one-time setup)
 # openssl genpkey -algorithm Ed25519 -out private_key.pem

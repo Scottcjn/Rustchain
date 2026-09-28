@@ -319,7 +319,13 @@ def build_payload(
     chain_id: Optional[str] = DEFAULT_CHAIN_ID,
     legacy: bool = False,
 ) -> Dict[str, Any]:
-    """Build the signed request body for ``POST /wallet/transfer/signed``."""
+    """Build the signed request body for ``POST /wallet/transfer/signed``.
+
+    ``chain_id`` is required (fail closed): a chain-less signature is valid on
+    every RustChain network, and nodes enforcing chain binding reject it.
+    """
+    if not isinstance(chain_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", chain_id):
+        raise A2AError(f"a valid chain_id is required to sign a transfer, got {chain_id!r}")
     from_address = signer.address
     validate_address(from_address, "from_address")
     validate_address(to_address, "to_address")

@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import os
 import sys
 from datetime import datetime, timezone
@@ -52,9 +53,14 @@ log = logging.getLogger("rustchain-bot")
 RUSTCHAIN_URL = os.getenv("RUSTCHAIN_NODE_URL", "https://rustchain.org").rstrip("/")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
 API_TIMEOUT = _env_float("API_TIMEOUT", 10.0)
-# Fallback when the node cannot be asked (GET /network/info). Must equal the
-# node's CHAIN_ID or the node rejects the transfer.
-DEFAULT_CHAIN_ID = os.getenv("RUSTCHAIN_CHAIN_ID", "rustchain-mainnet-v2")
+# Explicit chain id for /tip instructions. Unset = ask the node (GET /network/info)
+# and refuse to show instructions if it cannot say; never guess a network.
+CHAIN_ID_OVERRIDE = os.getenv("RUSTCHAIN_CHAIN_ID", "").strip()
+_CHAIN_ID_RE = re.compile(r"[A-Za-z0-9._-]{1,64}")
+
+
+def is_valid_chain_id(value) -> bool:
+    return isinstance(value, str) and _CHAIN_ID_RE.fullmatch(value) is not None
 
 
 def _format_uptime(value) -> str:
@@ -308,6 +314,18 @@ async def cmd_miners(interaction: discord.Interaction):
     await interaction.followup.send(embed=embed)
 
 
+async def resolve_chain_id(api) -> str | None:
+    """chain_id to bind: RUSTCHAIN_CHAIN_ID if set, else the node's. None = unknown (fail closed)."""
+    if CHAIN_ID_OVERRIDE:
+        if not is_valid_chain_id(CHAIN_ID_OVERRIDE):
+            log.error("RUSTCHAIN_CHAIN_ID is not a valid chain_id: %r", CHAIN_ID_OVERRIDE)
+            return None
+        return CHAIN_ID_OVERRIDE
+    info = await api.network_info()
+    chain_id = info.get("chain_id") if isinstance(info, dict) else None
+    return chain_id if is_valid_chain_id(chain_id) else None
+
+
 def signed_transfer_template(to_address: str, amount: float, chain_id: str) -> dict:
     """Instructions for a chain-bound POST /wallet/transfer/signed.
 
@@ -364,10 +382,14 @@ async def cmd_tip(interaction: discord.Interaction, to_miner: str, amount: float
 
     # Tipping requires a signed transaction (private key).
     # The bot cannot hold user keys, so we provide transfer instructions.
-    info = await bot.api.network_info()
-    chain_id = info.get("chain_id") if isinstance(info, dict) else None
-    if not isinstance(chain_id, str) or not chain_id:
-        chain_id = DEFAULT_CHAIN_ID
+    chain_id = await resolve_chain_id(bot.api)
+    if chain_id is None:
+        await interaction.followup.send(
+            "Could not determine this node's chain_id (GET /network/info), so no "
+            "signing instructions were produced. Set RUSTCHAIN_CHAIN_ID or retry.",
+            ephemeral=True,
+        )
+        return
     template = signed_transfer_template(to_miner.strip(), amount, chain_id)
 
     embed = discord.Embed(

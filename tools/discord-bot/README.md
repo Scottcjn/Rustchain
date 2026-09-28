@@ -32,7 +32,7 @@ Set environment variables (or create a `.env` file):
 DISCORD_TOKEN=your_bot_token_here
 RUSTCHAIN_NODE_URL=https://rustchain.org   # optional, this is the default
 API_TIMEOUT=10                              # optional, seconds
-RUSTCHAIN_CHAIN_ID=rustchain-mainnet-v2     # optional; /tip uses the node's /network/info chain_id when reachable
+RUSTCHAIN_CHAIN_ID=rustchain-mainnet-v2     # optional; default: the node's /network/info chain_id (/tip refuses if neither is available)
 ```
 
 ### Run

@@ -112,14 +112,16 @@ class RustChainClient:
         except httpx.ConnectError as e:
             raise RCConnectionError(f"Failed to connect to {self._base_url}: {e}")
         except httpx.HTTPStatusError as e:
+            error_body = None
             try:
                 error_body = e.response.json()
-                message = error_body.get("message", str(e))
+                message = error_body.get("message") or error_body.get("error") or str(e)
             except Exception:
                 message = str(e)
             raise APIError(
                 f"API error {e.response.status_code}: {message}",
                 status_code=e.response.status_code,
+                response_body=error_body if isinstance(error_body, dict) else None,
             )
         except Exception as e:
             raise RustChainError(f"Unexpected error: {e}")
@@ -416,8 +418,24 @@ class RustChainClient:
         Returns:
             Transaction result dict.
         """
-        if chain_id is None:
+        explicit_chain_id = chain_id is not None
+        if not explicit_chain_id:
             chain_id = await self.get_chain_id()
+        try:
+            return await self._submit_signed_with_wallet(wallet, to_address, amount, fee, memo, chain_id)
+        except APIError as e:
+            # A cached chain_id the node no longer recognizes (node switched
+            # networks): refetch once and re-sign with a fresh nonce.
+            mismatch = e.status_code == 400 and "chain_id does not match" in str(
+                e.response_body.get("error", "")
+            )
+            if explicit_chain_id or not mismatch:
+                raise
+            self._chain_id = None
+            chain_id = await self.get_chain_id()
+            return await self._submit_signed_with_wallet(wallet, to_address, amount, fee, memo, chain_id)
+
+    async def _submit_signed_with_wallet(self, wallet, to_address, amount, fee, memo, chain_id):
         transfer = wallet.sign_transfer(
             to_address, amount, fee, memo=memo, chain_id=chain_id
         )

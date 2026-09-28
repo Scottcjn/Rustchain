@@ -53,16 +53,28 @@
     return `${sign}${digits.slice(0, intLen)}.${digits.slice(intLen)}`;
   }
 
+  // Python json.dumps(ensure_ascii=True) string encoding. JSON.stringify already
+  // escapes quotes, backslashes, control chars (\b \t \n \f \r, else \u00xx)
+  // and lone surrogates exactly as Python does; Python additionally escapes every
+  // UTF-16 code unit outside 0x20-0x7e (so DEL, accents, emoji surrogate pairs)
+  // as lowercase \uxxxx. Without this, any non-ASCII memo fails verification.
+  function pyJsonString(value) {
+    return JSON.stringify(String(value)).replace(
+      /[\u007f-\uffff]/g,
+      (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0")
+    );
+  }
+
   function canonicalSignedMessage(fromAddress, toAddress, amountRtc, memo, nonceStr, chainId) {
     if (!isValidChainId(chainId)) throw new Error("invalid_chain_id");
     // keys sorted: amount, chain_id, from, memo, nonce, to
     return (
       `{"amount":${pyJsonNumber(amountRtc)}` +
-      `,"chain_id":${JSON.stringify(chainId)}` +
-      `,"from":${JSON.stringify(String(fromAddress))}` +
-      `,"memo":${JSON.stringify(String(memo ?? ""))}` +
-      `,"nonce":${JSON.stringify(String(nonceStr ?? ""))}` +
-      `,"to":${JSON.stringify(String(toAddress))}}`
+      `,"chain_id":${pyJsonString(chainId)}` +
+      `,"from":${pyJsonString(String(fromAddress))}` +
+      `,"memo":${pyJsonString(String(memo ?? ""))}` +
+      `,"nonce":${pyJsonString(String(nonceStr ?? ""))}` +
+      `,"to":${pyJsonString(String(toAddress))}}`
     );
   }
 
@@ -95,5 +107,5 @@
     };
   }
 
-  return { isValidChainId, pyJsonNumber, canonicalSignedMessage, buildSignedTransfer };
+  return { isValidChainId, pyJsonNumber, pyJsonString, canonicalSignedMessage, buildSignedTransfer };
 });

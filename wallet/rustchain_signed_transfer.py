@@ -36,6 +36,19 @@ def validate_chain_id(chain_id: Any) -> str:
     return chain_id
 
 
+def validate_nonce(nonce: Any) -> int:
+    """Return ``nonce`` if it is a positive ``int`` (not bool/float/str), else raise.
+
+    The node signs ``str(nonce)``; accepting "001", 1.5 or True would sign bytes
+    that differ from the nonce the node parses from the request.
+    """
+    if isinstance(nonce, bool) or not isinstance(nonce, int):
+        raise TypeError(f"nonce must be a positive int, got {type(nonce).__name__}")
+    if nonce <= 0:
+        raise ValueError(f"nonce must be positive, got {nonce}")
+    return nonce
+
+
 def chain_id_from_network_info(info: Any) -> str:
     """Extract and validate ``chain_id`` from a ``GET /network/info`` response."""
     if not isinstance(info, dict):
@@ -52,6 +65,7 @@ def canonical_transfer_message(
     chain_id: str,
 ) -> bytes:
     """The exact bytes the node verifies for a fee-less, chain-bound transfer."""
+    nonce = validate_nonce(nonce)
     tx_data = {
         "from": from_address,
         "to": to_address,
@@ -83,6 +97,7 @@ def build_signed_transfer(
         raise ValueError("amount must be a positive, finite number")
     if nonce is None:
         nonce = int(time.time() * 1000)
+    nonce = validate_nonce(nonce)
     memo = str(memo or "")
     message = canonical_transfer_message(
         wallet.address, to_address, amount, memo, nonce, chain_id
@@ -92,7 +107,7 @@ def build_signed_transfer(
         "to_address": to_address,
         "amount_rtc": amount,
         "memo": memo,
-        "nonce": int(nonce),
+        "nonce": nonce,
         "chain_id": chain_id,
         "signature": wallet.sign_message(message),
         "public_key": wallet.public_key,

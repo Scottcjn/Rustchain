@@ -47,6 +47,37 @@ fn py_json_number(n: f64) -> String {
     }
 }
 
+/// Encode a string exactly like Python's `json.dumps` (default `ensure_ascii=True`).
+///
+/// Printable ASCII (0x20-0x7e) is copied except `"` and `\\`; `\\b \\t \\n \\f \\r`
+/// use short escapes; every other UTF-16 code unit (other control chars, DEL,
+/// all non-ASCII, astral chars as a surrogate pair) becomes lowercase `\\uxxxx`.
+/// serde_json writes non-ASCII and DEL raw, which changes the signed bytes.
+fn py_json_string(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for c in value.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{08}' => out.push_str("\\b"),
+            '\t' => out.push_str("\\t"),
+            '\n' => out.push_str("\\n"),
+            '\u{0c}' => out.push_str("\\f"),
+            '\r' => out.push_str("\\r"),
+            ' '..='~' => out.push(c),
+            _ => {
+                let mut units = [0u16; 2];
+                for unit in c.encode_utf16(&mut units) {
+                    out.push_str(&format!("\\u{:04x}", unit));
+                }
+            }
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// Build the canonical signed message JSON, matching the Python server format:
 /// `json.dumps(tx_data, sort_keys=True, separators=(",", ":"))`
 ///
@@ -65,16 +96,16 @@ fn canonical_message(
     s.push_str(&py_json_number(amount_rtc));
     if let Some(cid) = chain_id {
         s.push_str(",\"chain_id\":");
-        s.push_str(&serde_json::to_string(cid).unwrap_or(cid.to_string()));
+        s.push_str(&py_json_string(cid));
     }
     s.push_str(",\"from\":");
-    s.push_str(&serde_json::to_string(from).unwrap_or(from.to_string()));
+    s.push_str(&py_json_string(from));
     s.push_str(",\"memo\":");
-    s.push_str(&serde_json::to_string(memo).unwrap_or(memo.to_string()));
+    s.push_str(&py_json_string(memo));
     s.push_str(",\"nonce\":");
-    s.push_str(&serde_json::to_string(nonce_str).unwrap_or(nonce_str.to_string()));
+    s.push_str(&py_json_string(nonce_str));
     s.push_str(",\"to\":");
-    s.push_str(&serde_json::to_string(to).unwrap_or(to.to_string()));
+    s.push_str(&py_json_string(to));
     s.push('}');
     s.into_bytes()
 }
@@ -795,6 +826,48 @@ mod tests {
             tx.signature.as_deref().unwrap(),
             "f7df488d1ffe61d28b35437b62771c2425d47d1ef1b3169292f731e69b639bf8c63f6b2cdc85a80114d60d50eac9421a04f7970ea593d0e5cc063d5e6565190d"
         );
+    }
+
+    #[test]
+    fn test_non_ascii_memo_matches_python_ensure_ascii_golden_vector() {
+        // Shared with tests/test_signed_transfer_clients_chain_id.py (RUST_UNICODE_GOLDEN).
+        let keypair = KeyPair::from_bytes(&[7u8; 32]).unwrap();
+        let mut tx = TransactionBuilder::new()
+            .from(keypair.rtc_address())
+            .to(GOLDEN_TO.to_string())
+            .amount(1_500_000)
+            .nonce(1_733_420_000_124)
+            .memo("caf\u{e9} \u{2615} \u{1f600} \u{7f} \n".to_string())
+            .chain_id(GOLDEN_CHAIN_ID.to_string())
+            .build()
+            .unwrap();
+        let msg = String::from_utf8(tx.serialize_for_signing().unwrap()).unwrap();
+        assert_eq!(
+            msg,
+            r#"{"amount":1.5,"chain_id":"rustchain-mainnet-v2","from":"RTCfe812c12f3ab4ce6ac5db69ac352f906cb1b11ef","memo":"caf\u00e9 \u2615 \ud83d\ude00 \u007f \n","nonce":"1733420000124","to":"RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#
+        );
+        tx.sign(&keypair).unwrap();
+        assert_eq!(
+            tx.signature.as_deref().unwrap(),
+            "c6761c58404ae8fc4de8ed30eb65d328ec8a08db075addf3b92713fa7b5cd837ae2d09f5b819f28ce85a42941d5db012fd0ae5777e924e765a77b6bdae5ea400"
+        );
+    }
+
+    #[test]
+    fn test_py_json_string_matches_python_json_dumps() {
+        let cases: &[(&str, &str)] = &[
+            ("plain", r#""plain""#),
+            ("q\"b\\", r#""q\"b\\""#),
+            ("\u{0}\u{1f}\u{8}\u{c}\t\r", r#""\u0000\u001f\b\f\t\r""#),
+            ("\u{7e}\u{7f}\u{80}", r#""~\u007f\u0080""#),
+            (
+                "\u{2028}\u{ffff}\u{10ffff}",
+                r#""\u2028\uffff\udbff\udfff""#,
+            ),
+        ];
+        for (input, want) in cases {
+            assert_eq!(py_json_string(input), *want, "py_json_string({input:?})");
+        }
     }
 
     #[test]
