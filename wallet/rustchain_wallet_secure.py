@@ -679,11 +679,15 @@ class SecureFounderWallet:
         self.balance.set(f"{balance:,.4f} RTC")
         self.status_var.set("Balance refreshed")
 
-    def send_signed_payment(self):
-        """Send a cryptographically signed payment."""
+    def send_signed_payment(self) -> bool:
+        """Send a cryptographically signed payment.
+
+        Returns True only when the node accepted the transfer; every failure
+        path has already been shown to the user and returns False.
+        """
         if not self.wallet:
             messagebox.showerror("Error", "No wallet loaded")
-            return
+            return False
 
         to_address = self.recipient_entry.get().strip()
         memo = self.memo_entry.get().strip()
@@ -693,19 +697,19 @@ class SecureFounderWallet:
             amount = float(self.amount_entry.get().strip())
         except ValueError:
             messagebox.showerror("Error", "Invalid amount")
-            return
+            return False
 
         if not to_address:
             messagebox.showerror("Error", "Enter recipient address")
-            return
+            return False
 
         if amount <= 0:
             messagebox.showerror("Error", "Amount must be positive")
-            return
+            return False
 
         if not password:
             messagebox.showerror("Error", "Enter your password to sign")
-            return
+            return False
 
         # Verify password
         try:
@@ -715,7 +719,7 @@ class SecureFounderWallet:
             verified_wallet = RustChainWallet.from_encrypted(encrypted, password)
         except Exception:
             messagebox.showerror("Error", "Invalid password")
-            return
+            return False
 
         # Confirm
         msg = f"Sign and send {amount:,.4f} RTC?\n\nFrom: {self.wallet.address[:30]}...\nTo: {to_address}"
@@ -723,7 +727,7 @@ class SecureFounderWallet:
             msg += f"\nMemo: {memo}"
 
         if not messagebox.askyesno("Confirm Transaction", msg):
-            return
+            return False
 
         # Bind the signature to this node's network (cross-network replay
         # protection). Never sign without a chain_id from the node we send to.
@@ -731,12 +735,12 @@ class SecureFounderWallet:
         if error:
             self.status_var.set(f"Error: {error}")
             self._show_network_error(error)
-            return
+            return False
         try:
             chain_id = chain_id_from_network_info(info)
         except ValueError as e:
             messagebox.showerror("Error", f"Node returned no usable chain_id: {e}")
-            return
+            return False
 
         # Sign transaction
         try:
@@ -752,7 +756,7 @@ class SecureFounderWallet:
             if error:
                 self.status_var.set(f"Error: {error}")
                 self._show_network_error(error)
-                return
+                return False
 
             if result.get("ok"):
                 self.status_var.set(f"Sent {amount:,.4f} RTC")
@@ -772,14 +776,16 @@ class SecureFounderWallet:
                 self.password_entry.delete(0, tk.END)
 
                 messagebox.showinfo("Success", f"Transaction sent!\n\nAmount: {amount:,.4f} RTC")
-            else:
-                error = result.get("error", "Unknown error")
-                messagebox.showerror("Error", error)
-                self.status_var.set(f"Error: {error}")
+                return True
+            error = result.get("error", "Unknown error")
+            messagebox.showerror("Error", error)
+            self.status_var.set(f"Error: {error}")
+            return False
 
         except Exception as e:
             messagebox.showerror("Error", f"Transaction failed: {e}")
             self.status_var.set(f"Error: {e}")
+            return False
 
 
 def main():

@@ -432,3 +432,57 @@ def test_a2a_transfer_signs_chain_bound_transfer(node):
     body = a2a_transfer.build_payload(signer, TO, 1.0, 1733420000006, memo="a2a",
                                       chain_id=node.chain_id)
     node.assert_chain_bound_and_accepted(body)
+
+
+def _secure_wallet_gui(monkeypatch, tmp_path, crypto_wallet, fetch):
+    """SecureFounderWallet.send_signed_payment with Tk widgets/dialogs stubbed."""
+    pytest.importorskip("_tkinter", reason="tkinter not available")
+    from unittest.mock import MagicMock
+
+    monkeypatch.syspath_prepend(str(ROOT / "wallet"))
+    gui = _load("rustchain_wallet_secure_under_test", ROOT / "wallet" / "rustchain_wallet_secure.py")
+    (tmp_path / "w.json").write_text("{}")
+    monkeypatch.setattr(gui, "KEYSTORE_DIR", tmp_path)
+    monkeypatch.setattr(gui, "messagebox", MagicMock(askyesno=lambda *a: True))
+    monkeypatch.setattr(gui.RustChainWallet, "from_encrypted",
+                        classmethod(lambda cls, enc, pw: crypto_wallet))
+
+    def entry(value):
+        return MagicMock(get=lambda: value)
+
+    app = MagicMock(spec=gui.SecureFounderWallet)
+    app.wallet = crypto_wallet
+    app.wallet_name = entry("w")
+    app.recipient_entry, app.amount_entry = entry(TO), entry("2.0")
+    app.memo_entry, app.password_entry = entry("gui"), entry("pw")
+    app.sig_label, app.status_var, app.tx_tree = MagicMock(), MagicMock(), MagicMock()
+    app._fetch_with_retry = fetch
+    return gui.SecureFounderWallet.send_signed_payment.__get__(app)
+
+
+def test_secure_wallet_gui_send_is_chain_bound_and_reports_success(node, monkeypatch, tmp_path):
+    wallet = _CryptoWallet(17)
+    node.fund(wallet.address)
+    sent = []
+
+    def fetch(url, method="GET", data=None, **_):
+        path = url.split("://", 1)[-1].split("/", 1)[1]
+        if method == "POST":
+            sent.append(data)
+            return node.post(data).get_json(), None
+        return node.client.get("/" + path).get_json(), None
+
+    assert _secure_wallet_gui(monkeypatch, tmp_path, wallet, fetch)() is True
+    assert sent[0]["chain_id"] == node.chain_id
+
+
+def test_secure_wallet_gui_send_fails_explicitly_without_chain_id(monkeypatch, tmp_path):
+    posted = []
+
+    def fetch(url, method="GET", data=None, **_):
+        if method == "POST":
+            posted.append(data)
+        return {"network": "mainnet"}, None  # no chain_id
+
+    assert _secure_wallet_gui(monkeypatch, tmp_path, _CryptoWallet(18), fetch)() is False
+    assert posted == []
