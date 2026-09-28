@@ -22,7 +22,8 @@ pasted straight into a bounty claim.
 
 * Builds the canonical signing payload **byte-identically** to the node
   (`node/rustchain_v2_integrated_v2.2.1_rip200.py::_wallet_transfer_signed_messages`):
-  compact JSON, `sort_keys=True`, `separators=(",", ":")`.
+  compact JSON, `sort_keys=True`, `separators=(",", ":")`, float `amount`/`fee`,
+  `nonce` as a string, and `chain_id` bound in (cross-network replay protection).
 * Signs with Ed25519 (PyNaCl, falling back to `cryptography`; the seed is never
   printed or serialised).
 * Auto-retries once with the **legacy fee-less canonical message** when the node

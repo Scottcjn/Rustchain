@@ -11,13 +11,39 @@ use serde::{Deserialize, Serialize};
 /// Smallest-unit-to-RTC conversion factor (6 decimals).
 const AMOUNT_UNIT: u64 = 1_000_000;
 
-/// Format an f64 amount to match Python's json.dumps float representation.
-/// Python serializes 1.0 as "1.0", 1000000.0 as "1000000.0", etc.
+/// Format an f64 amount exactly like Python's `repr(float)` / `json.dumps`.
+///
+/// Rust and Python agree on the shortest round-trip digits but not on layout:
+/// Python prints `1.0` (Rust `1`) and switches to exponent form when the decimal
+/// exponent is < -4 or >= 16 (`1e-05`, `1e+16`), where Rust's `{}` never does.
+/// Any difference changes the signed bytes and the node rejects the signature.
 fn py_json_number(n: f64) -> String {
-    if n.trunc() == n {
-        format!("{n:.1}")
+    if n == 0.0 {
+        return if n.is_sign_negative() { "-0.0" } else { "0.0" }.to_string();
+    }
+    // `{:e}` gives the shortest round-trip digits, e.g. "1.5e-5", "1e16".
+    let sci = format!("{:e}", n.abs());
+    let (mantissa, exp) = sci.split_once('e').unwrap_or((sci.as_str(), "0"));
+    let exp: i32 = exp.parse().unwrap_or(0);
+    let digits: String = mantissa.chars().filter(|c| *c != '.').collect();
+    let sign = if n < 0.0 { "-" } else { "" };
+    if !(-4..16).contains(&exp) {
+        let mant = if digits.len() > 1 {
+            format!("{}.{}", &digits[..1], &digits[1..])
+        } else {
+            digits
+        };
+        let esign = if exp < 0 { '-' } else { '+' };
+        return format!("{sign}{mant}e{esign}{:02}", exp.abs());
+    }
+    if exp < 0 {
+        return format!("{sign}0.{}{digits}", "0".repeat((-exp - 1) as usize));
+    }
+    let int_len = (exp + 1) as usize;
+    if digits.len() <= int_len {
+        format!("{sign}{digits}{}.0", "0".repeat(int_len - digits.len()))
     } else {
-        format!("{n}")
+        format!("{sign}{}.{}", &digits[..int_len], &digits[int_len..])
     }
 }
 
@@ -74,6 +100,12 @@ pub struct Transaction {
     pub signature: Option<String>,
     /// Public key (hex encoded) for verification
     pub public_key: Option<String>,
+    /// Network the signature is bound to (the node's `CHAIN_ID`, from
+    /// `/network/info`). Signed into the message so the transfer cannot be
+    /// replayed on another RustChain network. `submit_transaction` refuses
+    /// transactions without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chain_id: Option<String>,
 }
 
 impl Transaction {
@@ -89,7 +121,17 @@ impl Transaction {
             memo: None,
             signature: None,
             public_key: None,
+            chain_id: None,
         }
+    }
+
+    /// Bind the transaction to a chain id (the node's `CHAIN_ID`).
+    ///
+    /// Clears any existing signature, since it no longer covers the message.
+    pub fn with_chain_id(mut self, chain_id: impl Into<String>) -> Self {
+        self.chain_id = Some(chain_id.into());
+        self.signature = None;
+        self
     }
 
     /// Add a memo to the transaction
@@ -111,13 +153,19 @@ impl Transaction {
     ///              sort_keys=True, separators=(",",":"))`
     ///
     /// Note: `amount` is converted from smallest units to RTC units (÷1_000_000),
-    /// and `nonce` is serialized as a JSON string (not a number).
+    /// and `nonce` is serialized as a JSON string (not a number). When
+    /// `chain_id` is set it is included (sorted between `amount` and `from`).
     pub fn serialize_for_signing(&self) -> Result<Vec<u8>> {
         let amount_rtc = self.amount as f64 / AMOUNT_UNIT as f64;
         let nonce_str = self.nonce.to_string();
         let memo = self.memo.as_deref().unwrap_or("");
         Ok(canonical_message(
-            &self.from, &self.to, amount_rtc, memo, &nonce_str, None,
+            &self.from,
+            &self.to,
+            amount_rtc,
+            memo,
+            &nonce_str,
+            self.chain_id.as_deref(),
         ))
     }
 
@@ -216,6 +264,7 @@ pub struct TransactionBuilder {
     fee: u64,
     nonce: u64,
     memo: Option<String>,
+    chain_id: Option<String>,
 }
 
 impl TransactionBuilder {
@@ -228,6 +277,7 @@ impl TransactionBuilder {
             fee: 1000, // Default fee
             nonce: 0,
             memo: None,
+            chain_id: None,
         }
     }
 
@@ -267,6 +317,12 @@ impl TransactionBuilder {
         self
     }
 
+    /// Bind the transaction to a chain id (the node's `CHAIN_ID`)
+    pub fn chain_id(mut self, chain_id: String) -> Self {
+        self.chain_id = Some(chain_id);
+        self
+    }
+
     /// Build the transaction
     pub fn build(self) -> Result<Transaction> {
         let from = self
@@ -286,6 +342,9 @@ impl TransactionBuilder {
         let mut tx = Transaction::new(from, to, self.amount, self.fee, self.nonce);
         if let Some(memo) = self.memo {
             tx = tx.with_memo(memo);
+        }
+        if let Some(chain_id) = self.chain_id {
+            tx = tx.with_chain_id(chain_id);
         }
 
         Ok(tx)
@@ -699,5 +758,101 @@ mod tests {
         tx2.amount = 2_000_000; // Changed from 1.0 to 2.0 RTC
         let valid = tx2.verify(&keypair).unwrap();
         assert!(!valid);
+    }
+
+    // Golden vectors shared with tests/test_signed_transfer_clients_chain_id.py,
+    // which checks that the node's verifier accepts exactly these bytes and
+    // signatures. Seed = [7; 32], nonce 1733420000123, memo "rust golden".
+    const GOLDEN_CHAIN_ID: &str = "rustchain-mainnet-v2";
+    const GOLDEN_FROM: &str = "RTCfe812c12f3ab4ce6ac5db69ac352f906cb1b11ef";
+    const GOLDEN_TO: &str = "RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+    fn golden_tx(amount: u64) -> (KeyPair, Transaction) {
+        let keypair = KeyPair::from_bytes(&[7u8; 32]).unwrap();
+        assert_eq!(keypair.rtc_address(), GOLDEN_FROM);
+        let tx = TransactionBuilder::new()
+            .from(keypair.rtc_address())
+            .to(GOLDEN_TO.to_string())
+            .amount(amount)
+            .nonce(1_733_420_000_123)
+            .memo("rust golden".to_string())
+            .chain_id(GOLDEN_CHAIN_ID.to_string())
+            .build()
+            .unwrap();
+        (keypair, tx)
+    }
+
+    #[test]
+    fn test_chain_bound_signature_matches_node_golden_vector() {
+        let (keypair, mut tx) = golden_tx(1_500_000);
+        let msg = String::from_utf8(tx.serialize_for_signing().unwrap()).unwrap();
+        assert_eq!(
+            msg,
+            r#"{"amount":1.5,"chain_id":"rustchain-mainnet-v2","from":"RTCfe812c12f3ab4ce6ac5db69ac352f906cb1b11ef","memo":"rust golden","nonce":"1733420000123","to":"RTCbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}"#
+        );
+        tx.sign(&keypair).unwrap();
+        assert_eq!(
+            tx.signature.as_deref().unwrap(),
+            "f7df488d1ffe61d28b35437b62771c2425d47d1ef1b3169292f731e69b639bf8c63f6b2cdc85a80114d60d50eac9421a04f7970ea593d0e5cc063d5e6565190d"
+        );
+    }
+
+    #[test]
+    fn test_small_amount_uses_python_exponent_form() {
+        // 50 uRTC = 5e-05 RTC. Python's json.dumps writes "5e-05"; Rust's `{}`
+        // writes "0.00005", which the node would reject as a bad signature.
+        let (keypair, mut tx) = golden_tx(50);
+        let msg = String::from_utf8(tx.serialize_for_signing().unwrap()).unwrap();
+        assert!(msg.starts_with(r#"{"amount":5e-05,"chain_id":"#), "{msg}");
+        tx.sign(&keypair).unwrap();
+        assert_eq!(
+            tx.signature.as_deref().unwrap(),
+            "d3f37e63d4be98115c6ed8268c0edb4dfa2f241204a489110d289b384beaf1fa9f4e1ffb7fe66b299b7b8dda0bf1b78c75e78ca00ecba6c69eb83739e23f520a"
+        );
+    }
+
+    #[test]
+    fn test_py_json_number_matches_python_repr() {
+        let cases: &[(f64, &str)] = &[
+            (1.0, "1.0"),
+            (1.5, "1.5"),
+            (0.1, "0.1"),
+            (0.000249, "0.000249"),
+            (0.0001, "0.0001"),
+            (0.00005, "5e-05"),
+            (0.000001, "1e-06"),
+            (0.0000015, "1.5e-06"),
+            (123456.789, "123456.789"),
+            (1_000_000.0, "1000000.0"),
+            (1e15, "1000000000000000.0"),
+            (1e16, "1e+16"),
+            (8_388_608.0, "8388608.0"),
+            (0.0, "0.0"),
+        ];
+        for (n, want) in cases {
+            assert_eq!(py_json_number(*n), *want, "py_json_number({n})");
+        }
+    }
+
+    #[test]
+    fn test_with_chain_id_invalidates_existing_signature() {
+        let keypair = KeyPair::generate();
+        let mut tx = Transaction::new(keypair.rtc_address(), GOLDEN_TO.to_string(), 1, 0, 1);
+        tx.sign(&keypair).unwrap();
+        let tx = tx.with_chain_id(GOLDEN_CHAIN_ID);
+        assert!(tx.signature.is_none());
+        assert_eq!(tx.chain_id.as_deref(), Some(GOLDEN_CHAIN_ID));
+    }
+
+    #[test]
+    fn test_chain_id_roundtrips_and_old_json_still_loads() {
+        let (_, tx) = golden_tx(1_500_000);
+        let back = Transaction::from_json(&tx.to_json().unwrap()).unwrap();
+        assert_eq!(back.chain_id.as_deref(), Some(GOLDEN_CHAIN_ID));
+
+        let mut legacy: serde_json::Value = serde_json::from_str(&tx.to_json().unwrap()).unwrap();
+        legacy.as_object_mut().unwrap().remove("chain_id");
+        let old = Transaction::from_json(&legacy.to_string()).unwrap();
+        assert!(old.chain_id.is_none());
     }
 }

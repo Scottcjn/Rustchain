@@ -255,6 +255,9 @@ class TestRustChainClientTransfer:
                 "status": "confirmed",
             })
         )
+        respx.get(f"{DEFAULT_NODE_URL}/network/info").mock(
+            return_value=httpx.Response(200, json={"chain_id": "rustchain-mainnet-v2"})
+        )
         wallet = RustChainWallet.create(strength=128)
         async with RustChainClient() as client:
             await client.wallet_transfer_with_wallet(
@@ -268,6 +271,67 @@ class TestRustChainClientTransfer:
         assert payload["fee_rtc"] == 1.0
         assert payload["amount_rtc"] == 2.5
         assert route.calls[0].request.url.path == "/wallet/transfer/signed"
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_wallet_transfer_with_wallet_binds_node_chain_id(self):
+        """The node's chain_id is sent AND bound into the signed message."""
+        info = respx.get(f"{DEFAULT_NODE_URL}/network/info").mock(
+            return_value=httpx.Response(200, json={"chain_id": "rustchain-testnet-v2"})
+        )
+        route = respx.post(f"{DEFAULT_NODE_URL}/wallet/transfer/signed").mock(
+            return_value=httpx.Response(200, json={"ok": True})
+        )
+        wallet = RustChainWallet.create(strength=128)
+        async with RustChainClient() as client:
+            await client.wallet_transfer_with_wallet(
+                wallet, to_address="RTCrecipient123", amount=2.5, memo="m"
+            )
+            await client.wallet_transfer_with_wallet(
+                wallet, to_address="RTCrecipient123", amount=1.0
+            )
+
+        assert info.call_count == 1  # cached per client
+        payload = json.loads(route.calls[0].request.content)
+        assert payload["chain_id"] == "rustchain-testnet-v2"
+        assert payload["memo"] == "m"
+        message = json.dumps(
+            {
+                "amount": 2.5,
+                "chain_id": "rustchain-testnet-v2",
+                "fee": 0.0,
+                "from": wallet.address,
+                "memo": "m",
+                "nonce": str(payload["nonce"]),
+                "to": "RTCrecipient123",
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+        # Raises InvalidSignature unless the signed bytes include chain_id.
+        Ed25519PublicKey.from_public_bytes(bytes.fromhex(payload["public_key"])).verify(
+            bytes.fromhex(payload["signature"]), message
+        )
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_wallet_transfer_refuses_invalid_node_chain_id(self):
+        """A node that reports no usable chain_id gets no signature."""
+        respx.get(f"{DEFAULT_NODE_URL}/network/info").mock(
+            return_value=httpx.Response(200, json={"network": "mainnet"})
+        )
+        route = respx.post(f"{DEFAULT_NODE_URL}/wallet/transfer/signed").mock(
+            return_value=httpx.Response(200, json={"ok": True})
+        )
+        wallet = RustChainWallet.create(strength=128)
+        async with RustChainClient() as client:
+            with pytest.raises(APIError):
+                await client.wallet_transfer_with_wallet(
+                    wallet, to_address="RTCrecipient123", amount=1.0
+                )
+        assert route.call_count == 0
 
     @pytest.mark.asyncio
     @respx.mock

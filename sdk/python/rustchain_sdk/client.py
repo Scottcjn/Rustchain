@@ -3,6 +3,8 @@ RustChain Async HTTP Client
 Provides async access to the RustChain network RPC API.
 """
 
+import re
+
 import httpx
 from typing import Dict, List, Any, Optional
 
@@ -13,6 +15,8 @@ from .exceptions import (
 )
 
 
+# Same accepted shape as the node (payout_preflight.validate_wallet_transfer_signed).
+_CHAIN_ID_RE = re.compile(r"[A-Za-z0-9._-]{1,64}")
 DEFAULT_NODE_URL = "https://rustchain.org"
 
 
@@ -48,6 +52,7 @@ class RustChainClient:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._client: Optional[httpx.AsyncClient] = None
+        self._chain_id: Optional[str] = None
         # Use pinned cert if available, else system CA bundle
         import os
         if verify is not None:
@@ -213,6 +218,22 @@ class RustChainClient:
         """
         return await self._get_object("/health")
 
+    async def network_info(self) -> Dict[str, Any]:
+        """Get network info (``chain_id``, network, version) from ``/network/info``."""
+        return await self._get_object("/network/info")
+
+    async def get_chain_id(self) -> str:
+        """
+        The node's chain id, which signed transfers must bind (cross-network
+        replay protection). Fetched from ``/network/info`` once and cached.
+        """
+        if self._chain_id is None:
+            chain_id = (await self.network_info()).get("chain_id")
+            if not isinstance(chain_id, str) or not _CHAIN_ID_RE.fullmatch(chain_id):
+                raise APIError(f"Node returned invalid chain_id: {chain_id!r}")
+            self._chain_id = chain_id
+        return self._chain_id
+
     async def get_epoch(self) -> Dict[str, Any]:
         """
         Get current epoch information.
@@ -377,6 +398,8 @@ class RustChainClient:
         to_address: str,
         amount: float,
         fee: float = 0,
+        memo: str = "",
+        chain_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Build and submit a signed transfer using a RustChainWallet.
@@ -386,11 +409,18 @@ class RustChainClient:
             to_address: Recipient wallet address.
             amount: Amount to transfer in RTC.
             fee: Transaction fee in RTC.
+            memo: Optional transfer memo (signed).
+            chain_id: Chain id to bind into the signature. Defaults to the
+                node's own chain id (``/network/info``); never sent chain-less.
 
         Returns:
             Transaction result dict.
         """
-        transfer = wallet.sign_transfer(to_address, amount, fee)
+        if chain_id is None:
+            chain_id = await self.get_chain_id()
+        transfer = wallet.sign_transfer(
+            to_address, amount, fee, memo=memo, chain_id=chain_id
+        )
         return await self.transfer_signed(
             from_address=transfer["from_address"],
             to_address=transfer["to_address"],

@@ -22,6 +22,7 @@
     publicKey: null, // Uint8Array
     secretKey: null, // Uint8Array (64 bytes for nacl)
     address: "",
+    chainId: "", // from GET /network/info, bound into every signed transfer
   };
 
   function setLog(target, msg) {
@@ -181,30 +182,21 @@
     pubEl.textContent = pubHex;
   }
 
-  function pyJsonNumber(n) {
-    // RustChain server uses Python float() then json.dumps.
-    // Key mismatch edge case: Python prints 1.0, JS prints "1".
-    if (!Number.isFinite(n)) throw new Error("amount_not_finite");
-    if (Math.trunc(n) === n) return `${n}.0`;
-    const s = n.toString(); // shortest round-trip in JS; close to Python repr for non-integers
-    if (!/[eE]/.test(s)) return s;
-    const m = s.match(/^([+-]?\d+(?:\.\d+)?)[eE]([+-]?)(\d+)$/);
-    if (!m) return s;
-    const base = m[1];
-    const sign = m[2] === "-" ? "-" : "+";
-    const exp = m[3].padStart(2, "0");
-    return `${base}e${sign}${exp}`;
-  }
+  const signing = window.RustChainLightSigning;
+  if (!signing) throw new Error("signing_js_missing");
 
-  function canonicalSignedMessage(fromAddress, toAddress, amountRtc, memo, nonceStr) {
-    // Python: json.dumps(tx_data, sort_keys=True, separators=(",", ":"))
-    const amountStr = pyJsonNumber(amountRtc);
-    const memoStr = String(memo ?? "");
-    const nonceS = String(nonceStr ?? "");
-    // keys sorted: amount, from, memo, nonce, to
-    return `{"amount":${amountStr},"from":${JSON.stringify(fromAddress)},"memo":${JSON.stringify(
-      memoStr
-    )},"nonce":${JSON.stringify(nonceS)},"to":${JSON.stringify(toAddress)}}`;
+  // chain_id binds the signature to this node's network (cross-network replay
+  // protection). The light client is served from the node's own origin, so ask
+  // that node which chain it is; never sign without one.
+  async function fetchChainId() {
+    if (state.chainId) return state.chainId;
+    const resp = await fetch("/network/info", { cache: "no-cache" });
+    if (!resp.ok) throw new Error(`network_info_http_${resp.status}`);
+    const info = await resp.json();
+    const chainId = info && info.chain_id;
+    if (!signing.isValidChainId(chainId)) throw new Error("network_info_invalid_chain_id");
+    state.chainId = chainId;
+    return chainId;
   }
 
   async function refreshBalance() {
@@ -238,25 +230,19 @@
 
     // Replay protection is per (from_address, nonce). Use ms to avoid collisions.
     const nonceInt = Date.now();
-    const nonceStr = String(nonceInt);
+    const chainId = await fetchChainId();
 
-    // Signed message must match server reconstruction exactly.
-    const msgStr = canonicalSignedMessage(state.address, to, amount, memo, nonceStr);
-    const msgBytes = new TextEncoder().encode(msgStr);
-
-    const sig = nacl.sign.detached(msgBytes, state.secretKey);
-    const sigHex = bytesToHex(sig);
-    const pubHex = bytesToHex(state.publicKey);
-
-    const body = {
-      from_address: state.address,
-      to_address: to,
-      amount_rtc: amount,
-      nonce: nonceInt,
-      signature: sigHex,
-      public_key: pubHex,
+    // Signed message must match server reconstruction exactly (see signing.js).
+    const { message: msgStr, body } = signing.buildSignedTransfer(nacl, {
+      secretKey: state.secretKey,
+      publicKey: state.publicKey,
+      fromAddress: state.address,
+      toAddress: to,
+      amountRtc: amount,
       memo,
-    };
+      nonce: nonceInt,
+      chainId,
+    });
 
     setLog(sendLog, `message=${msgStr}\n\nposting...`);
     const resp = await fetch("/wallet/transfer/signed", {

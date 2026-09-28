@@ -1,8 +1,24 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const nacl = require('tweetnacl');
 const naclUtil = require('tweetnacl-util');
+const { buildSignedTransfer, isValidChainId } = require('../signing');
 
 const API_BASE = 'https://50.28.86.131';
+
+// Signed transfers bind chain_id (cross-network replay protection). Use
+// RUSTCHAIN_CHAIN_ID if set, otherwise ask the node we are sending to.
+let cachedChainId = null;
+async function getChainId() {
+  const override = (process.env.RUSTCHAIN_CHAIN_ID || '').trim();
+  if (override) return override;
+  if (cachedChainId) return cachedChainId;
+  const resp = await fetch(`${API_BASE}/network/info`);
+  if (!resp.ok) throw new Error(`network info HTTP ${resp.status}`);
+  const info = await resp.json();
+  if (!isValidChainId(info && info.chain_id)) throw new Error('node reported no usable chain_id');
+  cachedChainId = info.chain_id;
+  return cachedChainId;
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -53,30 +69,23 @@ module.exports = {
     }
     
     try {
-      // Create transfer payload
-      const transferData = {
-        from: publicKey,
-        to: recipient,
-        amount: amount,
-        timestamp: Date.now()
-      };
-      
-      // Sign the transfer
-      const messageBytes = naclUtil.decodeUTF8(JSON.stringify(transferData));
-      const secretKeyBytes = naclUtil.decodeBase64(secretKey);
-      const signature = nacl.sign.detached(messageBytes, secretKeyBytes);
-      const signatureHex = Buffer.from(signature).toString('hex');
-      
+      // Build and sign the canonical, chain-bound transfer
+      const { body } = buildSignedTransfer(nacl, {
+        secretKey: naclUtil.decodeBase64(secretKey),
+        toAddress: recipient,
+        amountRtc: amount,
+        memo: message,
+        nonce: Date.now(),
+        chainId: await getChainId(),
+      });
+
       // Send signed transaction to API
       const response = await fetch(`${API_BASE}/wallet/transfer/signed`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          ...transferData,
-          signature: signatureHex
-        })
+        body: JSON.stringify(body)
       });
       
       if (!response.ok) {

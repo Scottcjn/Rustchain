@@ -31,6 +31,7 @@ from typing import Optional, Tuple, Dict, Any
 
 # Import our crypto module
 from rustchain_crypto import RustChainWallet, verify_transaction
+from rustchain_signed_transfer import build_signed_transfer, chain_id_from_network_info
 
 # SSL verification — default to True for production security.
 # Only disable for local development with self-signed certs by setting
@@ -724,9 +725,22 @@ class SecureFounderWallet:
         if not messagebox.askyesno("Confirm Transaction", msg):
             return
 
+        # Bind the signature to this node's network (cross-network replay
+        # protection). Never sign without a chain_id from the node we send to.
+        info, error = self._fetch_with_retry(f"{NODE_URL}/network/info")
+        if error:
+            self.status_var.set(f"Error: {error}")
+            self._show_network_error(error)
+            return
+        try:
+            chain_id = chain_id_from_network_info(info)
+        except ValueError as e:
+            messagebox.showerror("Error", f"Node returned no usable chain_id: {e}")
+            return
+
         # Sign transaction
         try:
-            tx = verified_wallet.sign_transaction(to_address, amount, memo)
+            tx = build_signed_transfer(verified_wallet, to_address, amount, memo, chain_id)
 
             self.sig_label.config(text=f"Signature: {tx['signature'][:40]}...")
             self.status_var.set("Transaction signed, sending...")

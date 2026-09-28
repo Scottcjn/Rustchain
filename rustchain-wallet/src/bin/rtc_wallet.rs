@@ -418,6 +418,10 @@ async fn cmd_send(
         tx = tx.with_memo(m.to_string());
     }
 
+    // Bind the signature to the node's network (cross-network replay protection)
+    let chain_id = client.get_network_info().await?.chain_id;
+    tx = tx.with_chain_id(chain_id);
+
     // Sign transaction
     tx.sign(&keypair)?;
 

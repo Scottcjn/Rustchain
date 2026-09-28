@@ -171,22 +171,11 @@ impl RustChainClient {
     ///
     /// The request payload uses the server-expected field names:
     /// `from_address`, `to_address`, `amount_rtc` (in RTC units, not smallest units),
-    /// `nonce` (as string), `signature`, `public_key`, `memo`.
+    /// `nonce` (as string), `signature`, `public_key`, `memo`, `chain_id`.
+    /// Refuses a transaction that is not bound to a chain id.
     pub async fn submit_transaction(&self, tx: &Transaction) -> Result<TransactionResponse> {
         let url = format!("{}/wallet/transfer/signed", self.api_url);
-
-        // Convert amount from smallest units to RTC units (6 decimals)
-        let amount_rtc = tx.amount as f64 / 1_000_000.0;
-
-        let payload = serde_json::json!({
-            "from_address": tx.from,
-            "to_address": tx.to,
-            "amount_rtc": amount_rtc,
-            "nonce": tx.nonce.to_string(),
-            "memo": tx.memo,
-            "signature": tx.signature,
-            "public_key": tx.public_key,
-        });
+        let payload = signed_transfer_payload(tx)?;
 
         let response = self
             .http_client
@@ -348,6 +337,49 @@ pub enum FeePriority {
     Instant,
 }
 
+/// Request body for `POST /wallet/transfer/signed`.
+///
+/// The node checks `chain_id` against its own `CHAIN_ID` and verifies the
+/// signature over a message that includes it, so the value sent here must be
+/// the one the transaction was signed with.
+pub fn signed_transfer_payload(tx: &Transaction) -> Result<serde_json::Value> {
+    let chain_id = match tx.chain_id.as_deref() {
+        Some(cid) if is_valid_chain_id(cid) => cid,
+        Some(cid) => {
+            return Err(WalletError::Transaction(format!(
+                "invalid chain_id: {cid:?}"
+            )))
+        }
+        None => {
+            return Err(WalletError::Transaction(
+                "transaction is not bound to a chain_id; use with_chain_id() before signing"
+                    .to_string(),
+            ))
+        }
+    };
+    // Convert amount from smallest units to RTC units (6 decimals)
+    let amount_rtc = tx.amount as f64 / 1_000_000.0;
+    Ok(serde_json::json!({
+        "from_address": tx.from,
+        "to_address": tx.to,
+        "amount_rtc": amount_rtc,
+        "nonce": tx.nonce.to_string(),
+        "memo": tx.memo,
+        "signature": tx.signature,
+        "public_key": tx.public_key,
+        "chain_id": chain_id,
+    }))
+}
+
+/// Same accepted shape as the node: `[A-Za-z0-9._-]{1,64}`.
+fn is_valid_chain_id(chain_id: &str) -> bool {
+    !chain_id.is_empty()
+        && chain_id.len() <= 64
+        && chain_id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+}
+
 /// Helper function to transfer tokens
 pub async fn transfer(
     client: &RustChainClient,
@@ -357,6 +389,12 @@ pub async fn transfer(
     // Get current nonce if not set
     if tx.nonce == 0 {
         tx.nonce = client.get_nonce(&tx.from).await.unwrap_or(0);
+    }
+
+    // Bind to the node's network (cross-network replay protection)
+    if tx.chain_id.is_none() {
+        let chain_id = client.get_network_info().await?.chain_id;
+        *tx = tx.clone().with_chain_id(chain_id);
     }
 
     // Sign the transaction
@@ -373,6 +411,26 @@ mod tests {
     use std::net::TcpListener;
     use std::sync::Arc;
     use std::thread;
+
+    #[test]
+    fn test_signed_transfer_payload_carries_chain_id() {
+        let tx = Transaction::new("RTCfrom".into(), "RTCto".into(), 1_500_000, 0, 7)
+            .with_chain_id("rustchain-mainnet-v2");
+        let payload = signed_transfer_payload(&tx).unwrap();
+        assert_eq!(payload["chain_id"], "rustchain-mainnet-v2");
+        assert_eq!(payload["amount_rtc"], 1.5);
+        assert_eq!(payload["nonce"], "7");
+    }
+
+    #[test]
+    fn test_signed_transfer_payload_refuses_unbound_or_invalid_chain_id() {
+        let tx = Transaction::new("RTCfrom".into(), "RTCto".into(), 1, 0, 7);
+        assert!(signed_transfer_payload(&tx).is_err());
+        let bad = tx.clone().with_chain_id("bad chain id");
+        assert!(signed_transfer_payload(&bad).is_err());
+        let too_long = tx.with_chain_id("x".repeat(65));
+        assert!(signed_transfer_payload(&too_long).is_err());
+    }
 
     #[test]
     fn test_client_creation() {
