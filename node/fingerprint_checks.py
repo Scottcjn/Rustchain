@@ -139,7 +139,7 @@ def check_simd_identity() -> Tuple[bool, Dict]:
     except Exception:
         pass
 
-    if not flags:
+    if not flags and platform.system() != "Windows":
         try:
             result = subprocess.run(
                 ["sysctl", "-a"],
@@ -150,6 +150,16 @@ def check_simd_identity() -> Tuple[bool, Dict]:
                     flags.append(line.split(":")[-1].strip())
         except Exception:
             pass
+
+    # Windows: /proc/cpuinfo and sysctl are absent. Get the same SIMD signal
+    # from the kernel (IsProcessorFeaturePresent) — a real, non-editable source.
+    if not flags and platform.system() == "Windows":
+        flags = _windows_simd_flags()
+        if not flags and arch in ("amd64", "x86_64", "x86"):
+            # Any 64-bit x86 Windows CPU guarantees an SSE/SSE2 baseline; record
+            # it so the check still reflects real capability if the kernel query
+            # was unavailable (e.g. locked-down process token).
+            flags = ["sse", "sse2"]
 
     has_sse = any("sse" in f.lower() for f in flags)
     has_avx = any("avx" in f.lower() for f in flags)
@@ -286,6 +296,143 @@ def _run_cmd(args: List[str], timeout_s: int = 5) -> Optional[str]:
         return result.stdout.strip()
     except Exception:
         return None
+
+
+def _windows_registry_value(subkey_path: str, value_name: str):
+    """
+    Read a single value from HKEY_LOCAL_MACHINE. Windows only.
+    winreg is imported lazily so this module still loads on Linux/macOS.
+    Returns the raw value (str / int / list) or None.
+    """
+    try:
+        import winreg  # noqa: WPS433 (lazy, Windows-only)
+    except Exception:
+        return None
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, subkey_path) as key:
+            val, _ = winreg.QueryValueEx(key, value_name)
+            return val
+    except Exception:
+        return None
+
+
+def _windows_cpu_identity() -> Dict[str, str]:
+    """
+    Read real CPU identity from the Windows registry (populated by the kernel
+    at boot from CPUID, not user-writable in normal operation).
+
+    Key: HKLM\\HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0
+      ProcessorNameString -> "AMD Ryzen 7 7700X 8-Core Processor"
+      Identifier          -> "AMD64 Family 25 Model 97 Stepping 2"
+      VendorIdentifier    -> "AuthenticAMD"
+    """
+    import re
+
+    base = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+    out: Dict[str, str] = {}
+
+    name = _windows_registry_value(base, "ProcessorNameString")
+    ident = _windows_registry_value(base, "Identifier")
+    vendor = _windows_registry_value(base, "VendorIdentifier")
+
+    if name:
+        out["cpu_model"] = str(name).strip()
+    if ident:
+        ident_s = str(ident).strip()
+        out["identifier"] = ident_s
+        mf = re.search(r"Family\s+(\d+)", ident_s)
+        mm = re.search(r"Model\s+(\d+)", ident_s)
+        ms = re.search(r"Stepping\s+(\d+)", ident_s)
+        if mf:
+            out["cpu_family"] = mf.group(1)
+        if mm:
+            out["model"] = mm.group(1)
+        if ms:
+            out["stepping"] = ms.group(1)
+    if vendor:
+        out["vendor"] = str(vendor).strip()
+
+    return out
+
+
+def _windows_simd_flags() -> List[str]:
+    """
+    Detect SIMD features on Windows via the kernel's IsProcessorFeaturePresent().
+    This queries the OS/CPU directly (not a string a miner can edit), so it is a
+    trustworthy hardware signal analogous to /proc/cpuinfo flags on Linux.
+
+    PF_* constants: https://learn.microsoft.com/windows/win32/api/processthreadsapi/nf-processthreadsapi-isprocessorfeaturepresent
+    """
+    flags: List[str] = []
+    try:
+        import ctypes  # stdlib
+
+        k32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        pf_map = {
+            6: "sse",       # PF_XMMI_INSTRUCTIONS_AVAILABLE
+            10: "sse2",     # PF_XMMI64_INSTRUCTIONS_AVAILABLE
+            13: "sse3",     # PF_SSE3_INSTRUCTIONS_AVAILABLE
+            36: "ssse3",    # PF_SSSE3_INSTRUCTIONS_AVAILABLE
+            37: "sse4_1",   # PF_SSE4_1_INSTRUCTIONS_AVAILABLE
+            38: "sse4_2",   # PF_SSE4_2_INSTRUCTIONS_AVAILABLE
+            39: "avx",      # PF_AVX_INSTRUCTIONS_AVAILABLE
+            40: "avx2",     # PF_AVX2_INSTRUCTIONS_AVAILABLE
+            41: "avx512f",  # PF_AVX512F_INSTRUCTIONS_AVAILABLE
+        }
+        for code, fname in pf_map.items():
+            try:
+                if k32.IsProcessorFeaturePresent(code):
+                    flags.append(fname)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return flags
+
+
+def _windows_bios_info() -> Dict[str, str]:
+    """
+    Read firmware age signals from Windows.
+
+    Registry key: HKLM\\HARDWARE\\DESCRIPTION\\System\\BIOS
+      BIOSReleaseDate / SystemBiosDate -> firmware date (e.g. "09/12/2023")
+      BIOSVersion / SystemBiosVersion  -> firmware version string(s)
+
+    Falls back to Win32_BIOS via PowerShell only if the registry can't provide it.
+    """
+    out: Dict[str, str] = {}
+    base = r"HARDWARE\DESCRIPTION\System\BIOS"
+
+    date = (_windows_registry_value(base, "BIOSReleaseDate")
+            or _windows_registry_value(base, "SystemBiosDate"))
+    ver = (_windows_registry_value(base, "BIOSVersion")
+           or _windows_registry_value(base, "SystemBiosVersion"))
+
+    if date:
+        out["bios_date"] = str(date).strip()
+    if ver:
+        # SystemBiosVersion is a REG_MULTI_SZ (list of strings).
+        if isinstance(ver, (list, tuple)):
+            ver = " ".join(str(x) for x in ver if str(x).strip())
+        out["bios_version"] = str(ver).strip()
+
+    # Last-resort fallback: WMI/CIM via PowerShell.
+    if not out.get("bios_date"):
+        ps_date = _run_cmd([
+            "powershell", "-NoProfile", "-Command",
+            "(Get-CimInstance Win32_BIOS).ReleaseDate.ToString('yyyy-MM-dd')",
+        ])
+        if ps_date:
+            out["bios_date"] = ps_date.strip()
+    if not out.get("bios_version"):
+        ps_ver = _run_cmd([
+            "powershell", "-NoProfile", "-Command",
+            "(Get-CimInstance Win32_BIOS).SMBIOSBIOSVersion",
+        ])
+        if ps_ver:
+            out["bios_version"] = ps_ver.strip()
+
+    return out
 
 
 def _parse_linux_cpuinfo(cpuinfo_text: str) -> Dict[str, str]:
@@ -425,13 +572,33 @@ def check_device_age_oracle() -> Tuple[bool, Dict]:
     flags = flags_raw.split() if flags_raw else []
 
     # macOS fallback
-    if not cpu_model:
+    if not cpu_model and platform.system() != "Windows":
         cpu_model = _run_cmd(["sysctl", "-n", "machdep.cpu.brand_string"]) or ""
+
+    # Windows fallback: registry-backed CPU identity + firmware date.
+    win_bios: Dict[str, str] = {}
+    if platform.system() == "Windows":
+        win_id = _windows_cpu_identity()
+        if not cpu_model:
+            cpu_model = win_id.get("cpu_model", "")
+        # Fill CPUID-derived fields the Linux path would have gotten from cpuinfo.
+        if not cpuinfo.get("cpu_family"):
+            cpuinfo["cpu_family"] = win_id.get("cpu_family")
+        if not cpuinfo.get("model"):
+            cpuinfo["model"] = win_id.get("model")
+        if not cpuinfo.get("stepping"):
+            cpuinfo["stepping"] = win_id.get("stepping")
+        if not flags:
+            flags = _windows_simd_flags()
+        win_bios = _windows_bios_info()
 
     release_year, year_details = _estimate_release_year(cpu_model)
 
     bios_date = _read_text_file("/sys/class/dmi/id/bios_date", max_bytes=256)
     bios_version = _read_text_file("/sys/class/dmi/id/bios_version", max_bytes=256)
+    if platform.system() == "Windows":
+        bios_date = win_bios.get("bios_date") or bios_date
+        bios_version = win_bios.get("bios_version") or bios_version
 
     mismatch_reasons: List[str] = []
     cpu_l = cpu_model.lower()
