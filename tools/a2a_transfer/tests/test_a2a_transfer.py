@@ -103,7 +103,7 @@ def test_canonical_message_matches_node_format():
     )
     assert current == (
         b'{"amount":1.0,"chain_id":"rustchain-mainnet-v2","fee":0.0,'
-        b'"from":"RTC' + b"a" * 40 + b'","memo":"","nonce":1700000000000,'
+        b'"from":"RTC' + b"a" * 40 + b'","memo":"","nonce":"1700000000000",'
         b'"to":"RTC' + b"b" * 40 + b'"}'
     )
     assert b'"fee"' not in legacy

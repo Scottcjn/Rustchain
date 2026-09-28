@@ -150,7 +150,8 @@ def test_self_dealing_blocked(env):
     assert r.get_json()["error"] == "self_dealing"
 
 
-def test_order_happy_path_returns_payment_instructions(env):
+def test_order_happy_path_returns_payment_instructions(env, monkeypatch):
+    monkeypatch.delenv("RC_CHAIN_ID", raising=False)
     p, b = env["agent"](), env["agent"]()
     order = full_order(env, p, b)
     r = env["post"](b, f"/catalog/orders/{order['id']}/accept", {})
@@ -160,7 +161,19 @@ def test_order_happy_path_returns_payment_instructions(env):
     ins = body["payment_instructions"]
     assert ins == {"endpoint": "/wallet/transfer/signed", "to_address": p.id,
                    "amount_rtc": 2.5, "memo": f"svc:{order['id']}",
+                   "chain_id": "rustchain-mainnet-v2",
+                   "signed_message": ins["signed_message"],
                    "note": ins["note"]}
+    # chain_id must be bound into the signed message, not just sent alongside it.
+    assert '"chain_id": chain_id' in ins["signed_message"]
+
+
+def test_payment_instructions_follow_node_chain_id(env, monkeypatch):
+    monkeypatch.setenv("RC_CHAIN_ID", "rustchain-testnet-v2")
+    p, b = env["agent"](), env["agent"]()
+    order = full_order(env, p, b)
+    body = env["post"](b, f"/catalog/orders/{order['id']}/accept", {}).get_json()
+    assert body["payment_instructions"]["chain_id"] == "rustchain-testnet-v2"
 
 
 def test_catalog_never_writes_ledger(env):

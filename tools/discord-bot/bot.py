@@ -18,7 +18,9 @@ Environment variables:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 import os
 import sys
 from datetime import datetime, timezone
@@ -51,6 +53,14 @@ log = logging.getLogger("rustchain-bot")
 RUSTCHAIN_URL = os.getenv("RUSTCHAIN_NODE_URL", "https://rustchain.org").rstrip("/")
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN", "")
 API_TIMEOUT = _env_float("API_TIMEOUT", 10.0)
+# Explicit chain id for /tip instructions. Unset = ask the node (GET /network/info)
+# and refuse to show instructions if it cannot say; never guess a network.
+CHAIN_ID_OVERRIDE = os.getenv("RUSTCHAIN_CHAIN_ID", "").strip()
+_CHAIN_ID_RE = re.compile(r"[A-Za-z0-9._-]{1,64}")
+
+
+def is_valid_chain_id(value) -> bool:
+    return isinstance(value, str) and _CHAIN_ID_RE.fullmatch(value) is not None
 
 
 def _format_uptime(value) -> str:
@@ -115,6 +125,9 @@ class RustChainAPI:
 
     async def miners(self) -> list | None:
         return await self._get("/api/miners")
+
+    async def network_info(self) -> dict | None:
+        return await self._get("/network/info")
 
     async def transfer(self, payload: dict) -> dict | None:
         try:
@@ -301,6 +314,52 @@ async def cmd_miners(interaction: discord.Interaction):
     await interaction.followup.send(embed=embed)
 
 
+async def resolve_chain_id(api) -> str | None:
+    """chain_id to bind: RUSTCHAIN_CHAIN_ID if set, else the node's. None = unknown (fail closed)."""
+    if CHAIN_ID_OVERRIDE:
+        if not is_valid_chain_id(CHAIN_ID_OVERRIDE):
+            log.error("RUSTCHAIN_CHAIN_ID is not a valid chain_id: %r", CHAIN_ID_OVERRIDE)
+            return None
+        return CHAIN_ID_OVERRIDE
+    info = await api.network_info()
+    chain_id = info.get("chain_id") if isinstance(info, dict) else None
+    return chain_id if is_valid_chain_id(chain_id) else None
+
+
+def signed_transfer_template(to_address: str, amount: float, chain_id: str) -> dict:
+    """Instructions for a chain-bound POST /wallet/transfer/signed.
+
+    ``message`` is what the node verifies (node/rustchain_v2_integrated_v2.2.1_rip200.py,
+    _wallet_transfer_signed_messages, fee-less form): compact sorted JSON, amount
+    as a float, nonce as a string, chain_id bound in so the signature is only
+    valid on this network. The request body must carry the same chain_id.
+    """
+    amount = float(amount)
+    message = json.dumps(
+        {
+            "amount": amount,
+            "chain_id": chain_id,
+            "from": "<your RTC address>",
+            "memo": "",
+            "nonce": "<nonce>",
+            "to": to_address,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    body = {
+        "from_address": "<your RTC address>",
+        "to_address": to_address,
+        "amount_rtc": amount,
+        "memo": "",
+        "nonce": "<nonce: unique increasing integer, e.g. unix ms>",
+        "chain_id": chain_id,
+        "public_key": "<ed25519 public key hex>",
+        "signature": "<ed25519 signature hex of the message>",
+    }
+    return {"message": message, "body": body}
+
+
 # ---------------------------------------------------------------------------
 # /tip
 # ---------------------------------------------------------------------------
@@ -323,7 +382,15 @@ async def cmd_tip(interaction: discord.Interaction, to_miner: str, amount: float
 
     # Tipping requires a signed transaction (private key).
     # The bot cannot hold user keys, so we provide transfer instructions.
-    amount_units = int(amount * 1_000_000)
+    chain_id = await resolve_chain_id(bot.api)
+    if chain_id is None:
+        await interaction.followup.send(
+            "Could not determine this node's chain_id (GET /network/info), so no "
+            "signing instructions were produced. Set RUSTCHAIN_CHAIN_ID or retry.",
+            ephemeral=True,
+        )
+        return
+    template = signed_transfer_template(to_miner.strip(), amount, chain_id)
 
     embed = discord.Embed(
         title="Tip Transfer",
@@ -335,26 +402,20 @@ async def cmd_tip(interaction: discord.Interaction, to_miner: str, amount: float
     )
     embed.add_field(name="Recipient", value=to_miner.strip(), inline=True)
     embed.add_field(name="Amount", value=f"{amount:.6f} RTC", inline=True)
-    embed.add_field(name="Amount (units)", value=f"{amount_units:,}", inline=True)
+    embed.add_field(name="Chain ID", value=chain_id, inline=True)
     embed.add_field(
         name="Endpoint",
         value=f"`POST {RUSTCHAIN_URL}/wallet/transfer/signed`",
         inline=False,
     )
     embed.add_field(
-        name="Payload Template",
-        value=(
-            "```json\n"
-            "{\n"
-            f'  "from": "<your_wallet_id>",\n'
-            f'  "to": "{to_miner.strip()}",\n'
-            f'  "amount": {amount_units},\n'
-            '  "fee": 1000,\n'
-            '  "signature": "<ed25519_sig>",\n'
-            '  "timestamp": <unix_ts>\n'
-            "}\n"
-            "```"
-        ),
+        name="Sign exactly these bytes (Ed25519)",
+        value=f"```json\n{template['message']}\n```",
+        inline=False,
+    )
+    embed.add_field(
+        name="Request body",
+        value=f"```json\n{json.dumps(template['body'], indent=2)}\n```",
         inline=False,
     )
     embed.timestamp = datetime.now(timezone.utc)

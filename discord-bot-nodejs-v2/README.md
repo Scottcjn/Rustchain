@@ -37,6 +37,8 @@ cp .env.example .env
 
 # Edit .env and add your Discord bot token
 # Optional: Add wallet keys for /tip command
+# Optional: RUSTCHAIN_CHAIN_ID (default: the node's GET /network/info chain_id,
+#           bound into every signed /tip transfer)
 ```
 
 ## 🎮 Usage

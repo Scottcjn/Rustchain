@@ -94,24 +94,26 @@ def canonical_messages(
 ) -> Tuple[bytes, bytes]:
     """Return ``(current, legacy)`` canonical signing payloads.
 
-    Mirrors the node exactly: compact JSON, ``sort_keys=True``, no spaces.
-    The legacy variant omits ``fee`` so signatures stay valid against nodes
-    that predate the fee field.
+    Mirrors the node exactly (``_wallet_transfer_signed_messages``): compact
+    JSON, ``sort_keys=True``, no spaces, ``amount``/``fee`` as floats and
+    ``nonce`` as a *string* (the node signs ``str(nonce)``). The legacy variant
+    omits ``fee`` so signatures stay valid against nodes that predate the fee
+    field. ``chain_id`` binds the signature to one network.
     """
     tx = {
         "from": from_address,
         "to": to_address,
-        "amount": amount_rtc,
-        "fee": fee_rtc,
+        "amount": float(amount_rtc),
+        "fee": float(fee_rtc),
         "memo": memo,
-        "nonce": nonce,
+        "nonce": str(nonce),
     }
     legacy = {
         "from": from_address,
         "to": to_address,
-        "amount": amount_rtc,
+        "amount": float(amount_rtc),
         "memo": memo,
-        "nonce": nonce,
+        "nonce": str(nonce),
     }
     if chain_id:
         tx["chain_id"] = chain_id
@@ -317,7 +319,13 @@ def build_payload(
     chain_id: Optional[str] = DEFAULT_CHAIN_ID,
     legacy: bool = False,
 ) -> Dict[str, Any]:
-    """Build the signed request body for ``POST /wallet/transfer/signed``."""
+    """Build the signed request body for ``POST /wallet/transfer/signed``.
+
+    ``chain_id`` is required (fail closed): a chain-less signature is valid on
+    every RustChain network, and nodes enforcing chain binding reject it.
+    """
+    if not isinstance(chain_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,64}", chain_id):
+        raise A2AError(f"a valid chain_id is required to sign a transfer, got {chain_id!r}")
     from_address = signer.address
     validate_address(from_address, "from_address")
     validate_address(to_address, "to_address")

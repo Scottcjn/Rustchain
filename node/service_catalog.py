@@ -28,6 +28,7 @@ Registered from wsgi.py via ``register_service_catalog(app, DB_PATH)``.
 
 import hashlib
 import json
+import os
 import re
 import secrets
 import sqlite3
@@ -50,6 +51,12 @@ AUTH_MAX_FUTURE_SECONDS = 30
 # /wallet/transfer/signed always agree on who is registered. Deliberately
 # no env override: the node has none either.
 BEACON_ATLAS_DB = "/root/beacon/beacon_atlas.db"
+
+
+def _active_chain_id():
+    """The node's CHAIN_ID, from the same env var and default the node reads
+    (rustchain_v2_integrated_v2.2.1_rip200.py: RC_CHAIN_ID, "rustchain-mainnet-v2")."""
+    return os.environ.get("RC_CHAIN_ID", "rustchain-mainnet-v2")
 
 CATEGORIES = (
     "render", "review", "hw_test", "vision", "compute",
@@ -316,8 +323,15 @@ def _payment_instructions(row):
         "to_address": row["provider"],
         "amount_rtc": _rtc_from_i64(row["price_i64"]),
         "memo": _payment_memo(row["id"]),
+        # Signed transfers bind chain_id (cross-network replay protection): put it
+        # in the request body AND in the signed message.
+        "chain_id": _active_chain_id(),
+        "signed_message": ('json.dumps({"amount": amount_rtc, "chain_id": chain_id, '
+                           '"from": from_address, "memo": memo, "nonce": str(nonce), '
+                           '"to": to_address}, sort_keys=True, separators=(",", ":"))'),
         "note": ("Send one signed transfer for the full amount from your own wallet. "
-                 "This catalog does not move funds."),
+                 "Sign signed_message with your Ed25519 key and include the same "
+                 "chain_id in the request. This catalog does not move funds."),
     }
 
 

@@ -65,6 +65,7 @@ python bot.py
 | `RUSTCHAIN_NODE_URL` | No | `https://50.28.86.131` | RustChain node URL |
 | `RUSTCHAIN_VERIFY_SSL` | No | `false` | Verify SSL certificates |
 | `BOT_SECRET` | No | `rustchain-tip-bot-secret-key` | Secret for wallet derivation |
+| `RUSTCHAIN_CHAIN_ID` | No | node's `GET /network/info` | Chain id bound into every signed transfer (cross-network replay protection) |
 
 ## Security
 

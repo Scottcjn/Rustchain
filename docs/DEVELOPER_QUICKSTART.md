@@ -157,6 +157,7 @@ POST /wallet/transfer/signed
 | `amount_rtc` | number | Amount to send in RTC |
 | `memo` | string | Optional memo; if omitted, the server treats it as an empty string |
 | `nonce` | integer or numeric string | Unique positive nonce; current examples use a timestamp |
+| `chain_id` | string | The node's chain id from `GET /network/info` (mainnet: `rustchain-mainnet-v2`); must also be inside the signed message |
 | `public_key` | string | Sender Ed25519 public key as hex |
 | `signature` | string | Ed25519 signature as hex |
 
@@ -170,6 +171,7 @@ It reconstructs this canonical JSON object and signs/verifies that exact byte se
 ```json
 {
   "amount": 1.0,
+  "chain_id": "rustchain-mainnet-v2",
   "from": "RTC...",
   "memo": "Payment for services",
   "nonce": "1709942400",
@@ -180,7 +182,11 @@ It reconstructs this canonical JSON object and signs/verifies that exact byte se
 Canonicalization rules from the server implementation:
 - keys are sorted alphabetically
 - separators are compact: `(",", ":")`
+- `amount` is written as Python writes a float (`1.0`, not `1`; `5e-05`, not `0.00005`)
 - `nonce` is verified as a string inside the signed message, even if submitted as a number in the request body
+- `chain_id` binds the signature to one network, so it cannot be replayed on another
+  (testnet, forks). Send the same value in the request body. Nodes are moving to
+  reject signed transfers without it.
 
 Equivalent Python used by the server:
 
@@ -199,6 +205,7 @@ message = json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode()
   "amount_rtc": 1.0,
   "memo": "Payment for services",
   "nonce": 1709942400,
+  "chain_id": "rustchain-mainnet-v2",
   "public_key": "a1b2c3d4e5f6...",
   "signature": "9f8e7d6c5b4a..."
 }
@@ -245,13 +252,17 @@ signing_key = SigningKey(bytes.fromhex(PRIVATE_KEY_HEX))
 public_key_hex = signing_key.verify_key.encode().hex()
 from_address = "RTC" + hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
 
+# Bind the signature to the network you are sending on.
+CHAIN_ID = requests.get(f"{NODE_URL}/network/info", timeout=15).json()["chain_id"]
+
 # This exact structure is what the server reconstructs and verifies.
 tx_data = {
     "from": from_address,
     "to": TO_ADDRESS,
-    "amount": AMOUNT_RTC,
+    "amount": float(AMOUNT_RTC),
     "memo": MEMO,
     "nonce": str(NONCE),
+    "chain_id": CHAIN_ID,
 }
 
 message = json.dumps(tx_data, sort_keys=True, separators=(",", ":")).encode()
@@ -263,6 +274,7 @@ payload = {
     "amount_rtc": AMOUNT_RTC,
     "memo": MEMO,
     "nonce": NONCE,
+    "chain_id": CHAIN_ID,
     "public_key": public_key_hex,
     "signature": signature_hex,
 }
@@ -291,6 +303,9 @@ TO_ADDRESS="RTC0987654321098765432109876543210987654321"
 AMOUNT=1.0
 MEMO="Test transfer"
 NONCE=$(date +%s%3N)
+# chain_id binds the signature to this network: fetch it over verified TLS and
+# stop if the node did not return one.
+CHAIN_ID=$(curl -sf "$NODE_URL/network/info" | jq -er .chain_id) || { echo "no chain_id from $NODE_URL" >&2; exit 1; }
 
 # Generate Ed25519 key (one-time setup)
 # openssl genpkey -algorithm Ed25519 -out private_key.pem
@@ -300,10 +315,11 @@ NONCE=$(date +%s%3N)
 PUBLIC_KEY=$(openssl pkey -in public_key.pem -pubout -outform DER 2>/dev/null | tail -c 32 | xxd -p -c 64)
 
 # Create the canonical message the node verifies.
-# The signed bytes use legacy keys {from,to,amount,memo,nonce}
+# The signed bytes use legacy keys {amount,chain_id,from,memo,nonce,to}
 # even though the outer request body uses {from_address,to_address,amount_rtc,...}.
+# AMOUNT must be written as Python writes a float (1.0, not 1).
 MESSAGE=$(cat <<EOF
-{"amount":${AMOUNT},"from":"${FROM_ADDRESS}","memo":"${MEMO}","nonce":"${NONCE}","to":"${TO_ADDRESS}"}
+{"amount":${AMOUNT},"chain_id":"${CHAIN_ID}","from":"${FROM_ADDRESS}","memo":"${MEMO}","nonce":"${NONCE}","to":"${TO_ADDRESS}"}
 EOF
 )
 
@@ -319,6 +335,7 @@ curl -k -X POST "$NODE_URL/wallet/transfer/signed" \
     \"amount_rtc\": ${AMOUNT},
     \"memo\": \"${MEMO}\",
     \"nonce\": \"${NONCE}\",
+    \"chain_id\": \"${CHAIN_ID}\",
     \"public_key\": \"${PUBLIC_KEY}\",
     \"signature\": \"${SIGNATURE}\"
   }" | jq .
@@ -333,7 +350,9 @@ curl -k -X POST "$NODE_URL/wallet/transfer/signed" \
 | `invalid_from_address_format` | `from_address` is not a valid `RTC...` address | Derive the address from the Ed25519 public key; do not use `0x...` or a nickname |
 | `invalid_to_address_format` | Recipient is not a valid `RTC...` address | Use the recipient's RustChain address |
 | `missing_required_fields` | Missing one of the required outer payload fields | Include `from_address`, `to_address`, `amount_rtc`, `nonce`, `signature`, and `public_key` |
-| `Invalid signature` | The server-reconstructed canonical message does not match what you signed | Sign `{from,to,amount,memo,nonce}` with sorted keys and compact separators |
+| `Invalid signature` | The server-reconstructed canonical message does not match what you signed | Sign `{amount,chain_id,from,memo,nonce,to}` with sorted keys and compact separators |
+| `chain_id does not match active network` | The request's `chain_id` is another network's | Use the `chain_id` from this node's `GET /network/info` |
+| `CHAIN_ID_REQUIRED` | The request has no `chain_id` (nodes that enforce chain binding) | Add `chain_id` to the request body and the signed message |
 | `insufficient_balance` | Wallet has insufficient RTC | Check balance first via `/wallet/balance` |
 | `REPLAY_DETECTED` | Nonce already used for that sender | Use a fresh nonce for every transfer |
 

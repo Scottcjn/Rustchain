@@ -73,6 +73,8 @@ rtc-wallet send \
 ```
 
 Signs the transaction with Ed25519 and submits to `https://rustchain.org/wallet/transfer/signed`.
+The node's `chain_id` (from `/network/info`) is bound into the signed message and sent with
+the request, so the signature cannot be replayed on another RustChain network.
 
 ### Receive (Show Address)
 
