@@ -108,8 +108,12 @@ journalctl --user -u rustchain-miner -f
 ### Check Rewards
 
 ```bash
-curl -s "https://rustchain.org/api/miners?wallet=YOUR_WALLET"
+# Your accumulated RTC balance (same endpoint as "Check Balance" above)
+curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET"
 ```
+
+`/api/miners` lists all active miners (paginated with `limit`/`offset`); it does not
+filter by wallet, so use `/wallet/balance` to check your own rewards.
 
 ---
 
