@@ -5,6 +5,10 @@ import pytest
 
 from node import payout_worker
 
+# balances.amount_i64 is micro-RTC. Wallet held 100 RTC; the node's /withdraw
+# endpoint already debited amount (10) + fee (1) at request time.
+AFTER_REQUEST_DEBIT_I64 = (100 - 10 - 1) * payout_worker.ACCOUNT_UNIT
+
 
 def withdrawal():
     return {
@@ -34,16 +38,20 @@ def test_process_withdrawal_leaves_pending_when_production_broadcast_is_not_conf
     monkeypatch.setattr(payout_worker, "MOCK_MODE", False)
     db_path = str(tmp_path / "payout_worker.db")
     with sqlite3.connect(db_path) as conn:
-        conn.execute("CREATE TABLE accounts (public_key TEXT PRIMARY KEY, balance INTEGER)")
+        conn.execute(
+            "CREATE TABLE balances (miner_id TEXT PRIMARY KEY, amount_i64 INTEGER NOT NULL DEFAULT 0)"
+        )
         conn.execute(
             "CREATE TABLE withdrawals ("
             "withdrawal_id TEXT PRIMARY KEY, miner_pk TEXT, amount INTEGER, fee INTEGER, "
             "destination TEXT, status TEXT, error_msg TEXT, processed_at INTEGER, "
             "tx_hash TEXT, created_at INTEGER)"
         )
+        # The node debits amount + fee from `balances` at REQUEST time
+        # (100 RTC - 10 - 1 fee = 89 RTC left); the worker must not touch it.
         conn.execute(
-            "INSERT INTO accounts (public_key, balance) VALUES (?, ?)",
-            ("miner-pubkey", 100),
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            ("miner-pubkey", AFTER_REQUEST_DEBIT_I64),
         )
         conn.execute(
             "INSERT INTO withdrawals "
@@ -59,7 +67,7 @@ def test_process_withdrawal_leaves_pending_when_production_broadcast_is_not_conf
 
     with sqlite3.connect(db_path) as conn:
         balance = conn.execute(
-            "SELECT balance FROM accounts WHERE public_key = ?",
+            "SELECT amount_i64 FROM balances WHERE miner_id = ?",
             ("miner-pubkey",),
         ).fetchone()[0]
         status, error_msg, tx_hash = conn.execute(
@@ -67,7 +75,8 @@ def test_process_withdrawal_leaves_pending_when_production_broadcast_is_not_conf
             ("wd-1",),
         ).fetchone()
 
-    assert balance == 100
+    # Not configured -> left pending: no second debit and no refund.
+    assert balance == AFTER_REQUEST_DEBIT_I64
     assert status == "pending"
     assert "not configured" in error_msg
     assert tx_hash is None
@@ -83,15 +92,19 @@ def test_process_withdrawal_does_not_refund_after_broadcast_tx_hash(
     monkeypatch.setattr(payout_worker, "MOCK_MODE", True)
     db_path = str(tmp_path / "payout_worker.db")
     with sqlite3.connect(db_path) as conn:
-        conn.execute("CREATE TABLE accounts (public_key TEXT PRIMARY KEY, balance INTEGER)")
+        conn.execute(
+            "CREATE TABLE balances (miner_id TEXT PRIMARY KEY, amount_i64 INTEGER NOT NULL DEFAULT 0)"
+        )
         conn.execute(
             "CREATE TABLE withdrawals ("
             "withdrawal_id TEXT PRIMARY KEY, miner_pk TEXT, amount INTEGER, fee INTEGER, "
             "destination TEXT, status TEXT, error_msg TEXT, tx_hash TEXT, created_at INTEGER)"
         )
+        # The node debits amount + fee from `balances` at REQUEST time
+        # (100 RTC - 10 - 1 fee = 89 RTC left); the worker must not touch it.
         conn.execute(
-            "INSERT INTO accounts (public_key, balance) VALUES (?, ?)",
-            ("miner-pubkey", 100),
+            "INSERT INTO balances (miner_id, amount_i64) VALUES (?, ?)",
+            ("miner-pubkey", AFTER_REQUEST_DEBIT_I64),
         )
         conn.execute(
             "INSERT INTO withdrawals "
@@ -107,7 +120,7 @@ def test_process_withdrawal_does_not_refund_after_broadcast_tx_hash(
 
     with sqlite3.connect(db_path) as conn:
         balance = conn.execute(
-            "SELECT balance FROM accounts WHERE public_key = ?",
+            "SELECT amount_i64 FROM balances WHERE miner_id = ?",
             ("miner-pubkey",),
         ).fetchone()[0]
         status, error_msg, tx_hash = conn.execute(
@@ -115,7 +128,9 @@ def test_process_withdrawal_does_not_refund_after_broadcast_tx_hash(
             ("wd-1",),
         ).fetchone()
 
-    assert balance == 89
+    # Broadcast hash exists -> must NOT refund (funds may have left), and the
+    # worker must not debit a second time either.
+    assert balance == AFTER_REQUEST_DEBIT_I64
     assert status == "processing"
     assert tx_hash == "tx-broadcasted"
     assert "manual reconciliation required" in error_msg
