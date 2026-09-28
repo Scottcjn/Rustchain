@@ -702,29 +702,34 @@ def test_telegram_bot_api_post_keeps_node_error_body(node, monkeypatch, tmp_path
     assert result["http_status"] == 400
 
 
+def _sdk_client_on_node(node, posted):
+    """RustChainClient whose real HTTP layer (_get/_post) talks to the node app."""
+    def handler(request):
+        if request.method == "GET":
+            r = node.client.get(request.url.path)
+        else:
+            body = json.loads(request.content)
+            posted.append(body["chain_id"])
+            r = node.post(body)
+        return httpx.Response(r.status_code, json=r.get_json())
+
+    client = RustChainClient()
+    client._client = httpx.AsyncClient(base_url="https://node.test",
+                                       transport=httpx.MockTransport(handler))
+    return client
+
+
 def test_python_sdk_refetches_stale_chain_id_once(node):
     import asyncio
-
-    import respx
 
     wallet = SdkWallet.create(strength=128)
     node.fund(wallet.address)
     posted = []
 
-    def transfer(request):
-        body = json.loads(request.content)
-        posted.append(body["chain_id"])
-        r = node.post(body)
-        return httpx.Response(r.status_code, json=r.get_json())
-
     async def run():
-        with respx.mock(base_url="https://rustchain.org") as mock:
-            mock.get("/network/info").mock(return_value=httpx.Response(
-                200, json=node.client.get("/network/info").get_json()))
-            mock.post("/wallet/transfer/signed").mock(side_effect=transfer)
-            async with RustChainClient() as client:
-                client._chain_id = STALE_CHAIN
-                return await client.wallet_transfer_with_wallet(wallet, TO, 1.0, memo="sdk")
+        async with _sdk_client_on_node(node, posted) as client:
+            client._chain_id = STALE_CHAIN
+            return await client.wallet_transfer_with_wallet(wallet, TO, 1.0, memo="sdk")
 
     assert asyncio.run(run())["ok"] is True
     assert posted == [STALE_CHAIN, node.chain_id]
@@ -733,26 +738,21 @@ def test_python_sdk_refetches_stale_chain_id_once(node):
 def test_python_sdk_explicit_chain_id_is_not_silently_replaced(node):
     import asyncio
 
-    import respx
-
     from rustchain_sdk.exceptions import APIError
 
     wallet = SdkWallet.create(strength=128)
     node.fund(wallet.address)
-
-    def transfer(request):
-        r = node.post(json.loads(request.content))
-        return httpx.Response(r.status_code, json=r.get_json())
+    posted = []
 
     async def run():
-        with respx.mock(base_url="https://rustchain.org") as mock:
-            mock.post("/wallet/transfer/signed").mock(side_effect=transfer)
-            async with RustChainClient() as client:
-                await client.wallet_transfer_with_wallet(wallet, TO, 1.0, chain_id=STALE_CHAIN)
+        async with _sdk_client_on_node(node, posted) as client:
+            await client.wallet_transfer_with_wallet(wallet, TO, 1.0, chain_id=STALE_CHAIN)
 
     with pytest.raises(APIError) as exc:
         asyncio.run(run())
     assert exc.value.status_code == 400
+    assert "chain_id does not match" in exc.value.response_body["error"]
+    assert posted == [STALE_CHAIN]
 
 
 def _run_nodejs_tip(script_body, env=None):
