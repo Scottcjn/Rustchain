@@ -16,11 +16,11 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-info()    { printf "${CYAN}[INFO]${NC}  %s\n" "$*"; }
-ok()      { printf "${GREEN}[OK]${NC}    %s\n" "$*"; }
-warn()    { printf "${YELLOW}[WARN]${NC}  %s\n" "$*"; }
-err()     { printf "${RED}[ERROR]${NC} %s\n" "$*"; }
-banner()  { printf "\n${BOLD}${GREEN}%s${NC}\n" "$*"; }
+info()    { printf "%b[INFO]%b  %s\n" "${CYAN}" "${NC}" "$*"; }
+ok()      { printf "%b[OK]%b    %s\n" "${GREEN}" "${NC}" "$*"; }
+warn()    { printf "%b[WARN]%b  %s\n" "${YELLOW}" "${NC}" "$*"; }
+err()     { printf "%b[ERROR]%b %s\n" "${RED}" "${NC}" "$*"; }
+banner()  { printf "\n%b%b%s%b\n" "${BOLD}" "${GREEN}" "${NC}" "$*"; }
 
 download_file() {
     local primary_url="$1"
@@ -53,16 +53,24 @@ REPO_RAW="https://raw.githubusercontent.com/Scottcjn/Rustchain/main"
 # miners/linux/ on macOS returned 404. The Linux branch keeps the literal
 # miners/linux/ paths because the installer-contract tests assert on them
 # (they guard the curl|bash install UX).
-if [ "$(uname -s)" = "Darwin" ]; then
-    MINER_FILENAME="rustchain_mac_miner_v2.5.py"
+OS_NAME="$(uname -s)"
+if [ "$OS_NAME" = "Darwin" ]; then
+    if [ "$(uname -m)" = "x86_64" ] && ! sysctl -n sysctl.proc_translated 2>/dev/null | grep -q 1; then
+        MINER_FILENAME="rustchain_mac_miner_v2.4.py"
+    else
+        MINER_FILENAME="rustchain_mac_miner_v2.5.py"
+    fi
     MINER_URL="${REPO_RAW}/miners/macos/${MINER_FILENAME}"
     FINGERPRINT_URL="${REPO_RAW}/miners/macos/fingerprint_checks.py"
     MINER_CRYPTO_URL="${REPO_RAW}/miners/macos/miner_crypto.py"
-else
+elif [ "$OS_NAME" = "Linux" ]; then
     MINER_FILENAME="rustchain_linux_miner.py"
     MINER_URL="${REPO_RAW}/miners/linux/rustchain_linux_miner.py"
     FINGERPRINT_URL="${REPO_RAW}/miners/linux/fingerprint_checks.py"
     MINER_CRYPTO_URL="${REPO_RAW}/miners/linux/miner_crypto.py"
+else
+    err "Unsupported platform: $OS_NAME. Only Linux and macOS are supported."
+    exit 1
 fi
 NODE_URL="https://50.28.86.131"
 BOUNTY_URL="https://github.com/Scottcjn/rustchain-bounties/issues/2451"
@@ -98,7 +106,7 @@ detect_vm() {
     # Check DMI vendor
     if [ -f /sys/class/dmi/id/sys_vendor ]; then
         local vendor
-        vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null | tr '[:upper:]' '[:lower:]')
+        vendor=$(tr '[:upper:]' '[:lower:]') < /sys/class/dmi/id/sys_vendor 2>/dev/null
         case "$vendor" in
             *qemu*|*kvm*|*vmware*|*virtualbox*|*xen*|*parallels*|*bochs*)
                 vm_detected=1
@@ -110,7 +118,7 @@ detect_vm() {
     # Check product name
     if [ -f /sys/class/dmi/id/product_name ]; then
         local product
-        product=$(cat /sys/class/dmi/id/product_name 2>/dev/null | tr '[:upper:]' '[:lower:]')
+        product=$(tr '[:upper:]' '[:lower:]') < /sys/class/dmi/id/product_name 2>/dev/null
         case "$product" in
             *virtual*|*qemu*|*kvm*|*vmware*|*bochs*)
                 vm_detected=1
@@ -182,7 +190,7 @@ detect_arch() {
             family="ARM"
             # Detect Raspberry Pi
             if [ -f /proc/device-tree/model ]; then
-                rpi_model=$(cat /proc/device-tree/model 2>/dev/null | tr -d '\0' || true)
+                rpi_model=$(tr -d '\0' || true) < /proc/device-tree/model 2>/dev/null
                 case "$rpi_model" in
                     *"Raspberry Pi 5"*|*BCM2712*)
                         is_rpi=1; arch="rpi5" ;;
@@ -300,6 +308,7 @@ ensure_python() {
     warn "Python 3.9+ not found. Installing..."
     local os_id=""
     if [ -f /etc/os-release ]; then
+        # shellcheck source=/dev/null
         os_id=$(. /etc/os-release && echo "$ID")
     fi
 
@@ -354,6 +363,7 @@ ensure_pip_deps() {
     if ! "$py" -c "import requests, psutil, nacl" 2>/dev/null; then
         info "Creating virtual environment..."
         "$py" -m venv "${INSTALL_DIR}/venv"
+        # shellcheck source=/dev/null
         source "${INSTALL_DIR}/venv/bin/activate"
         pip install --quiet requests psutil PyNaCl
         py="${INSTALL_DIR}/venv/bin/python3"
@@ -483,7 +493,7 @@ main() {
         warn "  For real rewards, run on physical hardware."
         warn "========================================================"
         echo ""
-        printf "${YELLOW}Continue anyway? (y/N):${NC} "
+        printf "%bContinue anyway? (y/N):%b " "${YELLOW}" "${NC}"
         read -r vm_continue </dev/tty 2>/dev/null || vm_continue="y"
         if [ "$vm_continue" != "y" ] && [ "$vm_continue" != "Y" ]; then
             info "Installation cancelled. Get real hardware for real rewards!"
@@ -516,7 +526,7 @@ main() {
         info "ARM devices earn minimal mining rewards (0.0005x)."
         info "For RPi, we recommend rustchain-arcade — earn RTC through gaming!"
         echo ""
-        printf "${CYAN}Install rustchain-arcade instead? (Y/n):${NC} "
+        printf "%bInstall rustchain-arcade instead? (Y/n):%b " "${CYAN}" "${NC}"
         read -r rpi_choice </dev/tty 2>/dev/null || rpi_choice="y"
         if [ "$rpi_choice" != "n" ] && [ "$rpi_choice" != "N" ]; then
             info "Installing rustchain-arcade..."
@@ -585,7 +595,7 @@ main() {
     default_wallet="miner-$(hostname | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9-')-$(date +%s | tail -c 5)"
 
     echo ""
-    printf "${BOLD}Enter your wallet ID${NC} (or press Enter for auto-generated): "
+    printf "%bEnter your wallet ID%b (or press Enter for auto-generated): " "${BOLD}" "${NC}"
     read -r wallet_input </dev/tty 2>/dev/null || wallet_input=""
     local wallet="${wallet_input:-$default_wallet}"
 
@@ -636,51 +646,51 @@ CFGEOF
     banner "   RustChain Miner Installed!"
     banner "============================================="
     echo ""
-    printf "${GREEN}  Wallet ID:     ${BOLD}%s${NC}\n" "$wallet"
-    printf "${GREEN}  Miner ID:      ${BOLD}%s${NC}\n" "$miner_id"
-    printf "${GREEN}  Architecture:  ${BOLD}%s (%s)${NC}\n" "$family" "$arch"
-    printf "${GREEN}  Multiplier:    ${BOLD}%sx${NC}\n" "$mult"
-    printf "${GREEN}  Install dir:   ${BOLD}%s${NC}\n" "$INSTALL_DIR"
+    printf "%b  Wallet ID:     %b%s%b\n" "${GREEN}" "${BOLD}" "${NC}" "$wallet"
+    printf "%b  Miner ID:      %b%s%b\n" "${GREEN}" "${BOLD}" "${NC}" "$miner_id"
+    printf "%b  Architecture:  %b%s (%s)%b\n" "${GREEN}" "${BOLD}" "${NC}" "$family" "$arch"
+    printf "%b  Multiplier:    %b%sx%b\n" "${GREEN}" "${BOLD}" "${NC}" "$mult"
+    printf "%b  Install dir:   %b%s%b\n" "${GREEN}" "${BOLD}" "${NC}" "$INSTALL_DIR"
     echo ""
 
     if [ "$is_rpi" -eq 1 ]; then
-        printf "${YELLOW}  RPi Note: Mining rewards are minimal on ARM.${NC}\n"
-        printf "${YELLOW}  Earn more RTC through rustchain-arcade gaming!${NC}\n"
-        printf "${YELLOW}  See: ${ARCADE_REPO}${NC}\n"
+        printf "%b  RPi Note: Mining rewards are minimal on ARM.%b\n" "${YELLOW}" "${NC}"
+        printf "%b  Earn more RTC through rustchain-arcade gaming!%b\n" "${YELLOW}" "${NC}"
+        printf "%b  See: %s%b\n" "${YELLOW}" "${ARCADE_REPO}" "${NC}"
         echo ""
     fi
 
     local float_check
     float_check=$(echo "$mult" | awk '{if ($1 > 1.4) print "vintage"}')
     if [ "$float_check" = "vintage" ]; then
-        printf "${GREEN}  ** VINTAGE HARDWARE BONUS ACTIVE! **${NC}\n"
-        printf "${GREEN}  Your %s hardware earns a %sx antiquity multiplier.${NC}\n" "$arch" "$mult"
+        printf "%b  ** VINTAGE HARDWARE BONUS ACTIVE! **%b\n" "${GREEN}" "${NC}"
+        printf "%b  Your %s hardware earns a %sx antiquity multiplier.%b\n" "${GREEN}" "${NC}" "$arch" "$mult"
         echo ""
     fi
 
     banner "  Founding 100 Antiquity Miners Program"
     echo ""
-    printf "  Earn up to ${BOLD}75 RTC${NC} as a founding miner:\n"
+    printf "  Earn up to %b75 RTC%b as a founding miner:\n" "${BOLD}" "${NC}"
     printf "   - 25 RTC for first valid attestation\n"
     printf "   - 25 RTC after 30 days uptime\n"
     printf "   - 25 RTC for vintage hardware (>1.4x multiplier)\n"
     echo ""
-    printf "  ${BOLD}Post your miner ID + hardware photo to:${NC}\n"
-    printf "  ${CYAN}${BOUNTY_URL}${NC}\n"
+    printf "  %bPost your miner ID + hardware photo to:%b\n" "${BOLD}" "${NC}"
+    printf "  %b%s%b\n" "${CYAN}" "${BOUNTY_URL}" "${NC}"
     echo ""
-    printf "  ${BOLD}Useful commands:${NC}\n"
+    printf "  %bUseful commands:%b\n" "${BOLD}" "${NC}"
     if [ "$os_name" = "Linux" ] && command -v systemctl &>/dev/null; then
-        printf "    Status:  sudo systemctl status ${SERVICE_NAME}\n"
-        printf "    Logs:    sudo journalctl -u ${SERVICE_NAME} -f\n"
-        printf "    Stop:    sudo systemctl stop ${SERVICE_NAME}\n"
-        printf "    Restart: sudo systemctl restart ${SERVICE_NAME}\n"
+        printf "    Status:  sudo systemctl status %s\n" "${SERVICE_NAME}"
+        printf "    Logs:    sudo journalctl -u %s -f\n" "${SERVICE_NAME}"
+        printf "    Stop:    sudo systemctl stop %s\n" "${SERVICE_NAME}"
+        printf "    Restart: sudo systemctl restart %s\n" "${SERVICE_NAME}"
     elif [ "$os_name" = "Darwin" ]; then
         printf "    Status:  launchctl list | grep rustchain\n"
         printf "    Logs:    tail -f /tmp/rustchain-miner.log\n"
         printf "    Stop:    launchctl stop com.rustchain.miner\n"
     fi
     echo ""
-    printf "  ${BOLD}Links:${NC}\n"
+    printf "  %bLinks:%b\n" "${BOLD}" "${NC}"
     printf "    Website:  https://rustchain.org\n"
     printf "    GitHub:   https://github.com/Scottcjn/Rustchain\n"
     printf "    Arcade:   https://github.com/Scottcjn/rustchain-arcade\n"
