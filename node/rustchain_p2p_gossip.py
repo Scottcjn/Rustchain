@@ -1466,20 +1466,32 @@ class GossipLayer:
                     remote_attest = LWWRegister.from_dict(raw)
                     # Drop any entries with future-dated ts_ok beyond skew tolerance
                     filtered = LWWRegister()
+                    # Rejections are counted and logged ONCE per sync. A full
+                    # state snapshot carries every miner the peer knows, and
+                    # all but the sender's own key are foreign by design
+                    # (#2867 H2), so a per-entry warning wrote one line per
+                    # miner per sync: ~10 GB/day of syslog on node 2 (2026-09-28).
+                    future_keys, foreign_keys = [], []
                     for key, (ts, value) in remote_attest.data.items():
                         if ts > now + MAX_FUTURE_SKEW_S:
-                            logger.warning(
-                                f"State from {sender}: rejecting future-dated "
-                                f"attestation {key[:16]} (ts={ts}, now={now})"
-                            )
+                            future_keys.append(key)
                             continue
                         if key != sender:
-                            logger.warning(
-                                f"State from {sender}: rejecting attestation "
-                                f"for foreign miner namespace {key[:16]}"
-                            )
+                            foreign_keys.append(key)
                             continue
                         filtered.set(key, value, ts)
+                    if future_keys:
+                        logger.warning(
+                            f"State from {sender}: rejected {len(future_keys)} "
+                            f"future-dated attestation(s) (now={now}), e.g. "
+                            f"{', '.join(k[:16] for k in future_keys[:3])}"
+                        )
+                    if foreign_keys:
+                        logger.debug(
+                            f"State from {sender}: skipped {len(foreign_keys)} "
+                            f"attestation(s) outside the sender namespace, e.g. "
+                            f"{', '.join(k[:16] for k in foreign_keys[:3])}"
+                        )
                     self.attestation_crdt.merge(filtered)
                 except Exception as e:
                     logger.warning(f"State from {sender}: attestation merge failed: {e}")
