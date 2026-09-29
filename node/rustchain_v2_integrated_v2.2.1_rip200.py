@@ -6939,7 +6939,9 @@ def _submit_attestation_impl():
                 warthog_bonus = bonus_tier if verified else 1.0
                 _wart_epoch = slot_to_epoch(current_slot())
                 with sqlite3.connect(DB_PATH) as wart_conn:
-                    record_warthog_proof(wart_conn, miner, _wart_epoch, warthog_proof, verified, warthog_bonus, wart_reason)
+                    _rec = record_warthog_proof(wart_conn, miner, _wart_epoch, warthog_proof, verified, warthog_bonus, wart_reason)
+                    if isinstance(_rec, tuple) and len(_rec) == 3:
+                        verified, warthog_bonus, wart_reason = _rec
                 print(f"[WARTHOG] Miner: {miner[:20]}... verified={verified} bonus={warthog_bonus}x reason={wart_reason}")
             except Exception as _we:
                 print(f"[WARTHOG] Verification error for {miner[:20]}...: {_we}")

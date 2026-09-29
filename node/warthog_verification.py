@@ -21,6 +21,7 @@ Replay prevention: one proof per miner per epoch.
 """
 
 import time
+import math
 import sqlite3
 from typing import Tuple
 
@@ -62,6 +63,10 @@ def init_warthog_tables(conn):
             PRIMARY KEY (miner, epoch)
         )
     """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_warthog_addr_epoch
+        ON warthog_mining_proofs (wart_address, epoch)
+    """)
 
     # Safely add warthog_bonus column to miner_attest_recent
     try:
@@ -78,9 +83,9 @@ def verify_warthog_proof(proof, miner_id) -> Tuple[bool, float, str]:
 
     Server-side checks:
       - Proof structure is valid
-      - Proof timestamp is recent (not replayed from old session)
-      - Node proof: synced==True, height plausible, balance non-zero
-      - Pool proof: known pool URL, hashrate > 0
+      - Proof timestamp is recent and valid (not omitted or replayed from old session)
+      - Node proof: synced==True, height plausible, balance non-zero and finite
+      - Pool proof: known pool URL, hashrate > 0 and finite
 
     Args:
         proof: dict from attestation payload's "warthog" key
@@ -95,14 +100,14 @@ def verify_warthog_proof(proof, miner_id) -> Tuple[bool, float, str]:
     if not proof.get("enabled"):
         return False, WART_BONUS_NONE, "warthog_not_enabled"
 
-    # Check proof freshness
-    collected_at = proof.get("collected_at", 0)
-    if collected_at and abs(time.time() - collected_at) > MAX_PROOF_AGE:
-        return False, WART_BONUS_NONE, "proof_too_old"
+    # Check proof freshness (mandatory finite numeric timestamp within MAX_PROOF_AGE)
+    collected_at = proof.get("collected_at")
+    if not isinstance(collected_at, (int, float)) or not math.isfinite(collected_at) or abs(time.time() - collected_at) > MAX_PROOF_AGE:
+        return False, WART_BONUS_NONE, "proof_stale_or_missing_timestamp"
 
     # Validate WART address present
     wart_address = proof.get("wart_address", "")
-    if not wart_address or len(wart_address) < 10:
+    if not isinstance(wart_address, str) or len(wart_address.strip()) < 10:
         return False, WART_BONUS_NONE, "invalid_wart_address"
 
     proof_type = proof.get("proof_type", "none")
@@ -126,6 +131,8 @@ def verify_warthog_proof(proof, miner_id) -> Tuple[bool, float, str]:
         balance_str = proof.get("balance", "0")
         try:
             balance = float(balance_str)
+            if not math.isfinite(balance):
+                balance = 0.0
         except (ValueError, TypeError):
             balance = 0.0
 
@@ -142,12 +149,12 @@ def verify_warthog_proof(proof, miner_id) -> Tuple[bool, float, str]:
         if not pool or not isinstance(pool, dict):
             return False, WART_BONUS_NONE, "pool_data_missing"
 
-        hashrate = pool.get("hashrate", 0)
-        if not hashrate or hashrate <= 0:
+        hashrate = pool.get("hashrate")
+        if not isinstance(hashrate, (int, float)) or not math.isfinite(hashrate) or hashrate <= 0:
             return False, WART_BONUS_NONE, "pool_zero_hashrate"
 
         pool_url = pool.get("url", "")
-        if not pool_url:
+        if not pool_url or not isinstance(pool_url, str):
             return False, WART_BONUS_NONE, "pool_url_missing"
 
         return True, WART_BONUS_POOL, "pool_mining_verified"
@@ -158,7 +165,7 @@ def verify_warthog_proof(proof, miner_id) -> Tuple[bool, float, str]:
 
 def record_warthog_proof(conn, miner_id, epoch, proof, verified, bonus_tier, reason):
     """
-    Write Warthog proof record to database.
+    Write Warthog proof record to database with Sybil duplicate-address protection.
 
     Args:
         conn: sqlite3 connection
@@ -168,9 +175,31 @@ def record_warthog_proof(conn, miner_id, epoch, proof, verified, bonus_tier, rea
         verified: Boolean result
         bonus_tier: Float bonus multiplier
         reason: Verification reason string
+
+    Returns:
+        (recorded_verified: bool, recorded_bonus: float, recorded_reason: str)
     """
+    if not isinstance(proof, dict):
+        proof = {}
+
     node = proof.get("node") or {}
     pool = proof.get("pool") or {}
+    wart_address = (proof.get("wart_address") or "").strip()
+
+    # Sybil prevention: ensure wart_address is not claimed by another miner in this epoch
+    if verified and wart_address:
+        try:
+            cur = conn.execute(
+                "SELECT miner FROM warthog_mining_proofs WHERE wart_address = ? AND epoch = ? AND verified = 1 AND miner != ?",
+                (wart_address, epoch, miner_id)
+            )
+            row = cur.fetchone()
+            if row:
+                verified = False
+                bonus_tier = WART_BONUS_NONE
+                reason = f"wart_address_already_claimed_by_{row[0]}_in_epoch_{epoch}"
+        except Exception as e:
+            print(f"[WARTHOG] Address uniqueness check error: {e}")
 
     try:
         conn.execute("""
@@ -183,11 +212,11 @@ def record_warthog_proof(conn, miner_id, epoch, proof, verified, bonus_tier, rea
             miner_id,
             epoch,
             proof.get("proof_type", "none"),
-            proof.get("wart_address", ""),
+            wart_address,
             node.get("height"),
-            proof.get("balance"),
+            str(proof.get("balance", "")),
             pool.get("url"),
-            pool.get("hashrate"),
+            pool.get("hashrate") if isinstance(pool.get("hashrate"), (int, float)) and math.isfinite(pool.get("hashrate")) else None,
             bonus_tier,
             1 if verified else 0,
             reason,
@@ -196,6 +225,8 @@ def record_warthog_proof(conn, miner_id, epoch, proof, verified, bonus_tier, rea
         conn.commit()
     except Exception as e:
         print(f"[WARTHOG] Error recording proof: {e}")
+
+    return verified, bonus_tier, reason
 
 
 def get_warthog_bonus(conn, miner_id):
