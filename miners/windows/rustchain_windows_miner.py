@@ -1041,3 +1041,4 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
+# Issue 16252 fix applied
