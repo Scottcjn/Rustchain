@@ -1,0 +1,8 @@
+{
+  "github_handle": "YOUR_GITHUB_HANDLE",
+  "wallet": "RTC_WALLET_ADDRESS",
+  "starred_date": "YYYY-MM-DD",
+  "reason": "Why you starred RustChain, in 1-3 sentences.",
+  "favorite_feature": "Optional: the feature or RIP that stood out to you.",
+  "shoutout": true
+}
