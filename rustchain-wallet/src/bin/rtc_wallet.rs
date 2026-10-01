@@ -16,7 +16,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 #[derive(Parser)]
 #[command(name = "rtc-wallet")]
 #[command(author = "RustChain Contributors")]
-#[command(version = "0.1.0")]
+#[command(version)]
 #[command(about = "A native Rust CLI wallet for RustChain", long_about = None)]
 struct Cli {
     /// Network to use (mainnet, testnet, devnet)

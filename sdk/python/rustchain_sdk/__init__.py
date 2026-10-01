@@ -36,7 +36,7 @@ Author: kuanglaodi2-sudo (Atlas AI Agent)
 License: MIT
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "kuanglaodi2-sudo"
 
 from .client import RustChainClient

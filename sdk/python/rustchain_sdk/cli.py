@@ -21,11 +21,12 @@ import click
 
 from .client import DEFAULT_NODE_URL, RustChainClient
 from .wallet import RustChainWallet
+from . import __version__
 from .exceptions import RustChainError
 
 
 @click.group()
-@click.version_option(version="1.0.0", prog_name="rustchain")
+@click.version_option(version=__version__, prog_name="rustchain")
 def main():
     """
     RustChain CLI — Interact with the RustChain blockchain.
