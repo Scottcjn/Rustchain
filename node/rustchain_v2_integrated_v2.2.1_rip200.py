@@ -7001,6 +7001,10 @@ def _submit_attestation_impl():
     if fingerprint_passed:
         _check_welcome_bonus(miner, probation_status)  # SYBIL-GUARD: paid at probation exit
 
+    # Header-key identities refused during auto-enroll (surfaced in the response
+    # so a miner can see why its wallet has no header key; attestation still succeeds).
+    header_key_skipped = []
+
     # AUTO-ENROLL: Automatically enroll miner in current epoch on successful attestation
     # This eliminates the need for miners to make a separate POST /epoch/enroll call
     try:
@@ -7097,7 +7101,9 @@ def _submit_attestation_impl():
                 # a compatibility alias, but always register the canonical
                 # chain identity too. RTC-address identities only accept a key
                 # that derives to them (see _register_header_key_identities).
-                _register_header_key_identities(enroll_conn, header_pubkey, (miner, miner_id))
+                _register_header_key_identities(
+                    enroll_conn, header_pubkey, (miner, miner_id), skipped=header_key_skipped
+                )
             enroll_conn.commit()
 
         # Issue #19 temporal consistency only sets a review flag (no hard-fail).
@@ -7164,7 +7170,8 @@ def _submit_attestation_impl():
         "measurement_binding_state": measurement_binding_verdict.get("state"),
         "measurement_workload_next": derive_measurement_workload(nonce),
         "macs_recorded": len(macs) if macs else 0,
-        "warthog_bonus": warthog_bonus
+        "warthog_bonus": warthog_bonus,
+        **({"header_key_skipped": header_key_skipped} if header_key_skipped else {}),
     })
 
 # ============= EPOCH ENDPOINTS =============
@@ -7491,10 +7498,13 @@ def enroll_epoch():
 
         # Register a real Ed25519 pubkey for block-header verification when available.
         header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner_pk)
+        header_key_skipped = []
         if header_pubkey:
             # miner_id is caller-supplied; RTC-address identities only accept a
             # key that derives to them (see _register_header_key_identities).
-            _register_header_key_identities(c, header_pubkey, (miner_pk, miner_id))
+            _register_header_key_identities(
+                c, header_pubkey, (miner_pk, miner_id), skipped=header_key_skipped
+            )
 
     app.logger.info(
         f"[RIP-309] epoch={epoch} miner={miner_pk[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
@@ -7518,7 +7528,8 @@ def enroll_epoch():
         "active_fingerprint_total": rotation_eval['active_total'],
         "fingerprint_failed": fingerprint_failed if 'fingerprint_failed' in dir() else False,
         "miner_pk": miner_pk,
-        "miner_id": miner_id
+        "miner_id": miner_id,
+        **({"header_key_skipped": header_key_skipped} if header_key_skipped else {}),
     })
 
 # ============= RIP-0173: LOTTERY/ELIGIBILITY ORACLE =============
@@ -7654,7 +7665,8 @@ def _rtc_identity_header_key_permitted(conn, identity, pubkey):
     Returns True when ``identity`` is NOT an RTC-address-shaped string (named
     aliases are governed by ``_header_key_authorized``'s bootstrap rules), or when
     the RTC identity may legitimately carry ``pubkey``:
-      * ``address_from_pubkey(pubkey) == identity`` (cryptographic ownership), or
+      * ``address_from_pubkey(pubkey)`` equals ``identity`` case-insensitively
+        (cryptographic ownership), or
       * the exact (identity, pubkey) pair is already registered (idempotent
         re-register of pre-existing rows, e.g. legacy compatibility aliases), or
       * the exact pair is admin-preapproved in ``miner_header_bootstrap``.
@@ -7667,7 +7679,9 @@ def _rtc_identity_header_key_permitted(conn, identity, pubkey):
     if not pubkey:
         return False
     try:
-        if address_from_pubkey(pubkey) == identity:
+        # Case-insensitive: a case variant of the key's OWN address is still that
+        # holder's wallet; a foreign address can never match.
+        if address_from_pubkey(pubkey).lower() == identity.lower():
             return True
     except Exception:
         pass  # malformed pubkey hex -> cannot derive; fall through to explicit pairs
@@ -7678,8 +7692,9 @@ def _rtc_identity_header_key_permitted(conn, identity, pubkey):
         ).fetchone() is not None:
             return True
     except Exception as exc:
+        # Do not treat a lookup failure as "pair absent"; still honour an
+        # admin pre-approval. Fail closed only if neither source can confirm.
         logging.warning(f"[header-key] existing-pair lookup failed for {str(identity)[:24]!r}: {exc!r}")
-        return False
     return _in_bootstrap_allowlist(conn, identity, pubkey)
 
 
@@ -7807,7 +7822,7 @@ def _register_header_key(conn, identity, pubkey):
     return True
 
 
-def _register_header_key_identities(conn, pubkey, identities):
+def _register_header_key_identities(conn, pubkey, identities, skipped=None):
     """Register ``pubkey`` as a header key for each distinct identity in
     ``identities`` (the canonical chain identity plus the client-local
     ``miner_id`` compatibility alias). Shared by /attest/submit and /epoch/enroll.
@@ -7817,7 +7832,9 @@ def _register_header_key_identities(conn, pubkey, identities):
     independently of ``_header_key_authorized``. The alias is caller-supplied, so
     this keeps a future change to the authorization rules from silently letting a
     caller bind their key to someone else's wallet. Returns the identities that
-    were registered."""
+    were registered; each refused RTC identity is appended to ``skipped`` (if a
+    list is given) as ``{"identity": ..., "reason": "rtc_identity_requires_derived_key"}``
+    so the endpoint can report it without failing the request."""
     registered = []
     if not pubkey:
         return registered
@@ -7827,6 +7844,8 @@ def _register_header_key_identities(conn, pubkey, identities):
                 "[header-key] refused non-derived key for RTC identity=%r pubkey=%s..."
                 % (str(identity)[:32], str(pubkey)[:12])
             )
+            if skipped is not None:
+                skipped.append({"identity": identity, "reason": "rtc_identity_requires_derived_key"})
             continue
         if _register_header_key(conn, identity, pubkey):
             registered.append(identity)

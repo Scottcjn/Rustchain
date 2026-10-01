@@ -18,11 +18,12 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from unittest import mock
 
 try:
     import nacl.signing
     HAVE_NACL = True
-except Exception:  # pragma: no cover - environment without pynacl
+except ImportError:  # pragma: no cover - environment without pynacl
     HAVE_NACL = False
 
 NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -150,6 +151,9 @@ class RtcAliasHeaderKeyBindingTest(unittest.TestCase):
         self.assertEqual(_header_rows(self.db_path, self.attacker_wallet), [self.attacker_pk])
         # ... but no key is bound to the victim wallet via the alias
         self.assertEqual(_header_rows(self.db_path, self.victim_wallet), [])
+        # ... and the refusal is reported without failing the attestation
+        self.assertEqual(resp.get_json().get("header_key_skipped"), [
+            {"identity": self.victim_wallet, "reason": "rtc_identity_requires_derived_key"}])
 
     def test_attest_alias_cannot_bind_victim_wallet_log_only(self):
         self._assert_attest_alias_blocked(None)
@@ -174,12 +178,25 @@ class RtcAliasHeaderKeyBindingTest(unittest.TestCase):
                             miner=self.attacker_wallet, miner_id=lookalike)
         self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
         self.assertEqual(_header_rows(self.db_path, lookalike), [])
+        self.assertEqual(resp.get_json().get("header_key_skipped"), [
+            {"identity": lookalike, "reason": "rtc_identity_requires_derived_key"}])
+
+    def test_attest_case_variant_of_own_wallet_is_allowed(self):
+        """Derivation is compared case-insensitively: an upper-case spelling of
+        the key holder's OWN wallet is still theirs."""
+        own_variant = "RTC" + self.attacker_wallet[3:].upper()
+        resp = self._attest(self.attacker_sk, self.attacker_pk,
+                            miner=self.attacker_wallet, miner_id=own_variant)
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        self.assertEqual(_header_rows(self.db_path, own_variant), [self.attacker_pk])
+        self.assertNotIn("header_key_skipped", resp.get_json())
 
     def test_attest_derived_key_registers_and_is_idempotent(self):
         for _ in range(2):
             resp = self._attest(self.victim_sk, self.victim_pk,
                                 miner=self.victim_wallet, miner_id="victim-rig-01")
             self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+            self.assertNotIn("header_key_skipped", resp.get_json())
         self.assertEqual(_header_rows(self.db_path, self.victim_wallet), [self.victim_pk])
         # named compatibility alias registered exactly as before
         self.assertEqual(_header_rows(self.db_path, "victim-rig-01"), [self.victim_pk])
@@ -221,8 +238,11 @@ class RtcAliasHeaderKeyBindingTest(unittest.TestCase):
         resp = self._enroll(self.attacker_sk, self.attacker_pk,
                             miner_pk=self.attacker_wallet, miner_id=self.victim_wallet)
         self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        self.assertTrue(resp.get_json()["ok"])
         self.assertEqual(_header_rows(self.db_path, self.attacker_wallet), [self.attacker_pk])
         self.assertEqual(_header_rows(self.db_path, self.victim_wallet), [])
+        self.assertEqual(resp.get_json().get("header_key_skipped"), [
+            {"identity": self.victim_wallet, "reason": "rtc_identity_requires_derived_key"}])
 
     def test_enroll_derived_key_succeeds_and_is_idempotent(self):
         self._enroll_ready()
@@ -231,10 +251,43 @@ class RtcAliasHeaderKeyBindingTest(unittest.TestCase):
             resp = self._enroll(self.victim_sk, self.victim_pk,
                                 miner_pk=self.victim_wallet, miner_id="victim-rig-01")
             self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+            self.assertNotIn("header_key_skipped", resp.get_json())
         self.assertEqual(_header_rows(self.db_path, self.victim_wallet), [self.victim_pk])
         self.assertEqual(_header_rows(self.db_path, "victim-rig-01"), [self.victim_pk])
 
     # --------------------------------------------- authorization unit checks
+    def test_existing_pair_lookup_error_still_consults_allowlist(self):
+        """A failing miner_header_keys lookup must not short-circuit to deny:
+        an admin pre-approval still counts; with neither, fail closed."""
+
+        class _KeysTableBroken:
+            def __init__(self, real):
+                self._real = real
+
+            def execute(self, sql, *args):
+                if "FROM miner_header_keys" in sql:
+                    raise sqlite3.OperationalError("database is locked")
+                return self._real.execute(sql, *args)
+
+        with sqlite3.connect(self.db_path) as real:
+            broken = _KeysTableBroken(real)
+            permitted = self.mod._rtc_identity_header_key_permitted
+            self.assertFalse(permitted(broken, self.victim_wallet, self.attacker_pk))
+            real.execute("INSERT INTO miner_header_bootstrap (miner_id, pubkey_hex) VALUES (?, ?)",
+                         (self.victim_wallet, self.attacker_pk))
+            self.assertTrue(permitted(broken, self.victim_wallet, self.attacker_pk))
+            # derivation needs no DB at all
+            self.assertTrue(permitted(broken, self.victim_wallet, self.victim_pk))
+
+    def test_case_insensitive_derivation_rules(self):
+        with sqlite3.connect(self.db_path) as conn:
+            permitted = self.mod._rtc_identity_header_key_permitted
+            own_upper = "RTC" + self.victim_wallet[3:].upper()
+            self.assertTrue(permitted(conn, own_upper, self.victim_pk))
+            self.assertTrue(self.mod._header_key_authorized(conn, own_upper, self.victim_pk))
+            foreign_upper = "RTC" + self.attacker_wallet[3:].upper()
+            self.assertFalse(permitted(conn, foreign_upper, self.victim_pk))
+            self.assertFalse(self.mod._header_key_authorized(conn, foreign_upper, self.victim_pk))
     def test_authorization_rules_for_rtc_identity(self):
         with sqlite3.connect(self.db_path) as conn:
             auth = self.mod._header_key_authorized
@@ -269,6 +322,51 @@ class RtcAliasHeaderKeyBindingTest(unittest.TestCase):
         })
         self.assertEqual(resp.status_code, 403, resp.get_data(as_text=True))
         self.assertEqual(resp.get_json().get("error"), "no pubkey registered for miner")
+
+    def test_admin_headerkey_override_still_binds_non_derived_key(self):
+        """The admin path (/miner/headerkey, RC_ADMIN_KEY) can still bind a
+        NON-derived key to an RTC identity (rotation/override), and that key is
+        then accepted by /headers/ingest_signed."""
+        machine_sk, machine_pk = _new_key()
+        self.assertNotEqual(_addr(machine_pk), self.victim_wallet)
+        unauth = self.client.post("/miner/headerkey", json={
+            "miner_id": self.victim_wallet, "pubkey_hex": machine_pk})
+        self.assertEqual(unauth.status_code, 403)
+        resp = self.client.post(
+            "/miner/headerkey",
+            json={"miner_id": self.victim_wallet, "pubkey_hex": machine_pk},
+            headers={"X-API-Key": os.environ["RC_ADMIN_KEY"]},
+        )
+        self.assertEqual(resp.status_code, 200, resp.get_data(as_text=True))
+        self.assertEqual(_header_rows(self.db_path, self.victim_wallet), [machine_pk])
+        # re-registration through attest stays idempotent for the admin-set pair
+        with sqlite3.connect(self.db_path) as conn:
+            self.assertTrue(self.mod._header_key_authorized(conn, self.victim_wallet, machine_pk))
+
+        slot = self.mod.current_slot()
+        header = {"miner": self.victim_wallet, "slot": slot, "prev_hash": "00" * 32,
+                  "timestamp": 1700000000}
+        msg = self.mod.canonical_header_bytes(header)
+
+        def _ingest(sk):
+            return self.client.post("/headers/ingest_signed", json={
+                "miner_id": self.victim_wallet,
+                "header": header,
+                "signature": sk.sign(msg).signature.hex(),
+            })
+
+        # Slot-producer rotation is covered by test_ingest_round_robin_authorization;
+        # make this identity the producer so the test isolates key acceptance.
+        with mock.patch("rip_200_round_robin_1cpu1vote.check_eligibility_round_robin",
+                        return_value={"eligible": True}):
+            self.assertEqual(_ingest(self.attacker_sk).status_code, 400)  # unregistered key
+            ok = _ingest(machine_sk)
+        self.assertEqual(ok.status_code, 200, ok.get_data(as_text=True))
+        self.assertTrue(ok.get_json().get("ok"), ok.get_data(as_text=True))
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute("SELECT pubkey_hex FROM headers WHERE miner_id=? AND slot=?",
+                               (self.victim_wallet, slot)).fetchone()
+        self.assertEqual(row, (machine_pk,))
 
 
 class WsgiRouteRegistrationTest(unittest.TestCase):
