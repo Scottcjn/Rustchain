@@ -401,3 +401,20 @@ def test_encrypted_beacon_identity(tmp_path):
     assert cli.AgentKey.load(str(path), password="pw").agent_id == expected.agent_id
     with pytest.raises(cli.CatalogError, match="wrong password"):
         cli.AgentKey.load(str(path), password="nope")
+
+
+@pytest.mark.parametrize("drop", ["payment", "payment_instructions"])
+def test_pay_fails_closed_without_payment_state_or_instructions(net, drop):
+    """If the node's order view lacks payment state or instructions, do not sign."""
+    provider, buyer = net.agent(1), net.agent(2)
+    order = _accepted_order(net, provider, buyer)
+
+    def transport(method, path, body, headers):
+        status, data = net.transport(method, path, body, headers)
+        if path == f"/catalog/orders/{order['id']}" and isinstance(data, dict):
+            data.pop(drop, None)
+        return status, data
+
+    with pytest.raises(cli.CatalogError, match="not signing"):
+        cli.CatalogClient(transport, buyer).build_payment(order["id"])
+    assert ("GET", "/network/info") not in net.requests

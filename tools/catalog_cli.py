@@ -374,11 +374,18 @@ class CatalogClient:
             raise CatalogError(
                 f"order {order_id} is {order.get('status')!r}; pay after delivery, "
                 "once you have accepted it (`accept`)")
-        state = (order.get("payment") or {}).get("state")
+        payment = order.get("payment")
+        if not isinstance(payment, dict) or "state" not in payment:
+            # An accepted order always carries its payment state; without it
+            # we cannot rule out an earlier payment, so do not sign.
+            raise CatalogError(f"order {order_id} has no payment state; not signing")
+        state = payment["state"]
         if state in ("pending", "confirmed"):
             raise CatalogError(f"order {order_id} already has a {state} payment "
                                f"(tx {order['payment'].get('tx_hash')}); not paying twice")
-        instr = order.get("payment_instructions") or {}
+        instr = order.get("payment_instructions")
+        if not isinstance(instr, dict):
+            raise CatalogError(f"order {order_id} has no payment instructions; not signing")
         memo = f"svc:{order['id']}"
         price = float(order["price_rtc"])
         problems = []
@@ -435,7 +442,9 @@ def _print(data: Any) -> None:
 
 
 def _print_listings(data: Dict[str, Any]) -> None:
-    rows = data.get("listings") or []
+    rows = data.get("listings")
+    if not isinstance(rows, list):
+        raise CatalogError(f"unexpected /catalog/listings response: {data}")
     if not rows:
         print("No active listings match. Offer one: catalog_cli.py offer --help")
     for item in rows:
