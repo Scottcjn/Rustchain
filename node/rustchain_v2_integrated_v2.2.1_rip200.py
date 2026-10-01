@@ -7095,9 +7095,9 @@ def _submit_attestation_impl():
                 # Lottery participation and header authorization use the
                 # attested wallet (`miner`). Keep the client-local miner_id as
                 # a compatibility alias, but always register the canonical
-                # chain identity too.
-                for header_miner_id in dict.fromkeys((miner, miner_id)):
-                    _register_header_key(enroll_conn, header_miner_id, header_pubkey)
+                # chain identity too. RTC-address identities only accept a key
+                # that derives to them (see _register_header_key_identities).
+                _register_header_key_identities(enroll_conn, header_pubkey, (miner, miner_id))
             enroll_conn.commit()
 
         # Issue #19 temporal consistency only sets a review flag (no hard-fail).
@@ -7492,8 +7492,9 @@ def enroll_epoch():
         # Register a real Ed25519 pubkey for block-header verification when available.
         header_pubkey = _valid_ed25519_pubkey_hex(pubkey_hex) or _valid_ed25519_pubkey_hex(miner_pk)
         if header_pubkey:
-            for header_miner_id in dict.fromkeys((miner_pk, miner_id)):
-                _register_header_key(c, header_miner_id, header_pubkey)
+            # miner_id is caller-supplied; RTC-address identities only accept a
+            # key that derives to them (see _register_header_key_identities).
+            _register_header_key_identities(c, header_pubkey, (miner_pk, miner_id))
 
     app.logger.info(
         f"[RIP-309] epoch={epoch} miner={miner_pk[:20]}... nonce={rotation_eval['measurement_nonce'][:16]} "
@@ -7635,6 +7636,53 @@ def _in_bootstrap_allowlist(conn, identity, pubkey):
         return False
 
 
+# Any-case RTC address shape. Node-derived addresses are lowercase (see
+# _is_rtc_hex_address), but for header-key binding we treat EVERY string shaped
+# like an RTC address as a wallet identity, so a mixed/upper-case look-alike of a
+# real wallet can never be TOFU-bound to an arbitrary key either.
+_RTC_ADDRESS_SHAPE_RE = re.compile(r"^RTC[0-9a-f]{40}$", re.IGNORECASE)
+
+
+def _is_rtc_address_shaped(identity):
+    """True for any string shaped like an RTC wallet address (RTC + 40 hex, any case)."""
+    return bool(isinstance(identity, str) and _RTC_ADDRESS_SHAPE_RE.fullmatch(identity))
+
+
+def _rtc_identity_header_key_permitted(conn, identity, pubkey):
+    """Header-key binding rule for RTC-address identities (wallet identities).
+
+    Returns True when ``identity`` is NOT an RTC-address-shaped string (named
+    aliases are governed by ``_header_key_authorized``'s bootstrap rules), or when
+    the RTC identity may legitimately carry ``pubkey``:
+      * ``address_from_pubkey(pubkey) == identity`` (cryptographic ownership), or
+      * the exact (identity, pubkey) pair is already registered (idempotent
+        re-register of pre-existing rows, e.g. legacy compatibility aliases), or
+      * the exact pair is admin-preapproved in ``miner_header_bootstrap``.
+    There is deliberately NO trust-on-first-use for RTC identities: they are
+    self-certifying, so a key that does not derive to the address proves nothing
+    about who controls that wallet.
+    """
+    if not _is_rtc_address_shaped(identity):
+        return True
+    if not pubkey:
+        return False
+    try:
+        if address_from_pubkey(pubkey) == identity:
+            return True
+    except Exception:
+        pass  # malformed pubkey hex -> cannot derive; fall through to explicit pairs
+    try:
+        if conn.execute(
+            "SELECT 1 FROM miner_header_keys WHERE miner_id=? AND pubkey_hex=?",
+            (identity, pubkey),
+        ).fetchone() is not None:
+            return True
+    except Exception as exc:
+        logging.warning(f"[header-key] existing-pair lookup failed for {str(identity)[:24]!r}: {exc!r}")
+        return False
+    return _in_bootstrap_allowlist(conn, identity, pubkey)
+
+
 def _header_key_authorized(conn, identity, pubkey):
     """Authorize registering ``pubkey`` as a block-header key for ``identity``.
 
@@ -7654,6 +7702,14 @@ def _header_key_authorized(conn, identity, pubkey):
         (``address_from_pubkey(pubkey) == identity``) or the identity *is* the raw
         pubkey: always allowed (only the rightful holder can present a matching key,
         and key rotation/multi-device for that holder still works).
+      * RTC-address identity (``RTC`` + 40 hex, any case) whose address does NOT
+        derive from ``pubkey``: NEVER trust-on-first-use, regardless of
+        RC_HEADER_KEY_STRICT_BOOTSTRAP. Allowed only for an already-registered
+        (identity, pubkey) pair (idempotent; keeps pre-existing compatibility-alias
+        rows working) or an admin-preapproved pair in ``miner_header_bootstrap``.
+        The enroll/attest ``miner_id`` alias is caller-supplied, so without this
+        rule any caller could bind their own key to a never-keyed wallet and sign
+        headers as that wallet.
       * Named/legacy identity (not derivable from any key, e.g. ``power8-s824-sophia``):
         first-key BOOTSTRAP is gated by ``_header_key_strict_bootstrap()`` — under
         strict mode the key must be pre-approved in ``miner_header_bootstrap``
@@ -7661,6 +7717,12 @@ def _header_key_authorized(conn, identity, pubkey):
         staged-rollout default it keeps legacy first-write-wins. Re-registering an
         already-registered (identity, pubkey) pair is always idempotent; an attacker
         can never ADD a new key to an already-established identity.
+
+    Residual (T1.1, documented): while RC_HEADER_KEY_STRICT_BOOTSTRAP is off, the
+    FIRST key for a never-keyed NAMED alias (e.g. a new ``modern-foo``) is still
+    first-write-wins, because named aliases are not self-certifying and the
+    legacy/pool compatibility flow depends on it. Closing that requires seeding
+    real producers via /miner/headerkey and enabling strict bootstrap.
     """
     if not pubkey:
         return False
@@ -7670,6 +7732,9 @@ def _header_key_authorized(conn, identity, pubkey):
     except Exception:
         # Malformed pubkey hex -> not self-authenticating; fall through.
         pass
+    if _is_rtc_address_shaped(identity):
+        # Wallet identity whose address does not derive from this key: no TOFU.
+        return _rtc_identity_header_key_permitted(conn, identity, pubkey)
     existing = conn.execute(
         "SELECT pubkey_hex FROM miner_header_keys WHERE miner_id=?", (identity,)
     ).fetchall()  # fetchall-ok: bounded-by-schema (capped by _prune_header_keys)
@@ -7740,6 +7805,32 @@ def _register_header_key(conn, identity, pubkey):
     )
     _prune_header_keys(conn, identity)
     return True
+
+
+def _register_header_key_identities(conn, pubkey, identities):
+    """Register ``pubkey`` as a header key for each distinct identity in
+    ``identities`` (the canonical chain identity plus the client-local
+    ``miner_id`` compatibility alias). Shared by /attest/submit and /epoch/enroll.
+
+    Defense in depth: an RTC-address identity is skipped outright unless the key
+    derives to it (or the exact pair is already registered / admin-preapproved),
+    independently of ``_header_key_authorized``. The alias is caller-supplied, so
+    this keeps a future change to the authorization rules from silently letting a
+    caller bind their key to someone else's wallet. Returns the identities that
+    were registered."""
+    registered = []
+    if not pubkey:
+        return registered
+    for identity in dict.fromkeys(i for i in identities if isinstance(i, str) and i):
+        if not _rtc_identity_header_key_permitted(conn, identity, pubkey):
+            logging.info(
+                "[header-key] refused non-derived key for RTC identity=%r pubkey=%s..."
+                % (str(identity)[:32], str(pubkey)[:12])
+            )
+            continue
+        if _register_header_key(conn, identity, pubkey):
+            registered.append(identity)
+    return registered
 
 
 @app.route('/miner/headerkey', methods=['POST'])
