@@ -244,6 +244,41 @@ def test_phase_d_state_attestations_are_scoped_to_sender_namespace():
     assert target.attestation_crdt.get("victim-miner") is None
 
 
+def test_phase_d_state_sync_rejections_log_once_not_per_entry(caplog):
+    """A full snapshot with many foreign/future entries must log O(1) lines, not O(miners).
+
+    Regression for 2026-09-28: one WARNING per foreign miner per sync filled
+    node 2's disk (~10 GB/day of syslog). Filtering behaviour is unchanged.
+    """
+    import logging
+    target = _mk_layer("node1", {"node2": "http://n2"})
+    sender = _mk_layer("node2", db_path=target.db_path)
+    sender.broadcast = lambda *args, **kwargs: None
+
+    now = int(time.time())
+    attestations = {
+        f"miner-{i}": {"ts": now, "value": {"miner": f"miner-{i}"}} for i in range(500)
+    }
+    attestations.update({
+        f"future-{i}": {"ts": now + 10_000, "value": {"miner": f"future-{i}"}} for i in range(50)
+    })
+    attestations["node2"] = {"ts": now, "value": {"miner": "node2", "device_arch": "modern"}}
+    msg = sender.create_message(mod.MessageType.STATE, {"state": {"attestations": attestations}})
+
+    with caplog.at_level(logging.DEBUG):
+        assert target.handle_message(msg)["status"] == "ok"
+
+    state_lines = [r for r in caplog.records if "State from node2" in r.getMessage()]
+    warnings = [r for r in state_lines if r.levelno >= logging.WARNING]
+    assert len(state_lines) <= 3, [r.getMessage() for r in state_lines]
+    assert len(warnings) == 1 and "rejected 50 future-dated" in warnings[0].getMessage()
+    assert any("skipped 500 attestation(s)" in r.getMessage() for r in state_lines)
+    # Filtering unchanged: only the sender's own key is merged.
+    assert target.attestation_crdt.get("node2")["miner"] == "node2"
+    assert target.attestation_crdt.get("miner-0") is None
+    assert target.attestation_crdt.get("future-0") is None
+
+
 def test_phase_d_direct_attestation_rejects_foreign_miner_namespace():
     """A signed ATTESTATION message can only update the sender's own key."""
     target = _mk_layer("node1", {"node2": "http://n2"})
