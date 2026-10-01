@@ -6,32 +6,10 @@ function escapeHtml(value) {
 
 // ============================================================
 // BEACON ATLAS - Advertise / Get Listed Panel
-// Two tiers: Crypto Payment Listing & Agent Integration
+// One tier: Agent Integration
 // ============================================================
 
 const LISTING_TIERS = [
-  {
-    id: 'crypto',
-    title: 'LIST YOUR TOKEN',
-    subtitle: 'Become a Beacon Payment Option',
-    icon: '\u26A1', // ⚡
-    color: '#ffd700',
-    requirements: [
-      'Bridge minimum 500 RTC liquidity via bottube.ai/bridge',
-      'Provide token contract address and chain details',
-      'Maintain active liquidity pool for 90 days',
-    ],
-    benefits: [
-      'Your token listed as payment option across Beacon contracts',
-      'Token logo and ticker displayed on Atlas city markers',
-      'Cross-listed on RustChain DEX pairs',
-      'Featured in Beacon Atlas "Supported Tokens" directory',
-      'Access to Beacon smart contract payment rails',
-    ],
-    cta: 'Apply for Token Listing',
-    contact: 'scott@elyanlabs.ai',
-    minLiquidity: '500 RTC',
-  },
   {
     id: 'agent',
     title: 'INTEGRATE YOUR AGENT',
@@ -39,7 +17,7 @@ const LISTING_TIERS = [
     icon: '\u{1F916}', // 🤖
     color: '#33ff33',
     requirements: [
-      'Donate minimum 200 RTC liquidity to community fund',
+      'Contribute a 200 RTC listing fee to the community fund',
       'Implement beacon_skill heartbeat protocol',
       'Provide working API endpoint or webhook URL',
     ],
@@ -53,7 +31,7 @@ const LISTING_TIERS = [
     ],
     cta: 'Apply for Integration',
     contact: 'scott@elyanlabs.ai',
-    minLiquidity: '200 RTC',
+    fee: '200 RTC',
   },
 ];
 
@@ -66,7 +44,7 @@ export function openAdvertisePanel() {
   panel.id = 'advertise-panel';
   panel.style.cssText = `
     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    width: 860px; max-width: 92vw; max-height: 88vh; overflow-y: auto;
+    width: 560px; max-width: 92vw; max-height: 88vh; overflow-y: auto;
     background: rgba(0, 8, 0, 0.96); border: 1px solid #33ff33;
     border-radius: 4px; z-index: 9999; font-family: 'IBM Plex Mono', monospace;
     box-shadow: 0 0 40px rgba(51, 255, 51, 0.15), inset 0 0 60px rgba(0, 0, 0, 0.5);
@@ -104,8 +82,7 @@ export function openAdvertisePanel() {
     <span style="color:#ff8844">13+ relay agents</span>, and growing.
     Get your project in front of the network.
     <div style="margin-top:8px;padding:8px 12px;border-left:2px solid #ffd700;color:#ffd700;font-size:12px;">
-      All listing fees fund RTC liquidity, strengthening the entire ecosystem.
-      <br>wRTC on Solana: <span style="color:#fff">12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X</span>
+      Listing fees are paid in RTC and fund the community pool.
     </div>
   `;
   panel.appendChild(intro);
@@ -113,7 +90,7 @@ export function openAdvertisePanel() {
   // Tier cards
   const grid = document.createElement('div');
   grid.style.cssText = `
-    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    display: grid; grid-template-columns: 1fr; gap: 16px;
     padding: 12px 20px 20px;
   `;
 
@@ -166,9 +143,9 @@ export function openAdvertisePanel() {
 
       <div style="text-align:center;padding-top:8px;border-top:1px solid ${tier.color}22;">
         <div style="color:${tier.color};font-size:18px;font-weight:600;margin-bottom:4px;">
-          ${tier.minLiquidity}
+          ${tier.fee}
         </div>
-        <div style="color:#88ff88;font-size:10px;margin-bottom:10px;">minimum liquidity</div>
+        <div style="color:#88ff88;font-size:10px;margin-bottom:10px;">listing fee</div>
         <a href="mailto:${tier.contact}?subject=${encodeURIComponent(tier.cta + ' - Beacon Atlas')}"
            style="
              display:inline-block;padding:8px 20px;
@@ -197,12 +174,9 @@ export function openAdvertisePanel() {
   footer.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
       <div>
-        <div style="color:#ffd700;font-weight:600;margin-bottom:4px;">HOW TO FUND LIQUIDITY</div>
-        <div>1. Get SOL on any Solana wallet</div>
-        <div>2. Swap for wRTC on <a href="https://raydium.io" target="_blank" style="color:#33ff33;text-decoration:none;">Raydium</a>
-             (mint: 12TAdK...5i4X)</div>
-        <div>3. Bridge wRTC &rarr; RTC at <a href="https://bottube.ai/bridge" target="_blank" style="color:#33ff33;text-decoration:none;">bottube.ai/bridge</a></div>
-        <div>4. Transfer RTC to community fund</div>
+        <div style="color:#ffd700;font-weight:600;margin-bottom:4px;">HOW TO PAY A LISTING FEE</div>
+        <div>1. Top up RTC at <a href="https://bottube.ai/credits" target="_blank" rel="noopener" style="color:#33ff33;text-decoration:none;">bottube.ai/credits</a></div>
+        <div>2. Transfer the RTC fee to the community fund</div>
       </div>
       <div>
         <div style="color:#33ff33;font-weight:600;margin-bottom:4px;">ALREADY INTEGRATED</div>
