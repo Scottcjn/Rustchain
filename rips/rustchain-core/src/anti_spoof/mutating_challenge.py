@@ -1,22 +1,49 @@
 #!/usr/bin/env python3
 """
-RustChain Mutating Challenge System
-===================================
+RustChain Mutating Challenge System -- EXPERIMENTAL DESIGN SKETCH
+=================================================================
 
-Challenges randomly mutate each round, validated in round-robin by all nodes.
-This makes pre-computation IMPOSSIBLE because:
-1. Challenge parameters change unpredictably each block
-2. Different validators challenge you with different mutations
-3. You must respond in real-time with actual hardware
-4. Mutation seeds are derived from previous block hash (unpredictable)
+STATUS: experimental, NOT wired in. Nothing under ``node/`` or ``miners/``
+imports this module, and it takes no part in consensus, attestation or reward
+calculation. ``tests/test_mutating_challenge_unwired.py`` asserts that, so that
+wiring it in has to be a deliberate, reviewed change. Do not treat this file as
+a security control: as written it is a model of the *shape* of a protocol, not
+an implementation of one.
 
-Round-Robin Validation:
-- Block N: Validator A challenges B, B challenges C, C challenges A
-- Block N+1: Roles rotate, mutation parameters change
-- Everyone validates everyone over time
-- Consensus requires 2/3 agreement on hardware validity
+The idea being sketched:
+- Challenge parameters are re-derived each round from the block hash and the
+  target, so a responder cannot reuse a fixed, pre-recorded answer.
+- Validators challenge each other in round-robin (block N: A challenges B,
+  B challenges C, C challenges A; block N+1: roles rotate).
+- A quorum of validators would have to agree on a target's hardware validity.
 
-"The chain mutates. The emulator cannot adapt. Real hardware persists."
+What this code does NOT do (known gaps):
+- Nothing is authenticated. The ``signature`` fields on ``MutatingChallenge``
+  and ``MutatingResponse`` are never produced or verified.
+- The proof hash is not bound to hardware. ``compute_proof`` is only ever
+  called with empty entropy, and the validator recomputes it from fields the
+  responder supplied, so it is a self-consistency check that anyone can
+  satisfy. It proves nothing about the responder's machine.
+- Timing, jitter and thermal values are self-reported numbers compared against
+  ranges; they are not measured by the validator.
+- Challenges do not expire and are not single-use; a challenge stays answerable
+  until ``end_round`` clears it.
+- A hardware profile that lacks the requested serial type is not rejected (only
+  a wholly missing profile is).
+- No quorum is computed. ``CONSENSUS_THRESHOLD`` is declared but unused, and
+  the "slashing" list is a local counter with no effect on anything.
+- Mutation seeds derive from a block hash, which is public once the block
+  exists and can be influenced by whoever produces the block. That makes
+  pre-computation inconvenient, not impossible.
+
+Required before this may be used for consensus or rewards:
+1. Signed challenges, verified against the challenger's registered key.
+2. ``responder == challenge.target`` (enforced below) AND a signature over the
+   full response, verified against the target's registered key.
+3. Fail closed on a missing hardware profile (enforced below) and on a missing
+   serial for the requested serial type.
+4. Single-use challenges with an expiry.
+5. A proof rooted in a registered hardware key, not in client-supplied entropy.
 """
 
 import hashlib
@@ -80,10 +107,14 @@ class ChallengeMutator:
     """
     Mutates challenge parameters based on blockchain state.
 
-    Mutation is deterministic but unpredictable:
-    - Seed derived from previous block hash
-    - Parameters change in ways that stress different hardware aspects
-    - Emulators can't pre-compute because they don't know next block hash
+    Experimental sketch; see the module docstring for status and known gaps.
+
+    Mutation is deterministic given its inputs:
+    - Seed derived from the genesis seed, block hash, target and epoch
+    - Parameters change in ways intended to stress different hardware aspects
+    - The parameters are not known before the block hash is, but the block
+      producer can influence that hash, so treat this as raising the cost of
+      pre-computation rather than preventing it
     """
 
     # Mutation ranges (min, max) for each parameter
@@ -108,10 +139,12 @@ class ChallengeMutator:
         """
         Derive mutation seed from block hash and validator.
 
-        This ensures:
+        Properties:
         - Different validators get different mutations
-        - Mutations are unpredictable until block is mined
-        - Mutations are deterministic (verifiable by all nodes)
+        - Mutations are not known until the block hash is (the block producer
+          can influence it; this is not a source of unbiasable randomness)
+        - Mutations are deterministic (re-derivable by any node holding the
+          same genesis seed)
         """
         return hashlib.sha256(
             self.genesis_seed +
@@ -216,7 +249,13 @@ class RoundRobinState:
 
 @dataclass
 class MutatingChallenge:
-    """A challenge with mutated parameters"""
+    """
+    A challenge with mutated parameters.
+
+    Experimental sketch. ``signature`` is a placeholder: nothing signs a
+    challenge and nothing verifies one, so a challenge is not authenticated
+    as coming from ``challenger``. Challenges also carry no expiry.
+    """
     challenge_id: str
     block_height: int
     block_hash: bytes
@@ -247,7 +286,13 @@ class MutatingChallenge:
 
 @dataclass
 class MutatingResponse:
-    """Response to a mutating challenge"""
+    """
+    Response to a mutating challenge.
+
+    Experimental sketch. ``signature`` is a placeholder that is never
+    verified, so ``responder`` is an unauthenticated claim, and every
+    measurement field is self-reported.
+    """
     challenge_id: str
     responder: str
 
@@ -269,7 +314,13 @@ class MutatingResponse:
         """
         Compute proof hash using mutated parameters.
 
-        This must be done in real-time with actual hardware entropy.
+        NOTE: this is not a hardware proof. The intent was to mix in entropy
+        from the responding machine, but every caller (including
+        ``validate_response``) passes ``b''``, and a validator has no way to
+        know a client-supplied entropy value anyway. The result is a
+        deterministic function of the challenge ID and the response's own
+        fields, so it only shows the response is internally consistent. A real
+        design needs a proof rooted in a registered hardware key.
         """
         data = (
             challenge.challenge_id.encode() +
@@ -292,14 +343,22 @@ class MutatingResponse:
 
 class MutatingChallengeNetwork:
     """
-    Full mutating challenge network with round-robin validation.
+    In-memory model of a mutating challenge round with round-robin pairing.
 
-    Architecture:
-    1. Each block triggers a new challenge round
+    EXPERIMENTAL DESIGN SKETCH: not wired into the node, consensus or
+    rewards. See the module docstring for the known gaps and for what must
+    exist before this may be relied on.
+
+    What is modelled:
+    1. Every ``BLOCKS_PER_ROUND`` blocks triggers a new challenge round
     2. Challenge parameters mutate based on block hash
-    3. Validators challenge each other in round-robin
-    4. 2/3 consensus required to mark a validator as valid
-    5. Failed validators lose rewards and eventually get slashed
+    3. Validators are paired challenger -> target in round-robin
+
+    Intended but NOT implemented:
+    4. A 2/3 quorum to mark a validator as valid (``CONSENSUS_THRESHOLD`` is
+       unused; each response is judged once, locally)
+    5. Reward loss or slashing (``get_slashed_validators`` only reads a local
+       failure counter; nothing acts on it)
     """
 
     CONSENSUS_THRESHOLD = 0.67  # 2/3 must agree
@@ -357,10 +416,35 @@ class MutatingChallengeNetwork:
         Validate a response against its challenge.
 
         Returns: (valid, confidence_score, failure_reasons)
+
+        Fails closed, before any measurement is looked at, when:
+        - the challenge ID is unknown;
+        - ``response.responder`` is not the challenge's target;
+        - no hardware profile is registered for the target.
+
+        These early rejections return ``(False, 0.0, [reason])`` and do not
+        touch round results or failure counters: nothing here is
+        authenticated, so a response that never reached evaluation must not
+        count as evidence against the target.
+
+        This is still NOT sufficient for production use. Signatures are not
+        verified (so the responder check compares an unauthenticated claim),
+        challenges are neither single-use nor expiring, and the proof hash is
+        not bound to hardware. See the module docstring.
         """
         challenge = self.pending_challenges.get(response.challenge_id)
         if not challenge:
             return False, 0.0, ["Unknown challenge ID"]
+
+        # Fail closed: only the challenged target may answer its challenge.
+        if response.responder != challenge.target:
+            return False, 0.0, ["Responder does not match challenge target"]
+
+        # Fail closed: without a registered profile there is nothing to check
+        # the serial against, so the response cannot be accepted.
+        expected_hardware = self.validator_hardware.get(challenge.target)
+        if not expected_hardware:
+            return False, 0.0, ["No hardware profile registered for target"]
 
         params = challenge.mutation_params
         failures = []
@@ -390,7 +474,6 @@ class MutatingChallengeNetwork:
             confidence -= 15.0
 
         # 4. Check serial (mutated serial type)
-        expected_hardware = self.validator_hardware.get(challenge.target, {})
         expected_serial = self._get_serial(expected_hardware, params.serial_type)
 
         if expected_serial and response.serial_value != expected_serial:
@@ -403,7 +486,9 @@ class MutatingChallengeNetwork:
             failures.append(f"Missing {params.serial_type} serial")
             confidence -= 20.0
 
-        # 5. Verify proof hash (must have correct round count)
+        # 5. Verify proof hash (must have correct round count).
+        # Consistency check only: recomputed from the response's own fields
+        # with empty entropy, so it does not attest to hardware.
         proof_ok = True
         if not response.proof_hash:
             proof_ok = False
@@ -455,7 +540,7 @@ class MutatingChallengeNetwork:
 
 
 def demo_mutating_challenges():
-    """Demonstrate the mutating challenge system"""
+    """Demonstrate the mutating challenge sketch (illustrative, not a security test)"""
 
     print("""
 ╔══════════════════════════════════════════════════════════════════════╗
@@ -464,6 +549,9 @@ def demo_mutating_challenges():
 ║   "The chain mutates. The emulator cannot adapt."                    ║
 ╚══════════════════════════════════════════════════════════════════════╝
 """)
+
+    print("  NOTE: experimental design sketch. Not wired into the node, consensus")
+    print("  or rewards; responses below are simulated and unauthenticated.\n")
 
     # Setup network with 4 validators
     validators = [
@@ -566,15 +654,14 @@ def demo_mutating_challenges():
   • Hash rounds varied from 500-5000
   • Different serial types checked each round
 
-  An emulator would need to:
-  1. Predict the next block hash (IMPOSSIBLE)
-  2. Pre-compute all possible mutations (INFEASIBLE)
-  3. Have accurate timing for ALL parameter combinations (EXPENSIVE)
+  The design intent is that an emulator would need to:
+  1. Know the next block hash in advance
+  2. Pre-compute responses for every possible mutation
+  3. Reproduce plausible timing for all parameter combinations
 
-  Cost to build adaptive emulator: $100,000+
-  Cost of real PowerMac G4:        $30-50
-
-  RATIONAL CHOICE: BUY REAL HARDWARE
+  This demo does not establish any of that: measurements here are
+  self-reported and nothing is signed or bound to hardware. See the
+  module docstring for what must exist before this is relied on.
 """)
 
     print("""
