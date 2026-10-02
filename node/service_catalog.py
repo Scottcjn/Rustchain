@@ -5,6 +5,7 @@
 Agents list work they can do, priced in RTC, and other agents order it.
 Payment happens after delivery, from the buyer's own wallet, through the
 existing ``/wallet/transfer/signed`` endpoint with memo ``svc:<order_id>``.
+Only a transfer sent by the order's buyer counts as its payment.
 
 Design rules (see ~/elyan-labs/agent-economy/final.md, roadmap item 5):
 
@@ -254,23 +255,61 @@ def _payment_memo(order_id):
     return f"svc:{order_id}"
 
 
-def _payment_status(conn, order):
+def _buyer_payer_ids(buyer, resolve_pubkey):
+    """The pending_ledger.from_miner values that are the order's buyer.
+
+    This is the single rule for "who may pay for an order": only its buyer.
+    /wallet/transfer/signed records the sender as either the buyer's bcn_ id
+    or the RTC address of a key, so the buyer is:
+
+    * the buyer's own bcn_ id, always; and
+    * the full RTC address derived from the buyer's registered Beacon key
+      ("RTC" + sha256(pubkey)[:40], as the node's address_from_pubkey does),
+      when that key resolves and matches the id.
+
+    If the key does not resolve (agent barred or Atlas unreadable) only the
+    bcn_ id is accepted. The 12-hex id prefix is deliberately not compared
+    against RTC addresses: it is too short to stand in for the key.
+    """
+    ids = [buyer]
+    pubkey_hex = resolve_pubkey(buyer) if resolve_pubkey else None
+    if pubkey_hex and _id_matches_pubkey(buyer, pubkey_hex):
+        key = bytes.fromhex(str(pubkey_hex).strip().removeprefix("0x"))
+        ids.append("RTC" + hashlib.sha256(key).hexdigest()[:40])
+    return ids
+
+
+def _memoized(resolve_pubkey):
+    """Per-request cache so a page of orders resolves each buyer once."""
+    cache = {}
+
+    def resolve(agent_id):
+        if agent_id not in cache:
+            cache[agent_id] = resolve_pubkey(agent_id)
+        return cache[agent_id]
+    return resolve
+
+
+def _payment_status(conn, order, resolve_pubkey):
     """Read-only reconciliation against pending_ledger.
 
-    A payment counts when a signed transfer to the provider, from someone
-    other than the provider, carries this order's memo and covers the
-    snapshot price. Voided transfers never count.
+    A payment counts when a signed transfer from the order's buyer (see
+    _buyer_payer_ids) to the provider carries this order's memo and covers
+    the snapshot price. Voided transfers never count.
     """
+    payers = _buyer_payer_ids(order["buyer"], resolve_pubkey)
     try:
         rows = conn.execute(
-            """
+            f"""
             SELECT status, tx_hash FROM pending_ledger
             WHERE to_miner = ? AND from_miner != ? AND reason = ?
               AND amount_i64 >= ? AND status IN ('pending', 'confirmed')
+              AND from_miner IN ({", ".join("?" * len(payers))})
             ORDER BY CASE status WHEN 'confirmed' THEN 0 ELSE 1 END, id
             """,
             (order["provider"], order["provider"],
-             "signed_transfer:" + _payment_memo(order["id"]), order["price_i64"]),
+             "signed_transfer:" + _payment_memo(order["id"]), order["price_i64"],
+             *payers),
         ).fetchall()  # fetchall-ok: bounded-by-schema (exact memo for one order)
     except sqlite3.OperationalError:
         return {"state": "unknown"}
@@ -279,7 +318,7 @@ def _payment_status(conn, order):
     return {"state": rows[0]["status"], "tx_hash": rows[0]["tx_hash"]}
 
 
-def _order_public_json(conn, row):
+def _order_public_json(conn, row, resolve_pubkey):
     """What anyone holding an order id may see. Order ids appear in ledger
     memos, so notes and delivery links stay party-only."""
     out = {
@@ -291,11 +330,11 @@ def _order_public_json(conn, row):
         "updated_at": row["updated_at"],
     }
     if row["status"] == "accepted":
-        out["payment"] = _payment_status(conn, row)
+        out["payment"] = _payment_status(conn, row, resolve_pubkey)
     return out
 
 
-def _order_json(conn, row):
+def _order_json(conn, row, resolve_pubkey):
     """Full view, for the buyer and provider only."""
     out = {
         "id": row["id"],
@@ -312,7 +351,7 @@ def _order_json(conn, row):
         "updated_at": row["updated_at"],
     }
     if row["status"] == "accepted":
-        out["payment"] = _payment_status(conn, row)
+        out["payment"] = _payment_status(conn, row, resolve_pubkey)
         out["payment_instructions"] = _payment_instructions(row)
     return out
 
@@ -623,7 +662,7 @@ def create_catalog_blueprint(db_path, pubkey_resolver):
                 (order_id, listing["id"], listing["provider"], buyer, listing["price_i64"],
                  note, now, now))
             row = conn.execute("SELECT * FROM catalog_orders WHERE id = ?", (order_id,)).fetchone()
-            return jsonify(_order_json(conn, row)), 201
+            return jsonify(_order_json(conn, row, pubkey_resolver)), 201
         return handle(run)
 
     @bp.route("/orders", methods=["GET"])
@@ -649,7 +688,8 @@ def create_catalog_blueprint(db_path, pubkey_resolver):
                 f"SELECT * FROM catalog_orders WHERE {' AND '.join(clauses)} "
                 "ORDER BY updated_at DESC, id LIMIT ? OFFSET ?",
                 (*params, limit, offset)).fetchall()  # fetchall-ok: already-paginated (LIMIT <= MAX_PAGE)
-            return jsonify({"orders": [_order_json(conn, r) for r in rows],
+            resolve = _memoized(pubkey_resolver)
+            return jsonify({"orders": [_order_json(conn, r, resolve) for r in rows],
                             "limit": limit, "offset": offset})
         return handle(run)
 
@@ -658,12 +698,12 @@ def create_catalog_blueprint(db_path, pubkey_resolver):
         """Public summary; the full view needs a signature from a party."""
         def run(conn):
             if not request.headers.get("X-Agent-Id"):
-                return jsonify(_order_public_json(conn, get_order(conn, order_id)))
+                return jsonify(_order_public_json(conn, get_order(conn, order_id), pubkey_resolver))
             agent_id = _authenticate(conn, pubkey_resolver)
             order = get_order(conn, order_id)
             if agent_id not in (order["buyer"], order["provider"]):
                 raise _Reject(403, "only the buyer or provider can see the full order")
-            return jsonify(_order_json(conn, order))
+            return jsonify(_order_json(conn, order, pubkey_resolver))
         return handle(run)
 
     @bp.route("/orders/<order_id>/deliver", methods=["POST"])
@@ -680,7 +720,7 @@ def create_catalog_blueprint(db_path, pubkey_resolver):
             order = get_order(conn, order_id)
             row = transition(conn, order, "provider", agent_id, "requested", "delivered",
                              deliverable_hash=digest, deliverable_uri=uri or None)
-            return jsonify(_order_json(conn, row))
+            return jsonify(_order_json(conn, row, pubkey_resolver))
         return handle(run)
 
     @bp.route("/orders/<order_id>/accept", methods=["POST"])
@@ -690,7 +730,7 @@ def create_catalog_blueprint(db_path, pubkey_resolver):
             agent_id = _authenticate(conn, pubkey_resolver)
             row = transition(conn, get_order(conn, order_id), "buyer", agent_id,
                              "delivered", "accepted")
-            return jsonify(_order_json(conn, row))
+            return jsonify(_order_json(conn, row, pubkey_resolver))
         return handle(run)
 
     @bp.route("/orders/<order_id>/reject", methods=["POST"])
@@ -703,7 +743,7 @@ def create_catalog_blueprint(db_path, pubkey_resolver):
             _no_fiat("reason", reason)
             row = transition(conn, get_order(conn, order_id), "buyer", agent_id,
                              "delivered", "rejected", close_reason=reason)
-            return jsonify(_order_json(conn, row))
+            return jsonify(_order_json(conn, row, pubkey_resolver))
         return handle(run)
 
     @bp.route("/orders/<order_id>/cancel", methods=["POST"])
@@ -717,7 +757,7 @@ def create_catalog_blueprint(db_path, pubkey_resolver):
             actor = "buyer" if order["buyer"] == agent_id else "provider"
             row = transition(conn, order, actor, agent_id, "requested", "cancelled",
                              close_reason=reason or None)
-            return jsonify(_order_json(conn, row))
+            return jsonify(_order_json(conn, row, pubkey_resolver))
         return handle(run)
 
     @bp.route("/providers/<agent_id>", methods=["GET"])
@@ -737,18 +777,25 @@ def create_catalog_blueprint(db_path, pubkey_resolver):
                 "SELECT COUNT(DISTINCT buyer) FROM catalog_orders "
                 "WHERE provider = ? AND status = 'accepted'", (agent_id,)).fetchone()[0]
             # Acceptance costs a buyer nothing, so it can be faked with extra
-            # identities. Confirmed payment from someone other than the
-            # provider is the stronger signal, reported separately.
+            # identities. Confirmed payment by the order's own buyer is the
+            # stronger signal, reported separately. The payer test is the
+            # same _buyer_payer_ids rule _payment_status uses.
             try:
-                paid, paying_buyers = conn.execute(
-                    """
-                    SELECT COUNT(DISTINCT o.id), COUNT(DISTINCT o.buyer)
-                    FROM catalog_orders o JOIN pending_ledger p
-                      ON p.reason = 'signed_transfer:svc:' || o.id
-                     AND p.to_miner = o.provider AND p.from_miner != o.provider
-                     AND p.amount_i64 >= o.price_i64 AND p.status = 'confirmed'
-                    WHERE o.provider = ? AND o.status = 'accepted'
-                    """, (agent_id,)).fetchone()
+                resolve = _memoized(pubkey_resolver)
+                paid_orders, paying = set(), set()
+                for order_id, buyer, payer in conn.execute(
+                        """
+                        SELECT o.id, o.buyer, p.from_miner
+                        FROM catalog_orders o JOIN pending_ledger p
+                          ON p.reason = 'signed_transfer:svc:' || o.id
+                         AND p.to_miner = o.provider AND p.from_miner != o.provider
+                         AND p.amount_i64 >= o.price_i64 AND p.status = 'confirmed'
+                        WHERE o.provider = ? AND o.status = 'accepted'
+                        """, (agent_id,)):
+                    if payer in _buyer_payer_ids(buyer, resolve):
+                        paid_orders.add(order_id)
+                        paying.add(buyer)
+                paid, paying_buyers = len(paid_orders), len(paying)
             except sqlite3.OperationalError:
                 paid = paying_buyers = None
         return jsonify({
@@ -764,7 +811,7 @@ def create_catalog_blueprint(db_path, pubkey_resolver):
             "orders_paid_confirmed": paid,
             "distinct_paying_buyers": paying_buyers,
             "note": ("accepted counts are reported by buyers; paid counts are "
-                     "confirmed signed transfers from a wallet other than the provider's id"),
+                     "confirmed signed transfers from the order's own buyer"),
         })
 
     return bp

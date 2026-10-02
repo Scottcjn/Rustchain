@@ -19,6 +19,8 @@ class Agent:
         pub = self.key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
         self.pubkey_hex = pub.hex()
         self.id = "bcn_" + hashlib.sha256(pub).hexdigest()[:12]
+        # Same derivation as the node's address_from_pubkey().
+        self.rtc_address = "RTC" + hashlib.sha256(pub).hexdigest()[:40]
         self._n = 0
 
     def headers(self, method, path, body, *, ts=None, nonce=None):
@@ -57,7 +59,8 @@ def env(tmp_path):
         body = json.dumps(payload).encode()
         return client.post(path, data=body, headers=agent.headers("POST", path, body, **kw))
 
-    return {"db": db, "client": client, "agent": make_agent, "post": post}
+    return {"db": db, "client": client, "agent": make_agent, "post": post,
+            "registry": registry}
 
 
 LISTING = {"title": "Render a 10s clip", "category": "render", "price_rtc": 2.5,
@@ -189,6 +192,87 @@ def _pay(env, frm, to, amount_i64, memo, status="pending"):
         conn.execute("INSERT INTO pending_ledger (from_miner, to_miner, amount_i64, reason, "
                      "status, tx_hash) VALUES (?, ?, ?, ?, ?, 'tx1')",
                      (frm, to, amount_i64, "signed_transfer:" + memo, status))
+
+
+def _accepted_order(env, provider, buyer, digest="a" * 64):
+    order = full_order(env, provider, buyer, digest=digest)
+    r = env["post"](buyer, f"/catalog/orders/{order['id']}/accept", {})
+    assert r.status_code == 200, r.get_json()
+    return order
+
+
+def _payment(env, order):
+    return env["client"].get(f"/catalog/orders/{order['id']}").get_json()["payment"]
+
+
+def _record(env, provider):
+    return env["client"].get(f"/catalog/providers/{provider.id}").get_json()
+
+
+def test_third_party_payment_does_not_pay_the_order(env):
+    p, b, other = env["agent"](), env["agent"](), env["agent"]()
+    order = _accepted_order(env, p, b)
+    memo = f"svc:{order['id']}"
+    # Right recipient, memo and amount, but not sent by the order's buyer.
+    _pay(env, other.id, p.id, 2_500_000, memo, "confirmed")
+    _pay(env, other.rtc_address, p.id, 2_500_000, memo, "confirmed")
+    _pay(env, "RTC" + "0" * 40, p.id, 2_500_000, memo, "confirmed")
+    assert _payment(env, order) == {"state": "unpaid"}
+    rec = _record(env, p)
+    assert rec["orders_paid_confirmed"] == 0 and rec["distinct_paying_buyers"] == 0
+
+
+def test_one_wallet_cannot_pay_for_many_buyers(env):
+    p, funded = env["agent"](), env["agent"]()
+    buyers = [env["agent"]() for _ in range(3)]
+    for i, b in enumerate(buyers):
+        order = _accepted_order(env, p, b, digest=str(i) * 64)
+        _pay(env, funded.rtc_address, p.id, 2_500_000, f"svc:{order['id']}", "confirmed")
+        assert _payment(env, order) == {"state": "unpaid"}
+    rec = _record(env, p)
+    assert rec["orders_accepted"] == 3 and rec["distinct_buyers_accepted"] == 3
+    assert rec["orders_paid_confirmed"] == 0 and rec["distinct_paying_buyers"] == 0
+
+
+@pytest.mark.parametrize("sender", ["id", "rtc_address"])
+def test_buyer_pays_from_beacon_id_or_rtc_address(env, sender):
+    p, b = env["agent"](), env["agent"]()
+    order = _accepted_order(env, p, b)
+    _pay(env, getattr(b, sender), p.id, 2_500_000, f"svc:{order['id']}", "confirmed")
+    assert _payment(env, order)["state"] == "confirmed"
+    rec = _record(env, p)
+    assert rec["orders_paid_confirmed"] == 1 and rec["distinct_paying_buyers"] == 1
+
+
+def test_rtc_address_sharing_only_the_id_prefix_is_not_the_buyer(env):
+    p, b = env["agent"](), env["agent"]()
+    order = _accepted_order(env, p, b)
+    lookalike = "RTC" + b.id[4:] + "f" * 28
+    assert lookalike != b.rtc_address
+    _pay(env, lookalike, p.id, 2_500_000, f"svc:{order['id']}", "confirmed")
+    assert _payment(env, order) == {"state": "unpaid"}
+    assert _record(env, p)["orders_paid_confirmed"] == 0
+
+
+def test_unresolvable_buyer_key_accepts_only_the_beacon_id(env):
+    p, b = env["agent"](), env["agent"]()
+    order = _accepted_order(env, p, b)
+    memo = f"svc:{order['id']}"
+    del env["registry"][b.id]  # barred / Atlas unreadable
+    _pay(env, b.rtc_address, p.id, 2_500_000, memo, "confirmed")
+    assert _payment(env, order) == {"state": "unpaid"}
+    _pay(env, b.id, p.id, 2_500_000, memo, "confirmed")
+    assert _payment(env, order)["state"] == "confirmed"
+    assert _record(env, p)["distinct_paying_buyers"] == 1
+
+
+def test_buyer_payer_ids_rule(env):
+    b, other = Agent(), Agent()
+    assert sc._buyer_payer_ids(b.id, {b.id: b.pubkey_hex}.get) == [b.id, b.rtc_address]
+    assert sc._buyer_payer_ids(b.id, {b.id: "0x" + b.pubkey_hex.upper()}.get) == [b.id, b.rtc_address]
+    # A key that is not the id's key adds nothing.
+    assert sc._buyer_payer_ids(b.id, {b.id: other.pubkey_hex}.get) == [b.id]
+    assert sc._buyer_payer_ids(b.id, {}.get) == [b.id]
 
 
 def test_payment_reconciliation(env):
