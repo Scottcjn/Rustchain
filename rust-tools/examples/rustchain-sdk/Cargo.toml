@@ -13,7 +13,7 @@ keywords = ["blockchain", "rustchain", "api", "sdk", "client"]
 categories = ["api-bindings", "cryptography", "web-programming::http-client"]
 
 [dependencies]
-reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+reqwest = { version = "0.13", features = ["json", "rustls-tls"], default-features = false }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }
