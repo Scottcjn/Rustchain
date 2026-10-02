@@ -188,6 +188,65 @@ paths:
                   last_attest: 1771187200
                   first_attest: 1770000000
 
+  /api/balances/export:
+    get:
+      tags:
+        - Wallet
+      summary: Export all wallet balances
+      description: |
+        Returns a stable, wallet-ordered page containing every balances-table
+        identity, including hosted handles, with its balance and latest ledger
+        activity. This public transparency endpoint intentionally excludes no
+        wallets and therefore publishes wallet identifiers and activity times.
+        Pages are rate-limited per client IP and cached for the current epoch.
+      operationId: exportWalletBalances
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 100
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Wallet balance page retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceExportResponse'
+        '400':
+          description: Invalid pagination parameters
+          content:
+            application/json:
+              schema:
+                type: object
+        '429':
+          description: Per-client export rate limit reached
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds until another request is permitted
+          content:
+            application/json:
+              schema:
+                type: object
+        '500':
+          description: Balance data is unavailable or inconsistent
+          content:
+            application/json:
+              schema:
+                type: object
+
   /api/nodes:
     get:
       tags:
@@ -1443,6 +1502,59 @@ components:
           type: integer
           nullable: true
           description: Unix timestamp of first attestation
+
+    BalanceExportRow:
+      type: object
+      required:
+        - wallet
+        - balance_rtc
+        - is_founder
+        - kind
+        - last_activity
+      properties:
+        wallet:
+          type: string
+        balance_rtc:
+          type: number
+          format: double
+          nullable: true
+          description: RTC balance, or null when a stored balance is null.
+        is_founder:
+          type: boolean
+        kind:
+          type: string
+          enum: [native, hosted_handle, bcn]
+        last_activity:
+          type: integer
+          nullable: true
+          description: Latest ledger Unix timestamp, or null when unavailable.
+
+    BalanceExportResponse:
+      type: object
+      required: [ok, count, total, limit, offset, epoch, balances]
+      properties:
+        ok:
+          type: boolean
+        count:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          minimum: 0
+        epoch:
+          type: integer
+          nullable: true
+        balances:
+          type: array
+          items:
+            $ref: '#/components/schemas/BalanceExportRow'
 
     NodeInfo:
       type: object
