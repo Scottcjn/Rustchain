@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="1200" viewBox="0 0 960 1200" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#161b22"/>
+    </linearGradient>
+    <linearGradient id="era1" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#8b5cf6"/><stop offset="1" stop-color="#6d28d9"/>
+    </linearGradient>
+    <linearGradient id="era2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="era3" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f59e0b"/><stop offset="1" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="era4" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ef4444"/><stop offset="1" stop-color="#b91c1c"/>
+    </linearGradient>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#9ca3af"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="1200" fill="url(#bg)"/>
+
+  <text x="480" y="64" text-anchor="middle" font-size="34" font-weight="bold" fill="#f9fafb">Proof-of-Antiquity in 60 Seconds</text>
+  <text x="480" y="98" text-anchor="middle" font-size="16" fill="#9ca3af">RustChain consensus — why a 2002 PowerMac can out-vote a 2026 server</text>
+
+  <!-- Big equation -->
+  <rect x="180" y="130" width="600" height="70" rx="12" fill="#1f2937" stroke="#374151"/>
+  <text x="480" y="174" text-anchor="middle" font-size="26" font-weight="bold" fill="#fbbf24">1 CPU = 1 vote, weighted by age</text>
+
+  <!-- Flow: attest -->
+  <rect x="60" y="250" width="260" height="110" rx="12" fill="#1f2937" stroke="#4b5563"/>
+  <text x="190" y="286" text-anchor="middle" font-size="18" font-weight="bold" fill="#f9fafb">1. Attest</text>
+  <text x="190" y="314" text-anchor="middle" font-size="13" fill="#d1d5db">Your miner announces itself</text>
+  <text x="190" y="334" text-anchor="middle" font-size="13" fill="#d1d5db">and signs with its wallet key</text>
+
+  <line x1="320" y1="305" x2="395" y2="305" stroke="#9ca3af" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- Flow: fingerprint -->
+  <rect x="400" y="230" width="500" height="150" rx="12" fill="#1f2937" stroke="#4b5563"/>
+  <text x="650" y="262" text-anchor="middle" font-size="18" font-weight="bold" fill="#f9fafb">2. Hardware fingerprint — 6 checks</text>
+  <text x="650" y="290" text-anchor="middle" font-size="13" fill="#d1d5db">CPU model &amp; family · microcode behavior · timing properties</text>
+  <text x="650" y="310" text-anchor="middle" font-size="13" fill="#d1d5db">platform entropy · instruction quirks · cache/FPU behavior</text>
+  <text x="650" y="340" text-anchor="middle" font-size="13" fill="#93c5fd">Binds one vote to one physical machine → Sybil resistance</text>
+  <text x="650" y="362" text-anchor="middle" font-size="13" fill="#93c5fd">and <tspan font-weight="bold">dates</tspan> the silicon it is running on</text>
+
+  <line x1="480" y1="380" x2="480" y2="425" stroke="#9ca3af" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- Flow: multiplier -->
+  <rect x="180" y="430" width="600" height="80" rx="12" fill="#1f2937" stroke="#4b5563"/>
+  <text x="480" y="462" text-anchor="middle" font-size="18" font-weight="bold" fill="#f9fafb">3. Antiquity multiplier sets reward weight</text>
+  <text x="480" y="490" text-anchor="middle" font-size="13" fill="#d1d5db">older, verifiably real hardware earns more per block</text>
+
+  <!-- Era bars -->
+  <g font-size="14">
+    <text x="70" y="572" fill="#f9fafb" font-weight="bold">486 / early Pentium (1990s)</text>
+    <rect x="70" y="582" width="760" height="34" rx="6" fill="url(#era1)"/>
+    <text x="822" y="605" fill="#f9fafb" font-weight="bold" text-anchor="start">highest</text>
+
+    <text x="70" y="652" fill="#f9fafb" font-weight="bold">PowerPC G4 (2002)</text>
+    <rect x="70" y="662" width="570" height="34" rx="6" fill="url(#era2)"/>
+    <text x="652" y="685" fill="#f9fafb" font-weight="bold" text-anchor="start">≈ 2.5×</text>
+
+    <text x="70" y="732" fill="#f9fafb" font-weight="bold">Modern x86 server</text>
+    <rect x="70" y="742" width="183" height="34" rx="6" fill="url(#era3)"/>
+    <text x="265" y="765" fill="#f9fafb" font-weight="bold" text-anchor="start">≈ 0.8×</text>
+
+    <text x="70" y="812" fill="#f9fafb" font-weight="bold">Cloud VM / emulator</text>
+    <rect x="70" y="822" width="40" height="34" rx="6" fill="url(#era4)"/>
+    <text x="122" y="845" fill="#f9fafb" font-weight="bold" text-anchor="start">≈ 0× — fails behavioral checks</text>
+  </g>
+
+  <!-- Why VMs lose -->
+  <rect x="60" y="895" width="840" height="120" rx="12" fill="#1f2937" stroke="#4b5563"/>
+  <text x="80" y="930" font-size="17" font-weight="bold" fill="#f9fafb">Why can't a VM fake an old CPU?</text>
+  <text x="80" y="958" font-size="13.5" fill="#d1d5db">Vintage silicon has undocumented instruction timings, cache and FPU quirks.</text>
+  <text x="80" y="980" font-size="13.5" fill="#d1d5db">Emulators approximate them loosely — attestation timing checks catch the gap.</text>
+  <text x="80" y="1002" font-size="13.5" fill="#fca5a5">Emulating old hardware is easy. <tspan font-weight="bold">Verifiably</tspan> emulating it is not.</text>
+
+  <!-- Get started -->
+  <rect x="60" y="1050" width="840" height="110" rx="12" fill="#052e16" stroke="#166534"/>
+  <text x="80" y="1086" font-size="17" font-weight="bold" fill="#86efac">Start mining</text>
+  <text x="80" y="1112" font-size="15" fill="#d1fae5" font-family="ui-monospace, Menlo, monospace">pip install clawrtc &amp;&amp; clawrtc wallet create &amp;&amp; clawrtc start</text>
+  <text x="80" y="1140" font-size="13" fill="#6ee7b7">github.com/Scottcjn/Rustchain · rustchain.org</text>
+</svg>
