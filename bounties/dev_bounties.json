@@ -1,11 +1,17 @@
 {
+    "status": "closed",
+    "closed_on": "2026-10-02",
+    "notice": "Every bounty in this file is closed and kept for history only. None can be claimed and no reward listed here is payable. The only live bounty list is https://github.com/Scottcjn/rustchain-bounties/issues",
+    "live_bounties": "https://github.com/Scottcjn/rustchain-bounties/issues",
     "bounties": [
         {
             "bounty_id": "bounty_dos_port",
             "title": "MS-DOS Validator Port",
             "description": "Create a RustChain validator client that runs on real-mode DOS (FreeDOS/PC-DOS/MS-DOS). Must read BIOS date and generate entropy.",
             "reward": "Uber Dev Badge + RUST 500",
-            "status": "Open",
+            "status": "closed",
+            "closed_on": "2026-10-02",
+            "note": "Closed. This legacy listing is no longer offered and cannot be claimed; the reward shown is historical. The only live bounty list is https://github.com/Scottcjn/rustchain-bounties/issues",
             "requirements": [
                 "Compatible with MS-DOS 6.x+",
                 "Outputs proof_of_antiquity.json to FAT filesystem",
@@ -17,7 +23,9 @@
             "title": "Classic Mac OS 7.5.x Validator",
             "description": "Build a validator utility that runs under System 7.5 using Toolbox or THINK C. Must parse system clock and Finder files.",
             "reward": "Uber Dev Badge + RUST 750",
-            "status": "Open",
+            "status": "closed",
+            "closed_on": "2026-10-02",
+            "note": "Closed. This legacy listing is no longer offered and cannot be claimed; the reward shown is historical. The only live bounty list is https://github.com/Scottcjn/rustchain-bounties/issues",
             "requirements": [
                 "Runs under Mac OS 7.5\u20139.1",
                 "Captures System Folder timestamp",
@@ -29,7 +37,9 @@
             "title": "Win3.1 Progman Validator",
             "description": "Write a validator that runs under Windows 3.1 with a Program Manager interface. Must perform entropy and display scores.",
             "reward": "Uber Dev Badge + RUST 600",
-            "status": "Open",
+            "status": "closed",
+            "closed_on": "2026-10-02",
+            "note": "Closed. This legacy listing is no longer offered and cannot be claimed; the reward shown is historical. The only live bounty list is https://github.com/Scottcjn/rustchain-bounties/issues",
             "requirements": [
                 "Executable as 16-bit Win app",
                 "Graphical score screen",
@@ -41,7 +51,9 @@
             "title": "BeOS / Haiku Native Validator",
             "description": "Build a native BeOS or Haiku application that runs validator logic and outputs rewards.",
             "reward": "Uber Dev Badge + RUST 400",
-            "status": "Open",
+            "status": "closed",
+            "closed_on": "2026-10-02",
+            "note": "Closed. This legacy listing is no longer offered and cannot be claimed; the reward shown is historical. The only live bounty list is https://github.com/Scottcjn/rustchain-bounties/issues",
             "requirements": [
                 "Compatible with BeOS R5 or Haiku",
                 "C++ Tracker-based GUI",
@@ -53,7 +65,9 @@
             "title": "RustChain Web Explorer \u2013 Keeper Faucet Edition",
             "description": "Develop a web-based blockchain explorer for RustChain. Must display blocks, validator info, NFT badge unlocks, and include a faucet interface to reward Keepers.",
             "reward": "Uber Dev Badge + RUST 1000",
-            "status": "Open",
+            "status": "closed",
+            "closed_on": "2026-10-02",
+            "note": "Closed. This legacy listing is no longer offered and cannot be claimed; the reward shown is historical. The only live bounty list is https://github.com/Scottcjn/rustchain-bounties/issues",
             "requirements": [
                 "Explorer must display block data and validator scores",
                 "Real-time or scheduled refresh via node RPC or JSON file",
@@ -67,7 +81,9 @@
             "title": "Relic Lore Scribe",
             "description": "Contribute original lore entries and emotional resonance narratives for legacy hardware, badges, or validators within the RustChain ecosystem. Help shape the voice of the chain.",
             "reward": "Flamekeeper Lore Badge + RUST 350",
-            "status": "Open",
+            "status": "closed",
+            "closed_on": "2026-10-02",
+            "note": "Closed. This legacy listing is no longer offered and cannot be claimed; the reward shown is historical. The only live bounty list is https://github.com/Scottcjn/rustchain-bounties/issues",
             "requirements": [
                 "Write original lore for at least 5 existing or proposed relic badges",
                 "Lore must include emotional resonance, symbolic metaphors, and historical callbacks",

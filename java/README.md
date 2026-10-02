@@ -420,7 +420,7 @@ MIT License - see [LICENSE](../LICENSE) for details.
 - [RustChain Main Repository](https://github.com/Scottcjn/Rustchain)
 - [Proof of Antiquity Specification](../rips/docs/RIP-0001-proof-of-antiquity.md)
 - [Contributing Guide](../CONTRIBUTING.md)
-- [Bounty Program](../bounties/dev_bounties.json)
+- [Bounty Program](https://github.com/Scottcjn/rustchain-bounties/issues)
 
 ---
 
