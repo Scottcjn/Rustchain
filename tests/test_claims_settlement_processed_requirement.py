@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """
 Unit tests verifying that process_claims_batch requires all claims in a batch
 to be successfully settled before returning processed = True.
