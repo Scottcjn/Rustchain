@@ -284,9 +284,9 @@ VINTAGE_PROFILES = {
 - Block time adjusted for slower hardware
 
 ## Evidence
-- [Photo](./evidence/photo.jpg)
-- [Screenshot](./evidence/screenshot.png)
-- [Attestation Log](./evidence/attestation.log)
+- `evidence/photo.jpg` (timestamped hardware photo)
+- `evidence/screenshot.png` (miner benchmark output)
+- `evidence/attestation.log` (server attestation log)
 
 ## Wallet
 RTC1VintagePentiumIIWallet123456789
