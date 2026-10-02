@@ -1,0 +1,10 @@
+[Unit]
+Description=Every 10 minutes: keep this replica equal to node 1's ledger
+
+[Timer]
+OnCalendar=*:07/10
+Persistent=true
+Unit=rustchain-replica-pull.service
+
+[Install]
+WantedBy=timers.target

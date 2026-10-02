@@ -1,0 +1,10 @@
+[Unit]
+Description=Every 10 minutes: node 2 must follow node 1
+
+[Timer]
+OnCalendar=*:03/10
+Persistent=true
+Unit=rustchain-follower-check.service
+
+[Install]
+WantedBy=timers.target

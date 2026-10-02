@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Fails if node 2 serves a RustChain ledger route itself instead of redirecting to node 1 (the ledger of record).
+# Set ALERT_EMAIL in the unit to get mail on a state change. Status: /var/lib/rustchain-follower/status.json
+set -uo pipefail
+D=/var/lib/rustchain-follower; mkdir -p $D
+loc() { curl -sk -m 12 -o /dev/null -w '%{http_code} %{redirect_url}' "$@"; }
+PROBLEMS=()
+chk() { [ "$2" = "$3" ] || PROBLEMS+=("$1: got '$3', expected '$2'"); }
+chk "GET /epoch"            "307 https://50.28.86.131/epoch"            "$(loc https://127.0.0.1/epoch)"
+chk "GET /api/miners"       "307 https://50.28.86.131/api/miners"       "$(loc https://127.0.0.1/api/miners)"
+chk "POST /attest/submit"   "307 https://50.28.86.131/attest/submit"    "$(loc -X POST -H 'Content-Type: application/json' -d '{}' https://127.0.0.1/attest/submit)"
+chk "POST /wallet/transfer/signed" "307 https://50.28.86.131/wallet/transfer/signed" "$(loc -X POST -H 'Content-Type: application/json' -d '{}' https://127.0.0.1/wallet/transfer/signed)"
+chk "GET :8088/epoch"       "307 http://50.28.86.131:8088/epoch"        "$(loc http://127.0.0.1:8088/epoch)"
+# Informational only: has this node's own (retired) ledger been written since the last run?
+FP=$(sqlite3 -readonly /root/rustchain/rustchain_v2.db "SELECT (SELECT COUNT(*) FROM balances)||':'||(SELECT COALESCE(SUM(amount_i64),0) FROM balances)||':'||(SELECT COALESCE(MAX(id),0) FROM pending_ledger)||':'||(SELECT COALESCE(MAX(id),0) FROM ledger);" 2>/dev/null)
+[ -n "$FP" ] || PROBLEMS+=("could not read this node's local ledger fingerprint (sqlite3 failed)")
+UFW=$(ufw status 2>/dev/null) || PROBLEMS+=("could not read the firewall rules (ufw status failed)")
+ALLOWED=$(printf '%s\n' "$UFW" | grep -E '^8099' | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]+)?' | sort | tr '\n' ' ')
+for ip in $ALLOWED; do case "$ip" in 127.0.0.1|50.28.86.131|50.28.86.153|209.194.25.46|209.194.25.86|136.239.27.176|35.192.216.178|100.64.0.0/10) ;; *) PROBLEMS+=("unexpected address allowed straight to :8099: $ip");; esac; done
+chk "GET /pending/list"     "307 https://50.28.86.131/pending/list"     "$(loc https://127.0.0.1/pending/list)"
+chk "GET /balance/x"        "307 https://50.28.86.131/balance/x"        "$(loc https://127.0.0.1/balance/x)"
+chk "GET /"                 "307 https://50.28.86.131/"                 "$(loc https://127.0.0.1/)"
+PREV=$(cat $D/local_ledger_fingerprint 2>/dev/null); [ -n "$FP" ] && echo "$FP" > $D/local_ledger_fingerprint
+CHANGED=false; [ -n "$PREV" ] && [ -n "$FP" ] && [ "$PREV" != "$FP" ] && CHANGED=true
+NOW=$(date -u +%FT%TZ)
+if [ ${#PROBLEMS[@]} -eq 0 ]; then STATE=ok; else STATE=FAILING; fi
+python3 - "$D/status.json" "$NOW" "$STATE" "$CHANGED" "$FP" "${PROBLEMS[@]}" <<'PY'
+import json, sys
+path, now, state, changed, fp, *problems = sys.argv[1:]
+json.dump({"checked_at": now, "state": state, "ledger_of_record": "https://50.28.86.131",
+           "problems": problems, "local_ledger_changed_since_last_check": changed == "true",
+           "local_ledger_fingerprint": fp}, open(path, "w"), indent=1)
+PY
+echo "$STATE" > $D/state
+if [ "$STATE" != ok ]; then
+  logger -p daemon.err -t rustchain-follower "NODE 2 IS SERVING LEDGER ROUTES LOCALLY AGAIN: ${PROBLEMS[*]}"
+  if [ ! -e $D/notified ] && command -v mail >/dev/null 2>&1; then
+    printf 'Node 2 (50.28.86.153) should redirect every RustChain ledger route to node 1, and it is not:\n\n%s\n\nIts own database is a stale copy; anything it answers itself can disagree with node 1.\nCheck /etc/nginx/sites-enabled/rustchain-dashboard and rustchain-legacy (backups in /root/nginx_backups).\n' "$(printf '%s\n' "${PROBLEMS[@]}")" \
+      | mail -s "RustChain node 2 is no longer following node 1" "${ALERT_EMAIL:-root}" && touch $D/notified
+  fi
+  printf '%s\n' "${PROBLEMS[@]}"; exit 1
+fi
+rm -f $D/notified
+[ "$CHANGED" = true ] && logger -p daemon.warning -t rustchain-follower "node 2's retired local ledger changed since the last check ($PREV -> $FP)"
+echo "ok: node 2 redirects ledger routes to node 1"

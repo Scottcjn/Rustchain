@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Is this replica's ledger the same as node 1's? Exit 0 = yes (or at most one publish cycle behind), 1 = no.
+T=/opt/rustchain-replica/ledger_snapshot.py; D=/var/lib/rustchain-replica/current
+[ -s $D/ledger.db ] || { echo "no replica ledger installed"; exit 1; }
+MINE=$(python3 $T root --db $D/ledger.db) || exit 1
+python3 $T verify --db $D/ledger.db --manifest $D/manifest.json --pubkey /etc/rustchain-replica/publisher.pub >/dev/null || { echo "installed ledger does NOT match its signed manifest"; exit 1; }
+read -r SEQ AGE <<<"$(python3 -c 'import json,time; m=json.loads(json.load(open("'$D'/manifest.json"))["payload"]); print(m["sequence"], int(time.time()-m["created_at"]))')"
+THEIRS=$(curl -s -m 15 https://rustchain.org/state/manifest.json | python3 -c 'import json,sys; print(json.loads(json.load(sys.stdin)["payload"])["state_root"])' 2>/dev/null)
+echo "replica root  $MINE  (sequence $SEQ, snapshot taken ${AGE}s ago, signature ok)"
+echo "node 1 root   ${THEIRS:-unreachable}"
+if [ "$MINE" = "$THEIRS" ]; then echo "MATCH"; exit 0; fi
+if [ "$AGE" -lt 1500 ]; then echo "behind by one publish cycle (normal between :04 and :07)"; exit 0; fi
+echo "DIFFERENT and stale"; exit 1

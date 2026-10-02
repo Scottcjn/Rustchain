@@ -13,15 +13,16 @@ independently held, independently checkable copy of the ledger.
 - Your machine's public IP address added to the settlement node's snapshot
   allowlist. Ask a maintainer; the signed manifest is public, the snapshot
   files are served to known replicas.
-- The publisher's public key (`publisher.pub`). Get it from a maintainer over
-  a channel you trust, not from the same place you download snapshots.
+- The publisher's public key: `deploy/ledger-replication/publisher.pub` in this
+  repository (check it against a second source, such as a maintainer, if you
+  can; it is what your replica trusts).
 
 ## Install
 
 ```bash
 sudo mkdir -p /opt/rustchain-replica /etc/rustchain-replica /var/lib/rustchain-replica
 sudo install -m 755 tools/ledger_snapshot.py /opt/rustchain-replica/ledger_snapshot.py
-sudo install -m 644 publisher.pub /etc/rustchain-replica/publisher.pub
+sudo install -m 644 deploy/ledger-replication/publisher.pub /etc/rustchain-replica/publisher.pub
 
 # one pull by hand
 sudo python3 /opt/rustchain-replica/ledger_snapshot.py pull \
@@ -37,23 +38,16 @@ three hold.
 Run it on a timer, a few minutes after the publisher's schedule (`:04` past
 every ten minutes):
 
-```ini
-# /etc/systemd/system/rustchain-replica-pull.service
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/python3 /opt/rustchain-replica/ledger_snapshot.py pull --base-url https://rustchain.org/state/ --pubkey /etc/rustchain-replica/publisher.pub --dest-dir /var/lib/rustchain-replica
-
-# /etc/systemd/system/rustchain-replica-pull.timer
-[Timer]
-OnCalendar=*:07/10
-Persistent=true
-[Install]
-WantedBy=timers.target
+```bash
+sudo install -m 644 deploy/ledger-replication/replica/rustchain-replica-pull.service deploy/ledger-replication/replica/rustchain-replica-pull.timer /etc/systemd/system/
+sudo install -m 755 deploy/ledger-replication/replica/rustchain-replica-status /usr/local/bin/
+sudo systemctl daemon-reload && sudo systemctl enable --now rustchain-replica-pull.timer
 ```
 
 ## Check that you agree with the settlement node
 
 ```bash
+rustchain-replica-status        # prints both roots and MATCH, or do it by hand:
 python3 /opt/rustchain-replica/ledger_snapshot.py root --db /var/lib/rustchain-replica/current/ledger.db
 curl -s https://rustchain.org/state/manifest.json | python3 -c 'import json,sys; print(json.loads(json.load(sys.stdin)["payload"])["state_root"])'
 ```

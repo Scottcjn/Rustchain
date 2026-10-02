@@ -1,0 +1,8 @@
+[Unit]
+Description=Check that node 2 redirects RustChain ledger routes to node 1
+After=nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/rustchain-follower-check
+SyslogIdentifier=rustchain-follower
