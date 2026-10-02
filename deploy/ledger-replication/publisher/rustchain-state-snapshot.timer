@@ -1,0 +1,10 @@
+[Unit]
+Description=Every 10 minutes: publish the ledger state root
+
+[Timer]
+OnCalendar=*:04/10
+Persistent=true
+Unit=rustchain-state-snapshot.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=Pull and verify node 1's signed RustChain ledger snapshot
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/rustchain-replica/ledger_snapshot.py pull --base-url https://rustchain.org/state/ --pubkey /etc/rustchain-replica/publisher.pub --dest-dir /var/lib/rustchain-replica
+Nice=10
+TimeoutStartSec=600
+SyslogIdentifier=rustchain-replica

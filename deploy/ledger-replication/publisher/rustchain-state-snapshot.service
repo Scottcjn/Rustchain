@@ -1,0 +1,12 @@
+[Unit]
+Description=Publish a signed RustChain ledger snapshot and state root
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/rustchain-state/ledger_snapshot.py snapshot --db /root/rustchain/rustchain_v2.db --out-dir /var/lib/rustchain-state --key /etc/rustchain-state/publisher.key --node node1
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=300
+SyslogIdentifier=rustchain-state
