@@ -284,9 +284,7 @@ VINTAGE_PROFILES = {
 - Block time adjusted for slower hardware
 
 ## Evidence
-- [Photo](./evidence/photo.jpg)
-- [Screenshot](./evidence/screenshot.png)
-- [Attestation Log](./evidence/attestation.log)
+_Original evidence artifacts (photo, screenshot, attestation log) were not bundled with this repository._
 
 ## Wallet
 RTC1VintagePentiumIIWallet123456789
