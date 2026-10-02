@@ -959,15 +959,22 @@ def process_claims_batch(
     # NOTE: Stale verifying claims are flagged for manual review above.
     # They are NOT auto-approved — that was a fund-theft vector.
     
-    result["processed"] = True
+    all_settled = (settled_count == len(claims_to_process)) and (settled_count > 0)
+    result["processed"] = all_settled
     result["claims_count"] = len(claims_to_process)
     result["total_amount_urtc"] = total_amount
     result["total_amount_rtc"] = total_amount / URTC_PER_RTC
     result["transaction_hash"] = tx_hash
     result["success_count"] = settled_count
+    result["failed_count"] = len(claims_to_process) - settled_count
+    if not all_settled:
+        result["error"] = (
+            f"Settlement incomplete: only {settled_count}/{len(claims_to_process)} "
+            f"claims updated to settled"
+        )
     
     print(f"[SETTLEMENT] Batch {batch_id} processed:")
-    print(f"  Claims: {settled_count}")
+    print(f"  Claims: {settled_count}/{len(claims_to_process)}")
     print(f"  Total: {total_amount / URTC_PER_RTC:.6f} RTC")
     print(f"  TX Hash: {tx_hash}")
     
