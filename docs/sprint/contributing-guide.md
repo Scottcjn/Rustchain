@@ -122,7 +122,8 @@ RustChain maintains a bounty board for funded issues. Claim a bounty by solving 
 ### Finding Bounties
 
 - **GitHub Issues** tagged `bounty` on the main repo
-- **`bounties/dev_bounties.json`** — machine-readable list with amounts and status
+- **[rustchain-bounties issues](https://github.com/Scottcjn/rustchain-bounties/issues)** — the only live bounty list
+- `bounties/dev_bounties.json` is a closed legacy list kept for history; nothing in it can be claimed
 - **Discord `#bounties` channel** — announcements for new and expiring bounties
 
 ### Claiming a Bounty
