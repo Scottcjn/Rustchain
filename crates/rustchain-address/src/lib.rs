@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Dependency-free parsing, validation, and normalization for RustChain RTC addresses.
 //!
 //! RustChain wallet addresses seen in the ecosystem use an `RTC` prefix followed by
