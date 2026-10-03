@@ -5208,6 +5208,13 @@ def validate_fingerprint_data(
     claimed_arch = claimed_arch.lower()
 
     # If claiming PowerPC, check for x86-specific signals in fingerprint
+    if claimed_arch in _X86_VINTAGE_REWARD_ARCHES:
+        derived = _derive_enroll_weight_device(
+            {"device_family": "x86", "device_arch": claimed_arch}, fingerprint, fingerprint_passed=True, measurement_report_verified=True
+        )
+        if derived.get("device_arch") != claimed_arch:
+            return False, f"x86_vintage_corroboration_failed:claims_{claimed_arch}"
+
     if claimed_arch in POWERPC_ARCHES:
         # FIX #1147: Check for x86 SIMD features on PowerPC claims (defensive type checking)
         simd_check = checks.get("simd_identity")
