@@ -12,6 +12,7 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 from .config import Config
 from .github_client import GitHubClient, RateLimitExceeded
+from .article_checker import ArticleChecker
 from .models import (
     ClaimComment,
     ClaimStatus,
@@ -234,6 +235,14 @@ class BountyVerifier:
                 self.config.github.owner,
             )
             
+            if star_count == 0:
+                return VerificationCheck(
+                    name="GitHub Stars",
+                    status=VerificationStatus.FAILED,
+                    message=f"@{username} has starred 0 repos (minimum required: {self.config.min_star_count})",
+                    details={"star_count": 0, "required": self.config.min_star_count},
+                )
+
             passed = star_count >= self.config.min_star_count
             
             return VerificationCheck(
@@ -388,6 +397,35 @@ class BountyVerifier:
                             status=VerificationStatus.PASSED,
                             message=f"URL is live (status {resp.status})",
                         ))
+
+                        # Quality & word count check if domain is blog/article
+                        if getattr(self.config.url_check, "check_article_quality", False) and any(d in url.lower() for d in ("dev.to", "medium.com", "substack.com", "hashnode")):
+                            checker = ArticleChecker(timeout=self.config.url_check.timeout)
+                            passed, details = checker.check_article(url)
+                            word_count = int(details.get("word_count", 0))
+                            min_words = getattr(self.config.url_check, "min_article_words", 250)
+
+                            if not passed:
+                                checks.append(VerificationCheck(
+                                    name=f"Article Quality: {url[:35]}...",
+                                    status=VerificationStatus.FAILED,
+                                    message=f"Article failed verification: {details.get('error', 'unknown')}",
+                                    details=details,
+                                ))
+                            elif word_count < min_words:
+                                checks.append(VerificationCheck(
+                                    name=f"Article Quality: {url[:35]}...",
+                                    status=VerificationStatus.FAILED,
+                                    message=f"Article too short: {word_count} words (minimum required: {min_words})",
+                                    details=details,
+                                ))
+                            else:
+                                checks.append(VerificationCheck(
+                                    name=f"Article Quality: {url[:35]}...",
+                                    status=VerificationStatus.PASSED,
+                                    message=f"Article verified: {word_count} words, mentions RustChain/RTC",
+                                    details=details,
+                                ))
                     else:
                         checks.append(VerificationCheck(
                             name=f"URL: {url[:50]}",
@@ -429,20 +467,36 @@ class BountyVerifier:
                 message="Duplicate check disabled",
             )
         
-        # Find previous claims from same user
+        # Find previous claims from same user or sharing the same wallet/target URL
         previous_claims = []
+        matching_wallet_claims = []
+
         for comment in all_comments:
             if comment.id >= claim.id:
                 continue  # Skip current and future comments
-            if comment.user_id != claim.user_id:
-                continue
             
             # Check if this was a claim
             if self.is_claim_comment(comment):
-                # Check if it was already paid
                 is_paid = self.is_paid_comment(comment)
-                previous_claims.append((comment, is_paid))
+                
+                # Check same user
+                if comment.user_id == claim.user_id:
+                    previous_claims.append((comment, is_paid))
+                
+                # Check cross-user wallet sharing (anti-sockpuppet / multi-claim detection)
+                if claim.wallet_address and self._extract_wallet(comment.body) == claim.wallet_address:
+                    if comment.user_id != claim.user_id:
+                        matching_wallet_claims.append((comment, is_paid))
         
+        if matching_wallet_claims:
+            prev_c, _ = matching_wallet_claims[0]
+            return VerificationCheck(
+                name="Duplicate Check",
+                status=VerificationStatus.FAILED,
+                message=f"Wallet {claim.wallet_address} was already submitted by another user (@{prev_c.user_login} in #{prev_c.id})",
+                details={"colliding_claim_id": prev_c.id, "colliding_user": prev_c.user_login},
+            )
+
         if not previous_claims:
             return VerificationCheck(
                 name="Duplicate Check",
@@ -460,6 +514,15 @@ class BountyVerifier:
                     details={"previous_claim_id": prev_claim.id, "previous_claim_url": prev_claim.html_url},
                 )
         
+        # Flag multiple unadjudicated claims as warning / duplicate review
+        if len(previous_claims) >= 2:
+            return VerificationCheck(
+                name="Duplicate Check",
+                status=VerificationStatus.FAILED,
+                message=f"Duplicate submission: user already posted {len(previous_claims)} pending claim(s) on this issue",
+                details={"pending_claims": [c[0].id for c in previous_claims]},
+            )
+
         return VerificationCheck(
             name="Duplicate Check",
             status=VerificationStatus.PASSED,
