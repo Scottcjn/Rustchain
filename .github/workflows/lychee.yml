@@ -14,7 +14,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Check relative links
+
+      # Blocking and deterministic: this step never touches the network, so
+      # every relative link and #fragment in README.md and the top-level docs
+      # must resolve to a file/anchor that actually exists, or the job fails.
+      - name: Enforce relative links (README + top-level docs)
+        run: python3 scripts/check_links.py *.md
+
+      # Informational only: external URLs can be flaky or rate-limited, so we
+      # report them in the job summary without blocking CI.
+      - name: Check all links incl. external URLs (informational)
         uses: lycheeverse/lychee-action@v2
         with:
           fail: false   # report broken links in the job summary but do not block CI (whole-repo doc check)
@@ -39,6 +48,3 @@ jobs:
             -- './**/*.md' './**/*.html'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Fail on broken relative links
-        if: failure()
-        run: exit 1
