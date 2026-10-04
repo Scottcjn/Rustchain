@@ -51,6 +51,16 @@ NODE_URL = "https://rustchain.org"  # Use HTTPS via nginx
 BLOCK_TIME = 600  # 10 minutes
 NETWORK_RETRY_ATTEMPTS = 3
 NETWORK_RETRY_BASE_DELAY = 2
+
+# Attestation retry policy. The node allows 10 fingerprint submissions per
+# hardware ID per hour and answers 409 REPLAY_ATTACK_BLOCKED (with
+# details.retry_after_seconds) once that is used up. A failed attestation used
+# to be retried on every 60 s enroll cycle regardless.
+ATTESTATION_TTL = 580            # local re-attest interval (s)
+ATTEST_BACKOFF_BASE = 30         # first retry after a failed attestation (s)
+ATTEST_BACKOFF_MAX = 900         # cap for exponential backoff (s)
+ATTEST_RETRY_AFTER_MAX = 3600    # longest node retry hint we honour (s)
+ATTEST_MAX_PER_HOUR = 8          # local budget, below the node's 10/hour
 MICRO_UNITS_PER_RTC = 1_000_000
 
 # TLS verification: use pinned cert if available, else system CA bundle
@@ -168,6 +178,34 @@ def _wallet_balance_rtc(data):
     return None
 
 
+def _retry_after_from_response(resp):
+    """Seconds the node asked us to wait (Retry-After header or JSON hint), or None."""
+    candidates = []
+    try:
+        candidates.append(resp.headers.get("Retry-After"))
+    except Exception:
+        pass
+    try:
+        body = resp.json()
+    except Exception:
+        body = None
+    if isinstance(body, dict):
+        for container in (body.get("details"), body.get("data"), body):
+            if isinstance(container, dict):
+                candidates.append(container.get("retry_after_seconds"))
+                candidates.append(container.get("retry_after"))
+    for value in candidates:
+        if isinstance(value, bool) or value is None:
+            continue
+        try:
+            seconds = float(value)
+        except (TypeError, ValueError):
+            continue
+        if seconds > 0:
+            return seconds
+    return None
+
+
 def _request_with_network_retry(method, url, action, retries=NETWORK_RETRY_ATTEMPTS,
                                 base_delay=NETWORK_RETRY_BASE_DELAY, sleep_func=None,
                                 **kwargs):
@@ -250,6 +288,12 @@ def get_hardware_serial(system=None):
 
 
 class LocalMiner:
+    # Attestation backoff state. Class-level defaults keep helpers working on
+    # instances built without __init__ (tests do this); __init__ sets them too.
+    _attest_failures = 0
+    _next_attest_at = 0.0
+    _last_attest_retry_after = None
+
     def __init__(self, wallet=None, wart_address=None, wart_pool=None,
                  bzminer_path=None, manage_bzminer=False, verbose=False, show_payload=False,
                  persist_key=True):
@@ -257,6 +301,10 @@ class LocalMiner:
         self.hw_info = {}
         self.enrolled = False
         self.attestation_valid_until = 0
+        self._attest_failures = 0
+        self._next_attest_at = 0.0
+        self._attest_submissions = []  # wall-clock times of /attest/submit calls
+        self._last_attest_retry_after = None
         self.last_entropy = {}
         self.fingerprint_data = {}
 
@@ -589,6 +637,7 @@ class LocalMiner:
     def attest(self):
         """Hardware attestation"""
         print(f"\n🔐 [{datetime.now().strftime('%H:%M:%S')}] Attesting...")
+        self._last_attest_retry_after = None
 
         self._get_hw_info()
 
@@ -605,6 +654,7 @@ class LocalMiner:
                 return False
             if resp.status_code != 200:
                 print(f"❌ Challenge failed: {resp.status_code}")
+                self._last_attest_retry_after = _retry_after_from_response(resp)
                 return False
 
             challenge = resp.json()
@@ -673,6 +723,7 @@ class LocalMiner:
                 )
 
         try:
+            self._attest_submission_log().append(time.time())
             resp = self._post(
                 "/attest/submit",
                 "submitting attestation",
@@ -686,7 +737,7 @@ class LocalMiner:
             if resp.status_code == 200:
                 result = resp.json()
                 if result.get("ok"):
-                    self.attestation_valid_until = time.time() + 580
+                    self.attestation_valid_until = time.time() + ATTESTATION_TTL
                     print(f"[PASS] Attestation accepted!")
                     print(f"   CPU: {self.hw_info['cpu']}")
                     print(f"   Arch: {self.hw_info.get('machine', 'x86_64')}/{self.hw_info.get('arch', 'modern')}")
@@ -717,17 +768,60 @@ class LocalMiner:
                     print(f"❌ Rejected: {result}")
             else:
                 print(f"❌ HTTP {resp.status_code}: {resp.text[:200]}")
+                self._last_attest_retry_after = _retry_after_from_response(resp)
 
         except Exception as e:
             print(f"❌ Error: {e}")
 
         return False
 
+    def _attest_submission_log(self):
+        """Wall-clock times of recent /attest/submit calls (per instance)."""
+        return self.__dict__.setdefault("_attest_submissions", [])
+
+    def _attestation_allowed(self, now=None):
+        """Gate every attestation attempt on backoff and the hourly budget."""
+        now = time.time() if now is None else now
+        if now < self._next_attest_at:
+            print(f"⏳ Attestation backoff: next attempt in {int(self._next_attest_at - now)}s")
+            return False
+        recent = [t for t in self._attest_submission_log() if now - t < 3600]
+        self._attest_submissions = recent
+        if len(recent) >= ATTEST_MAX_PER_HOUR:
+            self._next_attest_at = recent[0] + 3600
+            print(f"⏳ Attestation budget ({ATTEST_MAX_PER_HOUR}/hour) used; "
+                  f"next attempt in {int(self._next_attest_at - now)}s")
+            return False
+        return True
+
+    def _record_attest_outcome(self, ok, now=None):
+        """Reset backoff on success; otherwise schedule the next attempt."""
+        now = time.time() if now is None else now
+        if ok:
+            self._attest_failures = 0
+            self._next_attest_at = 0.0
+            return
+        self._attest_failures += 1
+        delay = min(ATTEST_BACKOFF_MAX, ATTEST_BACKOFF_BASE * (2 ** (self._attest_failures - 1)))
+        retry_after = self._last_attest_retry_after
+        if retry_after:
+            delay = max(delay, min(retry_after, ATTEST_RETRY_AFTER_MAX))
+        self._next_attest_at = now + delay
+        print(f"⏳ Attestation failed ({self._attest_failures} in a row); next attempt in {int(delay)}s")
+
+    def try_attest(self):
+        """Attest if backoff and the hourly budget allow it. Returns True on success."""
+        if not self._attestation_allowed():
+            return False
+        ok = self.attest()
+        self._record_attest_outcome(ok)
+        return ok
+
     def enroll(self):
         """Enroll in epoch"""
         if time.time() >= self.attestation_valid_until:
             print(f"📝 Attestation expired, re-attesting...")
-            if not self.attest():
+            if not self.try_attest():
                 return False
 
         print(f"\n📝 [{datetime.now().strftime('%H:%M:%S')}] Enrolling...")
