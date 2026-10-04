@@ -1,6 +1,7 @@
 """
-RustChain x402 Integration — Swap Info + Coinbase Wallet Linking
-Adds /wallet/swap-info and /wallet/link-coinbase endpoints.
+RustChain x402 Integration — Coinbase Wallet Linking
+Adds the /wallet/link-coinbase endpoint. /wallet/swap-info is retired: the
+wRTC bridge is disabled and the route answers 410 Gone with a notice.
 
 Usage in rustchain server:
     import rustchain_x402
@@ -16,23 +17,20 @@ from flask import jsonify, request
 
 log = logging.getLogger("rustchain.x402")
 
-# Import shared config
-try:
-    import sys
-    sys.path.insert(0, "/root/shared")
-    from x402_config import SWAP_INFO
-    X402_CONFIG_OK = True
-except ImportError:
-    log.warning("x402_config not found — using inline swap info")
-    X402_CONFIG_OK = False
-    SWAP_INFO = {
-        "wrtc_contract": "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6",
-        "usdc_contract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-        "aerodrome_pool": "0x4C2A0b915279f0C22EA766D58F9B815Ded2d2A3F",
-        "swap_url": "https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6",
-        "network": "Base (eip155:8453)",
-        "reference_price_usd": 0.10,
-    }
+# /wallet/swap-info used to publish DEX pool and wrapped-token contract
+# addresses. The wRTC bridge is disabled: RTC is earned for contributions and
+# spent on services inside the ecosystem, with no off-ramp. The route stays
+# registered so old clients get an explicit 410 instead of a bare 404.
+SWAP_INFO_RETIRED = {
+    "ok": False,
+    "error": "gone",
+    "code": "WRTC_BRIDGE_DISABLED",
+    "message": (
+        "The wRTC bridge is disabled. RTC is earned for contributions and spent "
+        "on services in the RustChain ecosystem; there is no off-ramp."
+    ),
+    "docs": "https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md",
+}
 
 
 COINBASE_MIGRATION = "ALTER TABLE balances ADD COLUMN coinbase_address TEXT DEFAULT NULL"
@@ -107,8 +105,11 @@ def init_app(app, db_path):
 
     @app.route("/wallet/swap-info", methods=["GET"])
     def wallet_swap_info():
-        """Returns Aerodrome pool info for USDC→wRTC swap guidance."""
-        return jsonify(SWAP_INFO)
+        """Retired: the wRTC bridge is disabled. Always 410 Gone."""
+        response = jsonify(SWAP_INFO_RETIRED)
+        response.status_code = 410
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     @app.route("/wallet/link-coinbase", methods=["PATCH", "POST"])
     def wallet_link_coinbase():

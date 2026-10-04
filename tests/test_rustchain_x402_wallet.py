@@ -95,3 +95,17 @@ def test_link_coinbase_preserves_valid_request(client):
     assert body["ok"] is True
     assert body["miner_id"] == "miner-1"
     assert body["coinbase_address"] == "0x1234567890123456789012345678901234567890"
+
+
+def test_swap_info_is_retired_with_410_notice(client):
+    response = client.get("/wallet/swap-info")
+
+    assert response.status_code == 410
+    assert response.headers["Cache-Control"] == "no-store"
+    body = response.get_json()
+    assert body["code"] == "WRTC_BRIDGE_DISABLED"
+    assert "there is no off-ramp" in body["message"]
+    assert body["docs"].endswith("/docs/EARN_AND_SPEND.md")
+    text = response.get_data(as_text=True).lower()
+    for term in ("aerodrome", "raydium", "dexscreener", "swap_url", "pool", "0x5683c105"):
+        assert term not in text
