@@ -79,37 +79,21 @@ def test_bridge_void_rejects_structured_reason(tmp_path, monkeypatch):
     assert resp.get_json()["error"] == "reason must be a string"
 
 
-def test_bridge_update_external_rejects_structured_hash_fields(tmp_path, monkeypatch):
+def test_bridge_update_external_is_retired(tmp_path, monkeypatch):
+    """The bridge-service callback answers 410 Gone: the wRTC bridge is disabled."""
     monkeypatch.setenv("RC_BRIDGE_API_KEY", "bridge-api-key")
     client = _make_client(tmp_path)
 
-    resp = client.post(
-        "/api/bridge/update-external",
-        headers={"X-API-Key": "bridge-api-key"},
-        json={
-            "tx_hash": {"hash": "abc"},
-            "external_tx_hash": "external-1",
-            "confirmations": 1,
-        },
-    )
+    for body in (
+        {"tx_hash": {"hash": "abc"}, "external_tx_hash": "external-1", "confirmations": 1},
+        {"tx_hash": "missing-transfer", "external_tx_hash": "external-1", "confirmations": ["one"]},
+    ):
+        resp = client.post(
+            "/api/bridge/update-external",
+            headers={"X-API-Key": "bridge-api-key"},
+            json=body,
+        )
 
-    assert resp.status_code == 400
-    assert resp.get_json()["error"] == "tx_hash must be a string"
-
-
-def test_bridge_update_external_rejects_malformed_confirmations(tmp_path, monkeypatch):
-    monkeypatch.setenv("RC_BRIDGE_API_KEY", "bridge-api-key")
-    client = _make_client(tmp_path)
-
-    resp = client.post(
-        "/api/bridge/update-external",
-        headers={"X-API-Key": "bridge-api-key"},
-        json={
-            "tx_hash": "missing-transfer",
-            "external_tx_hash": "external-1",
-            "confirmations": ["one"],
-        },
-    )
-
-    assert resp.status_code == 400
-    assert resp.get_json()["error"] == "confirmations must be an integer"
+        assert resp.status_code == 410
+        assert resp.headers["Cache-Control"] == "no-store"
+        assert resp.get_json()["code"] == "WRTC_BRIDGE_DISABLED"

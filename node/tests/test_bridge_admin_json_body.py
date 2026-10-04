@@ -3,8 +3,9 @@
 Regression test for issue #5766:
 Bridge admin callbacks crash on non-object JSON bodies.
 
-Verifies that POST /api/bridge/void and POST /api/bridge/update-external
-return HTTP 400 when given a JSON array body instead of a JSON object.
+Verifies that POST /api/bridge/void returns HTTP 400 when given a JSON array
+body instead of a JSON object. POST /api/bridge/update-external is retired
+(410 Gone) since the wRTC bridge was disabled.
 """
 import json
 import os
@@ -90,24 +91,16 @@ class TestBridgeVoidNonObjectJSON:
 
 
 class TestBridgeUpdateExternalNonObjectJSON:
-    """POST /api/bridge/update-external must reject non-object JSON bodies."""
+    """POST /api/bridge/update-external is retired (wRTC bridge disabled):
+    any body, well-formed or not, gets 410 Gone and never reaches parsing."""
 
-    def test_array_body_returns_400(self, client):
+    @pytest.mark.parametrize("raw", [json.dumps(["not", "an", "object"]), "null"])
+    def test_non_object_body_returns_410(self, client, raw):
         resp = client.post(
             '/api/bridge/update-external',
-            data=json.dumps(["not", "an", "object"]),
+            data=raw,
             content_type='application/json',
             headers={'X-API-Key': 'test-bridge-key'},
         )
-        assert resp.status_code == 400
-        body = resp.get_json()
-        assert 'error' in body
-
-    def test_null_body_returns_400(self, client):
-        resp = client.post(
-            '/api/bridge/update-external',
-            data='null',
-            content_type='application/json',
-            headers={'X-API-Key': 'test-bridge-key'},
-        )
-        assert resp.status_code == 400
+        assert resp.status_code == 410
+        assert resp.get_json()["code"] == "WRTC_BRIDGE_DISABLED"

@@ -1,4 +1,12 @@
 # SPDX-License-Identifier: MIT
+"""RIP-305 airdrop / bridge-lock routes after retirement.
+
+The wRTC airdrop has ended and the wRTC bridge is disabled. The public write
+routes (and public stats) answer 410 Gone with a JSON notice and never touch
+the database; the admin claim lookup and the lock status lookup stay as
+read-only record views. The AirdropV2 service methods are kept for history and
+are still covered directly below.
+"""
 
 import sqlite3
 
@@ -7,6 +15,44 @@ from flask import Flask
 
 from node.airdrop_v2 import AirdropV2, init_airdrop_routes
 
+ADMIN = "expected-admin"
+
+RETIRED_ROUTES = [
+    # (method, path, json body, expected notice code)
+    (
+        "post",
+        "/api/airdrop/eligibility",
+        {"github_username": "alice", "wallet_address": "wallet-1", "chain": "base"},
+        "AIRDROP_ENDED",
+    ),
+    (
+        "post",
+        "/api/airdrop/claim",
+        {
+            "github_username": "alice",
+            "wallet_address": "0x" + "a" * 40,
+            "chain": "base",
+            "tier": "contributor",
+        },
+        "AIRDROP_ENDED",
+    ),
+    ("get", "/api/airdrop/stats", None, "AIRDROP_ENDED"),
+    (
+        "post",
+        "/api/bridge/lock",
+        {
+            "from_address": "solana-source",
+            "to_address": "base-destination",
+            "from_chain": "solana",
+            "to_chain": "base",
+            "amount_wrtc": 1,
+        },
+        "WRTC_BRIDGE_DISABLED",
+    ),
+    ("post", "/api/bridge/lock/LOCK_ID/confirm", {"source_tx": "real-source-tx"}, "WRTC_BRIDGE_DISABLED"),
+    ("post", "/api/bridge/lock/LOCK_ID/release", {"dest_tx": "real-dest-tx"}, "WRTC_BRIDGE_DISABLED"),
+]
+
 
 def _make_client(tmp_path):
     db_path = tmp_path / "airdrop.db"
@@ -14,111 +60,142 @@ def _make_client(tmp_path):
     app = Flask(__name__)
     app.config["TESTING"] = True
     init_airdrop_routes(app, airdrop, str(db_path))
-    return app.test_client(), db_path
+    return app.test_client(), db_path, airdrop
 
 
-def _create_pending_lock(client, admin_key=None):
-    # Bridge lock creation is admin-gated (see require_admin_key in
-    # create_bridge_lock); callers that expect a successful 200 must supply
-    # the matching X-Admin-Key. Validation-error tests POST directly without a
-    # key because field validation runs before the auth check.
-    headers = {"X-Admin-Key": admin_key} if admin_key else {}
-    response = client.post(
-        "/api/bridge/lock",
-        headers=headers,
-        json={
-            "from_address": "solana-source",
-            "to_address": "base-destination",
-            "from_chain": "solana",
-            "to_chain": "base",
-            "amount_wrtc": 1,
-        },
+def _create_pending_lock(airdrop):
+    ok, message, lock = airdrop.create_bridge_lock(
+        "solana-source", "base-destination", "solana", "base", 1_000_000
     )
-    assert response.status_code == 200
-    return response.get_json()["lock"]["lock_id"]
+    assert ok, message
+    return lock.lock_id
 
 
-def _lock_status(db_path, lock_id):
+def _seed_claim(db_path):
     with sqlite3.connect(db_path) as conn:
-        return conn.execute(
-            "SELECT status, source_tx, dest_tx FROM bridge_locks WHERE lock_id = ?",
-            (lock_id,),
-        ).fetchone()
+        conn.execute(
+            "INSERT INTO airdrop_claims (claim_id, github_username, wallet_address,"
+            " chain, tier, amount_uwrtc, timestamp, status)"
+            " VALUES ('claim_hist', 'alice', 'wallet-1', 'base', 'contributor',"
+            " 50000000, 1700000000, 'pending')"
+        )
 
 
-def test_bridge_confirm_requires_admin_key(tmp_path, monkeypatch):
-    client, db_path = _make_client(tmp_path)
-    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
-    lock_id = _create_pending_lock(client, "expected-admin")
-
-    response = client.post(
-        f"/api/bridge/lock/{lock_id}/confirm",
-        json={"source_tx": "attacker-source-tx"},
-    )
-
-    assert response.status_code == 401
-    assert response.get_json()["error"] == "unauthorized"
-    assert _lock_status(db_path, lock_id) == ("pending", None, None)
+def _db_snapshot(db_path):
+    with sqlite3.connect(db_path) as conn:
+        return {
+            table: conn.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall()  # nosec B608
+            for table in ("airdrop_claims", "airdrop_allocation", "bridge_locks", "sybil_cache")
+        }
 
 
-def test_bridge_release_requires_admin_key(tmp_path, monkeypatch):
-    client, db_path = _make_client(tmp_path)
-    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
-    lock_id = _create_pending_lock(client, "expected-admin")
-
-    authorized = client.post(
-        f"/api/bridge/lock/{lock_id}/confirm",
-        headers={"X-Admin-Key": "expected-admin"},
-        json={"source_tx": "real-source-tx"},
-    )
-    assert authorized.status_code == 200
-
-    response = client.post(
-        f"/api/bridge/lock/{lock_id}/release",
-        json={"dest_tx": "attacker-dest-tx"},
-    )
-
-    assert response.status_code == 401
-    assert response.get_json()["error"] == "unauthorized"
-    assert _lock_status(db_path, lock_id) == ("locked", "real-source-tx", None)
+def _send(client, method, path, body, headers):
+    if method == "get":
+        return client.get(path, headers=headers)
+    return client.post(path, headers=headers, json=body)
 
 
-def test_bridge_confirm_and_release_accept_valid_admin_key(tmp_path, monkeypatch):
-    client, db_path = _make_client(tmp_path)
-    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
-    lock_id = _create_pending_lock(client, "expected-admin")
+@pytest.mark.parametrize(("method", "path", "body", "code"), RETIRED_ROUTES)
+@pytest.mark.parametrize("with_admin_key", [False, True])
+def test_retired_routes_return_410_and_write_nothing(
+    tmp_path, monkeypatch, method, path, body, code, with_admin_key
+):
+    client, db_path, airdrop = _make_client(tmp_path)
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN)
+    lock_id = _create_pending_lock(airdrop)
+    _seed_claim(db_path)
+    path = path.replace("LOCK_ID", lock_id)
 
-    confirmed = client.post(
-        f"/api/bridge/lock/{lock_id}/confirm",
-        headers={"X-Admin-Key": "expected-admin"},
-        json={"source_tx": "real-source-tx"},
-    )
-    released = client.post(
-        f"/api/bridge/lock/{lock_id}/release",
-        headers={"X-Admin-Key": "expected-admin"},
-        json={"dest_tx": "real-dest-tx"},
-    )
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("retired routes must not reach the airdrop service")
 
-    assert confirmed.status_code == 200
-    assert released.status_code == 200
-    assert _lock_status(db_path, lock_id) == (
-        "released",
-        "real-source-tx",
-        "real-dest-tx",
-    )
+    for name in (
+        "check_eligibility",
+        "claim_airdrop",
+        "get_stats",
+        "create_bridge_lock",
+        "confirm_bridge_lock",
+        "release_bridge_lock",
+    ):
+        monkeypatch.setattr(airdrop, name, fail_if_called)
+
+    before = _db_snapshot(db_path)
+    headers = {"X-Admin-Key": ADMIN} if with_admin_key else {}
+
+    response = _send(client, method, path, body, headers)
+
+    assert response.status_code == 410
+    assert response.headers["Cache-Control"] == "no-store"
+    payload = response.get_json()
+    assert payload["ok"] is False
+    assert payload["error"] == "gone"
+    assert payload["code"] == code
+    assert "there is no off-ramp" in payload["message"]
+    assert payload["docs"].endswith("/docs/EARN_AND_SPEND.md")
+    assert _db_snapshot(db_path) == before
+
+
+@pytest.mark.parametrize(("method", "path", "_body", "code"), RETIRED_ROUTES)
+@pytest.mark.parametrize("bad_body", [None, [{"unexpected": "array"}], "text"])
+def test_retired_routes_answer_410_before_body_parsing(
+    tmp_path, monkeypatch, method, path, _body, code, bad_body
+):
+    client, _db_path, _airdrop = _make_client(tmp_path)
+    monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+    path = path.replace("LOCK_ID", "no-such-lock")
+
+    response = _send(client, method, path, bad_body, {})
+
+    assert response.status_code == 410
+    assert response.get_json()["code"] == code
+
+
+def test_retired_notices_carry_no_dex_or_contract_details(tmp_path):
+    client, _db_path, _airdrop = _make_client(tmp_path)
+    for method, path, body, _code in RETIRED_ROUTES:
+        text = _send(client, method, path.replace("LOCK_ID", "x"), body, {}).get_data(as_text=True).lower()
+        for term in ("raydium", "aerodrome", "dexscreener", "swap", "0x5683c105", "remaining_wrtc"):
+            assert term not in text, (path, term)
+
+
+def test_admin_claim_lookup_stays_readonly_and_admin_gated(tmp_path, monkeypatch):
+    client, db_path, _airdrop = _make_client(tmp_path)
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN)
+    _seed_claim(db_path)
+    before = _db_snapshot(db_path)
+
+    unauthenticated = client.get("/api/airdrop/claim/claim_hist")
+    wrong_key = client.get("/api/airdrop/claim/claim_hist", headers={"X-Admin-Key": "nope"})
+    found = client.get("/api/airdrop/claim/claim_hist", headers={"X-Admin-Key": ADMIN})
+    missing = client.get("/api/airdrop/claim/claim_missing", headers={"X-Admin-Key": ADMIN})
+
+    assert unauthenticated.status_code == 401
+    assert wrong_key.status_code == 401
+    assert found.status_code == 200
+    claim = found.get_json()["claim"]
+    assert claim["claim_id"] == "claim_hist"
+    assert claim["github_username"] == "alice"
+    assert claim["status"] == "pending"
+    assert missing.status_code == 404
+    assert _db_snapshot(db_path) == before
+
+
+def test_admin_claim_lookup_fails_closed_without_configured_key(tmp_path, monkeypatch):
+    client, db_path, _airdrop = _make_client(tmp_path)
+    monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+    _seed_claim(db_path)
+
+    response = client.get("/api/airdrop/claim/claim_hist", headers={"X-Admin-Key": ""})
+
+    assert response.status_code == 503
+    assert response.get_json()["error"] == "admin_key_not_configured"
 
 
 def test_bridge_lock_status_public_redacts_addresses_and_tx_ids(tmp_path, monkeypatch):
-    client, _db_path = _make_client(tmp_path)
-    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
-    lock_id = _create_pending_lock(client, "expected-admin")
-
-    confirmed = client.post(
-        f"/api/bridge/lock/{lock_id}/confirm",
-        headers={"X-Admin-Key": "expected-admin"},
-        json={"source_tx": "real-source-tx"},
-    )
-    assert confirmed.status_code == 200
+    client, _db_path, airdrop = _make_client(tmp_path)
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN)
+    lock_id = _create_pending_lock(airdrop)
+    assert airdrop.confirm_bridge_lock(lock_id, "real-source-tx")[0]
 
     response = client.get(f"/api/bridge/lock/{lock_id}")
 
@@ -137,21 +214,12 @@ def test_bridge_lock_status_public_redacts_addresses_and_tx_ids(tmp_path, monkey
 
 
 def test_bridge_lock_status_admin_includes_full_lock_fields(tmp_path, monkeypatch):
-    client, _db_path = _make_client(tmp_path)
-    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
-    lock_id = _create_pending_lock(client, "expected-admin")
+    client, _db_path, airdrop = _make_client(tmp_path)
+    monkeypatch.setenv("RC_ADMIN_KEY", ADMIN)
+    lock_id = _create_pending_lock(airdrop)
+    assert airdrop.confirm_bridge_lock(lock_id, "real-source-tx")[0]
 
-    confirmed = client.post(
-        f"/api/bridge/lock/{lock_id}/confirm",
-        headers={"X-Admin-Key": "expected-admin"},
-        json={"source_tx": "real-source-tx"},
-    )
-    assert confirmed.status_code == 200
-
-    response = client.get(
-        f"/api/bridge/lock/{lock_id}",
-        headers={"X-Admin-Key": "expected-admin"},
-    )
+    response = client.get(f"/api/bridge/lock/{lock_id}", headers={"X-Admin-Key": ADMIN})
 
     assert response.status_code == 200
     lock = response.get_json()["lock"]
@@ -161,105 +229,16 @@ def test_bridge_lock_status_admin_includes_full_lock_fields(tmp_path, monkeypatc
     assert lock["dest_tx"] is None
 
 
-@pytest.mark.parametrize(
-    ("path", "headers"),
-    [
-        ("/api/airdrop/eligibility", {}),
-        ("/api/airdrop/claim", {}),
-        ("/api/bridge/lock", {}),
-        ("/api/bridge/lock/test-lock/confirm", {"X-Admin-Key": "expected-admin"}),
-        ("/api/bridge/lock/test-lock/release", {"X-Admin-Key": "expected-admin"}),
-    ],
-)
-def test_airdrop_write_routes_reject_non_object_json(tmp_path, monkeypatch, path, headers):
-    client, _db_path = _make_client(tmp_path)
-    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
+def test_bridge_lock_status_unknown_lock_is_404(tmp_path):
+    client, _db_path, _airdrop = _make_client(tmp_path)
 
-    response = client.post(path, headers=headers, json=[{"unexpected": "array"}])
+    response = client.get("/api/bridge/lock/no-such-lock")
 
-    assert response.status_code == 400
-    assert response.get_json() == {"ok": False, "error": "JSON object required"}
+    assert response.status_code == 404
+    assert response.get_json()["error"] == "lock_not_found"
 
 
-def test_airdrop_eligibility_rejects_structured_text_field(tmp_path):
-    client, _db_path = _make_client(tmp_path)
-
-    response = client.post(
-        "/api/airdrop/eligibility",
-        json={
-            "github_username": {"login": "alice"},
-            "wallet_address": "wallet-1",
-            "chain": "base",
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.get_json() == {"ok": False, "error": "github_username must be a string"}
-
-
-@pytest.mark.parametrize(
-    "github_username",
-    [
-        "../octocat",
-        "alice/bob",
-        "alice?tab=repositories",
-        "-alice",
-        "alice-",
-    ],
-)
-def test_airdrop_eligibility_rejects_invalid_github_username(tmp_path, github_username):
-    client, _db_path = _make_client(tmp_path)
-
-    response = client.post(
-        "/api/airdrop/eligibility",
-        json={
-            "github_username": github_username,
-            "wallet_address": "wallet-1",
-            "chain": "base",
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.get_json() == {
-        "ok": False,
-        "error": "github_username must be a valid GitHub username",
-    }
-
-
-def test_airdrop_eligibility_rejects_overlong_github_username(tmp_path):
-    client, _db_path = _make_client(tmp_path)
-
-    response = client.post(
-        "/api/airdrop/eligibility",
-        json={
-            "github_username": "a" * 40,
-            "wallet_address": "wallet-1",
-            "chain": "base",
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.get_json() == {"ok": False, "error": "github_username_too_long"}
-
-
-def test_airdrop_claim_rejects_invalid_github_username_before_network(tmp_path):
-    client, _db_path = _make_client(tmp_path)
-
-    response = client.post(
-        "/api/airdrop/claim",
-        json={
-            "github_username": "alice/bob",
-            "wallet_address": "wallet-1",
-            "chain": "base",
-            "tier": "contributor",
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.get_json() == {
-        "ok": False,
-        "error": "github_username must be a valid GitHub username",
-    }
+# --- AirdropV2 service methods (kept for the historical record) -------------
 
 
 def test_airdrop_service_rejects_invalid_github_username_without_api_calls(tmp_path, monkeypatch):
@@ -274,51 +253,6 @@ def test_airdrop_service_rejects_invalid_github_username_without_api_calls(tmp_p
 
     assert result.eligible is False
     assert result.reason == "Invalid GitHub username"
-
-
-def test_bridge_lock_rejects_structured_amount(tmp_path):
-    client, _db_path = _make_client(tmp_path)
-
-    response = client.post(
-        "/api/bridge/lock",
-        json={
-            "from_address": "solana-source",
-            "to_address": "base-destination",
-            "from_chain": "solana",
-            "to_chain": "base",
-            "amount_wrtc": ["bad"],
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.get_json() == {"ok": False, "error": "amount_wrtc must be a finite number"}
-
-
-@pytest.mark.parametrize(
-    ("amount_wrtc", "message"),
-    [
-        (0, "amount_wrtc must be positive"),
-        (-1, "amount_wrtc must be positive"),
-        (1e100, "amount_wrtc exceeds maximum bridge lock"),
-        (30000.000001, "amount_wrtc exceeds maximum bridge lock"),
-    ],
-)
-def test_bridge_lock_rejects_out_of_range_amounts(tmp_path, amount_wrtc, message):
-    client, _db_path = _make_client(tmp_path)
-
-    response = client.post(
-        "/api/bridge/lock",
-        json={
-            "from_address": "solana-source",
-            "to_address": "base-destination",
-            "from_chain": "solana",
-            "to_chain": "base",
-            "amount_wrtc": amount_wrtc,
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.get_json() == {"ok": False, "error": message}
 
 
 def test_airdrop_service_rejects_oversized_bridge_lock(tmp_path):
@@ -337,75 +271,6 @@ def test_airdrop_service_rejects_oversized_bridge_lock(tmp_path):
     assert lock is None
 
 
-def test_bridge_confirm_rejects_structured_source_tx(tmp_path, monkeypatch):
-    client, _db_path = _make_client(tmp_path)
-    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
-
-    response = client.post(
-        "/api/bridge/lock/test-lock/confirm",
-        headers={"X-Admin-Key": "expected-admin"},
-        json={"source_tx": {"tx": "abc"}},
-    )
-
-    assert response.status_code == 400
-    assert response.get_json() == {"ok": False, "error": "source_tx must be a string"}
-
-
-@pytest.mark.parametrize(
-    ("field", "error"),
-    [
-        ("from_address", "from_address_too_long"),
-        ("to_address", "to_address_too_long"),
-    ],
-)
-def test_bridge_lock_rejects_overlong_addresses(tmp_path, field, error):
-    client, _db_path = _make_client(tmp_path)
-    payload = {
-        "from_address": "solana-source",
-        "to_address": "base-destination",
-        "from_chain": "solana",
-        "to_chain": "base",
-        "amount_wrtc": 1,
-    }
-    payload[field] = "x" * 129
-
-    response = client.post("/api/bridge/lock", json=payload)
-
-    assert response.status_code == 400
-    assert response.get_json() == {"ok": False, "error": error}
-
-
-@pytest.mark.parametrize(
-    ("path", "payload", "error"),
-    [
-        (
-            "/api/bridge/lock/test-lock/confirm",
-            {"source_tx": "x" * 257},
-            "source_tx_too_long",
-        ),
-        (
-            "/api/bridge/lock/test-lock/release",
-            {"dest_tx": "x" * 257},
-            "dest_tx_too_long",
-        ),
-    ],
-)
-def test_bridge_admin_routes_reject_overlong_tx_ids(
-    tmp_path, monkeypatch, path, payload, error
-):
-    client, _db_path = _make_client(tmp_path)
-    monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin")
-
-    response = client.post(
-        path,
-        headers={"X-Admin-Key": "expected-admin"},
-        json=payload,
-    )
-
-    assert response.status_code == 400
-    assert response.get_json() == {"ok": False, "error": error}
-
-
 @pytest.mark.parametrize(
     ("from_address", "to_address", "message"),
     [
@@ -416,7 +281,7 @@ def test_bridge_admin_routes_reject_overlong_tx_ids(
 def test_airdrop_service_rejects_overlong_bridge_addresses(
     tmp_path, from_address, to_address, message
 ):
-    _client, db_path = _make_client(tmp_path)
+    _client, db_path, _airdrop = _make_client(tmp_path)
     airdrop = AirdropV2(str(db_path))
 
     success, actual_message, lock = airdrop.create_bridge_lock(
@@ -440,7 +305,7 @@ def test_airdrop_service_rejects_overlong_bridge_addresses(
     ],
 )
 def test_airdrop_service_rejects_overlong_bridge_tx_ids(tmp_path, method, message):
-    _client, db_path = _make_client(tmp_path)
+    _client, db_path, _airdrop = _make_client(tmp_path)
     airdrop = AirdropV2(str(db_path))
 
     success, actual_message = getattr(airdrop, method)("lock-id", "x" * 257)

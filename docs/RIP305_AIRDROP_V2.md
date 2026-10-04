@@ -1,8 +1,10 @@
 # RIP-305: Cross-Chain Airdrop Implementation
 
 **Issue:** [#1149](https://github.com/Scottcjn/rustchain-bounties/issues/1149)  
-**Status:** Implemented  
+**Status:** Ended — the airdrop is closed and the wRTC bridge is disabled  
 **Reward:** 100-200 RTC (staged payments)
+
+> **Ended:** the RIP-305 wRTC airdrop is over and the wRTC bridge is disabled (RTC is earned for contributions and spent on services in the RustChain ecosystem; there is no off-ramp). `POST /api/airdrop/eligibility`, `POST /api/airdrop/claim`, `GET /api/airdrop/stats`, `POST /api/bridge/lock` and `POST /api/bridge/lock/<id>/confirm|release` now answer **410 Gone** with a JSON notice (`code`: `AIRDROP_ENDED` or `WRTC_BRIDGE_DISABLED`). `GET /api/airdrop/claim/<id>` (admin) and `GET /api/bridge/lock/<id>` remain as read-only record lookups. The rest of this document is kept as a historical record.
 
 ## Overview
 

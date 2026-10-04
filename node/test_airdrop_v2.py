@@ -727,7 +727,7 @@ class TestAllocationTracking(unittest.TestCase):
 
 
 class TestAirdropBridgeRoutes(unittest.TestCase):
-    """Test Flask bridge route authorization."""
+    """Bridge lock routes after the wRTC bridge was disabled."""
 
     def setUp(self):
         self.temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
@@ -748,6 +748,22 @@ class TestAirdropBridgeRoutes(unittest.TestCase):
         os.unlink(self.temp_db.name)
 
     def _create_lock(self):
+        success, message, lock = self.airdrop.create_bridge_lock(
+            "RTC1234567890123456789012345678901234567890",
+            "0x1234567890123456789012345678901234567890",
+            "rustchain",
+            "base",
+            100 * 1_000_000,
+        )
+        self.assertTrue(success, message)
+        return lock.lock_id
+
+    def _assert_bridge_disabled(self, response):
+        self.assertEqual(response.status_code, 410)
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(response.get_json()["code"], "WRTC_BRIDGE_DISABLED")
+
+    def test_lock_route_is_retired(self):
         response = self.client.post(
             "/api/bridge/lock",
             headers=ADMIN_HEADERS,
@@ -759,70 +775,39 @@ class TestAirdropBridgeRoutes(unittest.TestCase):
                 "amount_wrtc": 100,
             },
         )
-        self.assertEqual(response.status_code, 200)
-        return response.get_json()["lock"]["lock_id"]
 
-    def test_confirm_route_requires_admin_key(self):
+        self._assert_bridge_disabled(response)
+        self.assertEqual(self.airdrop.get_stats()["pending_bridge_locks"], 0)
+
+    def test_confirm_and_release_routes_are_retired_even_with_admin_key(self):
         lock_id = self._create_lock()
 
-        response = self.client.post(
-            f"/api/bridge/lock/{lock_id}/confirm",
-            json={"source_tx": "attacker-source-tx"},
-        )
+        for headers in ({}, ADMIN_HEADERS):
+            confirm = self.client.post(
+                f"/api/bridge/lock/{lock_id}/confirm",
+                headers=headers,
+                json={"source_tx": "operator-source-tx"},
+            )
+            release = self.client.post(
+                f"/api/bridge/lock/{lock_id}/release",
+                headers=headers,
+                json={"dest_tx": "operator-dest-tx"},
+            )
+            self._assert_bridge_disabled(confirm)
+            self._assert_bridge_disabled(release)
 
-        self.assertEqual(response.status_code, 401)
         lock = self.airdrop.get_lock(lock_id)
         self.assertEqual(lock.status, "pending")
         self.assertIsNone(lock.source_tx)
-
-    def test_release_route_requires_admin_key(self):
-        lock_id = self._create_lock()
-        success, _ = self.airdrop.confirm_bridge_lock(lock_id, "operator-source-tx")
-        self.assertTrue(success)
-
-        response = self.client.post(
-            f"/api/bridge/lock/{lock_id}/release",
-            json={"dest_tx": "attacker-dest-tx"},
-        )
-
-        self.assertEqual(response.status_code, 401)
-        lock = self.airdrop.get_lock(lock_id)
-        self.assertEqual(lock.status, "locked")
         self.assertIsNone(lock.dest_tx)
 
-    def test_confirm_and_release_accept_admin_key(self):
+    def test_lock_status_route_stays_readable(self):
         lock_id = self._create_lock()
 
-        confirm = self.client.post(
-            f"/api/bridge/lock/{lock_id}/confirm",
-            headers=ADMIN_HEADERS,
-            json={"source_tx": "operator-source-tx"},
-        )
-        self.assertEqual(confirm.status_code, 200)
+        response = self.client.get(f"/api/bridge/lock/{lock_id}", headers=ADMIN_HEADERS)
 
-        release = self.client.post(
-            f"/api/bridge/lock/{lock_id}/release",
-            headers=ADMIN_HEADERS,
-            json={"dest_tx": "operator-dest-tx"},
-        )
-        self.assertEqual(release.status_code, 200)
-
-        lock = self.airdrop.get_lock(lock_id)
-        self.assertEqual(lock.status, "released")
-        self.assertEqual(lock.source_tx, "operator-source-tx")
-        self.assertEqual(lock.dest_tx, "operator-dest-tx")
-
-    def test_confirm_route_fails_closed_without_admin_key(self):
-        lock_id = self._create_lock()
-        os.environ.pop("RC_ADMIN_KEY", None)
-
-        response = self.client.post(
-            f"/api/bridge/lock/{lock_id}/confirm",
-            headers=ADMIN_HEADERS,
-            json={"source_tx": "operator-source-tx"},
-        )
-
-        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["lock"]["status"], "pending")
 
 
 class TestStatistics(unittest.TestCase):

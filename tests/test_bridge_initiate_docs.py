@@ -24,6 +24,19 @@ def test_bridge_initiate_markdown_docs_are_operator_assisted():
     assert "**Auth:** None (user-initiated)" not in api_reference
 
 
+def test_bridge_initiate_docs_mark_the_route_retired():
+    for parts in (("docs", "bridge-api.md"), ("docs", "API_REFERENCE.md")):
+        normalized = " ".join(read_doc(*parts).split())
+        assert "the wRTC bridge is disabled" in normalized
+        assert "410 Gone" in normalized
+        assert "WRTC_BRIDGE_DISABLED" in normalized
+
+    openapi = read_doc("docs", "api", "openapi.yaml")
+    assert "Initiate bridge transfer (retired, 410 Gone)" in openapi
+    assert "'410':" in openapi
+    assert "code: WRTC_BRIDGE_DISABLED" in openapi
+
+
 def test_bridge_initiate_openapi_exposes_admin_auth_errors():
     openapi = read_doc("docs", "api", "openapi.yaml")
 
