@@ -859,8 +859,14 @@ paths:
     post:
       tags:
         - Bridge
-      summary: Initiate bridge transfer
+      summary: Initiate bridge transfer (retired, 410 Gone)
+      deprecated: true
       description: |
+        RETIRED: the wRTC bridge is disabled. RTC is earned for contributions
+        and spent on services in the RustChain ecosystem; there is no off-ramp.
+        This route now always answers 410 Gone with code WRTC_BRIDGE_DISABLED.
+        The rest of this description is kept as a historical record.
+
         Create a new bridge transfer (deposit or withdraw) between
         RustChain and external chains (Solana, Ergo, Base). RustChain-origin
         deposits are operator-assisted/admin-authenticated and are not a public
@@ -933,6 +939,23 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error: RC_ADMIN_KEY not configured
+        '410':
+          description: Retired - the wRTC bridge is disabled
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              example: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                ok: false
+                error: gone
+                code: WRTC_BRIDGE_DISABLED
+                message: The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the RustChain ecosystem; there is no off-ramp.
+                docs: https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md
 
   /api/bridge/status/{tx_hash}:
     get:

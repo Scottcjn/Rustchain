@@ -34,7 +34,6 @@ import hashlib
 import hmac
 import json
 import logging
-import math
 import os
 import re
 import sqlite3
@@ -1376,9 +1375,60 @@ class AirdropV2:
 # ============================================================================
 
 
+# RIP-305 is over: the wRTC airdrop has ended and the wRTC bridge is disabled
+# (RTC is earned for contributions and spent on services inside the ecosystem;
+# there is no off-ramp). The public claim/eligibility/stats routes and the
+# bridge lock routes stay registered so old clients get an explicit 410 Gone
+# instead of a bare 404, but they no longer read or write the database. The
+# AirdropV2 service methods and the airdrop_claims / airdrop_allocation /
+# bridge_locks tables are kept for the historical record.
+# node/bridge_api.py carries the same WRTC_BRIDGE_DISABLED notice for
+# /api/bridge/initiate; keep the two in step.
+EARN_AND_SPEND_DOCS = "https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md"
+
+AIRDROP_ENDED_NOTICE = {
+    "ok": False,
+    "error": "gone",
+    "code": "AIRDROP_ENDED",
+    "message": (
+        "The RIP-305 wRTC airdrop has ended and is no longer accepting claims. "
+        "RTC is earned for contributions and spent on services in the RustChain "
+        "ecosystem; there is no off-ramp."
+    ),
+    "docs": EARN_AND_SPEND_DOCS,
+}
+
+WRTC_BRIDGE_DISABLED_NOTICE = {
+    "ok": False,
+    "error": "gone",
+    "code": "WRTC_BRIDGE_DISABLED",
+    "message": (
+        "The wRTC bridge is disabled. RTC is earned for contributions and spent "
+        "on services in the RustChain ecosystem; there is no off-ramp."
+    ),
+    "docs": EARN_AND_SPEND_DOCS,
+}
+
+
+def retired_response(notice: Dict[str, Any]):
+    """410 Gone with a JSON notice; never cached so a later change is seen."""
+    response = jsonify(notice)
+    response.status_code = 410
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
     """
-    Initialize airdrop API routes on Flask app.
+    Register the RIP-305 airdrop / bridge-lock routes on a Flask app.
+
+    Retired (always 410 Gone, no database access, checked before auth or body
+    parsing): POST /api/airdrop/eligibility, POST /api/airdrop/claim,
+    GET /api/airdrop/stats, POST /api/bridge/lock,
+    POST /api/bridge/lock/<id>/confirm, POST /api/bridge/lock/<id>/release.
+
+    Kept read-only for the record: GET /api/airdrop/claim/<id> (admin key) and
+    GET /api/bridge/lock/<id> (public redacted view, full view with admin key).
 
     Args:
         app: Flask application
@@ -1410,150 +1460,19 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
         ).strip()
         return bool(provided) and hmac.compare_digest(provided, required)
 
-    def parse_json_object_body(require_body: bool = True):
-        data = request.get_json(silent=True)
-        if data is None:
-            if require_body:
-                return None, (jsonify({"ok": False, "error": "invalid_json"}), 400)
-            return {}, None
-        if not isinstance(data, dict):
-            return None, (jsonify({"ok": False, "error": "JSON object required"}), 400)
-        if require_body and not data:
-            return None, (jsonify({"ok": False, "error": "invalid_json"}), 400)
-        return data, None
-
-    def string_field(data: Dict[str, Any], name: str, default: str = "", max_length: int = 0):
-        value = data.get(name, default)
-        if value is None:
-            return default, None
-        if not isinstance(value, str):
-            return None, (jsonify({"ok": False, "error": f"{name} must be a string"}), 400)
-        value = value.strip()
-        if max_length > 0 and len(value) > max_length:
-            return None, (jsonify({"ok": False, "error": f"{name}_too_long"}), 400)
-        return value, None
-
-    def github_username_field(data: Dict[str, Any], name: str):
-        value, error = string_field(data, name, max_length=39)
-        if error:
-            return value, error
-        if value and not AirdropV2._is_valid_github_username(
-            AirdropV2._normalize_github_username(value)
-        ):
-            return None, (jsonify({"ok": False, "error": f"{name} must be a valid GitHub username"}), 400)
-        return value, None
-
-    def optional_string_field(data: Dict[str, Any], name: str):
-        if name not in data or data.get(name) is None:
-            return None, None
-        return string_field(data, name)
-
-    def finite_amount_field(data: Dict[str, Any], name: str, default: float = 0):
-        value = data.get(name, default)
-        if isinstance(value, bool):
-            return None, (jsonify({"ok": False, "error": f"{name} must be a finite number"}), 400)
-        try:
-            parsed = float(value)
-        except (TypeError, ValueError):
-            return None, (jsonify({"ok": False, "error": f"{name} must be a finite number"}), 400)
-        if not math.isfinite(parsed):
-            return None, (jsonify({"ok": False, "error": f"{name} must be a finite number"}), 400)
-        return parsed, None
-
-    def bridge_amount_field(data: Dict[str, Any], name: str):
-        value, error = finite_amount_field(data, name)
-        if error:
-            return value, error
-        if value <= 0:
-            return None, (jsonify({"ok": False, "error": f"{name} must be positive"}), 400)
-        max_wrtc = MAX_BRIDGE_LOCK_UWRTC / 1_000_000
-        if value > max_wrtc:
-            return None, (jsonify({"ok": False, "error": f"{name} exceeds maximum bridge lock"}), 400)
-        return value, None
-
     @app.route("/api/airdrop/eligibility", methods=["POST"])
     def check_airdrop_eligibility():
-        """Check airdrop eligibility."""
-        data, error = parse_json_object_body()
-        if error:
-            return error
-
-        github_username, error = github_username_field(data, "github_username")
-        if error:
-            return error
-        wallet_address, error = string_field(data, "wallet_address")
-        if error:
-            return error
-        chain, error = string_field(data, "chain")
-        if error:
-            return error
-        github_token, error = optional_string_field(data, "github_token")
-        if error:
-            return error
-
-        # SECURITY: skip_antisybil must NEVER be settable from API requests.
-        # It exists only for internal testing via direct Python calls.
-
-        if not github_username:
-            return jsonify({"ok": False, "error": "missing_github_username"}), 400
-        if not wallet_address:
-            return jsonify({"ok": False, "error": "missing_wallet_address"}), 400
-        if not chain:
-            return jsonify({"ok": False, "error": "missing_chain"}), 400
-
-        result = airdrop.check_eligibility(
-            github_username, wallet_address, chain, github_token, skip_antisybil=False
-        )
-
-        return jsonify({"ok": result.eligible, **result.to_dict()})
+        """Retired: the airdrop has ended. Always 410 Gone."""
+        return retired_response(AIRDROP_ENDED_NOTICE)
 
     @app.route("/api/airdrop/claim", methods=["POST"])
     def claim_airdrop():
-        """Submit airdrop claim."""
-        data, error = parse_json_object_body()
-        if error:
-            return error
-
-        github_username, error = github_username_field(data, "github_username")
-        if error:
-            return error
-        wallet_address, error = string_field(data, "wallet_address", max_length=128)
-        if error:
-            return error
-        chain, error = string_field(data, "chain", max_length=32)
-        if error:
-            return error
-        tier, error = string_field(data, "tier", max_length=32)
-        if error:
-            return error
-        github_token, error = optional_string_field(data, "github_token")
-        if error:
-            return error
-
-        if not all([github_username, wallet_address, chain, tier]):
-            return (
-                jsonify(
-                    {
-                        "ok": False,
-                        "error": "missing_required_fields",
-                        "required": ["github_username", "wallet_address", "chain", "tier"],
-                    }
-                ),
-                400,
-            )
-
-        success, message, claim = airdrop.claim_airdrop(
-            github_username, wallet_address, chain, tier, github_token
-        )
-
-        if success:
-            return jsonify({"ok": True, "message": message, "claim": claim.to_dict()})
-        else:
-            return jsonify({"ok": False, "error": message}), 400
+        """Retired: the airdrop has ended. Always 410 Gone."""
+        return retired_response(AIRDROP_ENDED_NOTICE)
 
     @app.route("/api/airdrop/claim/<claim_id>", methods=["GET"])
     def get_airdrop_claim(claim_id: str):
-        """Get claim status."""
+        """Get claim status (read-only record lookup)."""
         # SECURITY: Require admin key — exposes github_username, wallet_address, and airdrop tier
         auth_err = require_admin_key()
         if auth_err:
@@ -1565,112 +1484,27 @@ def init_airdrop_routes(app, airdrop: AirdropV2, db_path: str) -> None:
 
     @app.route("/api/airdrop/stats", methods=["GET"])
     def get_airdrop_stats():
-        """Get airdrop statistics."""
-        return jsonify({"ok": True, "stats": airdrop.get_stats()})
+        """Retired: public stats advertised remaining allocation. Always 410 Gone."""
+        return retired_response(AIRDROP_ENDED_NOTICE)
 
     @app.route("/api/bridge/lock", methods=["POST"])
     def create_bridge_lock():
-        """Create bridge lock."""
-        data, error = parse_json_object_body()
-        if error:
-            return error
-
-        from_address, error = string_field(data, "from_address", max_length=MAX_BRIDGE_ADDRESS_LENGTH)
-        if error:
-            return error
-        to_address, error = string_field(data, "to_address", max_length=MAX_BRIDGE_ADDRESS_LENGTH)
-        if error:
-            return error
-        from_chain, error = string_field(data, "from_chain")
-        if error:
-            return error
-        to_chain, error = string_field(data, "to_chain")
-        if error:
-            return error
-        amount_wrtc, error = bridge_amount_field(data, "amount_wrtc")
-        if error:
-            return error
-
-        if not all([from_address, to_address, from_chain, to_chain]):
-            return (
-                jsonify(
-                    {
-                        "ok": False,
-                        "error": "missing_required_fields",
-                        "required": ["from_address", "to_address", "from_chain", "to_chain"],
-                    }
-                ),
-                400,
-            )
-
-        # ── Admin auth: gate bridge lock creation ─────────────────────────────
-        auth_error = require_admin_key()
-        if auth_error:
-            return auth_error
-        # ── Auth passed ──────────────────────────────────────────────────────
-
-        amount_uwrtc = int(round(amount_wrtc * 1_000_000))
-
-        success, message, lock = airdrop.create_bridge_lock(
-            from_address, to_address, from_chain, to_chain, amount_uwrtc
-        )
-
-        if success:
-            return jsonify({"ok": True, "message": message, "lock": lock.to_dict()})
-        else:
-            return jsonify({"ok": False, "error": message}), 400
+        """Retired: the wRTC bridge is disabled. Always 410 Gone."""
+        return retired_response(WRTC_BRIDGE_DISABLED_NOTICE)
 
     @app.route("/api/bridge/lock/<lock_id>/confirm", methods=["POST"])
     def confirm_lock(lock_id: str):
-        """Confirm bridge lock with source tx."""
-        auth_error = require_admin_key()
-        if auth_error:
-            return auth_error
-
-        data, error = parse_json_object_body(require_body=False)
-        if error:
-            return error
-        source_tx, error = string_field(data, "source_tx", max_length=MAX_BRIDGE_TX_LENGTH)
-        if error:
-            return error
-
-        if not source_tx:
-            return jsonify({"ok": False, "error": "missing_source_tx"}), 400
-
-        success, message = airdrop.confirm_bridge_lock(lock_id, source_tx)
-
-        if success:
-            return jsonify({"ok": True, "message": message})
-        else:
-            return jsonify({"ok": False, "error": message}), 400
+        """Retired: the wRTC bridge is disabled. Always 410 Gone."""
+        return retired_response(WRTC_BRIDGE_DISABLED_NOTICE)
 
     @app.route("/api/bridge/lock/<lock_id>/release", methods=["POST"])
     def release_lock(lock_id: str):
-        """Release bridge lock with dest tx."""
-        auth_error = require_admin_key()
-        if auth_error:
-            return auth_error
-
-        data, error = parse_json_object_body(require_body=False)
-        if error:
-            return error
-        dest_tx, error = string_field(data, "dest_tx", max_length=MAX_BRIDGE_TX_LENGTH)
-        if error:
-            return error
-
-        if not dest_tx:
-            return jsonify({"ok": False, "error": "missing_dest_tx"}), 400
-
-        success, message = airdrop.release_bridge_lock(lock_id, dest_tx)
-
-        if success:
-            return jsonify({"ok": True, "message": message})
-        else:
-            return jsonify({"ok": False, "error": message}), 400
+        """Retired: the wRTC bridge is disabled. Always 410 Gone."""
+        return retired_response(WRTC_BRIDGE_DISABLED_NOTICE)
 
     @app.route("/api/bridge/lock/<lock_id>", methods=["GET"])
     def get_bridge_lock(lock_id: str):
-        """Get bridge lock status."""
+        """Get bridge lock status (read-only record lookup)."""
         lock = airdrop.get_lock(lock_id)
         if lock:
             if has_admin_key():

@@ -488,8 +488,8 @@ class TestBridgeTransferCreation:
         conn.close()
 
 
-class TestBridgeInitiateAuth:
-    """Test route-level authorization for bridge initiation."""
+class TestBridgeInitiateRetired:
+    """POST /api/bridge/initiate is retired: the wRTC bridge is disabled."""
 
     def _client(self, bridge_api, db_path):
         bridge_api.DB_PATH = db_path
@@ -507,70 +507,70 @@ class TestBridgeInitiateAuth:
             "amount_rtc": 10.0,
         }
 
-    def _bridge_row_counts(self, db_path):
+    def _withdraw_payload(self):
+        return {
+            "direction": "withdraw",
+            "source_chain": "solana",
+            "dest_chain": "rustchain",
+            "source_address": "4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+            "dest_address": "RTCwithdrawdest",
+            "amount_rtc": 10.0,
+        }
+
+    def _db_snapshot(self, db_path):
         conn = sqlite3.connect(db_path)
         try:
-            bridge_count = conn.execute(
-                "SELECT COUNT(*) FROM bridge_transfers"
-            ).fetchone()[0]
-            lock_count = conn.execute(
-                "SELECT COUNT(*) FROM lock_ledger"
-            ).fetchone()[0]
-            return bridge_count, lock_count
+            return (
+                conn.execute("SELECT COUNT(*) FROM bridge_transfers").fetchone()[0],
+                conn.execute("SELECT COUNT(*) FROM lock_ledger").fetchone()[0],
+                conn.execute(
+                    "SELECT miner_id, amount_i64 FROM balances ORDER BY miner_id"
+                ).fetchall(),
+            )
         finally:
             conn.close()
 
-    def test_deposit_requires_admin_key_before_creating_transfer(
-        self, setup_test_db, funded_miner, monkeypatch
+    def _assert_retired(self, response):
+        assert response.status_code == 410
+        assert response.headers["Cache-Control"] == "no-store"
+        body = response.get_json()
+        assert body["ok"] is False
+        assert body["code"] == "WRTC_BRIDGE_DISABLED"
+        assert "there is no off-ramp" in body["message"]
+        assert body["docs"].endswith("/docs/EARN_AND_SPEND.md")
+
+    @pytest.mark.parametrize("admin_key_configured", [True, False])
+    @pytest.mark.parametrize("send_admin_key", [True, False])
+    @pytest.mark.parametrize("direction", ["deposit", "withdraw", "malformed"])
+    def test_initiate_is_gone_and_writes_nothing(
+        self,
+        setup_test_db,
+        funded_miner,
+        monkeypatch,
+        admin_key_configured,
+        send_admin_key,
+        direction,
     ):
-        """Unauthenticated deposit initiation must not lock another address."""
         bridge_api = setup_test_db["bridge_api"]
-        client = self._client(bridge_api, setup_test_db["db_path"])
-        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin-key")
+        db_path = setup_test_db["db_path"]
+        client = self._client(bridge_api, db_path)
+        if admin_key_configured:
+            monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin-key")
+        else:
+            monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
+        headers = {"X-Admin-Key": "expected-admin-key"} if send_admin_key else {}
+        payload = {
+            "deposit": self._deposit_payload(funded_miner),
+            "withdraw": self._withdraw_payload(),
+            "malformed": ["not", "an", "object"],
+        }[direction]
+        before = self._db_snapshot(db_path)
 
-        response = client.post(
-            "/api/bridge/initiate",
-            json=self._deposit_payload(funded_miner),
-        )
+        response = client.post("/api/bridge/initiate", headers=headers, json=payload)
 
-        assert response.status_code == 401
-        assert response.get_json()["error"] == "unauthorized"
-        assert self._bridge_row_counts(setup_test_db["db_path"]) == (0, 0)
-
-    def test_deposit_accepts_valid_admin_key(
-        self, setup_test_db, funded_miner, monkeypatch
-    ):
-        """Configured admin key still allows bridge deposit initiation."""
-        bridge_api = setup_test_db["bridge_api"]
-        client = self._client(bridge_api, setup_test_db["db_path"])
-        monkeypatch.setenv("RC_ADMIN_KEY", "expected-admin-key")
-
-        response = client.post(
-            "/api/bridge/initiate",
-            headers={"X-Admin-Key": "expected-admin-key"},
-            json=self._deposit_payload(funded_miner),
-        )
-
-        assert response.status_code == 200
-        assert response.get_json()["ok"] is True
-        assert self._bridge_row_counts(setup_test_db["db_path"]) == (1, 1)
-
-    def test_deposit_fails_closed_when_admin_key_unconfigured(
-        self, setup_test_db, funded_miner, monkeypatch
-    ):
-        """Bridge initiation must not become public when RC_ADMIN_KEY is unset."""
-        bridge_api = setup_test_db["bridge_api"]
-        client = self._client(bridge_api, setup_test_db["db_path"])
-        monkeypatch.delenv("RC_ADMIN_KEY", raising=False)
-
-        response = client.post(
-            "/api/bridge/initiate",
-            json=self._deposit_payload(funded_miner),
-        )
-
-        assert response.status_code == 503
-        assert response.get_json()["error"] == "RC_ADMIN_KEY not configured"
-        assert self._bridge_row_counts(setup_test_db["db_path"]) == (0, 0)
+        self._assert_retired(response)
+        assert self._db_snapshot(db_path) == before
+        assert before[:2] == (0, 0)
 
 
 # =============================================================================
@@ -1502,74 +1502,59 @@ class TestBridgeCallbackAuth:
         bridge_api.register_bridge_routes(app)
         return app.test_client()
 
-    def test_update_external_fails_closed_when_api_key_unconfigured(
-        self, setup_test_db, monkeypatch
+    @pytest.mark.parametrize("api_key", [None, "wrong-key", "expected-key"])
+    def test_update_external_is_gone_and_writes_nothing(
+        self, setup_test_db, funded_miner, monkeypatch, api_key
     ):
+        """The bridge-service callback is retired with the wRTC bridge."""
         bridge_api = setup_test_db["bridge_api"]
-        client = self._client(bridge_api)
-        monkeypatch.delenv("RC_BRIDGE_API_KEY", raising=False)
-
-        response = client.post(
-            "/api/bridge/update-external",
-            json={"tx_hash": "bridge_tx", "external_tx_hash": "external_tx"},
-        )
-
-        assert response.status_code == 503
-        assert response.get_json()["error"] == "Bridge API key not configured"
-
-    def test_update_external_uses_constant_time_api_key_compare(
-        self, setup_test_db, monkeypatch
-    ):
-        bridge_api = setup_test_db["bridge_api"]
-        client = self._client(bridge_api)
-        monkeypatch.setenv("RC_BRIDGE_API_KEY", "expected-key")
-        calls = []
-
-        def fake_compare(provided, expected):
-            calls.append((provided, expected))
-            return False
-
-        monkeypatch.setattr(bridge_api.hmac, "compare_digest", fake_compare)
-
-        response = client.post(
-            "/api/bridge/update-external",
-            headers={"X-API-Key": "wrong-key"},
-            json={"tx_hash": "bridge_tx", "external_tx_hash": "external_tx"},
-        )
-
-        assert response.status_code == 401
-        assert calls == [("wrong-key", "expected-key")]
-
-    def test_update_external_accepts_configured_api_key_before_payload_validation(
-        self, setup_test_db, monkeypatch
-    ):
-        bridge_api = setup_test_db["bridge_api"]
+        db_path = setup_test_db["db_path"]
         client = self._client(bridge_api)
         monkeypatch.setenv("RC_BRIDGE_API_KEY", "expected-key")
 
+        conn = sqlite3.connect(db_path)
+        try:
+            ok, created = bridge_api.create_bridge_transfer(
+                conn,
+                bridge_api.BridgeTransferRequest(
+                    direction="deposit",
+                    source_chain="rustchain",
+                    dest_chain="solana",
+                    source_address=funded_miner,
+                    dest_address="4TRwNqXqXqXqXqXqXqXqXqXqXqXqXqXqXqXq",
+                    amount_rtc=10.0,
+                ),
+                admin_initiated=True,
+            )
+            assert ok, created
+            before = conn.execute(
+                "SELECT status, external_tx_hash, external_confirmations FROM bridge_transfers"
+            ).fetchall()
+        finally:
+            conn.close()
+
+        headers = {"X-API-Key": api_key} if api_key else {}
         response = client.post(
             "/api/bridge/update-external",
-            headers={"X-API-Key": "expected-key"},
+            headers=headers,
+            json={
+                "tx_hash": created["tx_hash"],
+                "external_tx_hash": "external_tx",
+                "confirmations": 100,
+            },
         )
 
-        assert response.status_code == 400
-        assert response.get_json()["error"] == "Request body required"
-
-    def test_update_external_rejects_non_object_json_before_state_handling(
-        self, setup_test_db, monkeypatch
-    ):
-        bridge_api = setup_test_db["bridge_api"]
-        client = self._client(bridge_api)
-        monkeypatch.setenv("RC_BRIDGE_API_KEY", "expected-key")
-
-        response = client.post(
-            "/api/bridge/update-external",
-            headers={"X-API-Key": "expected-key"},
-            json=["not", "an", "object"],
-        )
-
-        assert response.status_code == 400
-        assert response.get_json()["error"] == "Request body required"
+        assert response.status_code == 410
+        assert response.headers["Cache-Control"] == "no-store"
+        assert response.get_json()["code"] == "WRTC_BRIDGE_DISABLED"
+        conn = sqlite3.connect(db_path)
+        try:
+            after = conn.execute(
+                "SELECT status, external_tx_hash, external_confirmations FROM bridge_transfers"
+            ).fetchall()
+        finally:
+            conn.close()
+        assert after == before
 
     def test_void_bridge_rejects_non_object_json_before_state_handling(
         self, setup_test_db, monkeypatch

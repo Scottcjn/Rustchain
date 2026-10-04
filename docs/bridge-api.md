@@ -4,6 +4,8 @@
 
 The Bridge API provides REST endpoints for managing cross-chain transfers between RustChain and external chains (Solana, Ergo, Base). This implementation follows RIP-0305 Track C specifications.
 
+> **Retired:** the wRTC bridge is disabled. RTC is earned for contributions and spent on services in the RustChain ecosystem; there is no off-ramp. `POST /api/bridge/initiate` and `POST /api/bridge/update-external` now answer **410 Gone** with `code: WRTC_BRIDGE_DISABLED`. The admin status, list and void routes remain so any leftover transfer can be inspected or voided. The endpoint descriptions below are kept as a historical record.
+
 ## Base URL
 
 ```
@@ -36,6 +38,8 @@ X-API-Key: <bridge-api-key>
 ## Endpoints
 
 ### 1. Initiate Bridge Transfer
+
+> **Retired:** the wRTC bridge is disabled. RTC is earned for contributions and spent on services in the RustChain ecosystem; there is no off-ramp. This endpoint answers **410 Gone** (`code: WRTC_BRIDGE_DISABLED`).
 
 Create a new bridge transfer (deposit or withdraw). RustChain-origin deposits
 are operator-assisted and require admin authentication; do not treat this as a
@@ -272,6 +276,8 @@ X-Admin-Key: <admin-key>
 ---
 
 ### 5. Update External Confirmation (Bridge Service)
+
+> **Retired:** the wRTC bridge is disabled. RTC is earned for contributions and spent on services in the RustChain ecosystem; there is no off-ramp. This endpoint answers **410 Gone** (`code: WRTC_BRIDGE_DISABLED`).
 
 Update external transaction confirmation data (called by bridge service).
 

@@ -77,7 +77,7 @@ open http://localhost:8080/swagger.html
 |--------|----------|-------------|
 | POST | `/wallet/transfer` | Admin transfer |
 | POST | `/rewards/settle` | Trigger epoch settlement |
-| POST | `/api/bridge/initiate` | Initiate bridge transfer |
+| POST | `/api/bridge/initiate` | Retired: 410 Gone (wRTC bridge disabled) |
 | POST | `/api/bridge/void` | Void bridge transfer |
 | POST | `/api/lock/release` | Release lock |
 | POST | `/api/lock/forfeit` | Forfeit lock |

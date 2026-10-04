@@ -647,6 +647,8 @@ The Bridge API manages cross-chain transfers between RustChain and external chai
 
 ### POST /api/bridge/initiate
 
+> **Retired:** the wRTC bridge is disabled. RTC is earned for contributions and spent on services in the RustChain ecosystem; there is no off-ramp. This route answers **410 Gone** with `code: WRTC_BRIDGE_DISABLED`; the description below is kept as a historical record.
+
 Initiate a cross-chain bridge transfer (deposit or withdraw). RustChain-origin
 deposits are operator-assisted/admin-authenticated because they lock native RTC
 balances before external mint/release handling. This route is not a public
@@ -868,6 +870,8 @@ curl -fsS -X POST https://rustchain.org/api/bridge/void \
 ---
 
 ### POST /api/bridge/update-external
+
+> **Retired:** the wRTC bridge is disabled. RTC is earned for contributions and spent on services in the RustChain ecosystem; there is no off-ramp. This route answers **410 Gone** with `code: WRTC_BRIDGE_DISABLED`.
 
 Update external transaction confirmation data. **Bridge service callback only.**
 

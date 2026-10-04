@@ -59,7 +59,31 @@ class TestBridgeInitiateTypeValidation(unittest.TestCase):
             "amount_rtc": 1.0,
         }
 
-    def test_malformed_json_field_types_return_400_not_500(self):
+    # POST /api/bridge/initiate is retired (410 Gone); the request validators
+    # and create_bridge_transfer are kept for the historical record, so their
+    # type/precision guarantees are exercised directly.
+
+    def test_initiate_route_is_retired_and_writes_nothing(self):
+        bodies = [
+            self.valid_payload(),
+            {**self.valid_payload(), "amount_rtc": "nan"},
+            {**self.valid_payload(), "source_chain": []},
+            ["not", "an", "object"],
+        ]
+        for body in bodies:
+            with self.subTest(body=body):
+                response = self.client.post("/api/bridge/initiate", json=body)
+                self.assertEqual(response.status_code, 410)
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
+                self.assertEqual(response.get_json()["code"], "WRTC_BRIDGE_DISABLED")
+        conn = sqlite3.connect(self.db_path)
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM bridge_transfers").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(count, 0)
+
+    def test_malformed_json_field_types_are_rejected(self):
         cases = {
             "source_chain_list": {"source_chain": []},
             "dest_chain_dict": {"dest_chain": {}},
@@ -72,35 +96,46 @@ class TestBridgeInitiateTypeValidation(unittest.TestCase):
 
         for name, override in cases.items():
             with self.subTest(name=name):
-                payload = {**self.valid_payload(), **override}
-                response = self.client.post("/api/bridge/initiate", json=payload)
-                self.assertEqual(response.status_code, 400)
+                result = bridge_api.validate_bridge_request({**self.valid_payload(), **override})
+                self.assertFalse(result.ok)
 
-    def test_non_finite_amounts_return_400_not_500(self):
+    def test_non_finite_amounts_are_rejected(self):
         for amount_rtc in ("nan", "inf", "-inf"):
             with self.subTest(amount_rtc=amount_rtc):
-                payload = {**self.valid_payload(), "amount_rtc": amount_rtc}
-                response = self.client.post("/api/bridge/initiate", json=payload)
-                self.assertEqual(response.status_code, 400)
+                result = bridge_api.validate_bridge_request(
+                    {**self.valid_payload(), "amount_rtc": amount_rtc}
+                )
+                self.assertFalse(result.ok)
 
-    def test_overprecision_amount_returns_400(self):
-        payload = {**self.valid_payload(), "amount_rtc": "1.0000004"}
+    def test_overprecision_amount_is_rejected(self):
+        result = bridge_api.validate_bridge_request(
+            {**self.valid_payload(), "amount_rtc": "1.0000004"}
+        )
 
-        response = self.client.post("/api/bridge/initiate", json=payload)
-
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("at most 6 decimal places", response.get_json()["error"])
+        self.assertFalse(result.ok)
+        self.assertIn("at most 6 decimal places", result.error)
 
     def test_six_decimal_amount_is_stored_exactly(self):
-        payload = {**self.valid_payload(), "amount_rtc": "1.000001"}
-
-        response = self.client.post("/api/bridge/initiate", json=payload)
-
-        self.assertEqual(response.status_code, 200)
-        body = response.get_json()
-        self.assertEqual(body["amount_rtc"], 1.000001)
+        result = bridge_api.validate_bridge_request(
+            {**self.valid_payload(), "amount_rtc": "1.000001"}
+        )
+        self.assertTrue(result.ok, result.error)
+        details = result.details
+        req = bridge_api.BridgeTransferRequest(
+            direction=details["direction"],
+            source_chain=details["source_chain"],
+            dest_chain=details["dest_chain"],
+            source_address=details["source_address"],
+            dest_address=details["dest_address"],
+            amount_rtc=details["amount_rtc"],
+            memo=details.get("memo"),
+            bridge_type=details["bridge_type"],
+        )
         conn = sqlite3.connect(self.db_path)
         try:
+            ok, body = bridge_api.create_bridge_transfer(conn, req)
+            self.assertTrue(ok, body)
+            self.assertEqual(body["amount_rtc"], 1.000001)
             row = conn.execute(
                 "SELECT amount_i64 FROM bridge_transfers WHERE tx_hash = ?",
                 (body["tx_hash"],),
@@ -110,30 +145,25 @@ class TestBridgeInitiateTypeValidation(unittest.TestCase):
         self.assertEqual(row[0], 1_000_001)
 
     def test_mixed_case_chain_uses_normalized_value_for_address_validation(self):
-        payload = {
-            **self.valid_payload(),
-            "source_chain": "Base",
-            "source_address": "not-a-base-wallet",
-        }
+        result = bridge_api.validate_bridge_request(
+            {**self.valid_payload(), "source_chain": "Base", "source_address": "not-a-base-wallet"}
+        )
+        self.assertTrue(result.ok, result.error)
 
-        response = self.client.post("/api/bridge/initiate", json=payload)
+        valid, _msg = bridge_api.validate_bridge_route_address(
+            result.details["source_chain"], result.details["source_address"]
+        )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertFalse(valid)
 
-    def test_successful_mixed_case_chain_response_uses_normalized_values(self):
-        payload = {
-            **self.valid_payload(),
-            "source_chain": "Solana",
-            "dest_chain": "RustChain",
-        }
+    def test_mixed_case_chains_are_normalized(self):
+        result = bridge_api.validate_bridge_request(
+            {**self.valid_payload(), "source_chain": "Solana", "dest_chain": "RustChain"}
+        )
 
-        response = self.client.post("/api/bridge/initiate", json=payload)
-
-        self.assertEqual(response.status_code, 200)
-        body = response.get_json()
-        self.assertEqual(body["source_chain"], "solana")
-        self.assertEqual(body["dest_chain"], "rustchain")
-
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual(result.details["source_chain"], "solana")
+        self.assertEqual(result.details["dest_chain"], "rustchain")
 
 if __name__ == "__main__":
     unittest.main()

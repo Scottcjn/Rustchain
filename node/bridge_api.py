@@ -917,9 +917,36 @@ def update_external_confirmation(
 # Flask Routes (to be integrated into main node)
 # =============================================================================
 
+# The wRTC bridge is disabled (RTC is earned for contributions and spent on
+# services inside the ecosystem; there is no off-ramp). POST /api/bridge/initiate
+# and the external-confirmation callback stay registered so old clients get an
+# explicit 410 Gone instead of a bare 404, but they no longer touch the database.
+# The bridge_transfers / lock_ledger tables and the helpers above are kept for
+# the historical record; admin status/list/void stay available so any leftover
+# transfer can still be inspected or voided (voiding only releases a lock).
+# node/airdrop_v2.py carries the same notice for /api/bridge/lock; keep the two
+# in step.
+WRTC_BRIDGE_DISABLED_NOTICE = {
+    "ok": False,
+    "error": "gone",
+    "code": "WRTC_BRIDGE_DISABLED",
+    "message": (
+        "The wRTC bridge is disabled. RTC is earned for contributions and spent "
+        "on services in the RustChain ecosystem; there is no off-ramp."
+    ),
+    "docs": "https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md",
+}
+
+
 def register_bridge_routes(app):
     """Register bridge API routes with Flask app."""
     from flask import request, jsonify
+
+    def _bridge_disabled():
+        response = jsonify(WRTC_BRIDGE_DISABLED_NOTICE)
+        response.status_code = 410
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     def _body_string_field(data: Dict[str, Any], name: str, default: Optional[str] = None):
         value = data.get(name, default)
@@ -931,66 +958,9 @@ def register_bridge_routes(app):
     
     @app.route('/api/bridge/initiate', methods=['POST'])
     def initiate_bridge():
-        """Initiate a new bridge transfer."""
-        data = request.get_json(silent=True)
-        
-        # Validate request
-        validation = validate_bridge_request(data)
-        if not validation.ok:
-            return jsonify({"error": validation.error}), 400
-        details = validation.details or {}
+        """Retired: the wRTC bridge is disabled. Always 410 Gone."""
+        return _bridge_disabled()
 
-        # Deposits lock balances keyed by RustChain miner_id. Require operator
-        # authorization before any address-format response can mask auth state
-        # or leak validation behavior for another miner's balance.
-        admin_key = request.headers.get("X-Admin-Key", "")
-        expected_admin_key = os.environ.get("RC_ADMIN_KEY", "")
-        admin_initiated = bool(expected_admin_key) and hmac.compare_digest(admin_key, expected_admin_key)
-        if details["direction"] == "deposit":
-            if not expected_admin_key:
-                return jsonify({"error": "RC_ADMIN_KEY not configured"}), 503
-            if not admin_initiated:
-                return jsonify({"error": "unauthorized"}), 401
-
-        # Validate address formats
-        for chain, addr in [
-            (details["source_chain"], details["source_address"]),
-            (details["dest_chain"], details["dest_address"])
-        ]:
-            valid, msg = validate_bridge_route_address(
-                chain,
-                addr,
-                rustchain_source_is_miner=(
-                    details["direction"] == "deposit"
-                    and chain == details["source_chain"]
-                    and chain == "rustchain"
-                ),
-            )
-            if not valid:
-                return jsonify({"error": f"Invalid {chain} address: {msg}"}), 400
-
-        # Create bridge transfer
-        req = BridgeTransferRequest(
-            direction=details["direction"],
-            source_chain=details["source_chain"],
-            dest_chain=details["dest_chain"],
-            source_address=details["source_address"],
-            dest_address=details["dest_address"],
-            amount_rtc=details["amount_rtc"],
-            memo=details.get("memo"),
-            bridge_type=details["bridge_type"]
-        )
-        
-        conn = sqlite3.connect(DB_PATH, timeout=5.0)
-        try:
-            success, result = create_bridge_transfer(conn, req, admin_initiated)
-            if success:
-                return jsonify(result), 200
-            else:
-                return jsonify(result), 400
-        finally:
-            conn.close()
-    
     @app.route('/api/bridge/status/<tx_hash>', methods=['GET'])
     @app.route('/api/bridge/status', methods=['GET'])
     def get_bridge_status(tx_hash: Optional[str] = None):
@@ -1097,52 +1067,8 @@ def register_bridge_routes(app):
     
     @app.route('/api/bridge/update-external', methods=['POST'])
     def update_external():
-        """Update external confirmation data (for bridge service callbacks)."""
-        api_key = request.headers.get("X-API-Key", "")
-        expected_key = os.environ.get("RC_BRIDGE_API_KEY", "")
-        if not expected_key:
-            return jsonify({"error": "Bridge API key not configured"}), 503
-        if not hmac.compare_digest(api_key, expected_key):
-            return jsonify({"error": "Unauthorized"}), 401
-        
-        data = request.get_json(silent=True)
-        if not isinstance(data, dict) or not data:
-            return jsonify({"error": "Request body required"}), 400
-        
-        tx_hash, error = _body_string_field(data, "tx_hash")
-        if error:
-            return jsonify({"error": error}), 400
-        external_tx_hash, error = _body_string_field(data, "external_tx_hash")
-        if error:
-            return jsonify({"error": error}), 400
-        confirmations, error = _parse_non_negative_int_arg(data.get("confirmations"), "confirmations", 0, max_value=1000)
-        if error:
-            return jsonify({"error": error}), 400
-        required_confirmations = None
-        if data.get("required_confirmations") is not None:
-            required_confirmations, error = _parse_non_negative_int_arg(
-                data.get("required_confirmations"),
-                "required_confirmations",
-                0,
-                max_value=1000,
-            )
-            if error:
-                return jsonify({"error": error}), 400
-        
-        if not tx_hash or not external_tx_hash:
-            return jsonify({"error": "tx_hash and external_tx_hash required"}), 400
-
-        conn = sqlite3.connect(DB_PATH, timeout=5.0)
-        try:
-            success, result = update_external_confirmation(
-                conn, tx_hash, external_tx_hash, confirmations, required_confirmations
-            )
-            if success:
-                return jsonify(result), 200
-            else:
-                return jsonify(result), 400
-        finally:
-            conn.close()
+        """Retired: no bridge service confirms transfers any more. Always 410 Gone."""
+        return _bridge_disabled()
 
 
 # =============================================================================
