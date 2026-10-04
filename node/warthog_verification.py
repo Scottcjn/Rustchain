@@ -18,8 +18,18 @@ Bonus tiers:
   1.15x  Own Warthog node confirmed (running full node + balance)
 
 Replay prevention: one proof per miner per epoch.
+
+DISABLED BY DEFAULT (2026-10): every field of the proof is self-reported by
+the miner (collected_at is client-supplied and skippable, a NaN hashrate
+passes the `<= 0` check, and nothing binds wart_address to one miner), so the
+bonus cannot be granted on it. See submissions/self-audits/
+bosschaos-warthog-7446.md and Rustchain#3165. Proofs are still verified and
+stored, but effective_warthog_bonus() pins the reward multiplier to 1.0
+unless the operator sets RC_WARTHOG_BONUS_ENABLED=1. Re-enable only once the
+proof is checked server-side against the Warthog chain/pool.
 """
 
+import os
 import time
 import sqlite3
 from typing import Tuple
@@ -36,6 +46,37 @@ MIN_PLAUSIBLE_HEIGHT = 1000
 
 # Maximum age of a proof timestamp (seconds) - reject stale proofs
 MAX_PROOF_AGE = 900  # 15 minutes
+
+# Opt-in switch for applying the bonus to reward weight. Default OFF.
+WARTHOG_BONUS_ENV = "RC_WARTHOG_BONUS_ENABLED"
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+_disabled_logged = False
+
+
+def warthog_bonus_enabled() -> bool:
+    """True only when the operator explicitly opted in via RC_WARTHOG_BONUS_ENABLED."""
+    return os.environ.get(WARTHOG_BONUS_ENV, "").strip().lower() in _TRUTHY
+
+
+def effective_warthog_bonus(bonus) -> float:
+    """
+    Multiplier that may actually enter reward weight for this attestation.
+
+    With the opt-in flag set, returns `bonus` unchanged (previous behaviour).
+    Otherwise returns WART_BONUS_NONE (1.0) regardless of the proof, and logs
+    once per process that the bonus is disabled.
+    """
+    global _disabled_logged
+    if warthog_bonus_enabled():
+        return bonus
+    if not _disabled_logged:
+        _disabled_logged = True
+        print(
+            "[WARTHOG] Dual-mining bonus DISABLED pending server-side proof "
+            "verification; proofs are recorded but weight stays 1.0x "
+            f"(set {WARTHOG_BONUS_ENV}=1 to re-enable)"
+        )
+    return WART_BONUS_NONE
 
 
 def init_warthog_tables(conn):
@@ -281,7 +322,7 @@ if __name__ == "__main__":
     assert tier == 1.0  # Rejected
 
     # Test 6: DB operations
-    import tempfile, os
+    import tempfile
     db_path = os.path.join(tempfile.gettempdir(), "wart_test.db")
     with sqlite3.connect(db_path) as conn:
         conn.execute("""CREATE TABLE IF NOT EXISTS miner_attest_recent (

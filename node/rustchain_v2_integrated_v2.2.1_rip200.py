@@ -199,7 +199,7 @@ except ImportError as e:
 try:
     from warthog_verification import (
         verify_warthog_proof, record_warthog_proof,
-        get_warthog_bonus, init_warthog_tables
+        get_warthog_bonus, init_warthog_tables, effective_warthog_bonus
     )
     HAVE_WARTHOG = True
     print("[INIT] [OK] Warthog dual-mining verification loaded")
@@ -6942,7 +6942,7 @@ def _submit_attestation_impl():
         else:
             try:
                 verified, bonus_tier, wart_reason = verify_warthog_proof(warthog_proof, miner)
-                warthog_bonus = bonus_tier if verified else 1.0
+                warthog_bonus = effective_warthog_bonus(bonus_tier if verified else 1.0)
                 _wart_epoch = slot_to_epoch(current_slot())
                 with sqlite3.connect(DB_PATH) as wart_conn:
                     record_warthog_proof(wart_conn, miner, _wart_epoch, warthog_proof, verified, warthog_bonus, wart_reason)
