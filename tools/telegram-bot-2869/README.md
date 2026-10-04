@@ -1,5 +1,7 @@
 # RustChain Telegram Bot — Issue #2869
 
+> **Deprecated feature:** the price lookup in this tool queried third-party market-data services. It is deprecated: do not use, extend, or advertise it — RustChain official materials do not reference market prices. The code is left in place pending removal. The wRTC bridge is disabled; RTC is earned for contributions and spent on services in the ecosystem, with no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
+
 A complete Telegram bot for querying RustChain wallet and miner status.
 
 ## Features
@@ -7,7 +9,6 @@ A complete Telegram bot for querying RustChain wallet and miner status.
 - **`/balance <wallet>`** — Check RTC wallet balance
 - **`/miners`** — List active miners with hardware details
 - **`/epoch`** — Current epoch info (slot, pot, enrolled miners, supply)
-- **`/price`** — RTC/wRTC price in USD (from node + DexScreener)
 - **`/help`** — Show available commands
 - **Rate limiting** — 1 request per 5 seconds per user (configurable)
 - **Error handling** — Graceful messages when node is offline or unreachable
@@ -49,7 +50,6 @@ python bot.py
 | `RUSTCHAIN_NODE_URL` | `https://rustchain.org` | RustChain node URL |
 | `RATE_LIMIT_SECONDS` | `5` | Min seconds between requests per user |
 | `REQUEST_TIMEOUT` | `15` | HTTP request timeout in seconds |
-| `RTC_PRICE_USD` | `0.10` | Fallback price when DexScreener is down |
 
 ## Deployment
 
@@ -162,8 +162,6 @@ primary_region = "sjc"
 
 ```
 User → Telegram → Bot → httpx → RustChain Node
-                          ↓
-                    DexScreener (price)
 ```
 
 - **Async I/O**: Uses `python-telegram-bot` v20+ (async) + `httpx` for non-blocking HTTP

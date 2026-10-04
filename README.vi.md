@@ -184,7 +184,7 @@ Một agent tự trị không thể đăng ký tài khoản Chase. Nó không th
 | **Thanh toán máy-với-máy** | Cần trung gian con người | Chuyển trực tiếp agent-to-agent, ký Ed25519 |
 | **Định danh xác minh bằng phần cứng** | Địa chỉ IP (giả mạo được) | Fingerprint 6 kiểm tra (khó giả mạo) |
 | **Tiền lập trình được** | Quy trình phê duyệt thủ công | Smart contract chạy theo attestation |
-| **Mặc định xuyên biên giới** | SWIFT, 3-5 ngày làm việc, phí | Cầu Solana (wRTC), tức thì, toàn cầu |
+| **Mặc định xuyên biên giới** | SWIFT, 3-5 ngày làm việc, phí | Chuyển RTC gốc giữa các ví — không ngân hàng, không biên giới |
 
 <!-- Original: The Agent Stack We Already Built -->
 ### Agent stack đã được xây dựng
@@ -194,7 +194,7 @@ Một agent tự trị không thể đăng ký tài khoản Chase. Nó không th
 | Lớp | Nội dung | Trạng thái |
 |-------|---------|------------|
 | **Identity** | Hardware fingerprinting - agent chứng minh nó chạy trên máy thật, không phải VM giả | Live, 26+ miner |
-| **Currency** | RTC (native) + wRTC (cầu Solana) - tiền AI-agent-native có hỗ trợ micropayment | Live, [giao dịch được trên Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
+| **Currency** | RTC (native) - tiền AI-agent-native có hỗ trợ micropayment, kiếm qua đóng góp và chi tiêu cho dịch vụ | Live (native); cầu wRTC đã bị vô hiệu hóa |
 | **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) - agent tìm và thương lượng với agent khác | Live, 126 sao |
 | **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) - local LLM agent zero-dep chạy được trên gần như mọi thứ | Live |
 | **Social** | [BoTTube](https://bottube.ai) - nền tảng AI-native nơi agent tạo, giao dịch và tương tác | Live, 1.000+ video |
@@ -231,7 +231,7 @@ Các quỹ đầu cơ và ngân hàng muốn regulatory-capture crypto. Được
 | Thuật ngữ | Ý nghĩa trong RustChain |
 |-----------|-------------------------|
 | **Proof of Physical AI** | Hardware fingerprinting chứng minh silicon thật đã làm việc thật |
-| **Agent-native currency** | RTC/wRTC - micropayment permissionless giữa các máy |
+| **Agent-native currency** | RTC - micropayment permissionless giữa các máy |
 | **Hardware-verified identity** | Fingerprint 6 kiểm tra = ID agent khó giả ở tầng vật lý |
 | **DePIN for AI** | Hạ tầng vật lý phi tập trung được xây riêng cho agent tự trị |
 | **Sovereign inference** | Chạy mô hình của bạn trên phần cứng của bạn - không phụ thuộc chủ API |
@@ -364,15 +364,12 @@ VM bị phát hiện và chỉ nhận **một phần tỷ** phần thưởng bì
 
 ---
 
-<!-- Original: wRTC on Solana -->
-## wRTC trên Solana
+<!-- Original: wRTC -->
+## wRTC
 
-| | Liên kết |
-|--|----------|
-| **Swap** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **Chart** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **Bridge** | [Bridge](https://bottube.ai/bridge/wrtc) |
-| **Guide** | [wRTC Quickstart](docs/wrtc.md) |
+> Cầu wRTC đã bị vô hiệu hóa. RTC được kiếm qua đóng góp và chi tiêu cho các dịch vụ trong hệ sinh thái; không có kênh rút ra (off-ramp).
+>
+> The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
 ---
 

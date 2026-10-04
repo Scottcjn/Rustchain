@@ -610,7 +610,7 @@ RustChain 使用最低费用结构来防止垃圾邮件，同时保持可访问�
 ### 6.5 归属规则
 
 - 预挖钱包：1 年解锁延迟（链上治理执行）
-- 基金会/开发资金：在 Epoch 1 之前不能在 DEX 上出售
+- 基金会/开发资金：在 Epoch 1 之前锁定
 - 社区金库：通过治理提案释放
 
 ---
@@ -759,7 +759,6 @@ def compute_commitment(miners: List[Dict]) -> str:
 
 ### 9.1 近期路线图（2026）
 
-- **DEX 上市**：ErgoDEX 上的 RTC/ERG 交易对
 - **NFT 徽章系统**：灵魂绑定成就徽章
   - "Bondi G3 Flamekeeper" — 在 PowerPC G3 上挖矿
   - "QuickBasic Listener" — 在 DOS 机器上挖矿

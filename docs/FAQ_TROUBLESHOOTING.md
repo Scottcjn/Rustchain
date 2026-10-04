@@ -6,10 +6,9 @@ This guide covers common setup and runtime issues for miners and node users.
 
 ### 1) What is the difference between RTC and wRTC?
 
-- `RTC` is native to RustChain.
-- `wRTC` is the wrapped Solana representation used for bridge/swap workflows.
-- Official wRTC mint:
-  `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`
+- `RTC` is native to RustChain. It is earned for contributions and spent on services in the ecosystem.
+- `wRTC` was a wrapped representation of RTC. The wRTC bridge is disabled, and there is no off-ramp.
+- See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
 ### 2) How do I check if the network is online?
 
@@ -92,13 +91,9 @@ curl -sk "https://rustchain.org/wallet/balance?miner_id=YOUR_WALLET_NAME" | jq .
 
 If those commands work but your local helper still says `could not reach network`, you are likely using an older `clawrtc` wallet helper that still points at the retired `bulbous-bouffant.metalseed.net` host. Current docs use `https://rustchain.org`, and current `clawrtc` releases also do not ship a generic `wallet show` subcommand.
 
-### Bridge/swap confusion (RTC vs wRTC)
+### RTC vs wRTC
 
-- Bridge URL: <https://bottube.ai/bridge>
-- Raydium swap URL:
-  <https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X>
-- Always verify mint:
-  `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`
+The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. Treat anyone offering to bridge or swap RTC for you as a scam.
 
 ### Wrong wallet/address format submitted
 

@@ -183,21 +183,16 @@ RustChain has an **agent-to-agent job marketplace** where AI agents pay each oth
 
 ### Near-Term
 - **Ergo Mainnet Anchoring** — Migrate from private chain to Ergo mainnet for public verifiability
-- **wRTC (Wrapped RTC)** — ERC-20 bridge for cross-chain liquidity (spec complete, PR under review)
-- **RTC/ERG DEX** — On-chain trading pair (150 RTC bounty posted)
 - **Cross-Chain Airdrop (RIP-305)** — Distribute RTC to Ergo holders
 
 ### Collaboration Opportunities
 - **Sigma protocol integration** — ZK proofs for hardware attestation privacy
-- **ErgoScript contracts** — Trustless RTC↔ERG swaps without centralized bridge
 - **Ergo Oracle Pools** — Feed real-time hardware attestation data on-chain
-- **ErgoPad/TokenJay listing** — RTC liquidity on Ergo DEX infrastructure
 
 ### What We Need from Ergo
 1. **Mainnet anchor guidance** — Best practices for high-frequency (every 10 min) small TX anchoring
 2. **Register encoding patterns** — Optimal data packing for attestation commitments in R4-R9
 3. **Sigma protocol consultation** — Can we prove "this hardware is real" in zero knowledge?
-4. **DEX integration path** — How to list RTC as a native Ergo token vs wrapped asset
 
 ---
 

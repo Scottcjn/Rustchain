@@ -5,13 +5,13 @@
 > particular number. RTC holders have **no legal claim** on the RustChain codebase,
 > Elyan Labs hardware, or any asset described here — coverage is an honesty check on
 > the reference rate, the way book-value-per-share is an honesty check on a stock
-> price, not a redemption guarantee. Markets for RTC are **thin** (see the wRTC
-> liquidity caveat in the [README](../README.md#tokenomics)). Every input below is
+> price, not a redemption guarantee. RTC has **no off-ramp**, and the reference rate is
+> an internal accounting unit (see the [README](../README.md#tokenomics)). Every input below is
 > dated, sourced, and re-computable by you.
 
 **Analysis date:** 2026-06-11. Live counterparts of several figures regenerate at
 [`rustchain.org/facts.json`](https://rustchain.org/facts.json) (see the
-`external_sales` and `live_chain` facts) and
+`live_chain` facts) and
 [`rustchain.org/payouts.json`](https://rustchain.org/payouts.json).
 
 ---
@@ -19,8 +19,8 @@
 ## The question
 
 The published reference rate is $0.15 (tier schedule: $0.10 base → $0.15 at 1,000+
-holders → $0.20 at 2,000+ → market discovery). External arms-length sales have
-cleared at $0.10 (operator-attested; disclosed as such in `facts.json`).
+holders → $0.20 at 2,000+). The reference rate is an internal accounting unit, not a
+market price.
 
 **What if you valued RTC on fundamentals instead — what the ecosystem would cost to
 replace, and what an RTC has actually purchased? Is the reference rate honest,
@@ -39,7 +39,6 @@ inflated, or conservative?**
 | Public repo, core code | 562,200 lines (excl. `bounties/` submissions) | `git clone` this repo and count |
 | Deployed node codebase | ~84,000 lines (overlapping + node-local) | Operator-attested |
 | On-chain bounty payouts | 670 payouts, 21,130 RTC from `founder_team_bounty` | `participation.json`; ledger debits in explorer |
-| External sales cleared | $0.10, arms-length OTC | `facts.json` → `external_sales` (operator-attested, thin depth disclosed) |
 
 ## What-if #1: effective supply
 
@@ -96,7 +95,7 @@ Replacement cost ($1.5–2.5M) divided by each supply basis:
   schedule walks the ask *toward* where measured fundamentals already sit, rather
   than ahead of them. Most tokens invert this — priced at large multiples of
   anything measurable behind them.
-- **Coverage is still not price.** Price requires buyers, depth, and time. This
+- **Coverage is not a price.** RTC has no off-ramp and is not traded by the project. This
   analysis answers one question only: *is the reference rate honest?* The measured
   answer is yes — with room below fundamentals, not above them.
 

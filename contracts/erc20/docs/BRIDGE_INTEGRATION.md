@@ -1,5 +1,7 @@
 # Bridge Integration Guide
 
+> **Notice:** The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md). This document is kept as a technical/historical record.
+
 **Bounty #1510 | RIP-305 Track B**
 
 This guide explains how to integrate the wRTC ERC-20 contract with the BoTTube Bridge for cross-chain transfers between RustChain, Solana, and Base.
@@ -446,44 +448,6 @@ function processedDeposits(bytes32 depositId)
 // Get withdrawal status
 function processedWithdrawals(bytes32 withdrawalId) 
     external view returns (bool);
-```
-
----
-
-## 🔗 Example Integration: Aerodrome DEX
-
-### Add Liquidity
-
-```javascript
-// 1. Approve router
-await wrtc.approve(routerAddress, amount);
-
-// 2. Add liquidity
-await router.addLiquidity(
-  wrtcAddress,
-  usdcAddress,
-  wrtcAmount,
-  usdcAmount,
-  minWrtcAmount,
-  minUsdcAmount,
-  recipient,
-  deadline
-);
-```
-
-### Create Pool
-
-```javascript
-// 1. Create pool if doesn't exist
-await factory.createPair(wrtcAddress, usdcAddress);
-
-// 2. Get pool address
-const poolAddress = await factory.getPair(wrtcAddress, usdcAddress);
-
-// 3. Add initial liquidity
-await wrtc.approve(poolAddress, initialAmount);
-await usdc.approve(poolAddress, initialAmount);
-await pool.mint(recipient);
 ```
 
 ---

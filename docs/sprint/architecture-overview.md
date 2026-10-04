@@ -252,7 +252,7 @@ Client (Agent/User)           RustChain Node / Service
 | Block Producer | Bundle attestations → blocks | Internal |
 | Ledger | Canonical chain storage | Ergo-anchored |
 | x402 Layer | Micropayment authorization | HTTP 402 |
-| wRTC Bridge | Cross-chain liquidity (Solana) | FlameBridge |
+| wRTC Bridge | Disabled | FlameBridge |
 
 ---
 

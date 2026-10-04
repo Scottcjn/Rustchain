@@ -463,32 +463,6 @@ curl -fsS -X POST https://rustchain.org/wallet/transfer/signed \
 
 ---
 
-### GET /wallet/swap-info
-
-获取 USDC/wRTC 交换指南 (高级 x402 端点，目前在测试版免费)。
-
-**方法:** `GET`
-**路径:** `/wallet/swap-info`
-**权限:** 无 (x402 付款协议，测试版免费)
-
-**cURL:**
-```bash
-curl -fsS https://rustchain.org/wallet/swap-info | jq .
-```
-
-**响应 (200 OK):**
-```json
-{
-  "rtc_price_usd": 0.15,
-  "wrtc_solana_mint": "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X",
-  "wrtc_base_contract": "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6",
-  "raydium_pool": "8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb",
-  "bridge_url": "https://bottube.ai/bridge"
-}
-```
-
----
-
 ### GET /explorer
 
 用于浏览区块和交易的网页界面。返回 HTML。

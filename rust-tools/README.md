@@ -28,7 +28,6 @@ RustChain is named after Rust for a reason. We want real Rust code in the ecosys
 - **High-performance miner** - optimized mining client
 - **Cross-chain bridge client** - interoperability with other chains
 - **Advanced wallet with multisig** - enterprise-grade wallet features
-- **Decentralized exchange (DEX) client** - trade RTC and other assets
 - **Layer 2 scaling solution** - payment channels or sidechains
 
 ## Requirements

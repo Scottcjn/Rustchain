@@ -111,7 +111,7 @@ graph LR
     
     subgraph External
         ERGO[Ergo Blockchain]
-        SOL[Solana<br>wRTC Bridge]
+        SOL[Solana<br>wRTC Bridge - disabled]
     end
     
     M1 --> N1
@@ -143,12 +143,9 @@ graph LR
 | **Epoch Duration** | ~24 hours |
 | **Annual Inflation** | ~0.68% (decreasing) |
 
-### wRTC Bridge (Solana)
+### wRTC Bridge
 
-RustChain Token is bridged to Solana as **wRTC**:
-- **Token Mint**: `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`
-- **DEX**: [Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X)
-- **Bridge**: [BoTTube Bridge](https://bottube.ai/bridge)
+The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
 ## Security Model
 
@@ -236,9 +233,7 @@ curl -sk https://rustchain.org/api/miners
 - Security audits
 
 ### Phase 2: Bridge Expansion (Q2 2026)
-- Ethereum bridge
-- Base L2 integration
-- Cross-chain liquidity
+- Retired — the wRTC bridge is disabled
 
 ### Phase 3: Agent Economy (Q3 2026)
 - x402 payment protocol

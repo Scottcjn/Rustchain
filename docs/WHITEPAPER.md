@@ -615,7 +615,7 @@ RustChain uses a minimal fee structure to prevent spam while maintaining accessi
 ### 6.5 Vesting Rules
 
 - Premine wallets: 1-year unlock delay (on-chain governance enforced)
-- Foundation/Dev funds: Cannot sell on DEX prior to Epoch 1
+- Foundation/Dev funds: Locked prior to Epoch 1
 - Community vault: Released through governance proposals
 
 ---
@@ -764,7 +764,6 @@ Security audit conducted January 2026:
 
 ### 9.1 Near-Term Roadmap (2026)
 
-- **DEX Listing**: RTC/ERG trading pair on ErgoDEX
 - **NFT Badge System**: Soulbound achievement badges
   - "Bondi G3 Flamekeeper" — Mine on PowerPC G3
   - "QuickBasic Listener" — Mine from DOS machine

@@ -16,7 +16,7 @@ Under *SEC v. W.J. Howey Co.* (1946), an "investment contract" (security) requir
 |--------------|-------------|--------|
 | **1. Investment of money** | No one has ever paid money to acquire RTC at launch. All RTC is earned through mining (`python3 -m pip install clawrtc`). No ICO, no presale, no token sale. | **NOT MET** |
 | **2. Common enterprise** | Mining is performed independently by individual hardware operators. No pooled funds, no shared investment vehicle. Each miner runs their own CPU. | **NOT MET** |
-| **3. Expectation of profits** | RTC's primary use is ecosystem utility: mining rewards, agent tipping on BoTTube, bridge fees, skill discovery on Beacon Protocol. Marketing consistently emphasizes building, not investing. | **NOT MET** |
+| **3. Expectation of profits** | RTC's primary use is ecosystem utility: mining rewards, agent tipping on BoTTube, spending on ecosystem services, skill discovery on Beacon Protocol. Marketing consistently emphasizes building, not investing. | **NOT MET** |
 | **4. Efforts of others** | Value derives from decentralized mining participation across independent hardware operators, not from Elyan Labs' managerial efforts. The protocol runs autonomously. | **NOT MET** |
 
 **Conclusion: RTC fails all four prongs of the Howey Test.**
@@ -61,7 +61,7 @@ RTC serves concrete utility functions within the ecosystem:
 
 1. **Mining rewards** — Compensation for hardware attestation and network participation
 2. **Agent tipping** — Tipping AI agents on BoTTube for video content
-3. **Bridge fees** — Cross-chain bridging (Solana wRTC, Ergo anchoring)
+3. **Ecosystem services** — RTC is spent on services inside the RustChain / BoTTube ecosystem
 4. **Bounty payments** — Compensation for code contributions, security audits, documentation
 5. **Skill discovery** — Agent-to-agent coordination via Beacon Protocol
 6. **Governance** — Coalition voting on protocol changes (The Flamebound genesis coalition)
@@ -92,24 +92,18 @@ Bitcoin is widely recognized as a commodity, not a security. RTC shares the same
 
 ---
 
-## Bridges and Secondary Markets
+## Bridges and Anchoring
 
-### Solana wRTC Bridge
-- **wRTC** is a wrapped version of RTC on Solana (SPL token)
-- Mint: `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`
-- **Mint authority revoked** — no new wRTC can be created outside the bridge
-- **Metadata immutable** — cannot be changed
-- **LP tokens permanently locked** — anti-rug proof
-- Raydium DEX pool enables peer-to-peer trading
-- Bridge exists to provide liquidity access, not as a fundraising mechanism
+### wRTC Bridge (Disabled)
+- The wRTC bridge is disabled
+- RTC is one way in, no way out: it is earned for contributions and spent on services in the ecosystem
+- There is no off-ramp; the reference rate is an internal accounting unit, not a market price
+- See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md)
 
 ### Ergo Anchoring
 - Miner attestation hashes are periodically anchored to the Ergo blockchain
 - Provides external verification of RustChain's mining history
 - No token sale or fundraising involved
-
-### Important Note
-Secondary market trading on DEXs occurs peer-to-peer. Elyan Labs does not operate an exchange, does not set prices, and does not profit from trading activity.
 
 ---
 

@@ -326,6 +326,9 @@ graph LR
 - **发行递减** — 总供应上限为 830 万
 
 ### 跨链桥接 (wRTC)
+
+> **已停用。** wRTC 跨链桥已停用；RTC 没有出金通道。以下设计仅作历史记录。
+
 - **桥接类型:** RustChain ↔ Solana (通过 Ergo 锚点)
 - **包装代币:** Solana 上的 wRTC
 - **锁定机制:** RustChain 上的 RTC 锁定 → Solana 上的 wRTC 铸造

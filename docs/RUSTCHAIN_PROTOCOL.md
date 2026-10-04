@@ -44,7 +44,6 @@ RustChain is a **Proof-of-Antiquity** blockchain that rewards real vintage hardw
 |-----------|------|-----|
 | **Attestation Server** | Validates hardware fingerprints, tracks miners | `https://rustchain.org` |
 | **Block Explorer** | View miners, epochs, rewards | `https://rustchain.org/explorer` |
-| **wRTC Bridge** | Bridge RTC to Solana (wRTC) | `https://bottube.ai/bridge` |
 
 ---
 
@@ -207,21 +206,10 @@ The attestation server doesn't trust self-reported data. It performs:
 | **Bounty Pool** | 20% | Code contributions, docs, bounties |
 | **Dev Fund** | 10% | Core development, infrastructure |
 
-### RTC Value
+### RTC Reference Rate
 
-- **Reference Rate**: 1 RTC ≈ $0.15 USD
-- **Bridge**: RTC ↔ wRTC (Solana SPL token)
-- **Trading**: Available on Raydium DEX
-
-### Bridge to Solana
-
-```bash
-# Bridge RTC to wRTC (Solana)
-Visit: https://bottube.ai/bridge
-
-# Trade on Raydium
-https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X
-```
+- **Reference Rate**: 1 RTC = $0.15 — an internal accounting unit, not a market price
+- **One way in, no way out**: RTC is earned for contributions (or bought as credits on BoTTube) and spent on services in the ecosystem. The wRTC bridge is disabled; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
 ---
 
@@ -344,7 +332,7 @@ curl -sk -X POST https://rustchain.org/attest/submit \
 | **Epoch** | 10-minute reward cycle |
 | **Antiquity Multiplier** | Hardware age bonus (0.0005x - 4.0x) |
 | **RTC** | RustChain Token — native cryptocurrency |
-| **wRTC** | Wrapped RTC on Solana (SPL token) |
+| **wRTC** | Former wrapped RTC on Solana (bridge disabled) |
 | **DePIN** | Decentralized Physical Infrastructure Network |
 | **BCOS** | Beacon Certified Open Source — license compliance system |
 

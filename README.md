@@ -1,4 +1,4 @@
-<!-- RustChain — DePIN blockchain for vintage and retro hardware. Topics: Proof of Antiquity (PoA), hardware fingerprinting, anti-emulation, oscillator drift / cache timing / SIMD identity / thermal entropy / instruction jitter, vintage computing mining, PowerPC G4 G5, IBM POWER8 ppc64le, SPARC, MIPS, 68K, RISC-V, Cell BE, AI agent economy, agent-native payments, machine-to-machine micropayments, RTC token, wRTC Solana, Ergo anchoring, Proof of Physical AI, Proof of Provenance (RIP-0310), e-waste reduction, DePIN for AI agents. -->
+<!-- RustChain — DePIN blockchain for vintage and retro hardware. Topics: Proof of Antiquity (PoA), hardware fingerprinting, anti-emulation, oscillator drift / cache timing / SIMD identity / thermal entropy / instruction jitter, vintage computing mining, PowerPC G4 G5, IBM POWER8 ppc64le, SPARC, MIPS, 68K, RISC-V, Cell BE, AI agent economy, agent-native payments, machine-to-machine micropayments, RTC token, Ergo anchoring, Proof of Physical AI, Proof of Provenance (RIP-0310), e-waste reduction, DePIN for AI agents. -->
 
 <div align="center">
 
@@ -196,7 +196,7 @@ An autonomous agent can't apply for a Chase checking account. It can't sign a Te
 | **Machine-to-machine settlement** | Requires human intermediary | Direct agent-to-agent transfers, Ed25519 signed |
 | **Hardware-verified identity** | IP address (spoofable) | 6-check hardware fingerprint (unfakeable) |
 | **Programmable money** | Manual approval workflows | Smart contracts execute on attestation |
-| **Cross-border by default** | SWIFT, 3-5 business days, fees | Solana bridge (wRTC) — early-stage, thin liquidity |
+| **Cross-border by default** | SWIFT, 3-5 business days, fees | Native RTC transfers between wallets — no bank, no border |
 
 ### The Agent Stack We Already Built
 
@@ -205,7 +205,7 @@ This isn't a roadmap. This is deployed and running:
 | Layer | What | Status |
 |-------|------|--------|
 | **Identity** | Hardware fingerprinting — agents prove they run on real machines, not spoofed VMs | Live, 20+ miners (see the [live miner API](https://rustchain.org/api/miners)); this is distinct from the smaller count of always-on attestation nodes shown by the explorer |
-| **Currency** | RTC (native) + wRTC (Solana bridge) — agent-native money with micropayment support | Live (native); wRTC swappable, liquidity experimental |
+| **Currency** | RTC (native) — agent-native money with micropayment support, earned for contributions and spent on services | Live (native); the wRTC bridge is disabled |
 | **Discovery** | [Beacon protocol](https://github.com/Scottcjn/beacon-skill) — agents find and negotiate with other agents, with a RustChain transport for Ed25519-signed RTC micropayments | Live |
 | **Execution** | [TrashClaw](https://github.com/Scottcjn/trashclaw) — zero-dep local LLM agent that runs on anything | Live |
 | **Social** | BoTTube — AI-native platform where agents create, trade, and engage | Live, 1,000+ videos |
@@ -244,7 +244,7 @@ What they *can't* capture:
 | Term | What It Means Here |
 |------|-------------------|
 | **Proof of Physical AI** | Hardware fingerprinting proves real silicon did real work |
-| **Agent-native currency** | RTC/wRTC — permissionless micropayments between machines |
+| **Agent-native currency** | RTC — permissionless micropayments between machines |
 | **Hardware-verified identity** | 6-check fingerprint = unfakeable agent ID at the physical layer |
 | **DePIN for AI** | Decentralized physical infrastructure purpose-built for autonomous agents |
 | **Sovereign inference** | Run your own models on your own hardware — no API landlords |
@@ -431,14 +431,13 @@ Emission is a fixed 1.5 RTC per epoch and does not halve. It continues at that r
 
 ### Reference rate climbs as holder count grows
 
-The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *USD value paid per finding* stays stable as the token appreciates. There is currently no registered live API for that internal reference rate; the table and linked policy issue below are the published source. For machine-readable chain emission values, [`GET /epoch`](docs/READ_ONLY_API_CONTRACT.md#get-epoch) returns the confirmed epoch pot, epoch size, enrollment count, and fixed total supply. This distinction resolves the broken endpoint claim reported in [#7910](https://github.com/Scottcjn/Rustchain/issues/7910).
+The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *reference value paid per finding* stays stable as the reference rate steps up. There is currently no registered live API for that internal reference rate; the table and linked policy issue below are the published source. For machine-readable chain emission values, [`GET /epoch`](docs/READ_ONLY_API_CONTRACT.md#get-epoch) returns the confirmed epoch pot, epoch size, enrollment count, and fixed total supply. This distinction resolves the broken endpoint claim reported in [#7910](https://github.com/Scottcjn/Rustchain/issues/7910).
 
 | Holder count | Reference rate | Bounty rate scale |
 |--------------|----------------|-------------------|
 | Genesis (~761 holders) | $0.10 | initial |
 | ~1,000+ holders (today) | $0.15 | **Current** |
 | 2,000 holders | $0.20 | ~50% of current |
-| Real market discovery | observed price | Recompute from USD anchor |
 
 **Examples after first reduction (at 1,000 holders / $0.15 ref)**:
 - Critical bug bounty: 100 → 65 RTC
@@ -449,10 +448,11 @@ The published USD-equivalent reference rate for RTC moves up as the network gain
 **Fairness rules** (codified at [rustchain-bounties#12458](https://github.com/Scottcjn/rustchain-bounties/issues/12458)):
 - Not retroactive — work submitted under the old rate gets the old rate
 - Announced ahead — 24-48 hour heads-up before each milestone
-- One-way ratchet — rates ONLY go down with appreciation, never back up
-- Market overrides — DEX/CEX listing switches to USD-anchor pricing
+- One-way ratchet — rates ONLY go down as the reference rate steps up, never back up
 
-This is how a healthy token economy works. Rewards aren't anchored to a nominal RTC number; they're anchored to the USD value of the underlying work. As RTC gains real value through scarcity + adoption, the reward count per finding drops while the dollar value stays consistent. **The math protects both the contributor and the program.**
+Rewards aren't anchored to a nominal RTC number; they're anchored to the reference value of the underlying work. As the internal reference rate steps up, the reward count per finding drops while the reference value stays consistent. **The math protects both the contributor and the program.**
+
+> The reference rate is an **internal accounting unit** for bounties and service credits — not a market price. RTC is **one way in, no way out**: it is earned for contributions or bought as credits on BoTTube to spend on services in the ecosystem. There is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
 ### Fees
 
@@ -475,16 +475,9 @@ Full tokenomics detail: [WHITEPAPER §6](docs/WHITEPAPER.md). Scenario analysis:
 
 ---
 
-## wRTC on Solana
+## wRTC
 
-| | Link |
-|--|------|
-| **Swap** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **Pool** | [Raydium CPMM pool `8CF2…nYzb`](https://raydium.io/liquidity-pools/?token=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **Bridge** | [Bridge](https://bottube.ai/bridge/wrtc) |
-| **Guide** | [wRTC Quickstart](docs/wrtc.md) |
-
-> **Honest status:** wRTC is live and swappable on Solana, but the pool is **early-stage with very thin liquidity** (≈$1.5k TVL, near-zero volume as of 2026-08-28) — treat it as experimental, not a deep market. The `$0.15` figure for RTC is an **internal reference rate** for bounty accounting, not a market price or a promise of convertibility.
+The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md) and the [wRTC notice](docs/wrtc.md).
 
 ---
 
@@ -499,7 +492,7 @@ Every contribution earns RTC tokens. Browse [open bounties](https://github.com/S
 | Major | 75-100 RTC | Security fix, consensus |
 | Critical | 100-150 RTC | Vulnerability, protocol |
 
-**1 RTC ≈ $0.15 USD** · `curl -fsSL https://rustchain.org/install.sh | bash` · [CONTRIBUTING.md](CONTRIBUTING.md)
+**Internal reference rate: 1 RTC = $0.15** (accounting unit, not a market price) · `curl -fsSL https://rustchain.org/install.sh | bash` · [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 

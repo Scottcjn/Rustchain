@@ -20,7 +20,7 @@
 
 *你的 PowerPC G4 比现代 Threadripper 赚得更多。这就是重点。*
 
-[官网](https://rustchain.org) • [实时浏览器](https://rustchain.org/explorer) • [兑换 wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC 快速入门](../wrtc.md) • [wRTC 教程](../WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia 参考](https://grokipedia.com/search?q=RustChain) • [白皮书](../RustChain_Whitepaper_Flameholder_v0.97.pdf) • [快速开始](#-快速开始) • [工作原理](#-古董证明如何工作)
+[官网](https://rustchain.org) • [实时浏览器](https://rustchain.org/explorer) • [Grokipedia 参考](https://grokipedia.com/search?q=RustChain) • [白皮书](../RustChain_Whitepaper_Flameholder_v0.97.pdf) • [快速开始](#-快速开始) • [工作原理](#-古董证明如何工作)
 
 </div>
 
@@ -57,7 +57,6 @@ Proof of Antiquity 可以被理解为一种"硬件年代证明"或"机器时间�
 | [硬件列表](#-支持的硬件) | 15+架构支持 |
 | [白皮书](../RustChain_Whitepaper_Flameholder_v0.97.pdf) | 技术深度解析 |
 | [API 参考](./API.md) | REST API 文档 |
-| [wRTC 教程](../WRTC_ONBOARDING_TUTORIAL.md) | 跨链桥接指南 |
 | [贡献指南](../../CONTRIBUTING.md) | 参与开发 |
 
 ---
@@ -69,7 +68,6 @@ Proof of Antiquity 可以被理解为一种"硬件年代证明"或"机器时间�
 - `GET https://bottube.ai/api/premium/videos` - 批量视频导出（BoTTube）
 - `GET https://bottube.ai/api/premium/analytics/<agent>` - 深度 Agent 分析（BoTTube）
 - `GET /api/premium/reputation` - 完整声誉导出（Beacon Atlas）
-- `GET /wallet/swap-info` - USDC/wRTC 兑换指引（RustChain）
 
 ---
 
@@ -282,13 +280,11 @@ journalctl --user -u rustchain-miner -f
 
 ---
 
-## 🌉 wRTC 跨链桥
+## 🌉 wRTC
 
-RustChain通过wRTC（wrapped RTC）连接到Solana生态：
-
-- **wRTC** = Solana上的SPL代币，1:1锚定RTC
-- **交易**：[Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb)
-- **教程**：[wRTC入门指南](../WRTC_ONBOARDING_TUTORIAL.md)
+> wRTC 跨链桥已停用。RTC 通过贡献获得，并用于生态系统内的服务；没有出金通道（off-ramp）。
+>
+> The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
 ---
 
@@ -297,7 +293,6 @@ RustChain通过wRTC（wrapped RTC）连接到Solana生态：
 RustChain不只是一个挖矿网络——它是AI Agent的经济基础设施：
 
 - **硬件验证Agent**：自动审核新矿机的6项检查
-- **交易Agent**：代表用户执行跨链交易
 - **社交Agent**：在BoTTube（RustChain的AI原生社交平台）上发布内容
 - **分析Agent**：监控网络健康和矿机性能
 

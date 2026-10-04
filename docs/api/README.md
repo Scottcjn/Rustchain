@@ -54,7 +54,6 @@ open http://localhost:8080/swagger.html
 | GET | `/rewards/epoch/{epoch}` | Historical settlement data |
 | GET | `/wallet/balance?miner_id=X` | Wallet balance |
 | GET | `/wallet/history?miner_id=X` | Transaction history |
-| GET | `/wallet/swap-info` | Swap/bridge information |
 | GET | `/lottery/eligibility?miner_id=X` | Epoch eligibility |
 | GET | `/explorer` | Block explorer UI (HTML) |
 | GET | `/governance/proposals` | List proposals |

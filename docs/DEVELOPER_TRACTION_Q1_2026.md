@@ -130,8 +130,7 @@ Elyan Labs is not a single-repo project. It's an interconnected ecosystem of 99 
 | Token | Chain | Status |
 |-------|-------|--------|
 | **RTC** | RustChain native | Live, 20 miners, 88 epochs |
-| **wRTC** | Solana | Mint revoked, LP locked, Raydium pool |
-| **wRTC** | Base L2 | Mint revoked, LP locked, Aerodrome pool |
+| **wRTC** | Solana / Base L2 | Bridge disabled |
 
 ---
 
@@ -196,7 +195,7 @@ Investors should understand the gaps as clearly as the strengths.
 | **Followers** | 30 | 500+ | Stars are spread across 75+ repos. No single "viral" repo yet. Need one breakout (500+ stars on Rustchain). |
 | **External PR merge rate** | 9.4% (3/32) | 30%+ | Many awesome-list PRs awaiting review. llama.cpp PRs closed as duplicates. Need more targeted, higher-quality upstream contributions. |
 | **Contributor quality** | Mixed | Verified | Some inbound PRs appear bot-generated (bounty farming). Of 150+ interactions, genuine engaged developers are a subset. Improving triage and verification. |
-| **Revenue** | $0 | TBD | No monetization yet. Token (RTC) has internal reference rate ($0.15) but no public exchange listing. |
+| **Revenue** | $0 | TBD | No monetization yet. RTC has an internal reference rate ($0.15) used as an accounting unit; it has no off-ramp. |
 | **Documentation** | Thin | Production-grade | 97 repos created in 90 days. Many have minimal READMEs. Quality documentation would improve star-to-follow conversion. |
 
 ---
@@ -238,7 +237,6 @@ This lab enables R&D that pure-cloud startups cannot economically replicate — 
 - **100 followers**: Social proof threshold for organic discovery
 - **500 stars on Rustchain**: GitHub trending eligibility
 - **10 upstream merges**: Established open source contributor reputation
-- **First exchange listing**: RTC/wRTC price discovery
 
 ---
 
@@ -252,7 +250,7 @@ In 90 days with zero external funding, Elyan Labs has:
 - Earned **1,334 GitHub stars** and **359 forks**
 - Contributed **32 PRs to external projects** including llama.cpp, vLLM, and Microsoft BitNet
 - Published **1 CVPR workshop paper** and **5 Zenodo DOIs**
-- Deployed live tokens on **3 chains** (native RTC, Solana wRTC, Base wRTC)
+- Deployed the native **RTC** token on its own chain
 - Built all of this on **$12,000 of pawn-shop hardware**
 
 The question isn't whether this developer can build. The question is what happens when this velocity gets fuel.

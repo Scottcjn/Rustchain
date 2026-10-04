@@ -165,32 +165,17 @@ launchctl list | grep rustchain
 
 RTC (RustChain Token) 是 RustChain 的原生加密货币。
 
-- **参考汇率：** 1 RTC = ~$0.01 USD (value varies; check current rates)
-- **wRTC：** RTC 在 Solana 上的封装版本
+- **参考汇率：** 1 RTC = $0.15（内部记账单位，非市场价格）
 
 ### 如何获取 RTC？
 
 1. **挖矿：** 使用复古硬件参与网络挖矿
 2. **赏金计划：** 参与 RustChain 生态贡献（代码、文档、社区等）
-3. **交易所购买：** 在 Raydium DEX 购买 wRTC
+3. **服务额度：** 在 BoTTube 购买额度，用于生态内服务
 
-### 在哪里可以交易 RTC？
+### RTC 可以换成其他资产吗？
 
-| 操作 | 链接 |
-|-----|------|
-| 交换 wRTC | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| 价格图表 | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| 桥接 RTC ↔ wRTC | [BoTTube Bridge](https://bottube.ai/bridge) |
-
-**Token Mint (Solana):** `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`
-
-### wRTC 在 Coinbase Base 上也有吗？
-
-是的！RustChain 代理现在可以拥有 Coinbase Base 钱包并使用 x402 协议进行机器间支付。
-
-- **wRTC on Base:** `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6`
-- **交换 USDC 到 wRTC:** [Aerodrome DEX](https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6)
-- **Base 桥接:** [bottube.ai/bridge/base](https://bottube.ai/bridge/base)
+不可以。RTC 只进不出：通过贡献获得，用于生态系统内的服务。wRTC 跨链桥已停用，没有出金通道（off-ramp）。参见 [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md)。
 
 ---
 

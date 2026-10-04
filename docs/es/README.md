@@ -27,7 +27,6 @@ RustChain es una blockchain que incentiva la preservacion y operacion de hardwar
 - **Compatible con arquitecturas vintage:** PowerPC G4/G5, IBM POWER8 ppc64le, SPARC, MIPS, 68K, RISC-V, Cell BE
 - **Economia de agentes IA:** Pagos nativos agente-a-agente, micropagos maquina-a-maquina
 - **Token RTC:** Token nativo de la red RustChain
-- **wRTC en Solana:** Token puente en la red Solana
 - **Anclaje en Ergo:** Prueba de integridad mediante anclaje cruzado
 
 ## Proof of Antiquity
@@ -59,11 +58,13 @@ El **RTC (RustChain Token)** es el token nativo de la red RustChain.
 
 - **Suministro:** Distribuido a traves de mineria PoA y recompensas de agentes
 - **Utilidad:** Pagos entre agentes, gobernanza, staking
-- **Puente:** wRTC disponible en Solana para interoperabilidad
+- **Sin salida:** RTC se gana por contribuciones y se gasta en servicios; no hay off-ramp
 
-### wRTC en Solana
+### wRTC
 
-RTC puede ser puenteado a Solana como **wRTC** (wrapped RTC) para acceder a la liquidez del ecosistema DeFi de Solana.
+> El puente wRTC está deshabilitado. RTC se gana por contribuciones y se gasta en servicios del ecosistema; no hay vía de salida (off-ramp).
+>
+> The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
 ## Mineria
 

@@ -1,5 +1,8 @@
 # RIP-305 Track C: Bridge API
 
+> **Notice:** The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
+> The endpoints below are documented as a historical/technical record only.
+
 Cross-chain bridge endpoints for wRTC (Wrapped RTC) on Solana + Base L2.
 
 Part of [RIP-305: Cross-Chain Airdrop Protocol](../docs/RIP-305-cross-chain-airdrop.md).

@@ -13,25 +13,17 @@
 
 *Dein PowerPC G4 verdient mehr als ein moderner Threadripper. Das ist der Punkt.*
 
-[Webseite](https://rustchain.org) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Quickstart](docs/wrtc.md) • [wRTC Tutorial](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia Referenz](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [Schnellstart](#-schnellstart) • [Wie es funktioniert](#-wie-proof-of-antiquity-funktioniert)
+[Webseite](https://rustchain.org) • [Live Explorer](https://rustchain.org/explorer) • [Grokipedia Referenz](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [Schnellstart](#-schnellstart) • [Wie es funktioniert](#-wie-proof-of-antiquity-funktioniert)
 
 </div>
 
 ---
 
-## 🪙 wRTC auf Solana
+## 🪙 wRTC
 
-Der RustChain Token (RTC) ist jetzt als **wRTC** auf Solana über die BoTTube Bridge verfügbar:
-
-| Resource | Link |
-|----------|------|
-| **wRTC Tauschen** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **Preisdiagramm** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **RTC ↔ wRTC Brücke** | [BoTTube Bridge](https://bottube.ai/bridge) |
-| **Quickstart Guide** | [wRTC Quickstart (Kaufen, Bridgen, Sicherheit)](docs/wrtc.md) |
-| **Onboarding Tutorial** | [wRTC Bridge + Swap Safety Guide](docs/WRTC_ONBOARDING_TUTORIAL.md) |
-| **Externe Referenz** | [Grokipedia Suche: RustChain](https://grokipedia.com/search?q=RustChain) |
-| **Token Mint** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
+> Die wRTC-Bridge ist deaktiviert. RTC wird für Beiträge verdient und für Dienste im Ökosystem ausgegeben; es gibt keinen Off-Ramp.
+>
+> The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
 ---
 
@@ -93,7 +85,7 @@ Belohnungsfaktor = f(Produktionsdatum, Nachweis der Nutzung)
 - **Genesis:** Juli 2024
 - **Konsens:** Proof-of-Antiquity
 - **Blockzeit:** ~2-5 Minuten (angepasst an Netzwerk)
-- **Token:** RTC (nativ), wRTC (Solana via Bridge)
+- **Token:** RTC (nativ)
 - **Explorer:** https://rustchain.org/explorer
 
 ---

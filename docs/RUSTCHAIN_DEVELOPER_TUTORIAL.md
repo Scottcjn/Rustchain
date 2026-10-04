@@ -4,7 +4,7 @@
 
 **Last updated:** March 2026  
 **Network:** Mainnet (`https://rustchain.org`)  
-**Token:** RTC (native), wRTC (Solana wrapped)
+**Token:** RTC (native)
 
 ---
 
@@ -45,7 +45,6 @@ By the end of this tutorial, you will:
 - ✅ Understand the 6 hardware fingerprint checks
 - ✅ Earn RTC tokens from vintage hardware
 - ✅ Query the blockchain API
-- ✅ Bridge RTC ↔ wRTC on Solana
 
 ### Who This Is For
 
@@ -649,78 +648,9 @@ export RUSTCHAIN_WALLET="my-vintage-miner"
 python dashboard.py
 ```
 
-### Example 5: Bridge RTC ↔ wRTC Programmatically
+### Example 5: Bridging (Retired)
 
-```python
-#!/usr/bin/env python3
-"""
-Example: Bridge RTC to wRTC using the BoTTube Bridge API.
-
-Note: This is a conceptual example. Always use the official
-bridge UI at https://bottube.ai/bridge for production use.
-"""
-
-import requests
-
-BRIDGE_API = "https://bottube.ai/api/bridge"
-WRTC_MINT = "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X"
-
-def bridge_rtc_to_wrtc(amount, rtc_wallet, sol_wallet):
-    """
-    Bridge RTC from RustChain to wRTC on Solana.
-    
-    Args:
-        amount: Amount of RTC to bridge
-        rtc_wallet: RustChain wallet address
-        sol_wallet: Solana wallet address (recipient)
-    
-    Returns:
-        Transaction ID or error message
-    """
-    payload = {
-        "direction": "rtc_to_wrtc",
-        "amount": amount,
-        "source_wallet": rtc_wallet,
-        "destination_wallet": sol_wallet,
-        "wrtc_mint": WRTC_MINT
-    }
-    
-    response = requests.post(
-        f"{BRIDGE_API}/initiate",
-        json=payload
-    )
-    
-    if response.status_code == 200:
-        tx_data = response.json()
-        print(f"✅ Bridge initiated: {tx_data['transaction_id']}")
-        print(f"   Amount: {tx_data['amount']} RTC → {tx_data['expected_output']} wRTC")
-        print(f"   Status URL: {tx_data['status_url']}")
-        return tx_data['transaction_id']
-    else:
-        print(f"❌ Bridge failed: {response.text}")
-        return None
-
-def check_bridge_status(tx_id):
-    """Check the status of a bridge transaction."""
-    response = requests.get(f"{BRIDGE_API}/status/{tx_id}")
-    if response.status_code == 200:
-        status = response.json()
-        print(f"Bridge Status: {status['status']}")
-        print(f"  Confirmations: {status['confirmations']}/{status['required_confirmations']}")
-        return status
-    return None
-
-# Example usage
-if __name__ == "__main__":
-    tx_id = bridge_rtc_to_wrtc(
-        amount=10.0,
-        rtc_wallet="my-vintage-miner",
-        sol_wallet="YourSolanaWalletAddress"
-    )
-    
-    if tx_id:
-        status = check_bridge_status(tx_id)
-```
+The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
 ---
 
@@ -1081,7 +1011,7 @@ curl -sk -X POST https://rustchain.org/wallet/transfer/signed \
 | [`PROTOCOL.md`](./PROTOCOL.md) | Full protocol specification |
 | [`API_REFERENCE.md`](./api/REFERENCE.md) | Complete API documentation |
 | [`WALLET_USER_GUIDE.md`](./WALLET_USER_GUIDE.md) | Wallet management |
-| [`wrtc.md`](./wrtc.md) | wRTC on Solana guide |
+| [`wrtc.md`](./wrtc.md) | wRTC notice (bridge disabled) |
 
 ---
 

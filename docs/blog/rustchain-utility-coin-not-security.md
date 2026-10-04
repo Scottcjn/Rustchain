@@ -132,9 +132,8 @@ Why not just deploy an ERC-20 on Ethereum?
 RustChain doesn't exist in isolation. Block commitments are periodically anchored to the Ergo blockchain using BLAKE2b hashes stored in transaction registers. This provides:
 - External proof of chain state at specific epochs
 - Tamper evidence if the RustChain ledger is modified
-- Bridge capability for future cross-chain operations
 
-The wRTC (wrapped RTC) bridge is designed as an onramp — bringing external value into the RustChain ecosystem to build liquidity. This is the opposite of an exit-liquidity token: the bridge exists to grow the economy, not to let early holders dump.
+RTC is one way in, no way out. It is earned for contributions and spent on services in the ecosystem. The wRTC bridge is disabled, and there is no off-ramp.
 
 ---
 
@@ -154,7 +153,6 @@ This matters for AI because:
 
 ## What's Next
 
-- **wRTC Bridge (RIP-305)**: Onramp from Solana/Base to RTC. Builds liquidity without extraction.
 - **GPU Compute Marketplace**: Agents bid RTC for inference jobs on real GPU hardware.
 - **Retro Console Mining**: RustChain miners for Dreamcast, Apple II, Nintendo 64 — earning antiquity multipliers.
 - **BCOS v3**: On-chain software certification with automated CI/CD integration.

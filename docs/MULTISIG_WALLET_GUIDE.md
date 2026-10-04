@@ -543,7 +543,7 @@ curl -sk "https://rustchain.org/health"
 - [协议规范](https://github.com/Scottcjn/Rustchain/blob/main/docs/PROTOCOL.md)
 - [API 参考](https://github.com/Scottcjn/Rustchain/blob/main/docs/API.md)
 - [钱包用户指南](https://github.com/Scottcjn/Rustchain/blob/main/docs/WALLET_USER_GUIDE.md)
-- [wRTC 快速入门](https://github.com/Scottcjn/Rustchain/blob/main/docs/wrtc.md)
+- [wRTC 通知（跨链桥已停用）](https://github.com/Scottcjn/Rustchain/blob/main/docs/wrtc.md)
 
 ### 工具与库
 

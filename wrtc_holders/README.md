@@ -1,5 +1,7 @@
 # wRTC Holder Snapshot Tool
 
+> **Notice:** The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
+
 A command-line tool to query the Solana blockchain and list all wallets holding wRTC tokens.
 
 ## Installation
@@ -114,5 +116,3 @@ MIT
 ## Related Links
 
 - [RustChain GitHub](https://github.com/Scottcjn/Rustchain)
-- [wRTC on Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X)
-- [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb)

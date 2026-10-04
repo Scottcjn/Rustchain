@@ -62,10 +62,10 @@ A 2.5× vintage miner earns 2.5× more than a 1.0× modern machine — assuming 
 Approximately 5 minutes after epoch settlement (settlement occurs ~5 minutes after the epoch closes). Total latency from epoch end to wallet credit: ~10 minutes. Allow up to 30 minutes before troubleshooting.
 
 **Q11: What is the difference between RTC and wRTC?**  
-- **RTC** — native RustChain token, earned by mining, used on-chain
-- **wRTC** — wrapped version on Solana (mint: `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`), used for DEX trading and cross-chain liquidity
+- **RTC** — native RustChain token, earned by mining and contributions, spent on services in the ecosystem
+- **wRTC** — a former wrapped form of RTC; the wRTC bridge is disabled and there is no off-ramp
 
-Don't send RTC to a wRTC address or vice versa.
+See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
 ---
 

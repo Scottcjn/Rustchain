@@ -186,66 +186,18 @@ graph TD
 miner_reward = epoch_pot × (miner_multiplier / total_weight)
 ```
 
-## wRTC 桥接 (Solana)
+## wRTC
 
-### 包装 RTC (Wrapped RTC)
+wRTC 跨链桥已停用。RTC 通过贡献获得，并用于生态系统内的服务；没有出金通道（off-ramp）。参见 [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md)。
 
-RTC 可桥接至 Solana 作为 **wRTC** 以获取 DeFi 便利：
+## 网络概况
 
-```mermaid
-graph LR
-    subgraph RustChain
-        RTC[RTC 代币]
-    end
-
-    subgraph 桥接
-        B[BoTTube 桥接]
-    end
-
-    subgraph Solana
-        wRTC[wRTC 代币]
-        RAY[Raydium DEX]
-        DS[DexScreener]
-    end
-
-    RTC -->|锁定| B
-    B -->|铸造| wRTC
-    wRTC --> RAY
-    wRTC --> DS
-```
-
-### wRTC 详情
-
-| 属性 | 值 |
-|----------|-------|
-| **代币铸造地址** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
-| **DEX** | [Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **图表** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |      
-| **桥接** | [BoTTube Bridge](https://bottube.ai/bridge) |
-| **比例** | 1:1 (1 RTC = 1 wRTC) |
-
-## wRTC on Base (以太坊 L2)
-
-### Base 集成
-
-wRTC 也可在 Base L2 上使用：
-
-| 属性 | 值 |
-|----------|-------|
-| **合约地址** | `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6` |
-| **DEX** | [Aerodrome](https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
-| **桥接** | [bottube.ai/bridge/base](https://bottube.ai/bridge/base) |
-
-## 价值主张
-
-### 当前估值
+### 当前数据
 
 | 指标 | 值 |
 |--------|-------|
-| **参考价格** | $0.15 USD / RTC |
-| **完全稀释估值** | $800,000 USD |
+| **参考汇率** | $0.15 / RTC（内部记账单位，非市场价格） |
 | **流通供应量** | ~90,568 RTC |
-| **市值** | ~$9,057 USD |
 | **钱包持有人** | **500** |
 
 ## 赏金系统
@@ -259,7 +211,7 @@ wRTC 也可在 Base L2 上使用：
 | **重大** | 75-150 RTC | 55-115 RTC | 40-75 RTC |
 | **关键** | 200-400 RTC | 150-300 RTC | 100-200 RTC |
 
-*注：随生态成熟，费率会下调，以保护代币价值。*
+*注：随生态成熟，费率会下调，以保持固定赏金池的可持续性。*
 
 ---
 
