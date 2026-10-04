@@ -82,6 +82,43 @@ LOTTERY_CHECK_INTERVAL = 10
 
 ATTESTATION_TTL = 580  # Re-attest 20s before expiry
 
+# Attestation retry policy. The node allows 10 fingerprint submissions per
+# hardware ID per hour and answers 409 REPLAY_ATTACK_BLOCKED (with
+# details.retry_after_seconds) once that is used up, so a miner that retries
+# on every 10 s loop locks itself out for the rest of the window.
+ATTEST_BACKOFF_BASE = 30         # first retry after a failed attestation (s)
+ATTEST_BACKOFF_MAX = 900         # cap for exponential backoff (s)
+ATTEST_RETRY_AFTER_MAX = 3600    # longest node retry hint we honour (s)
+ATTEST_MAX_PER_HOUR = 8          # local budget, below the node's 10/hour
+
+
+def _retry_after_from_response(resp):
+    """Seconds the node asked us to wait (Retry-After header or JSON hint), or None."""
+    candidates = []
+    try:
+        candidates.append(resp.headers.get("Retry-After"))
+    except Exception:
+        pass
+    try:
+        body = resp.json()
+    except Exception:
+        body = None
+    if isinstance(body, dict):
+        for container in (body.get("details"), body.get("data"), body):
+            if isinstance(container, dict):
+                candidates.append(container.get("retry_after_seconds"))
+                candidates.append(container.get("retry_after"))
+    for value in candidates:
+        if isinstance(value, bool) or value is None:
+            continue
+        try:
+            seconds = float(value)
+        except (TypeError, ValueError):
+            continue
+        if seconds > 0:
+            return seconds
+    return None
+
 
 def _rtc_address_from_public_key(public_key_hex):
     return "RTC" + hashlib.sha256(bytes.fromhex(public_key_hex)).hexdigest()[:40]
@@ -601,6 +638,12 @@ def attach_serial_binding_status(fingerprint_data, hw_info):
 # ── Miner Class ─────────────────────────────────────────────────────
 
 class MacMiner:
+    # Attestation backoff state. Class-level defaults keep helpers working on
+    # instances built without __init__ (tests do this); __init__ sets them too.
+    _attest_failures = 0
+    _next_attest_at = 0.0
+    _last_attest_retry_after = None
+
     def __init__(self, miner_id=None, wallet=None, node_url=None, proxy_url=None, wallet_file=None):
         self.hw_info = detect_hardware()
         self.fingerprint_data = {}
@@ -648,6 +691,10 @@ class MacMiner:
         )
 
         self.attestation_valid_until = 0
+        self._attest_failures = 0
+        self._next_attest_at = 0.0
+        self._attest_submissions = []  # wall-clock times of /attest/submit calls
+        self._last_attest_retry_after = None
         self.shares_submitted = 0
         self.shares_accepted = 0
         self.last_entropy = {}
@@ -764,11 +811,13 @@ class MacMiner:
         """Complete hardware attestation with fingerprint."""
         ts = datetime.now().strftime('%H:%M:%S')
         print(info("\n[{}] Attesting hardware...".format(ts)))
+        self._last_attest_retry_after = None
 
         try:
             resp = self.transport.post("/attest/challenge", json={}, timeout=15)
             if resp.status_code != 200:
                 print(error("  ERROR: Challenge failed ({})".format(resp.status_code)))
+                self._last_attest_retry_after = _retry_after_from_response(resp)
                 return False
 
             challenge = resp.json()
@@ -834,6 +883,7 @@ class MacMiner:
             attestation["signature_type"] = "canonical_json"
 
         try:
+            self._attest_submission_log().append(time.time())
             resp = self.transport.post("/attest/submit", json=attestation, timeout=30)
 
             if resp.status_code == 200:
@@ -851,11 +901,57 @@ class MacMiner:
                     return False
             else:
                 print(error("  ERROR: HTTP {}: {}".format(resp.status_code, resp.text[:200])))
+                self._last_attest_retry_after = _retry_after_from_response(resp)
                 return False
 
         except Exception as e:
             print(error("  ERROR: {}".format(e)))
             return False
+
+    def _attest_submission_log(self):
+        """Wall-clock times of recent /attest/submit calls (per instance)."""
+        return self.__dict__.setdefault("_attest_submissions", [])
+
+    def _attestation_allowed(self, now=None):
+        """Gate every attestation attempt on backoff and the hourly budget."""
+        now = time.time() if now is None else now
+        if now < self._next_attest_at:
+            return False
+        recent = [t for t in self._attest_submission_log() if now - t < 3600]
+        self._attest_submissions = recent
+        if len(recent) >= ATTEST_MAX_PER_HOUR:
+            self._next_attest_at = recent[0] + 3600
+            print(warning("  Attestation budget ({}/hour) used; next attempt in {}s".format(
+                ATTEST_MAX_PER_HOUR, int(self._next_attest_at - now))))
+            return False
+        return True
+
+    def _record_attest_outcome(self, ok, now=None):
+        """Reset backoff on success; otherwise schedule the next attempt."""
+        now = time.time() if now is None else now
+        if ok:
+            self._attest_failures = 0
+            self._next_attest_at = 0.0
+            return
+        self._attest_failures += 1
+        delay = min(ATTEST_BACKOFF_MAX, ATTEST_BACKOFF_BASE * (2 ** (self._attest_failures - 1)))
+        retry_after = self._last_attest_retry_after
+        if retry_after:
+            delay = max(delay, min(retry_after, ATTEST_RETRY_AFTER_MAX))
+        self._next_attest_at = now + delay
+        print(warning("  Attestation failed ({} in a row); next attempt in {}s".format(
+            self._attest_failures, int(delay))))
+
+    def try_attest(self, reason=None):
+        """Attest if backoff and the hourly budget allow it. Returns True on success."""
+        if not self._attestation_allowed():
+            return False
+        if reason:
+            ts = datetime.now().strftime('%H:%M:%S')
+            print("[{}] {}".format(ts, reason))
+        ok = self.attest()
+        self._record_attest_outcome(ok)
+        return ok
 
     def check_eligibility(self):
         """Check lottery eligibility."""
@@ -922,10 +1018,9 @@ class MacMiner:
         ts = datetime.now().strftime('%H:%M:%S')
         print("\n[{}] Starting miner...".format(ts))
 
-        # Initial attestation
-        while not self.shutdown_requested and not self.attest():
-            print("  Retrying attestation in 30 seconds...")
-            self.sleep_until_shutdown(30)
+        # Initial attestation (backed off; see try_attest)
+        while not self.shutdown_requested and not self.try_attest():
+            self.sleep_until_shutdown(max(1.0, self._next_attest_at - time.time()))
         if self.shutdown_requested:
             print("Miner stopped gracefully.")
             return
@@ -941,9 +1036,9 @@ class MacMiner:
                     print("\n[{}] Sleep/wake detected - re-attesting...".format(ts))
                     self.attestation_valid_until = 0
 
-                # Re-attest if expired
+                # Re-attest if expired (subject to backoff / hourly budget)
                 if time.time() > self.attestation_valid_until:
-                    self.attest()
+                    self.try_attest()
 
                 # Check eligibility
                 eligibility = self.check_eligibility()
@@ -963,9 +1058,17 @@ class MacMiner:
                 else:
                     reason = eligibility.get("reason", "unknown")
                     if reason == "not_attested":
-                        ts = datetime.now().strftime('%H:%M:%S')
-                        print("[{}] Not attested - re-attesting...".format(ts))
-                        self.attest()
+                        # Only re-attest once our attestation has expired, and
+                        # only through the backoff gate. Re-attesting on every
+                        # 10 s loop exhausts the node's per-hour limit and
+                        # gets the miner 409 REPLAY_ATTACK_BLOCKED.
+                        remaining = self.attestation_valid_until - time.time()
+                        if remaining <= 0:
+                            self.try_attest("Not attested - re-attesting...")
+                        elif status_counter == 0:
+                            ts = datetime.now().strftime('%H:%M:%S')
+                            print("[{}] Node reports not_attested; local attestation valid "
+                                  "for {}s more, re-attesting at expiry".format(ts, int(remaining)))
 
                 # Status every ~60 seconds
                 status_counter += 1
