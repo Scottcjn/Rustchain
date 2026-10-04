@@ -1,5 +1,7 @@
 # wRTC SPL Token Deployment Guide
 
+> **Notice:** The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md). This document is kept as a technical/historical record.
+
 Complete guide for deploying and managing **wRTC (Wrapped RustChain)** as a Solana SPL Token.
 
 ---
@@ -23,8 +25,6 @@ Complete guide for deploying and managing **wRTC (Wrapped RustChain)** as a Sola
 **wRTC** is the Solana representation of RustChain's native **RTC** token, enabling:
 
 - 🔄 Cross-chain bridging (RTC ↔ wRTC)
-- 💱 DEX trading on Raydium, Jupiter, Orca
-- 🏦 DeFi integration on Solana
 - 💰 Miner reward distributions
 
 **Track A Scope**: Core SPL token deployment with multi-sig governance.

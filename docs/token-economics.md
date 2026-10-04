@@ -220,83 +220,23 @@ miner_reward = epoch_pot × (miner_multiplier / total_weight)
 | E | M1 | 1.2× | 15.5% | 0.234 RTC |
 | **Total** | | **7.7** | **100%** | **1.501 RTC** |
 
-## wRTC Bridge (Solana)
+## wRTC
 
-### Wrapped RTC
+The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
-RTC can be bridged to Solana as **wRTC** for DeFi access:
+## Network Snapshot
 
-```mermaid
-graph LR
-    subgraph RustChain
-        RTC[RTC Token]
-    end
-    
-    subgraph Bridge
-        B[BoTTube Bridge]
-    end
-    
-    subgraph Solana
-        wRTC[wRTC Token]
-        RAY[Raydium DEX]
-        DS[DexScreener]
-    end
-    
-    RTC -->|Lock| B
-    B -->|Mint| wRTC
-    wRTC --> RAY
-    wRTC --> DS
-```
-
-### wRTC Details
-
-| Property | Value |
-|----------|-------|
-| **Token Mint** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
-| **DEX** | [Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **Chart** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **Bridge** | [BoTTube Bridge](https://bottube.ai/bridge) |
-| **Ratio** | 1:1 (1 RTC = 1 wRTC) |
-
-### Bridge Process
-
-**RTC → wRTC (Lock & Mint)**:
-1. Send RTC to bridge address on RustChain
-2. Bridge verifies transaction
-3. wRTC minted on Solana to your wallet
-
-**wRTC → RTC (Burn & Release)**:
-1. Send wRTC to bridge contract on Solana
-2. wRTC burned
-3. RTC released on RustChain
-
-## wRTC on Base (Ethereum L2)
-
-### Base Integration
-
-wRTC is also available on Base L2:
-
-| Property | Value |
-|----------|-------|
-| **Contract** | `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6` |
-| **DEX** | [Aerodrome](https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
-| **Bridge** | [bottube.ai/bridge/base](https://bottube.ai/bridge/base) |
-
-## Value Proposition
-
-### Current Valuation
+### Current Figures
 
 | Metric | Value |
 |--------|-------|
-| **Reference Price** | $0.15 USD per RTC |
-| **Fully Diluted Value** | ~$1,258,291 USD |
+| **Reference Rate** | $0.15 per RTC (internal accounting unit, not a market price) |
 | **Circulating Supply** | ~90,568 RTC (contributor payouts + mining) |
-| **Market Cap** | ~$13,585 USD |
 | **Wallet Holders** | **500** (milestone reached March 26, 2026) |
 | **Bounties Paid** | ~27,000 RTC to 1,000+ recipients |
 | **Ledger Entries** | 2,511 on-chain transactions |
 
-### Earning Potential
+### Growth Phases
 
 | Hardware | Multiplier | Daily Earnings | Monthly | Yearly |
 |----------|------------|----------------|---------|--------|
@@ -319,22 +259,21 @@ wRTC is also available on Base L2:
 
 ### Bounty Payout Scaling (RIP-306)
 
-As the ecosystem matures and RTC distribution widens, bounty payouts scale down to protect token value for existing holders:
+As the ecosystem matures and RTC distribution widens, bounty payouts scale down to keep the fixed bounty pool sustainable:
 
 | Milestone | Rate Adjustment | Rationale |
 |-----------|----------------|-----------|
 | **0-27K RTC paid** (current) | Full rates | Bootstrap phase — attract contributors |
 | **35K RTC paid** | -25% across all tiers | Early maturity — 500+ wallets, ecosystem proven |
 | **50K RTC paid** | -50% across all tiers | Growth phase — only high-impact gets premium |
-| **100K RTC paid** | -75% — elite bounties only | Mature phase — RTC value should reflect scarcity |
+| **100K RTC paid** | -75% — elite bounties only | Mature phase — the remaining pool goes to the highest-impact work |
 
 **Why scale down?**
 
 1. **500 wallet holders** already exist — distribution goal met
 2. **50K of 8.3M supply** (0.6%) allocated to bounties is approaching meaningful dilution
-3. If RTC reference price increases, current bounty amounts become disproportionately expensive
-4. Early contributors who earned at full rates benefit from increasing scarcity
-5. The network is proven — we no longer need to overpay to attract contributors
+3. If the RTC reference rate increases, current bounty amounts become disproportionately expensive
+4. The network is proven — we no longer need to overpay to attract contributors
 
 **What doesn't change:**
 - Mining epoch rewards (1.5 RTC/epoch) — unchanged, consensus-driven
@@ -389,7 +328,6 @@ On March 26, 2026, RustChain reached **500 unique wallet holders** — a critica
 1. **Sybil-resistant distribution** — 500 real wallets across diverse hardware
 2. **Community-driven growth** — no airdrops to bots, every wallet earned RTC
 3. **Bounty system works** — paying contributors builds both code AND distribution
-4. **Ready for DEX** — sufficient holder count for healthy trading when wRTC bridge launches
 
 ### Wallet Distribution
 
@@ -410,7 +348,6 @@ This is a healthy distribution — most holders earned small amounts through fir
 - **Epoch Pot**: May increase with network growth
 - **New Hardware Tiers**: As hardware ages, new tiers added
 - **Decay Rates**: Community governance may adjust
-- **Bridge Fees**: May introduce small fees for sustainability
 
 ### Governance
 

@@ -310,12 +310,6 @@ class RustChainClient:
         resp = self.session.get(f"{self.base_url}/rewards/epoch/{epoch}")
         resp.raise_for_status()
         return resp.json()
-    
-    def get_swap_info(self) -> Dict[str, Any]:
-        """Get swap/bridge information."""
-        resp = self.session.get(f"{self.base_url}/wallet/swap-info")
-        resp.raise_for_status()
-        return resp.json()
 
 
 def main():
@@ -542,10 +536,6 @@ class RustChainClient {
 
   async getSettlement(epoch) {
     return this.request(`/rewards/epoch/${epoch}`);
-  }
-
-  async getSwapInfo() {
-    return this.request('/wallet/swap-info');
   }
 
   async adminTransfer(adminKey, fromMiner, toMiner, amountRtc, memo = null) {
@@ -1156,11 +1146,6 @@ cmd_settlement() {
     $CURL "$BASE_URL/rewards/epoch/$epoch" | jq
 }
 
-cmd_swap_info() {
-    print_header "Swap Information"
-    $CURL "$BASE_URL/wallet/swap-info" | jq
-}
-
 show_help() {
     echo "RustChain API Helper Script"
     echo
@@ -1177,7 +1162,6 @@ show_help() {
     echo "  hall-of-fame        Get Hall of Fame"
     echo "  fee-pool            Get fee pool statistics"
     echo "  settlement <epoch>  Get settlement data"
-    echo "  swap-info           Get swap information"
     echo "  help                Show this help"
     echo
 }
@@ -1213,9 +1197,6 @@ case "${1:-help}" in
         ;;
     settlement)
         cmd_settlement "$2"
-        ;;
-    swap-info)
-        cmd_swap_info
         ;;
     help|--help|-h)
         show_help

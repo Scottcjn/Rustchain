@@ -1,5 +1,7 @@
 # RustChain TUI Dashboard
 
+> **Deprecated feature:** the price lookup in this tool queried third-party market-data services. It is deprecated: do not use, extend, or advertise it — RustChain official materials do not reference market prices. The code is left in place pending removal. The wRTC bridge is disabled; RTC is earned for contributions and spent on services in the ecosystem, with no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
+
 Real-time terminal dashboard for monitoring the RustChain network.
 
 ![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue)
@@ -10,7 +12,6 @@ Real-time terminal dashboard for monitoring the RustChain network.
 - **Epoch / Slot** — current epoch number, slot counter with progress bar, epoch pot, enrolled miners, and total supply
 - **Active Miners** — table showing miner IDs, hardware type, architecture, and antiquity multiplier
 - **Recent Blocks** — live feed of new blocks as they appear on-chain
-- **wRTC Price Ticker** — USD price, 24h change, volume, and liquidity via DexScreener
 - **Auto-refresh** — configurable interval (default 5 seconds)
 
 ## Installation
@@ -41,10 +42,10 @@ Press **Ctrl+C** to exit.
 ┌──────────────────────────────────────────────────────────────┐
 │  RustChain Dashboard  |  Node: ...  |  Updated: ...         │
 ├──────────────────┬──────────────────┬────────────────────────┤
-│  Network Health  │  Epoch / Slot    │  wRTC Price            │
-│  ● HEALTHY       │  Epoch: 95       │  $0.001234             │
-│  Version: 2.2.1  │  Slot: 12345     │  ▲ +5.20%             │
-│  Uptime: 2d 5h   │  ████░░░░ 28.6%  │  Vol: $12.5K          │
+│  Network Health  │  Epoch / Slot    │  (price: deprecated)   │
+│  ● HEALTHY       │  Epoch: 95       │                        │
+│  Version: 2.2.1  │  Slot: 12345     │                        │
+│  Uptime: 2d 5h   │  ████░░░░ 28.6%  │                        │
 ├──────────────────┴──────────────────┴────────────────────────┤
 │  Active Miners (15 total)           │  Recent Blocks         │
 │  ID         HW       Arch   Mult   │  Height  Hash    Seen  │
@@ -61,7 +62,6 @@ Press **Ctrl+C** to exit.
 | `/epoch`         | Epoch number, slot, pot, supply   |
 | `/api/miners`    | Active miner list                 |
 | `/headers/tip`   | Latest block height and hash      |
-| DexScreener API  | wRTC token price and market data  |
 
 ## Requirements
 

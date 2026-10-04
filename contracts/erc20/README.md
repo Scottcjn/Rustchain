@@ -1,5 +1,7 @@
 # RustChain wRTC ERC-20 - Base Deployment
 
+> **Notice:** The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md). This document is kept as a technical/historical record.
+
 **RIP-305 Track B: Base ERC-20 Deployment Subtask**  
 **Bounty #1510**
 
@@ -121,7 +123,7 @@ npm run verify:base <CONTRACT_ADDRESS>
 
 | Feature | Description | Use Case |
 |---------|-------------|----------|
-| **ERC20Permit** | Gasless approvals (EIP-2612) | DEX integrations, meta-transactions |
+| **ERC20Permit** | Gasless approvals (EIP-2612) | Meta-transactions |
 | **ERC20Burnable** | Token burning | Cross-chain bridge withdrawals |
 | **Pausable** | Emergency stop | Security incidents, upgrades |
 | **Ownable** | Access control | Administrative functions |
@@ -428,16 +430,6 @@ Before mainnet deployment:
 ---
 
 ## 🔗 Integration Guide
-
-### DEX Integration (Uniswap/Aerodrome)
-
-```javascript
-// Add liquidity
-const pair = await factory.getPair(wrtcAddress, usdcAddress);
-await wrtc.approve(pair, amount);
-await usdc.approve(pair, amount);
-await router.addLiquidity(...);
-```
 
 ### Bridge Integration
 

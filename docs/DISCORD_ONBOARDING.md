@@ -45,7 +45,7 @@ This onboarding takes RustChain from **766 on-chain holders to ~1,065**, crossin
 **reference rate from $0.10 to $0.15 per RTC**.
 
 > **Note on the reference rate:** $0.15 is RustChain's *internal reference rate*, scaled by
-> holder count. RTC has no DEX/CEX listing and no fiat off-ramp at this time — the reference
+> holder count. RTC has no off-ramp — it is earned and spent inside the ecosystem, and the reference
 > rate is an accounting benchmark for bounty/reward sizing, not a market price.
 
 ## Claiming & custody

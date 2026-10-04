@@ -68,10 +68,8 @@ curl -sk https://rustchain.org/health
 
 ### Wrong chain/token confusion (RTC vs wRTC)
 
-- RTC: RustChain native token
-- wRTC: wrapped Solana representation
-- Official wRTC mint:
-  `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`
+- RTC: RustChain native token, earned for contributions and spent on services in the ecosystem
+- wRTC: a former wrapped form of RTC. The wRTC bridge is disabled, and there is no off-ramp — see [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md)
 
 ## 7) Quick support data to collect
 

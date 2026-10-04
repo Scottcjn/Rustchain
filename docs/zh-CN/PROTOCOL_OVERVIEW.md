@@ -111,7 +111,7 @@ graph LR
 
     subgraph 外部
         ERGO[Ergo 区块链]
-        SOL[Solana<br>wRTC 桥接]
+        SOL[Solana<br>wRTC 桥接 - 已停用]
     end
 
     M1 --> N1
@@ -143,12 +143,9 @@ graph LR
 | **纪元持续时间** | ~24 小时 |
 | **年度通胀** | ~0.68% (递减) |
 
-### wRTC 桥接 (Solana)
+### wRTC 桥接
 
-RustChain 代币桥接至 Solana 作为 **wRTC**：
-- **代币铸造地址**: `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X`
-- **DEX**: [Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X)
-- **桥接**: [BoTTube Bridge](https://bottube.ai/bridge)
+wRTC 跨链桥已停用。RTC 通过贡献获得，并用于生态系统内的服务；没有出金通道（off-ramp）。参见 [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md)。
 
 ## 安全模型
 
@@ -236,9 +233,7 @@ curl -sk https://rustchain.org/api/miners
 - 安全审计
 
 ### 第二阶段：桥接扩展 (Q2 2026)
-- 以太坊桥接
-- Base L2 集成
-- 跨链流动性
+- 已取消——wRTC 跨链桥已停用
 
 ### 第三阶段：代理经济 (Q3 2026)
 - x402 支付协议

@@ -326,6 +326,9 @@ graph LR
 - **Declining emission** — total supply capped at 8.3M
 
 ### Cross-Chain Bridge (wRTC)
+
+> **Disabled.** The wRTC bridge is disabled; RTC has no off-ramp. The design below is a historical record.
+
 - **Bridge Type:** RustChain ↔ Solana via Ergo anchor
 - **Wrapped Token:** wRTC on Solana
 - **Lock Mechanism:** RTC locked on RustChain → wRTC minted on Solana

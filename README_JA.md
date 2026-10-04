@@ -22,7 +22,7 @@
 
 *PowerPC G4は最新のThreadripperよりも多くの報酬を得られます。それがポイントです。*
 
-[Webサイト](https://rustchain.org) • [ライブエクスプローラー](https://rustchain.org/explorer) • [wRTCスワップ](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTCクイックスタート](docs/wrtc.md) • [wRTCチュートリアル](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia参照](https://grokipedia.com/search?q=RustChain) • [ホワイトペーパー](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [クイックスタート](#-quick-start) • [仕組み](#-how-proof-of-antiquity-works)
+[Webサイト](https://rustchain.org) • [ライブエクスプローラー](https://rustchain.org/explorer) • [Grokipedia参照](https://grokipedia.com/search?q=RustChain) • [ホワイトペーパー](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [クイックスタート](#-quick-start) • [仕組み](#-how-proof-of-antiquity-works)
 
 </div>
 
@@ -46,19 +46,11 @@
 
 ---
 
-## 🪙 Solana上のwRTC
+## 🪙 wRTC
 
-RustChainトークン（RTC）は、BoTTube Bridgeを通じてSolana上で**wRTC**として利用可能です：
-
-| リソース | リンク |
-|----------|------|
-| **wRTCスワップ** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **価格チャート** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **ブリッジ RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge) |
-| **クイックスタートガイド** | [wRTCクイックスタート（購入、ブリッジ、安全性）](docs/wrtc.md) |
-| **オンボーディングチュートリアル** | [wRTCブリッジ + スワップ安全性ガイド](docs/WRTC_ONBOARDING_TUTORIAL.md) |
-| **外部参照** | [Grokipedia検索: RustChain](https://grokipedia.com/search?q=RustChain) |
-| **トークンMint** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
+> wRTCブリッジは無効化されています。RTCは貢献によって獲得し、エコシステム内のサービスに使用します。換金手段（オフランプ）はありません。
+>
+> The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
 ---
 
@@ -90,17 +82,11 @@ RustChainエージェントは**Coinbase Baseウォレット**を所有し、**x
 | リソース | リンク |
 |----------|------|
 | **エージェントウォレットドキュメント** | [rustchain.org/wallets.html](https://rustchain.org/wallets.html) |
-| **Base上のwRTC** | [`0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6`](https://basescan.org/address/0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
-| **USDC → wRTCスワップ** | [Aerodrome DEX](https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
-| **Baseブリッジ** | [bottube.ai/bridge/base](https://bottube.ai/bridge/base) |
 
 ```bash
 # Coinbaseウォレットを作成
 python3 -m pip install clawrtc[coinbase]
 clawrtc wallet coinbase create
-
-# スワップ情報を確認
-clawrtc wallet coinbase swap-info
 
 # 既存のBaseアドレスをリンク
 clawrtc wallet coinbase link 0xYourBaseAddress
@@ -110,7 +96,6 @@ clawrtc wallet coinbase link 0xYourBaseAddress
 - `GET https://bottube.ai/api/premium/videos` - 一括動画エクスポート（BoTTube）
 - `GET https://bottube.ai/api/premium/analytics/<agent>` - 詳細エージェント分析（BoTTube）
 - `GET /api/premium/reputation` - 完全なレピュテーションエクスポート（Beacon Atlas）
-- `GET /wallet/swap-info` - USDC/wRTCスワップガイダンス（RustChain）
 
 ## 📄 学術論文
 
@@ -418,10 +403,6 @@ RustChainはAI支援PRを受け入れますが、メンテナーが低品質な�
 |---------|------|
 | **Webサイト** | [rustchain.org](https://rustchain.org) |
 | **ブロックエクスプローラー** | [rustchain.org/explorer](https://rustchain.org/explorer) |
-| **wRTCスワップ（Raydium）** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **価格チャート** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **ブリッジ RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge) |
-| **wRTCトークンMint** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
 | **BoTTube** | [bottube.ai](https://bottube.ai) - AI動画プラットフォーム |
 | **Moltbook** | [moltbook.com](https://moltbook.com) - AIソーシャルネットワーク |
 | [nvidia-power8-patches](https://github.com/Scottcjn/nvidia-power8-patches) | POWER8用NVIDIAドライバー |

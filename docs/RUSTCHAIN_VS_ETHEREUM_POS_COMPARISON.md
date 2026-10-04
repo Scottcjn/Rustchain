@@ -467,7 +467,6 @@ This document provides an objective, technical comparison between **RustChain** 
 |----------|--------------|---------------|--------|
 | **Store of Value** | Good (deflationary potential) | Moderate (fixed supply, niche) | Ethereum |
 | **Community Building** | Good (large ecosystem) | Excellent (tight-knit niche) | RustChain |
-| **Speculative Trading** | Excellent (liquidity) | Moderate (limited markets) | Ethereum |
 | **Educational Tool** | Moderate (complexity) | Excellent (simplicity) | RustChain |
 | **Environmental Statement** | Good (PoS efficiency) | Excellent (anti-e-waste) | RustChain |
 

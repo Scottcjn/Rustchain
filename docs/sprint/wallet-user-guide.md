@@ -202,7 +202,7 @@ curl -sk "https://rustchain.org/wallet/history?address=RTCa3f82..." | jq .
 |---------|-------------|-----|
 | Balance shows 0 | Epoch not yet settled | Wait ~24h; check `/api/miners` |
 | Wrong address shown | Querying wrong `miner_id` | Match exactly what the miner was started with |
-| RTC vs wRTC confusion | Different tokens | RTC = native; wRTC = Solana bridge token |
+| RTC vs wRTC confusion | Different tokens | RTC = native; wRTC = former bridge token (bridge disabled, no off-ramp) |
 | SSL warning on API | Self-signed TLS | Use `curl -sk` (expected in current release) |
 
 ---

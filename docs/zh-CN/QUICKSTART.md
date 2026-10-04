@@ -420,14 +420,14 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 | **Wallet（钱包）** | 你的矿机名称/地址。RTC 会被发送到这里。你在安装时选择了它。 |
 | **Miner（矿机）** | 运行在你机器上的软件，向网络证明并赚取 RTC。 |
 | **Fingerprint（指纹）** | 6 项硬件测量（时钟漂移、缓存时序、SIMD 身份、热漂移、指令抖动、反模拟），用于证明你的机器是真实的。 |
-| **wRTC** | Solana 上的 Wrapped RTC。你可以在 bottube.ai/bridge 使用桥接在 RTC 和 wRTC 之间兑换。 |
+| **wRTC** | RTC 以前的封装形式。wRTC 跨链桥已停用；RTC 在生态内赚取和使用，没有出金通道。 |
 | **Block Explorer（区块浏览器）** | 显示所有网络活动的网页：矿机、余额、epoch。访问 rustchain.org/explorer。 |
 
 ---
 
 ## 后续步骤
 
-- **将 RTC 兑换为 Solana 代币：** [wRTC 指南](../wrtc.md)
+- **使用你赚到的 RTC：** [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md)
 - **运行完整节点：** [协议文档](../PROTOCOL.md)
 - **深入了解 Proof-of-Antiquity：** [白皮书](RustChain_Whitepaper_zh-CN_v1.0.md)
 - **贡献代码：** [贡献指南](../CONTRIBUTING.md)

@@ -1,5 +1,8 @@
 # OTC Bridge — Settlement State Machine (async, crash-safe)
 
+> **Notice:** The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
+> This document is retained as a historical design record for the deprecated OTC bridge.
+
 The OTC settlement flow is **asynchronous and atomicity-safe**: the on-chain RTC
 payout is queued into the node's pending pool and confirms later, so the bridge
 never reveals an HTLC preimage (or records a trade) until that payout is

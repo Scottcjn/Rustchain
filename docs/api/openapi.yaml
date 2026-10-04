@@ -532,28 +532,6 @@ paths:
                 error: UNAUTHORIZED
                 detail: Invalid or missing X-Admin-Key
 
-  /wallet/swap-info:
-    get:
-      tags:
-        - Wallet
-      summary: Get swap information
-      description: |
-        Get USDC/wRTC swap guidance including prices and contract addresses.
-      operationId: getSwapInfo
-      responses:
-        '200':
-          description: Swap info retrieved successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SwapInfoResponse'
-              example:
-                rtc_price_usd: 0.10
-                wrtc_solana_mint: 12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X
-                wrtc_base_contract: "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"
-                raydium_pool: 8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb
-                bridge_url: https://bottube.ai/bridge
-
   /attest/submit:
     post:
       tags:
@@ -1730,21 +1708,6 @@ components:
         to_balance:
           type: number
           format: float
-
-    SwapInfoResponse:
-      type: object
-      properties:
-        rtc_price_usd:
-          type: number
-          format: float
-        wrtc_solana_mint:
-          type: string
-        wrtc_base_contract:
-          type: string
-        raydium_pool:
-          type: string
-        bridge_url:
-          type: string
 
     AttestationRequest:
       type: object

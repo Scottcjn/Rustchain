@@ -32,7 +32,6 @@ All tools are read-only, no auth required, wallet = any string.
 
 - **Agent-native**: no auth, no captcha, wallet = any string, same-day RTC payout.
 - **DePIN for vintage hardware**: old machines outmine new ones (Proof of Antiquity).
-- **Solana bridge (wRTC)**: cross-chain liquidity.
 - 55+ ecosystem repos, 5+ languages, 15+ CPU architectures.
 
 ## Example

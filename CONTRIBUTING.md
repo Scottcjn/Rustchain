@@ -126,7 +126,6 @@ For package-specific work, use the closest local manifest or test folder:
 | Active Miners | `https://rustchain.org/api/miners` |
 | Current Epoch | `https://rustchain.org/epoch` |
 | Block Explorer | `https://rustchain.org/explorer/` |
-| wRTC Bridge | `https://bottube.ai/bridge` |
 
 ## RTC Payout Process
 
@@ -135,8 +134,9 @@ You do **not** need an RTC wallet address before opening your PR. If the PR is m
 1. PR gets reviewed and merged
 2. We comment asking for your wallet address
 3. RTC is transferred from the community fund
-4. Bridge RTC to wRTC (Solana) via [bottube.ai/bridge](https://bottube.ai/bridge)
-5. Trade on [Raydium](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X)
+4. Spend RTC on services in the ecosystem — see [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md)
+
+RTC is one way in, no way out: the wRTC bridge is disabled and there is no off-ramp. The reference rate is an internal accounting unit, not a market price.
 
 
 ## Documentation Quality Checklist

@@ -13,25 +13,17 @@
 
 *你的PowerPC G4比现代Threadripper赚得更多。就是这么硬核。*
 
-[网站](https://rustchain.org) • [实时浏览器](https://rustchain.org/explorer) • [交换wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC快速入门（英文）](docs/wrtc.md) • [wRTC教程（英文）](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Grokipedia参考](https://grokipedia.com/search?q=RustChain) • [白皮书](docs/zh-CN/RustChain_Whitepaper_zh-CN_v1.0.md) • [快速开始](#-快速开始) • [工作原理](#-古董证明如何工作)
+[网站](https://rustchain.org) • [实时浏览器](https://rustchain.org/explorer) • [Grokipedia参考](https://grokipedia.com/search?q=RustChain) • [白皮书](docs/zh-CN/RustChain_Whitepaper_zh-CN_v1.0.md) • [快速开始](#-快速开始) • [工作原理](#-古董证明如何工作)
 
 </div>
 
 ---
 
-## 🪙 Solana上的wRTC
+## 🪙 wRTC
 
-RustChain代币（RTC）现已通过BoTTube桥接器在Solana上提供**wRTC**：
-
-| 资源 | 链接 |
-|----------|------|
-| **交换wRTC** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **价格图表** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **桥接 RTC ↔ wRTC** | [BoTTube桥接器](https://bottube.ai/bridge) |
-| **快速入门指南** | [wRTC快速入门（购买、桥接、安全，英文）](docs/wrtc.md) |
-| **新手教程** | [wRTC桥接器+交换安全指南（英文）](docs/WRTC_ONBOARDING_TUTORIAL.md) |
-| **外部参考** | [Grokipedia搜索：RustChain](https://grokipedia.com/search?q=RustChain) |
-| **代币铸造地址** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
+> wRTC 跨链桥已停用。RTC 通过贡献获得，并用于生态系统内的服务；没有出金通道（off-ramp）。
+>
+> The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
 ---
 
@@ -63,17 +55,11 @@ RustChain Agent 现已支持 **Coinbase Base 钱包**，并可通过 **x402 协�
 | 资源 | 链接 |
 |------|------|
 | **Agent 钱包文档** | [rustchain.org/wallets.html](https://rustchain.org/wallets.html) |
-| **Base 链上的 wRTC** | [`0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6`](https://basescan.org/address/0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
-| **USDC 兑换 wRTC** | [Aerodrome DEX](https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
-| **Base Bridge** | [bottube.ai/bridge/base](https://bottube.ai/bridge/base) |
 
 ```bash
 # 创建 Coinbase 钱包
 python3 -m pip install clawrtc[coinbase]
 clawrtc wallet coinbase create
-
-# 查看兑换信息
-clawrtc wallet coinbase swap-info
 
 # 绑定已有 Base 地址
 clawrtc wallet coinbase link 0xYourBaseAddress
@@ -361,10 +347,6 @@ RustChain 已通过 Beacon 认证开源标准（BCOS）相关要求，并持续�
 |---------|------|
 | **网站** | [rustchain.org](https://rustchain.org) |
 | **区块浏览器** | [rustchain.org/explorer](https://rustchain.org/explorer) |
-| **交换wRTC（Raydium）** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **价格图表** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **桥接 RTC ↔ wRTC** | [BoTTube桥接器](https://bottube.ai/bridge) |
-| **wRTC代币铸造地址** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
 | **BoTTube** | [bottube.ai](https://bottube.ai) - AI视频平台 |
 | **Moltbook** | [moltbook.com](https://moltbook.com) - AI社交网络 |
 | [nvidia-power8-patches](https://github.com/Scottcjn/nvidia-power8-patches) | POWER8的NVIDIA驱动程序 |

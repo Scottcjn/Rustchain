@@ -20,7 +20,7 @@
 
 *Tu PowerPC G4 gana más que un Threadripper moderno. Ese es el punto.*
 
-[Website](https://rustchain.org) • [Manifesto](https://rustchain.org/manifesto.html) • [Principios Boudreaux](docs/Boudreaux_COMPUTING_PRINCIPLES.md) • [Live Explorer](https://rustchain.org/explorer) • [Swap wRTC](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) • [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) • [wRTC Quickstart](docs/wrtc.md) • [Tutorial wRTC](docs/WRTC_ONBOARDING_TUTORIAL.md) • [Ref. Grokipedia](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [Inicio Rápido](#-inicio-rápido) • [Cómo Funciona](#-cómo-funciona-proof-of-antiquity)
+[Website](https://rustchain.org) • [Manifesto](https://rustchain.org/manifesto.html) • [Principios Boudreaux](docs/Boudreaux_COMPUTING_PRINCIPLES.md) • [Live Explorer](https://rustchain.org/explorer) • [Ref. Grokipedia](https://grokipedia.com/search?q=RustChain) • [Whitepaper](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [Inicio Rápido](#-inicio-rápido) • [Cómo Funciona](#-cómo-funciona-proof-of-antiquity)
 
 </div>
 
@@ -44,19 +44,11 @@
 
 ---
 
-## 🪙 wRTC en Solana
+## 🪙 wRTC
 
-RustChain Token (RTC) ahora está disponible como **wRTC** en Solana a través del Puente BoTTube:
-
-| Recurso | Enlace |
-|----------|------|
-| **Swap wRTC** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **Gráfico de Precios** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **Puente RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge) |
-| **Guía de Inicio Rápido** | [wRTC Quickstart (Compra, Puente, Seguridad)](docs/wrtc.md) |
-| **Tutorial de Incorporación** | [Guía de Seguridad del Puente + Swap wRTC](docs/WRTC_ONBOARDING_TUTORIAL.md) |
-| **Referencia Externa** | [Búsqueda Grokipedia: RustChain](https://grokipedia.com/search?q=RustChain) |
-| **Token Mint** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
+> El puente wRTC está deshabilitado. RTC se gana por contribuciones y se gasta en servicios del ecosistema; no hay vía de salida (off-ramp).
+>
+> The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
 ---
 
@@ -88,17 +80,11 @@ Los agentes RustChain ahora pueden tener **billeteras Coinbase Base** y realizar
 | Recurso | Enlace |
 |----------|------|
 | **Documentación de Billeteras** | [rustchain.org/wallets.html](https://rustchain.org/wallets.html) |
-| **wRTC en Base** | [`0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6`](https://basescan.org/address/0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
-| **Swap USDC a wRTC** | [Aerodrome DEX](https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6) |
-| **Puente Base** | [bottube.ai/bridge/base](https://bottube.ai/bridge/base) |
 
 ```bash
 # Crear una billetera Coinbase
 python3 -m pip install clawrtc[coinbase]
 clawrtc wallet coinbase create
-
-# Verificar información de swap
-clawrtc wallet coinbase swap-info
 
 # Vincular dirección Base existente
 clawrtc wallet coinbase link 0xTuDireccionBase
@@ -108,7 +94,6 @@ clawrtc wallet coinbase link 0xTuDireccionBase
 - `GET https://bottube.ai/api/premium/videos` - Exportación masiva de videos (BoTTube)
 - `GET https://bottube.ai/api/premium/analytics/<agent>` - Análisis profundo de agentes (BoTTube)
 - `GET /api/premium/reputation` - Exportación completa de reputación (Beacon Atlas)
-- `GET /wallet/swap-info` - Guía de swap USDC/wRTC (RustChain)
 
 ## 📄 Publicaciones Académicas
 
@@ -425,10 +410,6 @@ Lee el spec borrador:
 |---------|------|
 | **Website** | [rustchain.org](https://rustchain.org) |
 | **Block Explorer** | [rustchain.org/explorer](https://rustchain.org/explorer) |
-| **Swap wRTC (Raydium)** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **Gráfico de Precios** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **Puente RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge) |
-| **Token Mint wRTC** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
 | **BoTTube** | [bottube.ai](https://bottube.ai) - Plataforma de video AI |
 | **Moltbook** | [moltbook.com](https://moltbook.com) - Red social AI |
 | [nvidia-power8-patches](https://github.com/Scottcjn/nvidia-power8-patches) | Drivers NVIDIA para POWER8 |

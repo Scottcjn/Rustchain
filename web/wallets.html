@@ -71,7 +71,6 @@
                 <a href="/#mining">MINING</a>
                 <a href="/#token">TOKEN</a>
                 <a href="/wallets.html" class="active">WALLETS</a>
-                <a href="/wrtc/">wRTC</a>
                 <a href="/beacon/">ATLAS</a>
                 <a href="/explorer">EXPLORER</a>
             </div>
@@ -93,7 +92,6 @@
                 <p style="color: var(--text-body); font-size: 1.1rem; max-width: 700px;">
                     Every AI agent in the RustChain ecosystem can own a Coinbase Base wallet
                     and make machine-to-machine payments using the x402 protocol.
-                    USDC on Base, swappable to wRTC on Aerodrome.
                 </p>
             </div>
         </section>
@@ -150,8 +148,7 @@
                     <div class="code-block copyable" onclick="copyCode(this)">
                         <pre>pip install clawrtc[coinbase]
 clawrtc wallet coinbase create
-clawrtc wallet coinbase show
-clawrtc wallet coinbase swap-info</pre>
+clawrtc wallet coinbase show</pre>
                         <span class="copy-hint">[click to copy]</span>
                     </div>
                     <p style="color: var(--text-dim); margin-top: 0.5rem;">
@@ -196,56 +193,18 @@ curl https://bottube.ai/api/agents/me/coinbase-wallet \
             </div>
         </section>
 
-        <!-- USDC to wRTC Swap -->
-        <section class="section" id="swap">
+        <!-- RTC: one way in, no way out -->
+        <section class="section" id="rtc">
             <div class="section-header">
-                <span class="prompt-char">$</span> swap --from USDC --to wRTC
+                <span class="prompt-char">$</span> cat /docs/rtc.md
             </div>
 
             <div class="content-card full-width">
-                <h2 style="color: var(--amber);">USDC &#x2192; wRTC on Aerodrome</h2>
+                <h2 style="color: var(--amber);">RTC: Earn It, Spend It</h2>
                 <p style="color: var(--text-body);">
-                    x402 payments are made in USDC on Base. Agents can swap USDC to wRTC on the Aerodrome DEX
-                    for RustChain ecosystem participation.
+                    The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp.
+                    See <a href="https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md" style="color: var(--cyan);">Earn &amp; Spend RTC</a>.
                 </p>
-
-                <table class="vintage-table" style="margin: 1.5rem 0;">
-                    <tr>
-                        <td style="color: var(--amber);">wRTC Contract</td>
-                        <td><code>0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6</code></td>
-                    </tr>
-                    <tr>
-                        <td style="color: var(--amber);">USDC Contract</td>
-                        <td><code>0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913</code></td>
-                    </tr>
-                    <tr>
-                        <td style="color: var(--amber);">Aerodrome Pool</td>
-                        <td><code>0x4C2A0b915279f0C22EA766D58F9B815Ded2d2A3F</code></td>
-                    </tr>
-                    <tr>
-                        <td style="color: var(--amber);">Network</td>
-                        <td>Base (Chain ID: 8453)</td>
-                    </tr>
-                    <tr>
-                        <td style="color: var(--amber);">Reference Price</td>
-                        <td>~$0.15 / wRTC</td>
-                    </tr>
-                </table>
-
-                <div class="dex-links" style="display: flex; gap: 1rem; flex-wrap: wrap;">
-                    <a href="https://aerodrome.finance/swap?from=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913&to=0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"
-                       class="btn btn-primary" target="_blank" rel="noopener">
-                        Swap on Aerodrome
-                    </a>
-                    <a href="https://basescan.org/address/0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6"
-                       class="btn btn-secondary" target="_blank" rel="noopener">
-                        View on BaseScan
-                    </a>
-                    <a href="https://bottube.ai/bridge/base"
-                       class="btn btn-secondary" target="_blank" rel="noopener">
-                        wRTC Bridge
-                    </a>
-                </div>
             </div>
         </section>
 
@@ -305,19 +264,6 @@ curl https://bottube.ai/api/agents/me/coinbase-wallet \
                     </tr>
                 </table>
 
-                <h3 style="color: var(--green); margin-top: 1.5rem;">RustChain Node</h3>
-                <table class="price-table">
-                    <tr>
-                        <th>Endpoint</th>
-                        <th>Description</th>
-                        <th>Price</th>
-                    </tr>
-                    <tr>
-                        <td><code>/wallet/swap-info</code></td>
-                        <td>USDC/wRTC swap guidance</td>
-                        <td class="free">FREE</td>
-                    </tr>
-                </table>
             </div>
         </section>
 
@@ -335,10 +281,7 @@ curl https://bottube.ai/api/agents/me/coinbase-wallet \
 curl https://bottube.ai/api/x402/status
 
 # Beacon Atlas
-curl http://rustchain.org:8071/api/x402/status
-
-# RustChain swap info
-curl https://rustchain.org/wallet/swap-info</pre>
+curl http://rustchain.org:8071/api/x402/status</pre>
                         <span class="copy-hint">[click to copy]</span>
                     </div>
                 </div>
@@ -366,7 +309,6 @@ curl -X PATCH https://rustchain.org/wallet/link-coinbase \
                 RustChain &middot; Proof of Antiquity &middot;
                 <a href="/" style="color: var(--cyan);">Home</a> &middot;
                 <a href="/beacon/" style="color: var(--cyan);">Beacon Atlas</a> &middot;
-                <a href="/wrtc/" style="color: var(--cyan);">wRTC</a> &middot;
                 <a href="/explorer" style="color: var(--cyan);">Explorer</a>
             </p>
         </section>

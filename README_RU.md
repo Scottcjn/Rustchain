@@ -109,16 +109,11 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 ---
 
-## 🪙 wRTC на Solana
+## 🪙 wRTC
 
-Токен RustChain (RTC) теперь доступен как **wRTC** на Solana через мост BoTTube:
-
-| Ресурс | Ссылка |
-|--------|--------|
-| **Обмен wRTC** | [Raydium DEX](https://raydium.io/swap/?inputMint=sol&outputMint=12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X) |
-| **График цены** | [DexScreener](https://dexscreener.com/solana/8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb) |
-| **Мост RTC ↔ wRTC** | [BoTTube Bridge](https://bottube.ai/bridge) |
-| **Адрес токена** | `12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X` |
+> Мост wRTC отключён. RTC зарабатывается за вклад в проект и тратится на сервисы экосистемы; вывода (off-ramp) нет.
+>
+> The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 
 ---
 

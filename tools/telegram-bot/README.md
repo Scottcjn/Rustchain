@@ -1,5 +1,7 @@
 # RustChain Telegram Bot
 
+> **Deprecated feature:** the price lookup in this tool queried third-party market-data services. It is deprecated: do not use, extend, or advertise it — RustChain official materials do not reference market prices. The code is left in place pending removal. The wRTC bridge is disabled; RTC is earned for contributions and spent on services in the ecosystem, with no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
+
 Telegram bot for querying the RustChain network. Created for [Issue #1597](https://github.com/Scottcjn/rustchain-bounties/issues/1597).
 
 ## Commands
@@ -11,7 +13,6 @@ Telegram bot for querying the RustChain network. Created for [Issue #1597](https
 | `/epoch` | Current epoch, slot, supply |
 | `/balance <miner_id>` | Wallet balance for a miner |
 | `/miners` | Enrolled miners and epoch pot |
-| `/price` | RTC price (DexScreener or reference) |
 | `/help` | List all commands |
 
 ## Setup
@@ -54,7 +55,6 @@ python bot.py
 |----------|---------|-------------|
 | `TELEGRAM_BOT_TOKEN` | (required) | Bot token from @BotFather |
 | `RUSTCHAIN_API_URL` | `https://rustchain.org` | RustChain API base URL |
-| `RTC_PRICE_USD` | `0.10` | Fallback RTC price if DexScreener unavailable |
 | `RATE_LIMIT_PER_MINUTE` | `10` | Max requests per user per minute |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
@@ -63,7 +63,6 @@ python bot.py
 - `GET /health` -- Node health status
 - `GET /epoch` -- Epoch info, miner count, supply
 - `GET /wallet/balance?miner_id=ID` -- Wallet balance
-- DexScreener search API (optional, for live RTC price)
 
 ## Requirements
 

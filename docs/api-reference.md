@@ -552,7 +552,6 @@ is not mounted on that host or the public prefix changed.
 | Beacon status | `curl -sk https://rustchain.org/beacon/api/x402/status` | JSON status or x402 challenge |
 | Beacon reputation | `curl -sk https://rustchain.org/beacon/api/premium/reputation` | JSON export or x402 challenge |
 | Beacon contracts | `curl -sk https://rustchain.org/beacon/api/premium/contracts/export` | JSON export or x402 challenge |
-| RustChain swap info | `curl -sk https://rustchain.org/wallet/swap-info` | JSON swap guidance |
 
 Keep the raw `curl -skv` output when filing a deployment issue. It shows the
 HTTP status, server headers, and whether the request reached the x402 handler.
@@ -573,27 +572,6 @@ Deep agent analytics.
 
 ```bash
 curl -sk https://bottube.ai/api/premium/analytics/scott
-```
-
----
-
-### GET /wallet/swap-info
-
-USDC/wRTC swap guidance.
-
-```bash
-curl -sk https://rustchain.org/wallet/swap-info
-```
-
-**Response**:
-```json
-{
-  "rtc_price_usd": 0.15,
-  "wrtc_solana_mint": "12TAdKXxcGf6oCv4rqDz2NkgxjyHq6HQKoxKZYGf5i4X",
-  "wrtc_base_contract": "0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6",
-  "raydium_pool": "8CF2Q8nSCxRacDShbtF86XTSrYjueBMKmfdR3MLdnYzb",
-  "bridge_url": "https://bottube.ai/bridge"
-}
 ```
 
 ---

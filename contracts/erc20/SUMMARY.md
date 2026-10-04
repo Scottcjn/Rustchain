@@ -1,5 +1,7 @@
 # Bounty #1510 Implementation - Quick Summary
 
+> **Notice:** The wRTC bridge is disabled. RTC is earned for contributions and spent on services in the ecosystem; there is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md). This document is kept as a technical/historical record.
+
 **RIP-305 Track B: Base ERC-20 Deployment**  
 **Date**: 2026-03-09  
 **Status**: ✅ Implementation Complete
@@ -99,7 +101,6 @@
 
 ### Integration
 - **Bridge**: BoTTube Bridge will call `bridgeMint`/`bridgeBurn`
-- **DEX**: Compatible with Aerodrome, Uniswap v2
 - **Wallets**: All ERC-20 wallets supported
 - **Existing Contract**: `0x5683C10596AaA09AD7F4eF13CAB94b9b74A669c6`
 
@@ -129,7 +130,6 @@ npm run deploy:base-sepolia   # Test deployment
 3. Deploy to Base mainnet
 4. Verify on BaseScan
 5. Set up monitoring alerts
-6. Add liquidity on Aerodrome
 
 ### Long-term
 1. Bug bounty program
@@ -146,12 +146,6 @@ npm run deploy:base-sepolia   # Test deployment
 - Contract has `bridgeBurn(address from, uint256 amount)`
 - Only authorized bridge operators can call
 - Events emitted for off-chain tracking
-
-### For DEX Integration
-- Standard ERC-20 functions
-- 6 decimals (USDC-compatible)
-- EIP-2612 permit support
-- Ready for liquidity pools
 
 ### For Wallets
 - Standard ERC-20 interface

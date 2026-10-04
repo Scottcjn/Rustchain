@@ -241,7 +241,6 @@ If automated fails, use these parameters:
 
 - [ ] Contract visible on BaseScan
 - [ ] Wallet can add token
-- [ ] DEX can create pool
 - [ ] Bridge can operate
 
 ---

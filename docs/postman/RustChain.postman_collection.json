@@ -124,13 +124,6 @@
             "method": "GET",
             "url": "{{base_url}}/api/premium/reputation"
           }
-        },
-        {
-          "name": "Swap Info",
-          "request": {
-            "method": "GET",
-            "url": "{{base_url}}/wallet/swap-info"
-          }
         }
       ]
     }
