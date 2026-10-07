@@ -1023,9 +1023,14 @@ SECURITY_HEADERS = {
 def _after(resp):
     try:
         dur = time.time() - getattr(g, "_ts", time.time())
+        # Routine successes are DEBUG: at INFO, every 2xx/3xx request put a JSON
+        # line in syslog via journald (~140k lines/day on node1, 2026-10-07).
+        # Errors (4xx/5xx) stay at INFO. RC_LOG_ALL_REQUESTS=1 restores the old
+        # behaviour (every request at INFO).
+        noisy = resp.status_code < 400 and os.environ.get("RC_LOG_ALL_REQUESTS") != "1"
         rec = {
             "ts": int(time.time()),
-            "lvl": "INFO",
+            "lvl": "DEBUG" if noisy else "INFO",
             "req_id": getattr(g, "request_id", "-"),
             "method": request.method,
             "path": request.path,
@@ -1033,7 +1038,11 @@ def _after(resp):
             "ip": get_client_ip(),
             "dur_ms": int(dur * 1000),
         }
-        app.logger.info(json.dumps(rec, separators=(",", ":")))
+        line = json.dumps(rec, separators=(",", ":"))
+        if noisy:
+            app.logger.debug(line)
+        else:
+            app.logger.info(line)
     except Exception:
         pass
     resp.headers["X-Request-Id"] = getattr(g, "request_id", "-")
