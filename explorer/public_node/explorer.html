@@ -132,7 +132,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
 <div class="header">
   <h1>RustChain Explorer <span>Proof of Antiquity</span></h1>
   <div class="header-right">
-    <a href="/anchors" style="color:#58a6ff; text-decoration:none; font-size:14px; padding:4px 12px; border-radius:6px; transition:background 0.2s;">Ergo Anchors</a>
+    <a href="anchors" style="color:#58a6ff; text-decoration:none; font-size:14px; padding:4px 12px; border-radius:6px; transition:background 0.2s;">Ergo Anchors</a>
     <span class="version-badge" id="version">--</span>
     <span class="status-badge status-ok" id="statusBadge">Connecting...</span>
   </div>
@@ -203,7 +203,7 @@ body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background
   </div>
 
   <div class="footer">
-    RustChain Explorer | <a href="/anchors">Ergo Anchors</a> | <a href="https://github.com/Scottcjn/Rustchain">GitHub</a> |
+    RustChain Explorer | <a href="anchors">Ergo Anchors</a> | <a href="https://github.com/Scottcjn/Rustchain">GitHub</a> |
     <a href="https://github.com/Scottcjn/rustchain-bounties">Bounties</a> |
     Auto-refreshes every 30s | Node 1: 50.28.86.131
   </div>
@@ -214,6 +214,20 @@ const API = '';  // Same origin
 let refreshInterval;
 
 function fmt(n) { return n != null ? n.toLocaleString() : '--'; }
+
+// Node data (miner IDs, job titles, wallets) is inserted with innerHTML, so escape it.
+function escapeHtml(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// /api/miners used to return a bare array; it now returns {"miners": [...], "pagination": {...}}.
+// Accept both. Returns null when the request failed, [] when it succeeded with no miners.
+function minerList(resp) {
+  if (Array.isArray(resp)) return resp;
+  if (resp && Array.isArray(resp.miners)) return resp.miners;
+  return null;
+}
 
 function timeAgo(ts) {
   if (!ts) return 'never';
@@ -265,7 +279,7 @@ async function refresh() {
   const bar = document.getElementById('refreshBar');
   bar.style.width = '30%';
 
-  const [health, epoch, miners, agentStats, jobs] = await Promise.all([
+  const [health, epoch, minersResp, agentStats, jobs] = await Promise.all([
     fetchJSON(API + '/health'),
     fetchJSON(API + '/epoch'),
     fetchJSON(API + '/api/miners'),
@@ -299,9 +313,15 @@ async function refresh() {
   }
 
   // Miners
-  if (miners && miners.length) {
+  const miners = minerList(minersResp);
+  const tbody = document.getElementById('minerTableBody');
+  if (miners === null) {
+    tbody.innerHTML = '<tr><td colspan="6" class="loading">Miner list unavailable (node API did not respond).</td></tr>';
+  } else if (miners.length === 0) {
+    document.getElementById('minerCount').textContent = 0;
+    tbody.innerHTML = '<tr><td colspan="6" class="loading">No miners attesting right now.</td></tr>';
+  } else {
     document.getElementById('minerCount').textContent = miners.length;
-    const tbody = document.getElementById('minerTableBody');
     // Sort: online first, then by multiplier desc
     miners.sort((a, b) => {
       const aOnline = minerStatus(a.last_attest)[0] === 'online' ? 1 : 0;
@@ -312,13 +332,14 @@ async function refresh() {
     tbody.innerHTML = miners.map(m => {
       const [statusText, dotClass] = minerStatus(m.last_attest);
       const [archLabel, archClass] = archBadge(m.device_arch, m.device_family);
-      const name = m.miner.length > 24 ? m.miner.substring(0, 12) + '...' + m.miner.slice(-8) : m.miner;
+      const id = String(m.miner || '');
+      const name = id.length > 24 ? id.substring(0, 12) + '...' + id.slice(-8) : id;
       return `<tr>
         <td><span class="status-dot ${dotClass}"></span>${statusText}</td>
-        <td class="miner-name" title="${m.miner}">${name}</td>
+        <td class="miner-name" title="${escapeHtml(id)}">${escapeHtml(name)}</td>
         <td><span class="arch-badge ${archClass}">${archLabel}</span></td>
-        <td>${m.hardware_type || 'Unknown'}</td>
-        <td class="mult">${m.antiquity_multiplier}x</td>
+        <td>${escapeHtml(m.hardware_type || 'Unknown')}</td>
+        <td class="mult">${escapeHtml(m.antiquity_multiplier)}x</td>
         <td>${timeAgo(m.last_attest)}</td>
       </tr>`;
     }).join('');
@@ -332,28 +353,37 @@ async function refresh() {
     document.getElementById('agentFees').textContent = s.total_fees_collected;
     document.getElementById('openJobs').textContent = s.open_jobs;
     document.getElementById('escrowBalance').textContent = s.escrow_balance_rtc;
+  } else {
+    // /agent/* is not reachable from this host (e.g. rustchain.org has no nginx route for it).
+    // Say so instead of leaving placeholder dashes that read as zero activity.
+    document.getElementById('agentVolume').textContent = 'unavailable';
+    document.getElementById('openJobs').textContent = 'unavailable';
   }
 
   // Jobs
   const jobsEl = document.getElementById('jobsList');
-  if (jobs && jobs.jobs && jobs.jobs.length > 0) {
+  if (!jobs || !Array.isArray(jobs.jobs)) {
+    jobsEl.innerHTML = '<div class="card" style="text-align:center; color:#8b949e; padding:32px;">Job marketplace data is unavailable from this host. Try <a href="https://explorer.rustchain.org/" style="color:#58a6ff;">explorer.rustchain.org</a>.</div>';
+  } else if (jobs.jobs.length > 0) {
     jobsEl.innerHTML = jobs.jobs.map(j => {
-      const statusClass = j.status === 'open' ? 'status-open' : j.status === 'claimed' ? 'status-claimed' : 'status-completed';
+      const status = String(j.status || '');
+      const statusClass = status === 'open' ? 'status-open' : status === 'claimed' ? 'status-claimed' : 'status-completed';
+      const desc = String(j.description || '');
       return `<div class="job-card">
         <div style="display:flex; justify-content:space-between; align-items:start;">
           <div>
-            <div class="job-title">${j.title}</div>
+            <div class="job-title">${escapeHtml(j.title)}</div>
             <div class="job-meta">
-              <span class="job-status ${statusClass}">${j.status.toUpperCase()}</span>
-              <span class="category-tag">${j.category}</span>
-              <span>Posted by ${j.poster_wallet}</span>
-              ${j.worker_wallet ? '<span>Worker: ' + j.worker_wallet + '</span>' : ''}
+              <span class="job-status ${statusClass}">${escapeHtml(status.toUpperCase())}</span>
+              <span class="category-tag">${escapeHtml(j.category)}</span>
+              <span>Posted by ${escapeHtml(j.poster_wallet)}</span>
+              ${j.worker_wallet ? '<span>Worker: ' + escapeHtml(j.worker_wallet) + '</span>' : ''}
               <span>Expires ${timeAgo(j.expires_at).replace(' ago', ' left').replace('ago', '')}</span>
             </div>
           </div>
-          <div class="job-reward">${j.reward_rtc} RTC</div>
+          <div class="job-reward">${escapeHtml(j.reward_rtc)} RTC</div>
         </div>
-        <div style="margin-top:8px; font-size:13px; color:#8b949e;">${(j.description || '').substring(0, 200)}${(j.description || '').length > 200 ? '...' : ''}</div>
+        <div style="margin-top:8px; font-size:13px; color:#8b949e;">${escapeHtml(desc.substring(0, 200))}${desc.length > 200 ? '...' : ''}</div>
       </div>`;
     }).join('');
   } else {
