@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RustChain Explorer - Proof of Antiquity Blockchain</title>
+<meta name="description" content="RustChain Explorer: real-time block explorer for the Proof of Antiquity blockchain. Track miners, epochs, RTC token rewards, hardware attestations, and the Agent Economy job marketplace.">
+<meta name="keywords" content="RustChain, blockchain explorer, Proof of Antiquity, RTC token, cryptocurrency, mining, hardware attestation, PowerPC, vintage computing, agent economy, decentralized marketplace, RIP-200, RIP-302, epoch rewards, miner dashboard">
+<meta name="author" content="Elyan Labs">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://explorer.rustchain.org/">
+
+<!-- Open Graph / Social -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="RustChain Explorer - Proof of Antiquity Blockchain">
+<meta property="og:description" content="Live block explorer for RustChain: track miners from PowerPC G4 to POWER8, view RTC rewards, and browse the Agent Economy marketplace.">
+<meta property="og:url" content="https://explorer.rustchain.org/">
+<meta property="og:site_name" content="RustChain Explorer">
+<meta property="og:image" content="https://explorer.rustchain.org/og-image.png">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary">
+<meta name="twitter:site" content="@RustchainPOA">
+<meta name="twitter:title" content="RustChain Explorer - Proof of Antiquity">
+<meta name="twitter:description" content="Live blockchain explorer: miners, epochs, RTC rewards, and the Agent Economy job marketplace.">
+
+<!-- Favicon (inline SVG) -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%23f0a500'/%3E%3Cstop offset='100%25' stop-color='%23d4890a'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='32' r='30' fill='%230d1117' stroke='url(%23g)' stroke-width='3'/%3E%3Cpath d='M32 14 L36 22 L44 22 L38 28 L40 36 L32 31 L24 36 L26 28 L20 22 L28 22Z' fill='url(%23g)'/%3E%3Ccircle cx='32' cy='32' r='16' fill='none' stroke='url(%23g)' stroke-width='2' stroke-dasharray='6 4'/%3E%3Ctext x='32' y='50' text-anchor='middle' font-family='monospace' font-size='10' font-weight='bold' fill='%23f0a500'%3ERTC%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230d1117'/%3E%3Cpath d='M32 14 L36 22 L44 22 L38 28 L40 36 L32 31 L24 36 L26 28 L20 22 L28 22Z' fill='%23f0a500'/%3E%3Ccircle cx='32' cy='32' r='16' fill='none' stroke='%23f0a500' stroke-width='2' stroke-dasharray='6 4'/%3E%3Ctext x='32' y='50' text-anchor='middle' font-family='monospace' font-size='10' font-weight='bold' fill='%23f0a500'%3ERTC%3C/text%3E%3C/svg%3E">
+
+<!-- Structured Data -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "RustChain Explorer",
+  "url": "https://explorer.rustchain.org",
+  "description": "Real-time block explorer for the RustChain Proof of Antiquity blockchain. Track miners, epochs, RTC token rewards, and the Agent Economy job marketplace.",
+  "applicationCategory": "Blockchain Explorer",
+  "operatingSystem": "Web",
+  "author": {
+    "@type": "Organization",
+    "name": "Elyan Labs",
+    "url": "https://github.com/Scottcjn/Rustchain"
+  },
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  }
+}
+</script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0d1117; color: #e6edf3; min-height: 100vh; }
+
+/* Header */
+.header { background: linear-gradient(135deg, #161b22 0%, #1a1f2e 100%); border-bottom: 1px solid #30363d; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+.header h1 { font-size: 22px; font-weight: 700; color: #f0a500; letter-spacing: -0.5px; }
+.header h1 span { color: #8b949e; font-weight: 400; font-size: 14px; margin-left: 8px; }
+.header-right { display: flex; gap: 12px; align-items: center; }
+.status-badge { padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+.status-ok { background: #1a3a2a; color: #3fb950; border: 1px solid #238636; }
+.status-err { background: #3a1a1a; color: #f85149; border: 1px solid #da3633; }
+.version-badge { color: #8b949e; font-size: 12px; font-family: monospace; }
+
+/* Layout */
+.container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+@media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+
+/* Cards */
+.card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; }
+.card-header { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: #8b949e; margin-bottom: 8px; }
+.card-value { font-size: 32px; font-weight: 700; color: #f0a500; font-family: 'SF Mono', 'Cascadia Code', monospace; }
+.card-value small { font-size: 14px; color: #8b949e; font-weight: 400; }
+.card-sub { font-size: 13px; color: #8b949e; margin-top: 4px; }
+
+/* Section headers */
+.section-title { font-size: 18px; font-weight: 600; color: #e6edf3; margin: 32px 0 16px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+.section-title span { color: #f0a500; }
+
+/* Miner Table */
+.miner-table { width: 100%; border-collapse: collapse; }
+.miner-table th { text-align: left; padding: 10px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #8b949e; border-bottom: 1px solid #30363d; }
+.miner-table td { padding: 10px 12px; border-bottom: 1px solid #21262d; font-size: 14px; }
+.miner-table tr:hover { background: #1c2128; }
+.miner-name { font-family: monospace; font-size: 13px; color: #58a6ff; }
+.arch-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.arch-g4 { background: #3a1d6e; color: #d2a8ff; border: 1px solid #6e40c9; }
+.arch-g5 { background: #1d3a6e; color: #a8c8ff; border: 1px solid #4078c0; }
+.arch-power8 { background: #6e3a1d; color: #ffcba8; border: 1px solid #c07840; }
+.arch-apple { background: #1d6e3a; color: #a8ffc8; border: 1px solid #40c078; }
+.arch-modern { background: #21262d; color: #8b949e; border: 1px solid #30363d; }
+.arch-windows { background: #1d3a6e; color: #79c0ff; border: 1px solid #388bfd; }
+.mult { font-family: monospace; color: #f0a500; font-weight: 600; }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+.dot-online { background: #3fb950; box-shadow: 0 0 6px #3fb95066; }
+.dot-stale { background: #d29922; }
+.dot-offline { background: #f85149; }
+
+/* Agent Economy */
+.job-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+.job-card:hover { border-color: #f0a500; }
+.job-title { font-size: 15px; font-weight: 600; color: #e6edf3; margin-bottom: 6px; }
+.job-meta { font-size: 12px; color: #8b949e; display: flex; gap: 16px; flex-wrap: wrap; }
+.job-reward { color: #f0a500; font-weight: 700; font-size: 16px; }
+.job-status { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.status-open { background: #1a3a2a; color: #3fb950; }
+.status-claimed { background: #3a3a1a; color: #d29922; }
+.status-completed { background: #1a2a3a; color: #58a6ff; }
+.category-tag { background: #21262d; color: #8b949e; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+
+/* Footer */
+.footer { text-align: center; padding: 24px; color: #484f58; font-size: 12px; border-top: 1px solid #21262d; margin-top: 48px; }
+.footer a { color: #58a6ff; text-decoration: none; }
+
+/* Refresh indicator */
+.refresh-bar { position: fixed; top: 0; left: 0; height: 2px; background: #f0a500; transition: width 0.3s; z-index: 100; }
+
+/* Loading */
+.loading { text-align: center; padding: 40px; color: #8b949e; }
+.spin { display: inline-block; animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="refresh-bar" id="refreshBar" style="width: 0%"></div>
+
+<div class="header">
+  <h1>RustChain Explorer <span>Proof of Antiquity</span></h1>
+  <div class="header-right">
+    <a href="/anchors" style="color:#58a6ff; text-decoration:none; font-size:14px; padding:4px 12px; border-radius:6px; transition:background 0.2s;">Ergo Anchors</a>
+    <span class="version-badge" id="version">--</span>
+    <span class="status-badge status-ok" id="statusBadge">Connecting...</span>
+  </div>
+</div>
+
+<div class="container">
+  <!-- Network Stats -->
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-header">Current Epoch</div>
+      <div class="card-value" id="epoch">--</div>
+      <div class="card-sub">Slot <span id="slot">--</span> | <span id="blocksPerEpoch">--</span> blocks/epoch</div>
+    </div>
+    <div class="card">
+      <div class="card-header">Active Miners</div>
+      <div class="card-value" id="minerCount">--</div>
+      <div class="card-sub"><span id="enrolledMiners">--</span> enrolled this epoch</div>
+    </div>
+    <div class="card">
+      <div class="card-header">Epoch Reward Pool</div>
+      <div class="card-value" id="epochPot">-- <small>RTC</small></div>
+      <div class="card-sub">Total supply: <span id="totalSupply">--</span> RTC</div>
+    </div>
+  </div>
+
+  <div class="grid-3">
+    <div class="card">
+      <div class="card-header">Agent Economy Volume</div>
+      <div class="card-value" id="agentVolume">-- <small>RTC</small></div>
+      <div class="card-sub"><span id="agentJobs">--</span> jobs | <span id="agentFees">--</span> RTC fees</div>
+    </div>
+    <div class="card">
+      <div class="card-header">Open Jobs</div>
+      <div class="card-value" id="openJobs">--</div>
+      <div class="card-sub"><span id="escrowBalance">--</span> RTC in escrow</div>
+    </div>
+    <div class="card">
+      <div class="card-header">Node Uptime</div>
+      <div class="card-value" id="uptime">--</div>
+      <div class="card-sub">DB: <span id="dbStatus">--</span></div>
+    </div>
+  </div>
+
+  <!-- Miners -->
+  <div class="section-title"><span>Miners</span> — Active Attestations</div>
+  <div class="card" style="overflow-x: auto;">
+    <table class="miner-table">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Miner ID</th>
+          <th>Architecture</th>
+          <th>Hardware</th>
+          <th>Multiplier</th>
+          <th>Last Attest</th>
+        </tr>
+      </thead>
+      <tbody id="minerTableBody">
+        <tr><td colspan="6" class="loading"><span class="spin">&#x21bb;</span> Loading miners...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Agent Economy Jobs -->
+  <div class="section-title"><span>Agent Economy</span> — Job Marketplace</div>
+  <div id="jobsList">
+    <div class="loading"><span class="spin">&#x21bb;</span> Loading jobs...</div>
+  </div>
+
+  <div class="footer">
+    RustChain Explorer | <a href="/anchors">Ergo Anchors</a> | <a href="https://github.com/Scottcjn/Rustchain">GitHub</a> |
+    <a href="https://github.com/Scottcjn/rustchain-bounties">Bounties</a> |
+    Auto-refreshes every 30s | Node 1: 50.28.86.131
+  </div>
+</div>
+
+<script>
+const API = '';  // Same origin
+let refreshInterval;
+
+function fmt(n) { return n != null ? n.toLocaleString() : '--'; }
+
+function timeAgo(ts) {
+  if (!ts) return 'never';
+  const now = Math.floor(Date.now() / 1000);
+  const diff = now - ts;
+  if (diff < 60) return diff + 's ago';
+  if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+  return Math.floor(diff/86400) + 'd ago';
+}
+
+function formatUptime(s) {
+  if (!s) return '--';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (h > 24) return Math.floor(h/24) + 'd ' + (h%24) + 'h';
+  return h + 'h ' + m + 'm';
+}
+
+function archBadge(arch, family) {
+  const a = (arch || '').toLowerCase();
+  const f = (family || '').toLowerCase();
+  if (a.includes('g4') || a === 'powerpc' && f.includes('g4')) return ['G4', 'arch-g4'];
+  if (a.includes('g5')) return ['G5', 'arch-g5'];
+  if (a.includes('power8')) return ['POWER8', 'arch-power8'];
+  if (a.includes('m1') || a.includes('m2') || a.includes('m3') || a.includes('m4') || a === 'apple_silicon') return ['Apple Si', 'arch-apple'];
+  if (f === 'windows' || a.includes('amd64 family')) return ['Windows', 'arch-windows'];
+  return ['Modern', 'arch-modern'];
+}
+
+function minerStatus(lastAttest) {
+  if (!lastAttest) return ['offline', 'dot-offline'];
+  const now = Math.floor(Date.now() / 1000);
+  const diff = now - lastAttest;
+  if (diff < 700) return ['online', 'dot-online'];   // ~1 epoch
+  if (diff < 3600) return ['stale', 'dot-stale'];
+  return ['offline', 'dot-offline'];
+}
+
+async function fetchJSON(url) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+async function refresh() {
+  const bar = document.getElementById('refreshBar');
+  bar.style.width = '30%';
+
+  const [health, epoch, miners, agentStats, jobs] = await Promise.all([
+    fetchJSON(API + '/health'),
+    fetchJSON(API + '/epoch'),
+    fetchJSON(API + '/api/miners'),
+    fetchJSON(API + '/agent/stats'),
+    fetchJSON(API + '/agent/jobs'),
+  ]);
+
+  bar.style.width = '80%';
+
+  // Health
+  const badge = document.getElementById('statusBadge');
+  if (health && health.ok) {
+    badge.textContent = 'Online';
+    badge.className = 'status-badge status-ok';
+    document.getElementById('version').textContent = 'v' + (health.version || '?');
+    document.getElementById('uptime').textContent = formatUptime(health.uptime_s);
+    document.getElementById('dbStatus').textContent = health.db_rw ? 'Read/Write' : 'Read-Only';
+  } else {
+    badge.textContent = 'Offline';
+    badge.className = 'status-badge status-err';
+  }
+
+  // Epoch
+  if (epoch) {
+    document.getElementById('epoch').textContent = epoch.epoch;
+    document.getElementById('slot').textContent = fmt(epoch.slot);
+    document.getElementById('blocksPerEpoch').textContent = epoch.blocks_per_epoch;
+    document.getElementById('epochPot').innerHTML = epoch.epoch_pot + ' <small>RTC</small>';
+    document.getElementById('totalSupply').textContent = fmt(epoch.total_supply_rtc);
+    document.getElementById('enrolledMiners').textContent = epoch.enrolled_miners;
+  }
+
+  // Miners
+  if (miners && miners.length) {
+    document.getElementById('minerCount').textContent = miners.length;
+    const tbody = document.getElementById('minerTableBody');
+    // Sort: online first, then by multiplier desc
+    miners.sort((a, b) => {
+      const aOnline = minerStatus(a.last_attest)[0] === 'online' ? 1 : 0;
+      const bOnline = minerStatus(b.last_attest)[0] === 'online' ? 1 : 0;
+      if (bOnline !== aOnline) return bOnline - aOnline;
+      return (b.antiquity_multiplier || 1) - (a.antiquity_multiplier || 1);
+    });
+    tbody.innerHTML = miners.map(m => {
+      const [statusText, dotClass] = minerStatus(m.last_attest);
+      const [archLabel, archClass] = archBadge(m.device_arch, m.device_family);
+      const name = m.miner.length > 24 ? m.miner.substring(0, 12) + '...' + m.miner.slice(-8) : m.miner;
+      return `<tr>
+        <td><span class="status-dot ${dotClass}"></span>${statusText}</td>
+        <td class="miner-name" title="${m.miner}">${name}</td>
+        <td><span class="arch-badge ${archClass}">${archLabel}</span></td>
+        <td>${m.hardware_type || 'Unknown'}</td>
+        <td class="mult">${m.antiquity_multiplier}x</td>
+        <td>${timeAgo(m.last_attest)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // Agent Economy
+  if (agentStats && agentStats.stats) {
+    const s = agentStats.stats;
+    document.getElementById('agentVolume').innerHTML = fmt(s.total_rtc_volume) + ' <small>RTC</small>';
+    document.getElementById('agentJobs').textContent = s.completed_jobs + ' completed';
+    document.getElementById('agentFees').textContent = s.total_fees_collected;
+    document.getElementById('openJobs').textContent = s.open_jobs;
+    document.getElementById('escrowBalance').textContent = s.escrow_balance_rtc;
+  }
+
+  // Jobs
+  const jobsEl = document.getElementById('jobsList');
+  if (jobs && jobs.jobs && jobs.jobs.length > 0) {
+    jobsEl.innerHTML = jobs.jobs.map(j => {
+      const statusClass = j.status === 'open' ? 'status-open' : j.status === 'claimed' ? 'status-claimed' : 'status-completed';
+      return `<div class="job-card">
+        <div style="display:flex; justify-content:space-between; align-items:start;">
+          <div>
+            <div class="job-title">${j.title}</div>
+            <div class="job-meta">
+              <span class="job-status ${statusClass}">${j.status.toUpperCase()}</span>
+              <span class="category-tag">${j.category}</span>
+              <span>Posted by ${j.poster_wallet}</span>
+              ${j.worker_wallet ? '<span>Worker: ' + j.worker_wallet + '</span>' : ''}
+              <span>Expires ${timeAgo(j.expires_at).replace(' ago', ' left').replace('ago', '')}</span>
+            </div>
+          </div>
+          <div class="job-reward">${j.reward_rtc} RTC</div>
+        </div>
+        <div style="margin-top:8px; font-size:13px; color:#8b949e;">${(j.description || '').substring(0, 200)}${(j.description || '').length > 200 ? '...' : ''}</div>
+      </div>`;
+    }).join('');
+  } else {
+    jobsEl.innerHTML = '<div class="card" style="text-align:center; color:#8b949e; padding:32px;">No jobs in marketplace. <a href="https://github.com/Scottcjn/rustchain-bounties/issues/685" style="color:#58a6ff;">Post one via the API!</a></div>';
+  }
+
+  bar.style.width = '100%';
+  setTimeout(() => { bar.style.width = '0%'; }, 500);
+}
+
+// Initial load + auto-refresh
+refresh();
+refreshInterval = setInterval(refresh, 30000);
+</script>
+</body>
+</html>
