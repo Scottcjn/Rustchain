@@ -300,7 +300,7 @@ This document provides an objective, technical comparison between **RustChain** 
 |------|----------|-----------|
 | **Network Security** | Validators economically invested (stake at risk) | Miners incentivized to maintain hardware |
 | **Decentralization** | Low barrier (relative to PoW), but capital-intensive | Ultra-low barrier, hardware-gated |
-| **Long-term Alignment** | Validators benefit from ETH appreciation | Miners benefit from RTC + hardware appreciation |
+| **Long-term Alignment** | Validators are economically tied to ETH | Miners keep vintage hardware running and attested (preservation, not price) |
 | **Anti-Centralization** | No direct mechanism (pools dominate) | Natural limit (finite vintage hardware) |
 | **Speculative Pressure** | High (DeFi, NFTs, trading) | Low (niche collector market) |
 
