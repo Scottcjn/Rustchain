@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark light">
+<title>RustChain Machine Census - real machines attesting on Proof of Antiquity</title>
+<meta name="description" content="A public preservation record of the physical machines attesting on RustChain: vintage PowerPC, retro x86, exotic and modern hardware. Listing is free and earns no RTC.">
+<meta name="author" content="Elyan Labs">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://rustchain.org/census/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="RustChain Machine Census">
+<meta property="og:description" content="Physical machines attesting on RustChain, grouped by era, plus owner-verified vintage machines. A preservation record.">
+<meta property="og:url" content="https://rustchain.org/census/">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230d1117'/%3E%3Cpath d='M32 14 L36 22 L44 22 L38 28 L40 36 L32 31 L24 36 L26 28 L20 22 L28 22Z' fill='%23f0a500'/%3E%3Ccircle cx='32' cy='32' r='16' fill='none' stroke='%23f0a500' stroke-width='2' stroke-dasharray='6 4'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #0d1117; --panel: #161b22; --panel-2: #1c2128; --border: #30363d; --rule: #21262d;
+  --text: #e6edf3; --muted: #8b949e; --accent: #f0a500; --link: #58a6ff;
+  --gold-bg: #3a2e0a; --gold-fg: #f2cc60; --gold-bd: #9e6a03;
+  --ok-bg: #1a3a2a; --ok-fg: #3fb950; --ok-bd: #238636;
+  --warn-fg: #d29922;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #ffffff; --panel: #f6f8fa; --panel-2: #eef1f4; --border: #d0d7de; --rule: #d8dee4;
+    --text: #1f2328; --muted: #59636e; --accent: #9a6700; --link: #0969da;
+    --gold-bg: #fff8c5; --gold-fg: #7d4e00; --gold-bd: #d4a72c;
+    --ok-bg: #dafbe1; --ok-fg: #1a7f37; --ok-bd: #4ac26b;
+    --warn-fg: #9a6700;
+  }
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+a { color: var(--link); }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.skip { position: absolute; left: -9999px; }
+.skip:focus { left: 8px; top: 8px; background: var(--panel); padding: 6px 10px; z-index: 10; }
+header.site { background: var(--panel); border-bottom: 1px solid var(--border); padding: 16px 24px; }
+header.site .brand { font-size: 13px; color: var(--muted); text-decoration: none; }
+h1 { font-size: 26px; color: var(--accent); letter-spacing: -0.5px; margin-top: 4px; }
+.lede { color: var(--muted); max-width: 70ch; margin-top: 6px; }
+main { max-width: 1200px; margin: 0 auto; padding: 24px; }
+h2 { font-size: 20px; margin: 36px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--rule); }
+h3 { font-size: 16px; }
+.note { color: var(--muted); font-size: 14px; max-width: 75ch; }
+.status { font-size: 14px; color: var(--muted); margin: 8px 0 0; }
+.status.err { color: var(--warn-fg); }
+.era { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+.era-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.era-head p { color: var(--muted); font-size: 13px; }
+.count { font-family: 'SF Mono', 'Cascadia Code', monospace; font-size: 22px; font-weight: 700; color: var(--accent); }
+.empty { margin-top: 10px; font-size: 14px; }
+ul.machines { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-top: 12px; }
+ul.machines li { background: var(--panel-2); border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px; font-size: 14px; }
+.m-title { font-weight: 600; }
+.m-sub { color: var(--muted); font-size: 13px; }
+.mult { font-family: monospace; color: var(--accent); font-weight: 600; }
+ul.verified { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; margin-top: 12px; }
+ul.verified li { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+ul.verified img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; background: var(--panel-2); display: block; }
+.v-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.v-meta { color: var(--muted); font-size: 13px; }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid; vertical-align: middle; margin-left: 6px; }
+.badge-gold { background: var(--gold-bg); color: var(--gold-fg); border-color: var(--gold-bd); }
+.badge-verified { background: var(--ok-bg); color: var(--ok-fg); border-color: var(--ok-bd); }
+.join { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px 20px; }
+.join ol { margin: 10px 0 0 22px; }
+.join li { margin-bottom: 8px; }
+code { font-family: 'SF Mono', 'Cascadia Code', monospace; background: var(--panel-2); border: 1px solid var(--rule); border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+.free { margin-top: 14px; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--panel-2); font-weight: 600; }
+.button { display: inline-block; margin-top: 12px; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--accent); color: var(--accent); text-decoration: none; font-weight: 600; }
+footer { text-align: center; padding: 24px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--rule); margin-top: 48px; }
+@media (max-width: 600px) { main { padding: 16px; } h1 { font-size: 22px; } }
+</style>
+</head>
+<body>
+<a class="skip" href="#live">Skip to the census</a>
+<header class="site">
+  <a class="brand" href="/">RustChain</a>
+  <h1>Machine Census</h1>
+  <p class="lede">A public record of the physical machines that attest on RustChain's Proof of Antiquity: what they are, how old they are, and how long they have been running. It is a preservation record, not a leaderboard.</p>
+</header>
+
+<main>
+  <section id="live" aria-labelledby="live-h">
+    <h2 id="live-h">Machines attesting now</h2>
+    <p class="note">Taken from the node's list of active miners. The node classifies each machine from its hardware attestation; these entries are <strong>not</strong> checked by a person (see <a href="#verified-h">Verified machines</a> for those). Wallet and miner IDs, IP addresses and exact timestamps are never shown here.</p>
+    <p id="live-status" class="status" role="status" aria-live="polite">Loading live machines...</p>
+
+    <section class="era" aria-labelledby="era-ppc-h">
+      <div class="era-head">
+        <div><h3 id="era-ppc-h">Vintage PowerPC</h3><p>PowerPC G3, G4, G5 and IBM POWER</p></div>
+        <span class="count" id="count-ppc" aria-label="machines in this era">-</span>
+      </div>
+      <p class="empty" id="empty-ppc" hidden></p>
+      <ul class="machines" id="list-ppc"></ul>
+    </section>
+
+    <section class="era" aria-labelledby="era-retro-h">
+      <div class="era-head">
+        <div><h3 id="era-retro-h">Retro x86</h3><p>486, Pentium, Core 2, Nehalem and other older x86</p></div>
+        <span class="count" id="count-retro" aria-label="machines in this era">-</span>
+      </div>
+      <p class="empty" id="empty-retro" hidden></p>
+      <ul class="machines" id="list-retro"></ul>
+    </section>
+
+    <section class="era" aria-labelledby="era-exotic-h">
+      <div class="era-head">
+        <div><h3 id="era-exotic-h">Exotic</h3><p>SPARC, MIPS, Motorola 68k and classic ARM</p></div>
+        <span class="count" id="count-exotic" aria-label="machines in this era">-</span>
+      </div>
+      <p class="empty" id="empty-exotic" hidden></p>
+      <ul class="machines" id="list-exotic"></ul>
+    </section>
+
+    <section class="era" aria-labelledby="era-modern-h">
+      <div class="era-head">
+        <div><h3 id="era-modern-h">Modern</h3><p>Current x86-64, Apple Silicon and 64-bit ARM</p></div>
+        <span class="count" id="count-modern" aria-label="machines in this era">-</span>
+      </div>
+      <p class="empty" id="empty-modern" hidden></p>
+      <ul class="machines" id="list-modern"></ul>
+    </section>
+  </section>
+
+  <section aria-labelledby="verified-h">
+    <h2 id="verified-h">Verified machines</h2>
+    <p class="note">Machines whose owners sent a photo of the machine, its serial plate and a handwritten census code, and that a maintainer reviewed. <strong>Gold</strong> means the machine kept attesting for 60 days and was also checked in person.</p>
+    <p id="verified-status" class="status" role="status" aria-live="polite">Loading verified machines...</p>
+    <ul class="verified" id="verified-list"></ul>
+  </section>
+
+  <section id="join" aria-labelledby="join-h">
+    <h2 id="join-h">How to get on the census</h2>
+    <div class="join">
+      <ol>
+        <li><a href="/how-to-mine-rtc.html">Run the RustChain miner</a> on the machine so it attests to the network.</li>
+        <li>Take a photo that shows the machine, its serial plate, and a sheet of paper with this written by hand: <code>RTC CENSUS &lt;your GitHub handle&gt; &lt;today's date&gt;</code></li>
+        <li>Submit it with the <a href="https://github.com/Scottcjn/Rustchain/issues/new?template=census-submission.yml">census submission form</a> on GitHub.</li>
+        <li>A maintainer reviews the photo and adds the machine to the Verified list.</li>
+      </ol>
+      <p class="free">Listing is free and earns no RTC. The census is a preservation record.</p>
+      <p class="note" style="margin-top:10px">Privacy: the census page never shows wallets, miner IDs or IP addresses. A display name is optional; you can stay anonymous. GitHub issues are public, so your photo and handle are visible on the submission itself (you may cover all but the last 4 characters of the serial). Ask in an issue to have an entry removed.</p>
+      <a class="button" href="https://github.com/Scottcjn/Rustchain/issues/new?template=census-submission.yml">Submit a machine</a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <a href="/">rustchain.org</a> &middot; <a href="/explorer/">Explorer</a> &middot; <a href="https://github.com/Scottcjn/Rustchain/tree/main/census">Census source and maintainer guide</a>
+</footer>
+
+<script>
+'use strict';
+const ERAS = ['ppc', 'retro', 'exotic', 'modern'];
+const EMPTY_TEXT = {
+  ppc: 'No G4/G5 machines attesting right now.',
+  retro: 'No retro x86 machines attesting right now.',
+  exotic: 'No SPARC, MIPS, 68k or classic ARM machines attesting right now.',
+  modern: 'No modern machines attesting right now.'
+};
+// [pattern over "family arch hardware_type" (lower case), label]. First match wins.
+const ARCH_LABELS = [
+  [/\bg3\b/, 'PowerPC G3 (1997-2003)'],
+  [/\bg4\b/, 'PowerPC G4 (1999-2005)'],
+  [/\bg5\b/, 'PowerPC G5 (2003-2006)'],
+  [/power8/, 'IBM POWER8 (2014)'],
+  [/power9/, 'IBM POWER9 (2017)'],
+  [/sparc/, 'SPARC'],
+  [/mips/, 'MIPS'],
+  [/m68k|68k|680[0-6]0/, 'Motorola 68k'],
+  [/strongarm|sa11[01]0/, 'StrongARM (1996-2001)'],
+  [/xscale/, 'Intel XScale (2002-2006)'],
+  [/powerpc|ppc/, 'PowerPC'],
+  [/pentium ?4/, 'Pentium 4 (2000-2008)'],
+  [/core ?2/, 'Core 2 (2006-2010)'],
+  [/nehalem/, 'Nehalem (2008-2010)'],
+  [/\b[34]86\b|i[34]86/, '386/486 era'],
+  [/retro|vintage/, 'Retro x86'],
+  [/broadwell/, 'Intel Broadwell (2014)'],
+  [/apple silicon|\bm[1-4]\b/, 'Apple Silicon (2020+)'],
+  [/aarch64|arm64|armv8/, '64-bit ARM'],
+  [/x86/, 'Modern x86-64']
+];
+
+function str(v, max) {
+  // Node data is self-reported by miners: treat as untrusted text, never markup.
+  if (v === null || v === undefined) return '';
+  return String(v).slice(0, max || 80);
+}
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+
+function minerList(data) {
+  if (Array.isArray(data)) return { miners: data, total: data.length };
+  if (data && Array.isArray(data.miners)) {
+    const p = data.pagination || {};
+    const total = Number.isFinite(p.total) ? p.total : data.miners.length;
+    return { miners: data.miners, total: total };
+  }
+  return null;
+}
+
+function eraOf(m) {
+  const s = [m.device_family, m.device_arch, m.hardware_type].map(x => str(x).toLowerCase()).join(' ');
+  if (/powerpc|ppc|\bg[345]\b|power[0-9]|power macintosh/.test(s)) return 'ppc';
+  if (/sparc|mips|m68k|68k|680[0-6]0|amiga|strongarm|sa11[01]0|xscale|\barm[2367]\b|arm7tdmi|\barm9|arm926|\barm11|arm1176|cortex[_-]?a[89]\b/.test(s)) return 'exotic';
+  if (/retro|vintage|pentium|\b[34]86\b|i[34]86|core ?2|nehalem|\bk6\b|athlon/.test(s)) return 'retro';
+  return 'modern';
+}
+function eraLabel(m) {
+  const s = [m.device_family, m.device_arch, m.hardware_type].map(x => str(x).toLowerCase()).join(' ');
+  for (const [re, label] of ARCH_LABELS) if (re.test(s)) return label;
+  return 'Unclassified';
+}
+function fmtMult(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? (Math.round(n * 10000) / 10000) + '×' : '-';
+}
+function fmtDate(unix) {
+  const n = Number(unix);
+  if (!Number.isFinite(n) || n <= 0) return 'unknown';
+  return new Date(n * 1000).toISOString().slice(0, 10);  // day only, on purpose
+}
+function fmtSeen(unix) {
+  const n = Number(unix);
+  if (!Number.isFinite(n) || n <= 0) return 'seen: unknown';
+  const s = Math.max(0, Math.floor(Date.now() / 1000) - n);
+  if (s < 3600) return 'seen within the last hour';
+  if (s < 86400) return 'seen ' + Math.floor(s / 3600) + ' h ago';
+  return 'seen ' + Math.floor(s / 86400) + ' days ago';
+}
+
+function machineItem(m) {
+  // Deliberately reads ONLY these fields. The miner/wallet id is never touched.
+  const li = el('li');
+  const fam = str(m.device_family, 40) || 'unknown family';
+  const arch = str(m.device_arch, 40) || 'unknown arch';
+  li.appendChild(el('div', 'm-title', eraLabel(m)));
+  li.appendChild(el('div', 'm-sub', fam + ' / ' + arch + ' · ' + (str(m.hardware_type, 60) || 'hardware type not reported')));
+  const line = el('div');
+  line.appendChild(el('span', 'mult', fmtMult(m.antiquity_multiplier)));
+  line.appendChild(el('span', 'm-sub', ' antiquity multiplier'));
+  li.appendChild(line);
+  li.appendChild(el('div', 'm-sub', 'attesting since ' + fmtDate(m.first_attest) + ' · ' + fmtSeen(m.last_attest)));
+  return li;
+}
+
+function inviteLink() {
+  const a = el('a', null, 'Get it on the census.');
+  a.setAttribute('href', '#join');
+  return a;
+}
+
+function renderLive(data) {
+  const status = document.getElementById('live-status');
+  const parsed = minerList(data);
+  if (!parsed) {
+    status.className = 'status err';
+    status.textContent = 'Live data is unavailable right now (the node did not answer). This is not the same as zero machines.';
+    for (const era of ERAS) document.getElementById('count-' + era).textContent = '-';
+    return;
+  }
+  const groups = { ppc: [], retro: [], exotic: [], modern: [] };
+  for (const m of parsed.miners) if (m && typeof m === 'object') groups[eraOf(m)].push(m);
+  const shown = ERAS.reduce((n, e) => n + groups[e].length, 0);
+  let msg = shown + (shown === 1 ? ' machine is' : ' machines are') + ' attesting now.';
+  if (parsed.total > shown) msg += ' The node reports ' + parsed.total + '; the first ' + shown + ' are shown.';
+  status.className = 'status';
+  status.textContent = msg;
+
+  for (const era of ERAS) {
+    // Sort by era label, then multiplier, then start date (not the API order,
+    // which follows last-seen time and would line up 1:1 with the explorer).
+    const list = groups[era].slice().sort((a, b) =>
+      eraLabel(a).localeCompare(eraLabel(b)) ||
+      (Number(b.antiquity_multiplier) || 0) - (Number(a.antiquity_multiplier) || 0) ||
+      (Number(a.first_attest) || 0) - (Number(b.first_attest) || 0));
+    document.getElementById('count-' + era).textContent = String(list.length);
+    const ul = document.getElementById('list-' + era);
+    clear(ul);
+    for (const m of list) ul.appendChild(machineItem(m));
+    const empty = document.getElementById('empty-' + era);
+    clear(empty);
+    if (list.length === 0) {
+      empty.appendChild(el('span', null, EMPTY_TEXT[era] + (era === 'modern' ? ' ' : ' Own one? ')));
+      empty.appendChild(inviteLink());
+      empty.hidden = false;
+    } else {
+      empty.hidden = true;
+    }
+  }
+}
+
+function safePhoto(url) {
+  const u = str(url, 500);
+  if (/^https:\/\/[^\s"'<>]+$/i.test(u)) return u;
+  if (/^photos\/[A-Za-z0-9._-]+$/.test(u)) return u;
+  return '';
+}
+function methodText(v) {
+  if (v.method === 'in_person') return 'in person' + (v.event ? ' at ' + str(v.event, 80) : '');
+  return 'photo + handwritten code';
+}
+
+function verifiedItem(v) {
+  const li = el('li');
+  const model = str(v.model, 80);
+  const photo = safePhoto(v.photo);
+  if (photo) {
+    const img = el('img');
+    img.setAttribute('src', photo);
+    img.setAttribute('alt', str(v.photo_alt, 200) || ('Photo of the ' + model));
+    img.setAttribute('loading', 'lazy');
+    img.setAttribute('referrerpolicy', 'no-referrer');
+    li.appendChild(img);
+  }
+  const body = el('div', 'v-body');
+  const h = el('h3', null, model);
+  const gold = v.tier === 'gold';
+  h.appendChild(el('span', 'badge ' + (gold ? 'badge-gold' : 'badge-verified'), gold ? 'Gold' : 'Verified'));
+  body.appendChild(h);
+  const facts = [];
+  if (v.year) facts.push(str(v.year, 10));
+  if (v.cpu) facts.push(str(v.cpu, 80));
+  if (facts.length) body.appendChild(el('div', 'v-meta', facts.join(' · ')));
+  body.appendChild(el('div', null, 'Cared for by ' + (str(v.display_name, 60).trim() || 'an anonymous owner')));
+  if (v.running) body.appendChild(el('div', 'v-meta', 'Running: ' + str(v.running, 80)));
+  body.appendChild(el('div', 'v-meta', 'Verified ' + (str(v.verified, 10) || 'date not recorded') + ' · ' + methodText(v)));
+  if (v.story) body.appendChild(el('p', null, str(v.story, 600)));
+  li.appendChild(body);
+  return li;
+}
+
+function renderVerified(data) {
+  const status = document.getElementById('verified-status');
+  const ul = document.getElementById('verified-list');
+  clear(ul);
+  const list = data && Array.isArray(data.machines) ? data.machines : (Array.isArray(data) ? data : null);
+  if (!list) {
+    status.className = 'status err';
+    status.textContent = 'The verified list is unavailable right now.';
+    return;
+  }
+  const ok = list.filter(v => v && typeof v === 'object' && str(v.model).trim());
+  ok.sort((a, b) => (b.tier === 'gold') - (a.tier === 'gold') || (Number(a.year) || 9999) - (Number(b.year) || 9999));
+  for (const v of ok) ul.appendChild(verifiedItem(v));
+  status.className = 'status';
+  status.textContent = ok.length
+    ? ok.length + (ok.length === 1 ? ' machine has' : ' machines have') + ' been verified.'
+    : 'No machines have been verified yet. The first listing could be yours.';
+}
+
+async function getJson(url, opts) {
+  try {
+    const r = await fetch(url, opts);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+async function main() {
+  const [live, verified] = await Promise.all([
+    getJson('/api/miners?limit=500'),
+    getJson('machines.json', { cache: 'no-cache' })
+  ]);
+  renderLive(live);
+  renderVerified(verified);
+}
+
+main();
+</script>
+</body>
+</html>
