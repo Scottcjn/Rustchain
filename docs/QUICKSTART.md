@@ -9,7 +9,7 @@ A step-by-step guide for first-time users. Every command is copy-paste ready.
 RustChain is a blockchain that rewards you for keeping old computers alive. Instead of
 rewarding the fastest machine (like Bitcoin), RustChain rewards the *oldest* machine.
 A PowerBook G4 from 2003 earns 2.5x more than a brand-new gaming PC. The token is called
-**RTC** (RustChain Token), an experimental token used inside the RustChain ecosystem. It has no cash value and no off-ramp: no exchange listing, no redemption, no conversion to cash. Over 260
+**RTC** (RustChain Token), an experimental token used inside the RustChain ecosystem. It has no cash value and no off-ramp: no redemption and no conversion to cash. Over 260
 contributors have earned 25,000+ RTC through mining and code bounties.
 
 ---
