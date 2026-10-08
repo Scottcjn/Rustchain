@@ -272,8 +272,7 @@ As the ecosystem matures and RTC distribution widens, bounty payouts scale down 
 
 1. **500 wallet holders** already exist — distribution goal met
 2. **50K of 8.3M supply** (0.6%) allocated to bounties is approaching meaningful dilution
-3. If the RTC reference rate increases, current bounty amounts become disproportionately expensive
-4. The network is proven — we no longer need to overpay to attract contributors
+3. The network is proven — we no longer need to overpay to attract contributors
 
 **What doesn't change:**
 - Mining epoch rewards (1.5 RTC/epoch) — unchanged, consensus-driven

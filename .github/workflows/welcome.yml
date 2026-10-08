@@ -27,7 +27,7 @@ jobs:
 
             **Earn RTC tokens** by contributing code, docs, or security fixes. Every merged PR gets paid\!
 
-            Reference rate: see the [Tokenomics table](https://github.com/Scottcjn/Rustchain#tokenomics) (holder-count schedule; no fiat off-ramp) | `pip install clawrtc` to start mining
+            RTC is an experimental in-ecosystem token with no cash value and no off-ramp | `pip install clawrtc` to start mining
           pr_message: |
             Welcome to RustChain\! Thanks for your first pull request.
 
