@@ -12327,12 +12327,47 @@ def api_wallet_history():
         except Exception:
             pass
 
-    # Sort all transactions by timestamp descending
-    transactions.sort(key=lambda t: t.get("timestamp", 0), reverse=True)
-    total = len(transactions)
+        # Sort all transactions by timestamp descending
+        transactions.sort(key=lambda t: t.get("timestamp", 0), reverse=True)
+        total = len(transactions)
 
-    # Apply pagination
-    page = transactions[offset:offset + limit]
+        # Apply pagination before looking up transfer metadata so the memo query
+        # stays bounded to the hashes actually returned to the caller.
+        page = transactions[offset:offset + limit]
+        transfer_hashes = list(dict.fromkeys(
+            entry["tx_hash"]
+            for entry in page
+            if entry.get("type") in ("transfer_in", "transfer_out")
+            and entry.get("tx_hash")
+        ))
+        transfer_metadata = {}
+        if transfer_hashes:
+            try:
+                placeholders = ",".join("?" for _ in transfer_hashes)
+                metadata_rows = db.execute(
+                    f"""
+                    SELECT tx_hash, reason, status
+                    FROM pending_ledger
+                    WHERE tx_hash IN ({placeholders})
+                    """,
+                    transfer_hashes,
+                ).fetchall()
+                for tx_hash, memo, status in metadata_rows:
+                    clean_memo = None
+                    if memo is not None:
+                        clean_memo = re.sub(r"[\x00-\x1f\x7f-\x9f]", "", str(memo))[:200]
+                    transfer_metadata[tx_hash] = (clean_memo, status)
+            except Exception:
+                pass  # pending_ledger may not exist on all nodes
+
+        for entry in page:
+            if (
+                entry.get("type") in ("transfer_in", "transfer_out")
+                and entry.get("tx_hash")
+            ):
+                entry["memo"], entry["status"] = transfer_metadata.get(
+                    entry["tx_hash"], (None, None)
+                )
 
     return jsonify({
         "ok": True,
