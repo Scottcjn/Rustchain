@@ -12351,7 +12351,7 @@ def api_wallet_history():
                     WHERE tx_hash IN ({placeholders})
                     """,
                     transfer_hashes,
-                ).fetchall()
+                ).fetchall()  # fetchall-ok: already-paginated (IN list = tx hashes of one page, <= limit)
                 for tx_hash, memo, status in metadata_rows:
                     clean_memo = None
                     if memo is not None:
