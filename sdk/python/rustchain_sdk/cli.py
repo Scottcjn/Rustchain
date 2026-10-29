@@ -125,11 +125,11 @@ async def _wallet_balance(address: str, node: str, as_json: bool):
 @wallet_group.command(name="send")
 @click.argument("from_address")
 @click.argument("to_address")
-@click.argument("amount", type=int)
+@click.argument("amount", type=float)
 @click.option(
     "--fee",
-    type=int,
-    default=0,
+    type=float,
+    default=0.0,
     help="Transaction fee.",
 )
 @click.option(
@@ -152,8 +152,8 @@ async def _wallet_balance(address: str, node: str, as_json: bool):
 def wallet_send(
     from_address: str,
     to_address: str,
-    amount: int,
-    fee: int,
+    amount: float,
+    fee: float,
     seed_phrase: str,
     node: str,
     as_json: bool,
@@ -166,8 +166,8 @@ def wallet_send(
 async def _wallet_send(
     from_address: str,
     to_address: str,
-    amount: int,
-    fee: int,
+    amount: float,
+    fee: float,
     seed_phrase: list,
     node: str,
     as_json: bool,
