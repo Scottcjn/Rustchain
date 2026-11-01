@@ -2645,6 +2645,48 @@ def _fingerprint_check_passed(check_entry) -> bool:
     return False
 
 
+def _rip309_settlement_active_passed(checks_map, device_arch, active_checks) -> bool:
+    """RIP-309 gate for epoch settlement: True keeps the miner's epoch weight.
+
+    Mirrors the enrollment path's fail-closed rule (see
+    ``_fingerprint_check_passed``): a measurement that was NOT submitted
+    FAILS. The settlement gate previously used
+    ``all(checks_map.get(chk, True) ...)``, which read a missing measurement as
+    a PASS, so a miner retained epoch weight by simply omitting the rotating
+    checks it would have failed -- "nothing" is not "passed everything".
+
+    A check the device class is STRUCTURALLY UNABLE to perform stays neutral
+    (neither pass nor fail), so legitimate capability-limited classes (micro,
+    console-bridge) keep the treatment they already receive at enrollment.
+
+    ``checks_map`` is None when the stored column is NULL or unparseable; that
+    is no evidence at all and therefore fails.
+    """
+    if checks_map is None:
+        return False
+    # Normalise the stored bare checks map the same way the enrollment path
+    # does. `simd_identity` and `simd_bias` are aliases of one measurement, but
+    # the stored map (built in record_attestation_success) carries whichever
+    # name the client sent, while finalize_epoch's check list uses
+    # `simd_identity`. Without this a client that submits the canonical
+    # `simd_bias` would be scored as having no `simd_identity` result.
+    checks = _fingerprint_checks_map({"checks": checks_map})
+    unmeasurable = set(_structurally_unmeasurable_checks(device_arch, {"checks": checks}))
+    # The canonical RIP-309 tuple spells the measurement `simd_bias`, while
+    # finalize_epoch's check list spells it `simd_identity`. Expand the
+    # exemption across both spellings, otherwise a capability-limited device
+    # could never be excused from that one check and would be zeroed here even
+    # though the enrollment path excuses it.
+    if "simd_bias" in unmeasurable:
+        unmeasurable.add("simd_identity")
+    if "simd_identity" in unmeasurable:
+        unmeasurable.add("simd_bias")
+    return all(
+        (chk in unmeasurable) or _fingerprint_check_passed(checks.get(chk))
+        for chk in active_checks
+    )
+
+
 def get_previous_epoch_block_hash(conn, epoch: int) -> str:
     if epoch <= 0:
         return RIP309_NONCE_FALLBACK
@@ -5703,16 +5745,35 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
             if weight > 0:
                 try:
                     fp_row = c.execute(
-                        "SELECT fingerprint_checks_json FROM miner_attest_recent WHERE miner = ?",
+                        "SELECT fingerprint_checks_json, device_arch FROM miner_attest_recent WHERE miner = ?",
                         (pk,)
                     ).fetchone()
-                    checks_map = {}
-                    if fp_row and fp_row[0]:
-                        try:
-                            checks_map = json.loads(fp_row[0])
-                        except Exception:
-                            pass
-                    active_passed = all(checks_map.get(chk, True) for chk in active_checks)
+                    checks_map = None
+                    arch_for_rotation = ""
+                    if fp_row:
+                        if fp_row[0]:
+                            try:
+                                checks_map = json.loads(fp_row[0])
+                            except Exception:
+                                # SECURITY (RIP-309 fail-closed): an unparseable stored
+                                # measurement map is not evidence of anything. The old
+                                # code left checks_map = {} here, which silently read as
+                                # "every active check passed".
+                                print(
+                                    f"[RIP-309] {pk[:20]}... unparseable "
+                                    f"fingerprint_checks_json in finalize_epoch -> weight=0"
+                                )
+                                checks_map = None
+                        arch_for_rotation = fp_row[1] or ""
+                    # SECURITY (RIP-309 fail-closed): a measurement that was NOT
+                    # submitted must fail, exactly as _fingerprint_check_passed()
+                    # already requires on the enrollment path. The previous
+                    # `all(checks_map.get(chk, True) ...)` form let a miner retain
+                    # epoch weight by simply omitting the checks it would fail,
+                    # defeating the per-epoch rotating measurement.
+                    active_passed = _rip309_settlement_active_passed(
+                        checks_map, arch_for_rotation, active_checks
+                    )
                     if not active_passed:
                         print(f"[RIP-309] {pk[:20]}... failed active check(s) in finalize_epoch -> weight=0")
                         weight = 0
