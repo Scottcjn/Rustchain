@@ -63,11 +63,16 @@ def register_api_v1(app, *, db_path, current_slot, slot_to_epoch,
             return default
         return max(1, min(n, cap))
 
+    # Blocks are minted one per slot; the slot in progress may not have a
+    # header yet, so a node whose tip trails current_slot() by exactly one is
+    # steady-state, not behind. Only a lag of 2+ means it is actually catching up.
+    SYNC_LAG_TOLERANCE = 1
+
     ENDPOINTS = [
         "/api/v1/health", "/api/v1/info", "/api/v1/status", "/api/v1/chain/status",
         "/api/v1/epoch", "/api/v1/miners", "/api/v1/blocks", "/api/v1/blocks/latest",
         "/api/v1/blocks/<slot>", "/api/v1/anchors", "/api/v1/attestations",
-        "/api/v1/leaderboard", "/api/v1/governance/proposals",
+        "/api/v1/leaderboard", "/api/v1/governance/proposals", "/api/v1/sync",
     ]
 
     @bp.route("/")
@@ -111,6 +116,26 @@ def register_api_v1(app, *, db_path, current_slot, slot_to_epoch,
             "tip_height": tip or 0, "blocks_per_epoch": epoch_slots,
             "epoch_pot_rtc": per_epoch_rtc, "total_supply_rtc": total_supply_rtc,
             "active_miners_24h": miners_24h,
+        })
+
+    @bp.route("/sync")
+    @bp.route("/sync-status")
+    @bp.route("/health/sync")
+    @json_safe
+    def v1_sync():
+        # network_block is the slot wall-clock time says should exist now
+        # (current_slot(), the same value /info reports as "slot"), not a
+        # height observed from peers -- this node has no live peer-height feed
+        # wired into it. It is the best available proxy for "where the chain
+        # should be" and matches how the rest of this file already treats
+        # current_slot() as the chain's reference point.
+        network_block = current_slot()
+        current_block = _one("SELECT MAX(slot) FROM headers") or 0
+        lag = network_block - current_block
+        return jsonify({
+            "ok": True, "is_synced": lag <= SYNC_LAG_TOLERANCE,
+            "current_block": current_block, "network_block": network_block,
+            "lag": lag,
         })
 
     @bp.route("/epoch")
