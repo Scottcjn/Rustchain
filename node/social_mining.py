@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """
 RIP-310: Social Mining Protocol Engine
 Enables circular RTC economy across Moltbook, 4claw, and BoTTube with:
