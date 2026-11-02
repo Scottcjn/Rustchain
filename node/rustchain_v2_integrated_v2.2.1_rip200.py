@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """
 RustChain v2 - Integrated Server
 Includes RIP-0005 (Epoch Rewards), RIP-0008 (Withdrawals), RIP-0009 (Finality)
@@ -845,13 +846,17 @@ def attest_validate_challenge(conn, nonce: str, now_ts: Optional[int] = None,
         return False, "nonce_identity_mismatch", None
 
     deleted = conn.execute(
-        "DELETE FROM nonces WHERE nonce = ? AND expires_at = ?",
-        (nonce, expires_at),
+        "DELETE FROM nonces WHERE nonce = ? AND expires_at >= ? "
+        "AND (bound_miner IS NULL OR TRIM(bound_miner) = '' OR TRIM(bound_miner) = ?)",
+        (nonce, now_ts, (required_miner or "").strip()),
     ).rowcount
     conn.commit()
     if deleted != 1:
         return False, "challenge_invalid", None
     return True, None, expires_at
+
+
+_ATTEST_NONCE_LOCK = Lock()
 
 
 def attest_validate_and_store_nonce(
@@ -860,34 +865,41 @@ def attest_validate_and_store_nonce(
     nonce: str,
     now_ts: Optional[int] = None,
 ):
-    """Require a live server-issued challenge and persist accepted attestation nonces."""
+    """Require a live server-issued challenge and atomically persist accepted attestation nonces."""
     now_ts = int(time.time()) if now_ts is None else int(now_ts)
     nonce = _attest_text(nonce)
     miner = _attest_valid_miner(miner) or _attest_text(miner) or ""
     if nonce is None:
         return False, "missing_nonce", None
 
-    attest_cleanup_expired(conn, now_ts=now_ts)
-    replay_row = conn.execute(
-        "SELECT 1 FROM used_nonces WHERE nonce = ?",
-        (nonce,),
-    ).fetchone()
-    if replay_row:
-        return False, "nonce_replay", None
+    with _ATTEST_NONCE_LOCK:
+        attest_cleanup_expired(conn, now_ts=now_ts)
+        replay_row = conn.execute(
+            "SELECT 1 FROM used_nonces WHERE nonce = ?",
+            (nonce,),
+        ).fetchone()
+        if replay_row:
+            return False, "nonce_replay", None
 
-    ok, err, challenge_expires_at = attest_validate_challenge(
-        conn, nonce, now_ts=now_ts, required_miner=(miner or None)
-    )
-    if not ok:
-        return False, err, None
+        ok, err, challenge_expires_at = attest_validate_challenge(
+            conn, nonce, now_ts=now_ts, required_miner=(miner or None)
+        )
+        if not ok:
+            return False, err, None
 
-    expires_at = int(challenge_expires_at)
-    conn.execute(
-        "INSERT INTO used_nonces (nonce, miner_id, first_seen, expires_at) VALUES (?, ?, ?, ?)",
-        (nonce, miner, now_ts, expires_at),
-    )
-    conn.commit()
-    return True, None, expires_at
+        expires_at = int(challenge_expires_at)
+        try:
+            inserted = conn.execute(
+                "INSERT OR IGNORE INTO used_nonces (nonce, miner_id, first_seen, expires_at) VALUES (?, ?, ?, ?)",
+                (nonce, miner, now_ts, expires_at),
+            ).rowcount
+            conn.commit()
+        except sqlite3.IntegrityError:
+            conn.rollback()
+            return False, "nonce_replay", None
+        if inserted != 1:
+            return False, "nonce_replay", None
+        return True, None, expires_at
 
 # Register Hall of Rust blueprint (tables initialized after DB_PATH is set)
 try:
@@ -6712,7 +6724,7 @@ def _submit_attestation_impl():
             "code": "MISSING_NONCE"
         }), 400
 
-    with closing(sqlite3.connect(DB_PATH)) as nonce_conn:
+    with closing(sqlite3.connect(DB_PATH, timeout=10.0)) as nonce_conn:
         nonce_ok, nonce_err, _ = attest_validate_and_store_nonce(
             nonce_conn,
             miner=miner,

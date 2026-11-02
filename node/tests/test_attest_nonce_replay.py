@@ -1,8 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
 import importlib.util
 import os
 import sqlite3
 import sys
 import tempfile
+import threading
 import unittest
 
 
@@ -123,6 +125,51 @@ class TestAttestNonceReplay(unittest.TestCase):
             self.mod.attest_cleanup_expired(conn, now_ts=1000)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM nonces").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM used_nonces").fetchone()[0], 0)
+
+
+    def test_concurrent_nonce_submission_allows_exactly_one(self):
+        db_file = os.path.join(self._tmp.name, "concurrent_nonce.db")
+        with sqlite3.connect(db_file, timeout=10.0) as setup_conn:
+            self.mod.attest_ensure_tables(setup_conn)
+            setup_conn.execute(
+                "INSERT INTO nonces (nonce, expires_at, bound_miner) VALUES (?, ?, ?)",
+                ("race-nonce-8606", 2000, "miner-race"),
+            )
+            setup_conn.commit()
+
+        num_threads = 10
+        barrier = threading.Barrier(num_threads)
+        results = []
+        results_lock = threading.Lock()
+
+        def worker():
+            conn = sqlite3.connect(db_file, timeout=10.0)
+            try:
+                barrier.wait(timeout=5.0)
+                res = self.mod.attest_validate_and_store_nonce(
+                    conn,
+                    miner="miner-race",
+                    nonce="race-nonce-8606",
+                    now_ts=1500,
+                )
+                with results_lock:
+                    results.append(res)
+            finally:
+                conn.close()
+
+        threads = [threading.Thread(target=worker) for _ in range(num_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10.0)
+
+        self.assertEqual(len(results), num_threads)
+        successes = [r for r in results if r[0] is True]
+        rejections = [r for r in results if r[0] is False]
+        self.assertEqual(len(successes), 1)
+        self.assertEqual(len(rejections), num_threads - 1)
+        for ok, err, _ in rejections:
+            self.assertIn(err, ("challenge_invalid", "nonce_replay"))
 
 
 if __name__ == "__main__":
