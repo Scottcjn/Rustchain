@@ -1852,8 +1852,9 @@ class UtxoDB:
                 'inputs': [{'box_id': inp['box_id']} for inp in inputs],
                 'outputs': outputs,
                 'fee_nrtc': fee,
-                'timestamp': timestamp,
             }
+            if 'timestamp' in tx:
+                tx_for_mempool['timestamp'] = timestamp
             if data_inputs:
                 tx_for_mempool['data_inputs'] = data_inputs
             tx_data_json = json.dumps(

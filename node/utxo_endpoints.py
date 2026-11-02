@@ -732,6 +732,12 @@ def utxo_transfer():
             'message': 'to_address must be a canonical RustChain address: RTC followed by 40 lower-case hex characters',
         }), 400
 
+    if from_address == to_address:
+        return jsonify({
+            'error': 'Cannot transfer to self',
+            'code': 'SELF_TRANSFER_NOT_ALLOWED',
+        }), 400
+
     if amount_rtc <= 0:
         return jsonify({'error': 'Amount must be positive'}), 400
 
@@ -1052,9 +1058,9 @@ def utxo_transfer():
             if tx_id:
                 for b in conn.execute(
                     "SELECT box_id, owner_address, value_nrtc FROM utxo_boxes "
-                    "WHERE transaction_id = ?",
+                    "WHERE transaction_id = ? AND output_index = 0",
                     (tx_id,),
-                ).fetchall():  # fetchall-ok: bounded-by-schema (outputs of one transfer tx)
+                ).fetchall():  # fetchall-ok: bounded-by-schema (receiver output of one transfer tx)
                     conn.execute(
                         "INSERT OR REPLACE INTO account_mirror_boxes "
                         "(box_id, account_wallet, value_nrtc, created_epoch) "
