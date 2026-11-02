@@ -93,6 +93,27 @@ class TestRustChainClientHealth:
             with pytest.raises(APIError, match="Expected JSON object response"):
                 await client.health()
 
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_health_error_preserves_backend_error_and_response_body(self):
+        """GET API errors preserve backend diagnostics like POST errors do."""
+        detail = {
+            "error": "fixture temporarily unavailable",
+            "retry_after": 60,
+        }
+        respx.get(f"{DEFAULT_NODE_URL}/health").mock(
+            return_value=httpx.Response(503, json=detail)
+        )
+
+        async with RustChainClient() as client:
+            with pytest.raises(APIError) as exc_info:
+                await client.health()
+
+        error = exc_info.value
+        assert error.status_code == 503
+        assert error.response_body == detail
+        assert "fixture temporarily unavailable" in str(error)
+
 
 class TestRustChainClientEpoch:
     """Test epoch endpoint."""
