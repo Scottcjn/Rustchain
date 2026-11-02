@@ -3155,8 +3155,9 @@ def _detect_x86_vintage(cpu_brand: str, machine: str, simd_data: dict):
     cpu_lower = cpu_brand.lower()
     machine_lower = (machine or "").lower()
 
-    # Pentium M family — \b boundary + (?!\d) avoids false-matching "Pentium M4".
-    if re.search(r"\bpentium(?:\(r\))?\s+m\b(?!\d)", cpu_lower):
+    # Pentium M / Celeron M family — \b boundary + (?!\d) avoids false-matching "Pentium M4".
+    # Celeron M (Banias/Dothan/Yonah) shares the exact core/process generation as Pentium M (#8578).
+    if re.search(r"\b(?:pentium|celeron)(?:\(r\))?\s+m\b(?!\d)", cpu_lower):
         # Parse clock speed from brand string ("1500MHz" or "1.5GHz" form).
         speed_mhz = None
         mhz = re.search(r"(\d+)\s*mhz", cpu_lower)
@@ -3432,7 +3433,7 @@ def _classify_validated_x86_brand(cpu_brand: str):
             rf"(?:\s+\((?:klamath|deschutes|dixon)\)|"
             rf"(?:\s+(?:cpu|processor))?(?:\s+{speed})?)$",
         ),
-        ("pentium_m", 6, rf"^{vendor}pentium(?:\(r\))?\s+m(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        ("pentium_m", 6, rf"^{vendor}(?:pentium|celeron)(?:\(r\))?\s+m(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
         ("pentium", 5, rf"^{vendor}pentium(?:\(r\))?(?:\s+(?:cpu|processor))?(?:\s+{speed})?$"),
     )
     for arch, cpu_family, pattern in patterns:

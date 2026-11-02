@@ -384,5 +384,49 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         self.assertEqual(verified, {"device_family": "x86", "device_arch": "486"})
 
 
+    def test_celeron_m_banias_dothan_and_yonah_classification_and_reward(self):
+        # 1.50GHz 32-bit Celeron M (Banias, <= 1700MHz) -> pentium_m_banias (1.9x)
+        det_banias = self.mod._detect_x86_vintage(
+            "Intel(R) Celeron(R) M processor 1.50GHz", "i686", {}
+        )
+        self.assertEqual(det_banias, {"device_family": "x86", "device_arch": "pentium_m_banias"})
+        fp_banias = _fingerprint(
+            "Intel(R) Celeron(R) M processor 1.50GHz", 6,
+            simd_identity=_check(
+                arch="i686", simd_flags_count=2,
+                has_sse=True, has_avx=False, has_altivec=False, has_neon=False,
+                sample_flags=["sse", "sse2"],
+            ),
+        )
+        self.assertEqual(
+            self._reward("pentium_m_banias", fp_banias)["device_arch"],
+            "pentium_m_banias",
+        )
+
+        # 1.80GHz 32-bit Celeron M (Dothan, > 1700MHz) -> pentium_m_dothan (1.8x)
+        det_dothan = self.mod._detect_x86_vintage(
+            "Intel(R) Celeron(R) M processor 1.80GHz", "i686", {}
+        )
+        self.assertEqual(det_dothan, {"device_family": "x86", "device_arch": "pentium_m_dothan"})
+        fp_dothan = _fingerprint(
+            "Intel(R) Celeron(R) M processor 1.80GHz", 6,
+            simd_identity=_check(
+                arch="i686", simd_flags_count=2,
+                has_sse=True, has_avx=False, has_altivec=False, has_neon=False,
+                sample_flags=["sse", "sse2"],
+            ),
+        )
+        self.assertEqual(
+            self._reward("pentium_m_dothan", fp_dothan)["device_arch"],
+            "pentium_m_dothan",
+        )
+
+        # 64-bit Celeron M -> pentium_m_yonah (1.6x)
+        det_yonah = self.mod._detect_x86_vintage(
+            "Intel(R) Celeron(R) M CPU 1.60GHz", "x86_64", {}
+        )
+        self.assertEqual(det_yonah, {"device_family": "x86", "device_arch": "pentium_m_yonah"})
+
+
 if __name__ == "__main__":
     unittest.main()
