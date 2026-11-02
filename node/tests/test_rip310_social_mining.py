@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 import unittest
 from decimal import Decimal
 from node.social_mining import SocialMiningPool, MIN_TIP_RTC
