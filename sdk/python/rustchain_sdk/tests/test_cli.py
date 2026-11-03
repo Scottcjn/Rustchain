@@ -135,7 +135,7 @@ class TestCliAttest:
 
     @respx.mock
     def test_attest_no_challenge_json(self, runner, test_wallet):
-        """CLI attest --json returns structured error when no challenge is received."""
+        """CLI attest --json returns structured error with non-zero exit when no challenge is received."""
         wallet, seed_phrase = test_wallet
 
         respx.get(
@@ -158,14 +158,14 @@ class TestCliAttest:
             ],
         )
 
-        assert result.exit_code == 0
+        assert result.exit_code == 1, f"Expected non-zero exit, got {result.exit_code}"
         parsed = json.loads(result.output)
         assert parsed["error"] == "No challenge received"
         assert parsed["status"]["status"] == "inactive"
 
     @respx.mock
     def test_attest_no_challenge_plain(self, runner, test_wallet):
-        """CLI attest plain text outputs warning when no challenge is received."""
+        """CLI attest plain text outputs warning with non-zero exit when no challenge is received."""
         wallet, seed_phrase = test_wallet
 
         respx.get(
@@ -187,5 +187,139 @@ class TestCliAttest:
             ],
         )
 
-        assert result.exit_code == 0
+        assert result.exit_code == 1, f"Expected non-zero exit, got {result.exit_code}"
         assert "No challenge received" in result.output
+
+    @respx.mock
+    def test_attest_submit_rejected_json(self, runner, test_wallet):
+        """CLI attest --json exits non-zero when node rejects attestation."""
+        wallet, seed_phrase = test_wallet
+
+        respx.get(
+            f"{DEFAULT_NODE_URL}/attestation/status?miner_public_key={wallet.public_key_hex}"
+        ).mock(
+            return_value=httpx.Response(200, json={"status": "registered"})
+        )
+        respx.post(f"{DEFAULT_NODE_URL}/attestation/challenge").mock(
+            return_value=httpx.Response(
+                200,
+                json={"challenge": "test-challenge-uuid-1234"},
+            )
+        )
+        respx.post(f"{DEFAULT_NODE_URL}/attestation/submit").mock(
+            return_value=httpx.Response(
+                200,
+                json={"ok": False, "status": "rejected", "error": "invalid_signature"},
+            )
+        )
+
+        result = runner.invoke(
+            main,
+            [
+                "attest",
+                wallet.address,
+                "--seed",
+                seed_phrase,
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1, f"Expected non-zero exit, got {result.exit_code}"
+        parsed = json.loads(result.output)
+        assert parsed["ok"] is False
+        assert parsed["status"] == "rejected"
+        assert parsed["error"] == "invalid_signature"
+
+    @respx.mock
+    def test_attest_submit_rejected_plain(self, runner, test_wallet):
+        """CLI attest plain text exits non-zero when node rejects attestation."""
+        wallet, seed_phrase = test_wallet
+
+        respx.get(
+            f"{DEFAULT_NODE_URL}/attestation/status?miner_public_key={wallet.public_key_hex}"
+        ).mock(
+            return_value=httpx.Response(200, json={"status": "registered"})
+        )
+        respx.post(f"{DEFAULT_NODE_URL}/attestation/challenge").mock(
+            return_value=httpx.Response(
+                200,
+                json={"challenge": "test-challenge-uuid-1234"},
+            )
+        )
+        respx.post(f"{DEFAULT_NODE_URL}/attestation/submit").mock(
+            return_value=httpx.Response(
+                200,
+                json={"ok": False, "status": "rejected", "error": "invalid_signature"},
+            )
+        )
+
+        result = runner.invoke(
+            main,
+            [
+                "attest",
+                wallet.address,
+                "--seed",
+                seed_phrase,
+            ],
+        )
+
+        assert result.exit_code == 1, f"Expected non-zero exit, got {result.exit_code}"
+        assert "Attestation rejected" in result.output
+
+    @respx.mock
+    def test_attest_rustchain_error_json(self, runner, test_wallet):
+        """CLI attest --json formats RustChainError as structured JSON with non-zero exit."""
+        wallet, seed_phrase = test_wallet
+
+        respx.get(
+            f"{DEFAULT_NODE_URL}/attestation/status?miner_public_key={wallet.public_key_hex}"
+        ).mock(
+            return_value=httpx.Response(200, json={"status": "registered"})
+        )
+        respx.post(f"{DEFAULT_NODE_URL}/attestation/challenge").mock(
+            return_value=httpx.Response(500, json={"detail": "Internal server error"})
+        )
+
+        result = runner.invoke(
+            main,
+            [
+                "attest",
+                wallet.address,
+                "--seed",
+                seed_phrase,
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1, f"Expected non-zero exit, got {result.exit_code}"
+        assert "❌" not in result.output, "Should not output human emoji in --json mode"
+        parsed = json.loads(result.output)
+        assert "error" in parsed
+
+    @respx.mock
+    def test_attest_rustchain_error_plain(self, runner, test_wallet):
+        """CLI attest plain text outputs human error line with non-zero exit on RustChainError."""
+        wallet, seed_phrase = test_wallet
+
+        respx.get(
+            f"{DEFAULT_NODE_URL}/attestation/status?miner_public_key={wallet.public_key_hex}"
+        ).mock(
+            return_value=httpx.Response(200, json={"status": "registered"})
+        )
+        respx.post(f"{DEFAULT_NODE_URL}/attestation/challenge").mock(
+            return_value=httpx.Response(500, json={"detail": "Internal server error"})
+        )
+
+        result = runner.invoke(
+            main,
+            [
+                "attest",
+                wallet.address,
+                "--seed",
+                seed_phrase,
+            ],
+        )
+
+        assert result.exit_code == 1, f"Expected non-zero exit, got {result.exit_code}"
+        assert "❌" in result.output
+        assert "Error:" in result.output

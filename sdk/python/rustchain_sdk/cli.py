@@ -356,11 +356,14 @@ async def _attest(wallet_address: str, seed_phrase: list, node: str, as_json: bo
     try:
         wallet = RustChainWallet.from_seed_phrase(seed_phrase)
         if wallet.address != wallet_address:
-            click.echo(
-                f"❌  Address mismatch: seed phrase produces {wallet.address}, "
-                f"but expected {wallet_address}",
-                err=True,
+            err_msg = (
+                f"Address mismatch: seed phrase produces {wallet.address}, "
+                f"but expected {wallet_address}"
             )
+            if as_json:
+                click.echo(json.dumps({"error": err_msg}, indent=2))
+            else:
+                click.echo(f"❌  {err_msg}", err=True)
             sys.exit(1)
 
         async with RustChainClient(base_url=node) as client:
@@ -382,8 +385,8 @@ async def _attest(wallet_address: str, seed_phrase: list, node: str, as_json: bo
                         )
                     )
                 else:
-                    click.echo(f"⚠️  No challenge received. Status: {status}")
-                return
+                    click.echo(f"⚠️  No challenge received. Status: {status}", err=True)
+                sys.exit(1)
 
             # Step 3: Sign the challenge
             signature = wallet.sign(challenge.encode()).hex()
@@ -397,14 +400,42 @@ async def _attest(wallet_address: str, seed_phrase: list, node: str, as_json: bo
                 signature,
             )
 
+            # Verify the node actually accepted the attestation
+            def _is_accepted(res: dict) -> bool:
+                if not isinstance(res, dict):
+                    return False
+                if res.get("error"):
+                    return False
+                if res.get("ok") is False:
+                    return False
+                st = str(res.get("status", "")).lower()
+                if st in ("rejected", "failed", "error", "invalid"):
+                    return False
+                if st in ("attested", "accepted", "confirmed", "success", "ok"):
+                    return True
+                if res.get("ok") is True:
+                    return True
+                return False
+
+            accepted = _is_accepted(submit_result)
+
             if as_json:
                 click.echo(json.dumps(submit_result, indent=2))
+                if not accepted:
+                    sys.exit(1)
             else:
-                click.echo(f"✅  Attestation submitted!")
-                click.echo(f"   Result: {json.dumps(submit_result)}")
+                if accepted:
+                    click.echo("✅  Attestation submitted!")
+                    click.echo(f"   Result: {json.dumps(submit_result)}")
+                else:
+                    click.echo(f"❌  Attestation rejected: {json.dumps(submit_result)}", err=True)
+                    sys.exit(1)
 
-    except RustChainError as e:
-        click.echo(f"❌  Error: {e}", err=True)
+    except (RustChainError, ValueError) as e:
+        if as_json:
+            click.echo(json.dumps({"error": str(e)}, indent=2))
+        else:
+            click.echo(f"❌  Error: {e}", err=True)
         sys.exit(1)
 
 
