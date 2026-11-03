@@ -4,9 +4,10 @@ Provides async access to the RustChain network RPC API.
 """
 
 import re
+from decimal import Decimal
+from typing import Dict, List, Any, Optional, Union
 
 import httpx
-from typing import Dict, List, Any, Optional
 
 from .exceptions import (
     RustChainError,
@@ -398,8 +399,8 @@ class RustChainClient:
         self,
         wallet,
         to_address: str,
-        amount: float,
-        fee: float = 0,
+        amount: Union[float, Decimal, int, str],
+        fee: Union[float, Decimal, int, str] = 0,
         memo: str = "",
         chain_id: Optional[str] = None,
     ) -> Dict[str, Any]:
