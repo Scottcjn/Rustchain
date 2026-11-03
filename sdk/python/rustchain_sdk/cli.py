@@ -15,6 +15,8 @@ Usage:
 import asyncio
 import sys
 import json
+import math
+from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 import click
@@ -105,30 +107,145 @@ def wallet_balance(address: str, node: str, as_json: bool):
     asyncio.run(_wallet_balance(address, node, as_json))
 
 
+def _parse_finite_rtc_decimal(val, field_name: str) -> Decimal:
+    """Parse an RTC value as a finite numeric Decimal. Rejects bools, NaN, Inf, non-numeric strings."""
+    if val is None or isinstance(val, bool):
+        raise ValueError(f"Invalid non-numeric value for {field_name}: {val!r}")
+    if isinstance(val, float):
+        if math.isnan(val) or math.isinf(val):
+            raise ValueError(f"Non-finite value for {field_name}: {val!r}")
+        try:
+            d = Decimal(str(val))
+        except (InvalidOperation, ValueError):
+            raise ValueError(f"Invalid numeric value for {field_name}: {val!r}")
+    elif isinstance(val, int):
+        d = Decimal(val)
+    elif isinstance(val, str):
+        val_str = val.strip()
+        if not val_str:
+            raise ValueError(f"Empty string for {field_name}")
+        try:
+            d = Decimal(val_str)
+        except (InvalidOperation, ValueError):
+            raise ValueError(f"Non-numeric string for {field_name}: {val!r}")
+        if not d.is_finite():
+            raise ValueError(f"Non-finite value for {field_name}: {val!r}")
+    else:
+        raise ValueError(f"Unsupported type for {field_name}: {type(val)}")
+
+    if not d.is_finite():
+        raise ValueError(f"Non-finite value for {field_name}: {val!r}")
+    if d < 0:
+        raise ValueError(f"Negative balance not allowed for {field_name}: {val!r}")
+    return d
+
+
+def _parse_amount_i64_to_decimal(val) -> Decimal:
+    """Parse integer micro-RTC into Decimal RTC without float precision loss."""
+    if val is None or isinstance(val, bool):
+        raise ValueError(f"Invalid non-numeric value for amount_i64: {val!r}")
+    if isinstance(val, int):
+        i64_val = val
+    elif isinstance(val, str):
+        val_str = val.strip()
+        if val_str.startswith("-") and val_str[1:].isdigit():
+            i64_val = int(val_str)
+        elif val_str.isdigit():
+            i64_val = int(val_str)
+        else:
+            raise ValueError(f"amount_i64 must be an integer, got: {val!r}")
+    else:
+        raise ValueError(f"amount_i64 must be an integer, got: {type(val)}")
+
+    if i64_val < 0:
+        raise ValueError(f"amount_i64 cannot be negative: {i64_val}")
+    return Decimal(i64_val) / Decimal(1_000_000)
+
+
 async def _wallet_balance(address: str, node: str, as_json: bool):
     try:
         async with RustChainClient(base_url=node) as client:
             result = await client.get_balance(address)
+            if not isinstance(result, dict):
+                click.echo(
+                    f"❌  Error: Invalid balance response format: expected dict, got {type(result)}",
+                    err=True,
+                )
+                sys.exit(1)
+
+            # Check miner_id / address match
+            resp_miner_id = result.get("miner_id")
+            if resp_miner_id is not None and str(resp_miner_id) != address:
+                click.echo(
+                    f"❌  Error: response miner_id '{resp_miner_id}' does not match requested address '{address}'",
+                    err=True,
+                )
+                sys.exit(1)
+
+            resp_address = result.get("address")
+            if resp_address is not None and str(resp_address) != address:
+                click.echo(
+                    f"❌  Error: response address '{resp_address}' does not match requested address '{address}'",
+                    err=True,
+                )
+                sys.exit(1)
+
+            # Nonce is required and must not be fabricated
+            if "nonce" not in result or result["nonce"] is None:
+                click.echo("❌  Error: Missing nonce in balance response", err=True)
+                sys.exit(1)
+            nonce = result["nonce"]
+            if isinstance(nonce, bool) or not isinstance(nonce, int) or nonce < 0:
+                click.echo(f"❌  Error: Invalid nonce '{nonce}' in balance response", err=True)
+                sys.exit(1)
+
+            # Parse RTC balance
+            rtc_val = None
+            rtc_field = None
+            for field in ("amount_rtc", "balance_rtc", "balance"):
+                if field in result and result[field] is not None:
+                    rtc_val = result[field]
+                    rtc_field = field
+                    break
+
+            dec_rtc = None
+            if rtc_val is not None:
+                try:
+                    dec_rtc = _parse_finite_rtc_decimal(rtc_val, rtc_field or "balance")
+                except ValueError as e:
+                    click.echo(f"❌  Error: {e}", err=True)
+                    sys.exit(1)
+
+            dec_i64 = None
+            if "amount_i64" in result and result["amount_i64"] is not None:
+                try:
+                    dec_i64 = _parse_amount_i64_to_decimal(result["amount_i64"])
+                except ValueError as e:
+                    click.echo(f"❌  Error: {e}", err=True)
+                    sys.exit(1)
+
+            if dec_rtc is None and dec_i64 is None:
+                click.echo("❌  Error: Missing balance in balance response", err=True)
+                sys.exit(1)
+
+            if dec_rtc is not None and dec_i64 is not None:
+                if dec_rtc != dec_i64:
+                    click.echo(
+                        f"❌  Error: Balance mismatch: {rtc_field}={dec_rtc} RTC does not match amount_i64={dec_i64} RTC",
+                        err=True,
+                    )
+                    sys.exit(1)
+                final_balance = dec_rtc
+            elif dec_rtc is not None:
+                final_balance = dec_rtc
+            else:
+                final_balance = dec_i64
+
             if as_json:
                 click.echo(json.dumps(result, indent=2))
             else:
-                balance = (
-                    result.get("amount_rtc")
-                    if result.get("amount_rtc") is not None
-                    else result.get("balance_rtc", result.get("balance"))
-                )
-                if balance is None and "amount_i64" in result:
-                    try:
-                        balance = float(result["amount_i64"]) / 1_000_000
-                    except (ValueError, TypeError):
-                        balance = None
-
-                nonce = result.get("nonce", 0)
                 click.echo(f"Address:  {address}")
-                if balance is not None:
-                    click.echo(f"Balance:  {balance} RTC")
-                else:
-                    click.echo("Balance:  unavailable")
+                click.echo(f"Balance:  {final_balance} RTC")
                 click.echo(f"Nonce:    {nonce}")
     except RustChainError as e:
         click.echo(f"❌  Error: {e}", err=True)
