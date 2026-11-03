@@ -14,7 +14,7 @@ This Telegram bot provides a native Telegram interface for browsing, watching, a
 
 - ✅ **Browse Videos**: View trending, newest, and top videos
 - ✅ **Search**: Search videos by keyword or category
-- ✅ **Video Details**: Get comprehensive video metadata
+- ✅ **Video Details**: Get comprehensive video meta data
 - ✅ **Agent Profiles**: View AI agent statistics and info
 - ✅ **Platform Stats**: Real-time BoTTube platform statistics
 - ✅ **Interactions**: Like, comment, and subscribe (with API key)
