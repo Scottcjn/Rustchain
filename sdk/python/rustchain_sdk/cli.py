@@ -125,11 +125,11 @@ async def _wallet_balance(address: str, node: str, as_json: bool):
 @wallet_group.command(name="send")
 @click.argument("from_address")
 @click.argument("to_address")
-@click.argument("amount", type=int)
+@click.argument("amount", type=float)
 @click.option(
     "--fee",
-    type=int,
-    default=0,
+    type=float,
+    default=0.0,
     help="Transaction fee.",
 )
 @click.option(
@@ -152,8 +152,8 @@ async def _wallet_balance(address: str, node: str, as_json: bool):
 def wallet_send(
     from_address: str,
     to_address: str,
-    amount: int,
-    fee: int,
+    amount: float,
+    fee: float,
     seed_phrase: str,
     node: str,
     as_json: bool,
@@ -166,8 +166,8 @@ def wallet_send(
 async def _wallet_send(
     from_address: str,
     to_address: str,
-    amount: int,
-    fee: int,
+    amount: float,
+    fee: float,
     seed_phrase: list,
     node: str,
     as_json: bool,
@@ -207,7 +207,7 @@ async def _wallet_send(
 # Node Commands
 # ─────────────────────────────────────────────────────────────────
 
-@main.command(name="node")
+@main.group(name="node", invoke_without_command=True)
 @click.option(
     "--node",
     default=DEFAULT_NODE_URL,
@@ -219,7 +219,26 @@ async def _wallet_send(
     is_flag=True,
     help="Output as JSON.",
 )
-def node_status(node: str, as_json: bool):
+@click.pass_context
+def node_group(ctx, node: str, as_json: bool):
+    """Check node health status."""
+    if ctx.invoked_subcommand is None:
+        asyncio.run(_node_status(node, as_json))
+
+
+@node_group.command(name="status")
+@click.option(
+    "--node",
+    default=DEFAULT_NODE_URL,
+    help="RustChain node URL.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output as JSON.",
+)
+def node_status_cmd(node: str, as_json: bool):
     """Check node health status."""
     asyncio.run(_node_status(node, as_json))
 
@@ -245,7 +264,7 @@ async def _node_status(node: str, as_json: bool):
 # Epoch Commands
 # ─────────────────────────────────────────────────────────────────
 
-@main.command(name="epoch")
+@main.group(name="epoch", invoke_without_command=True)
 @click.option(
     "--node",
     default=DEFAULT_NODE_URL,
@@ -257,7 +276,26 @@ async def _node_status(node: str, as_json: bool):
     is_flag=True,
     help="Output as JSON.",
 )
-def epoch_info(node: str, as_json: bool):
+@click.pass_context
+def epoch_group(ctx, node: str, as_json: bool):
+    """Get current epoch information."""
+    if ctx.invoked_subcommand is None:
+        asyncio.run(_epoch_info(node, as_json))
+
+
+@epoch_group.command(name="info")
+@click.option(
+    "--node",
+    default=DEFAULT_NODE_URL,
+    help="RustChain node URL.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output as JSON.",
+)
+def epoch_info_cmd(node: str, as_json: bool):
     """Get current epoch information."""
     asyncio.run(_epoch_info(node, as_json))
 
@@ -367,12 +405,11 @@ async def _attest(wallet_address: str, seed_phrase: list, node: str, as_json: bo
             # Step 1: Get attestation status
             status = await client.get_attestation_status(wallet.public_key_hex)
 
-            if as_json:
-                click.echo(json.dumps(status, indent=2))
-                return
+            # Do not exit early if as_json is set; proceed through challenge, sign and submit
 
             # Step 2: Request challenge
-            click.echo("📋  Requesting attestation challenge...")
+            if not as_json:
+                click.echo("📋  Requesting attestation challenge...")
             challenge_result = await client.attest_challenge(wallet.public_key_hex)
             challenge = challenge_result.get("challenge", "")
 
@@ -384,15 +421,19 @@ async def _attest(wallet_address: str, seed_phrase: list, node: str, as_json: bo
             signature = wallet.sign(challenge.encode()).hex()
 
             # Step 4: Submit attestation
-            click.echo("📤  Submitting attestation...")
+            if not as_json:
+                click.echo("📤  Submitting attestation...")
             submit_result = await client.attest_submit(
                 wallet.public_key_hex,
                 challenge,
                 signature,
             )
 
-            click.echo(f"✅  Attestation submitted!")
-            click.echo(f"   Result: {json.dumps(submit_result)}")
+            if as_json:
+                click.echo(json.dumps(submit_result, indent=2))
+            else:
+                click.echo(f"✅  Attestation submitted!")
+                click.echo(f"   Result: {json.dumps(submit_result)}")
 
     except RustChainError as e:
         click.echo(f"❌  Error: {e}", err=True)
