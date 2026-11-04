@@ -11783,6 +11783,30 @@ def api_ready():
     except Exception:
         return jsonify({"ready": False, "version": APP_VERSION}), 503
 
+@app.route('/health/sync', methods=['GET'])
+@app.route('/api/sync-status', methods=['GET'])
+def api_sync_status():
+    """Sync status health check for monitoring systems (Prometheus, Datadog) (fixes #8507)"""
+    net_block = max(0, current_slot())
+    curr_block = 0
+    try:
+        with sqlite3.connect(DB_PATH, timeout=3) as db:
+            tbl = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='headers'").fetchone()
+            if tbl:
+                row = db.execute("SELECT slot FROM headers ORDER BY slot DESC LIMIT 1").fetchone()
+                if row is not None and row[0] is not None:
+                    curr_block = int(row[0])
+    except Exception:
+        pass
+
+    is_synced = (net_block - curr_block) <= 2 and curr_block > 0
+    return jsonify({
+        "is_synced": bool(is_synced),
+        "current_block": curr_block,
+        "network_block": net_block,
+        "lag_slots": max(0, net_block - curr_block)
+    }), 200
+
 @app.route('/metrics', methods=['GET'])
 @app.route('/api/metrics', methods=['GET'])
 def metrics():
