@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Unit tests for RustChain SDK CLI grammar and options.
 
 Validates fixes for:
