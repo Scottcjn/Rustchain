@@ -5,6 +5,7 @@ Validates fixes for:
 - #8564: Fractional amounts and fees in `rustchain wallet send`
 - #8565: Documented `rustchain node status` and `rustchain epoch info` commands
 - #8566: Full attestation pipeline execution when `--json` flag is supplied
+- #8580: Canonical amount_rtc and unavailable state in `rustchain wallet balance`
 """
 
 import json
@@ -131,6 +132,71 @@ class TestCliGrammarAndOptions(unittest.TestCase):
         ops = [t[0] for t in self.trace]
         self.assertEqual(ops, ['wallet', 'client', 'status', 'challenge', 'sign', 'submit'])
         self.assertEqual(json.loads(res.output), {'accepted': True})
+
+
+
+    def test_wallet_balance_canonical_amount_rtc(self):
+        """#8580: Canonical amount_rtc response renders balance and unavailable nonce."""
+        payload = {"amount_i64": 21000000, "amount_rtc": 21, "miner_id": "fixture-miner"}
+
+        class FakeBalanceClient:
+            def __init__(self, **kwargs):
+                pass
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                pass
+            async def get_balance(self, address):
+                return payload
+
+        cli.RustChainClient = FakeBalanceClient
+        res = self.runner.invoke(cli.main, ['wallet', 'balance', 'fixture-addr'])
+        self.assertEqual(res.exit_code, 0, f"balance failed: {res.output}")
+        self.assertIn("Address:  fixture-addr", res.output)
+        self.assertIn("Balance:  21 RTC", res.output)
+        self.assertIn("Nonce:    unavailable", res.output)
+
+    def test_wallet_balance_legacy_balance_and_nonce(self):
+        """#8580: Legacy balance and nonce response renders both values."""
+        payload = {"balance": 42, "nonce": 3, "miner_id": "fixture-miner"}
+
+        class FakeBalanceClient:
+            def __init__(self, **kwargs):
+                pass
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                pass
+            async def get_balance(self, address):
+                return payload
+
+        cli.RustChainClient = FakeBalanceClient
+        res = self.runner.invoke(cli.main, ['wallet', 'balance', 'fixture-addr'])
+        self.assertEqual(res.exit_code, 0, f"balance failed: {res.output}")
+        self.assertIn("Address:  fixture-addr", res.output)
+        self.assertIn("Balance:  42 RTC", res.output)
+        self.assertIn("Nonce:    3", res.output)
+
+    def test_wallet_balance_unavailable_when_missing_fields(self):
+        """#8580: Missing balance/nonce yields unavailable state instead of 0 RTC."""
+        payload = {"miner_id": "fixture-miner"}
+
+        class FakeBalanceClient:
+            def __init__(self, **kwargs):
+                pass
+            async def __aenter__(self):
+                return self
+            async def __aexit__(self, *args):
+                pass
+            async def get_balance(self, address):
+                return payload
+
+        cli.RustChainClient = FakeBalanceClient
+        res = self.runner.invoke(cli.main, ['wallet', 'balance', 'fixture-addr'])
+        self.assertEqual(res.exit_code, 0, f"balance failed: {res.output}")
+        self.assertIn("Address:  fixture-addr", res.output)
+        self.assertIn("Balance:  unavailable", res.output)
+        self.assertIn("Nonce:    unavailable", res.output)
 
 
 if __name__ == '__main__':
