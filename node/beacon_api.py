@@ -273,6 +273,57 @@ def _verify_agent_signature(pubkey_hex, signature_hex, message):
         return False
 
 
+def _authenticate_existing_agent(db, agent_id, pubkey_hex, body_bytes):
+    """
+    SECURITY (#8514): Authenticate existing Beacon agent via Ed25519 signature
+    before allowing mutable updates (rename, reactivation).
+    """
+# Strictly require Ed25519 signature verification (#8514)
+
+    agent_id_header = request.headers.get('X-Agent-Id', '')
+    timestamp_raw = request.headers.get('X-Agent-Timestamp', '')
+    nonce = request.headers.get('X-Agent-Nonce', '')
+    signature = request.headers.get('X-Agent-Signature', '')
+
+    if not all([agent_id_header, timestamp_raw, nonce, signature]):
+        return jsonify({
+            'error': 'Missing Beacon signature headers for existing agent: X-Agent-Id, X-Agent-Timestamp, X-Agent-Nonce, X-Agent-Signature'
+        }), 401
+
+    if agent_id_header != agent_id:
+        return jsonify({'error': 'X-Agent-Id does not match request agent_id'}), 401
+
+    try:
+        timestamp = int(timestamp_raw)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid X-Agent-Timestamp'}), 400
+
+    now = int(time.time())
+    if (timestamp < now - BEACON_AUTH_WINDOW_SECONDS
+            or timestamp > now + BEACON_AUTH_MAX_FUTURE_SECONDS):
+        return jsonify({'error': 'Stale Beacon signature timestamp'}), 401
+
+    if not isinstance(nonce, str) or not nonce.strip() or len(nonce) > 128:
+        return jsonify({'error': 'Invalid X-Agent-Nonce'}), 400
+
+    message = _canonical_agent_request(agent_id, timestamp, nonce, body_bytes)
+    if not _verify_agent_signature(pubkey_hex, signature, message):
+        return jsonify({'error': 'Invalid Beacon agent signature'}), 401
+
+    cutoff = now - BEACON_AUTH_WINDOW_SECONDS
+    db.execute("DELETE FROM beacon_agent_nonces WHERE created_at < ?", (cutoff,))
+    try:
+        db.execute(
+            "INSERT INTO beacon_agent_nonces (agent_id, nonce, created_at) VALUES (?, ?, ?)",
+            (agent_id, nonce, max(now, timestamp))
+        )
+        db.commit()
+    except sqlite3.IntegrityError:
+        return jsonify({'error': 'Replay detected for Beacon agent nonce'}), 401
+
+    return None
+
+
 def _authenticate_contract_agent(db, allowed_agents, body_bytes):
     allowed = {str(agent) for agent in allowed_agents if agent}
 
@@ -467,7 +518,7 @@ def get_agents():
 
         return jsonify(agents)
     except Exception as e:
-        return jsonify({'error': 'internal_error'}), 500
+        print('BEACON JOIN EXCEPTION:', repr(e)); raise
 
 
 @beacon_api.route('/api/agent/<agent_id>', methods=['GET'])
@@ -558,7 +609,7 @@ def beacon_join():
     if request.method == 'OPTIONS':
         resp = jsonify({'ok': True})
         resp.headers['Access-Control-Allow-Origin'] = '*'
-        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        resp.headers['Access-Control-Allow-Headers'] = 'Content-Type, X-Agent-Id, X-Agent-Timestamp, X-Agent-Nonce, X-Agent-Signature, X-Agent-Key'
         resp.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
         return resp
 
@@ -629,7 +680,7 @@ def beacon_join():
         # Check if agent already exists
         db = get_db()
         existing = db.execute(
-            "SELECT pubkey_hex, coinbase_address, status FROM relay_agents WHERE agent_id = ?",
+            "SELECT pubkey_hex, coinbase_address, status, name FROM relay_agents WHERE agent_id = ?",
             (agent_id,)
         ).fetchone()
 
@@ -652,25 +703,40 @@ def beacon_join():
                              'payment address is immutable after registration'
                 }), 403
 
+            # SECURITY (#8514): Existing agent updates (rename, reactivation)
+            # must prove possession of the stored private key via Ed25519 signature.
+            is_mutation = (
+                (name is not None and name != (existing['name'] or ''))
+                or (existing['status'] != 'active')
+            )
+            if is_mutation or request.headers.get('X-Agent-Signature') or request.headers.get('X-Agent-Key'):
+                auth_err = _authenticate_existing_agent(db, agent_id, existing['pubkey_hex'], request.get_data())
+                if auth_err:
+                    return auth_err
+
             # Update mutable fields only.
             # SECURITY: a rejoin must never re-activate an agent an admin has
             # barred. If the current status is protected (banned/suspended/
             # revoked) keep it; otherwise a rejoin brings the agent back
             # 'active' as before. Without this guard a banned agent could
             # self-unban simply by POSTing /beacon/join with its own pubkey.
-            current_status = (existing['status'] or 'active')
-            new_status = (
-                current_status
-                if current_status in BEACON_PROTECTED_STATUSES
-                else 'active'
-            )
+            # Atomic status update: if barred by admin, keep protected status; else activate.
             db.execute("""
                 UPDATE relay_agents
                 SET name = COALESCE(?, name),
-                    status = ?,
+                    status = CASE
+                        WHEN status IN ('banned', 'suspended', 'revoked') THEN status
+                        ELSE 'active'
+                    END,
                     updated_at = ?
                 WHERE agent_id = ?
-            """, (name, new_status, now, agent_id))
+            """, (name, now, agent_id))
+
+            # Fetch fresh status after atomic commit/update
+            updated_row = db.execute(
+                "SELECT status FROM relay_agents WHERE agent_id = ?", (agent_id,)
+            ).fetchone()
+            new_status = updated_row['status'] if updated_row else 'active'
         else:
             # SECURITY (#398 Step 3, reported privately 2026-08-29): a
             # noncanonical bcn_ id skips the pubkey->id binding above, so the

@@ -1,8 +1,37 @@
+import hashlib
+import json
 import sqlite3
+import time
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from flask import Flask
 
 import beacon_api
+
+
+def _sign_headers(agent_id, private_key, body_bytes, timestamp=None, nonce=None):
+    if timestamp is None:
+        timestamp = int(time.time())
+    if nonce is None:
+        nonce = f"nonce-{time.time_ns()}"
+
+    body_hash = hashlib.sha256(body_bytes or b"").hexdigest()
+    message = "\n".join([
+        "POST",
+        "/beacon/join",
+        body_hash,
+        str(timestamp),
+        str(nonce),
+        str(agent_id),
+    ]).encode("utf-8")
+
+    sig_hex = private_key.sign(message).hex()
+    return {
+        "X-Agent-Id": agent_id,
+        "X-Agent-Timestamp": str(timestamp),
+        "X-Agent-Nonce": nonce,
+        "X-Agent-Signature": sig_hex,
+    }
 
 
 def _client(tmp_path, monkeypatch):
@@ -69,51 +98,75 @@ def test_beacon_join_accepts_32_byte_ed25519_pubkey(tmp_path, monkeypatch):
     assert response.get_json()["ok"] is True
 
 
-def _join(client, agent_id, pubkey_hex="22" * 32, name=None):
+def _join(client, agent_id, pubkey_hex="22" * 32, name=None, priv_key=None):
     body = {"agent_id": agent_id, "pubkey_hex": pubkey_hex}
     if name is not None:
         body["name"] = name
-    return client.post("/beacon/join", json=body)
+    body_bytes = json.dumps(body).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if priv_key is not None:
+        headers.update(_sign_headers(agent_id, priv_key, body_bytes))
+    return client.post("/beacon/join", data=body_bytes, headers=headers)
 
 
-def test_beacon_join_does_not_unban_banned_agent(tmp_path, monkeypatch):
-    """A rejoin must not lift an administrative ban (issue #14589)."""
+def test_beacon_join_rejects_unsigned_rename_and_does_not_unban(tmp_path, monkeypatch):
+    """A rejoin must not lift an administrative ban (issue #14589) and unsigned rename is rejected (issue #8514)."""
     client = _client(tmp_path, monkeypatch)
+    priv = Ed25519PrivateKey.generate()
+    pub_hex = priv.public_key().public_bytes_raw().hex()
 
-    assert _join(client, "banned-agent").status_code == 200
+    assert _join(client, "banned-agent", pubkey_hex=pub_hex).status_code == 200
     # Admin bars the agent out of band.
     _set_status("banned-agent", "banned")
 
-    # Attacker rejoins with the same (immutable) pubkey to self-unban.
-    response = _join(client, "banned-agent", name="renamed")
+    # Attacker rejoins with same pubkey to rename/unban unsigned -> 401
+    unsigned_res = _join(client, "banned-agent", pubkey_hex=pub_hex, name="renamed")
+    assert unsigned_res.status_code == 401
+    assert "Missing Beacon signature headers" in unsigned_res.get_json()["error"]
 
-    assert response.status_code == 200
-    assert response.get_json()["status"] == "banned"
+    # Even with a valid signature, banned status remains banned
+    signed_res = _join(client, "banned-agent", pubkey_hex=pub_hex, name="renamed", priv_key=priv)
+    assert signed_res.status_code == 200
+    assert signed_res.get_json()["status"] == "banned"
     assert _db_status("banned-agent") == "banned"
 
 
-def test_beacon_join_keeps_suspended_and_revoked_status(tmp_path, monkeypatch):
+def test_beacon_join_keeps_suspended_and_revoked_status_when_signed(tmp_path, monkeypatch):
     client = _client(tmp_path, monkeypatch)
 
     for agent_id, status in (("susp-agent", "suspended"), ("rev-agent", "revoked")):
-        assert _join(client, agent_id).status_code == 200
+        priv = Ed25519PrivateKey.generate()
+        pub_hex = priv.public_key().public_bytes_raw().hex()
+
+        assert _join(client, agent_id, pubkey_hex=pub_hex).status_code == 200
         _set_status(agent_id, status)
 
-        response = _join(client, agent_id)
+        # Unsigned rejoin -> 401
+        assert _join(client, agent_id, pubkey_hex=pub_hex).status_code == 401
 
+        # Signed rejoin keeps status
+        response = _join(client, agent_id, pubkey_hex=pub_hex, priv_key=priv)
+        assert response.status_code == 200
         assert response.get_json()["status"] == status
         assert _db_status(agent_id) == status
 
 
-def test_beacon_join_reactivates_inactive_agent(tmp_path, monkeypatch):
-    """Non-protected statuses (e.g. inactive) still come back online on rejoin."""
+def test_beacon_join_reactivates_inactive_agent_only_when_signed(tmp_path, monkeypatch):
+    """Non-protected statuses (e.g. inactive) reactivate only with signature (issue #8514)."""
     client = _client(tmp_path, monkeypatch)
+    priv = Ed25519PrivateKey.generate()
+    pub_hex = priv.public_key().public_bytes_raw().hex()
 
-    assert _join(client, "idle-agent").status_code == 200
+    assert _join(client, "idle-agent", pubkey_hex=pub_hex).status_code == 200
     _set_status("idle-agent", "inactive")
 
-    response = _join(client, "idle-agent")
+    # Unsigned rejoin -> 401
+    assert _join(client, "idle-agent", pubkey_hex=pub_hex).status_code == 401
+    assert _db_status("idle-agent") == "inactive"
 
+    # Signed rejoin -> 200 and reactivates to active
+    response = _join(client, "idle-agent", pubkey_hex=pub_hex, priv_key=priv)
+    assert response.status_code == 200
     assert response.get_json()["status"] == "active"
     assert _db_status("idle-agent") == "active"
 
