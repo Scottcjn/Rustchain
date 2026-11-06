@@ -122,14 +122,27 @@ async def _wallet_balance(address: str, node: str, as_json: bool):
         sys.exit(1)
 
 
+from decimal import Decimal, InvalidOperation
+
+def parse_decimal_amount(value: str) -> Decimal:
+    try:
+        d = Decimal(str(value))
+        if d < 0:
+            raise click.BadParameter("Amount cannot be negative.")
+        if d.as_tuple().exponent < -8:
+            raise click.BadParameter("Amount exceeds maximum precision of 8 decimal places.")
+        return d
+    except (InvalidOperation, TypeError):
+        raise click.BadParameter(f"Invalid amount: {value}")
+
 @wallet_group.command(name="send")
 @click.argument("from_address")
 @click.argument("to_address")
-@click.argument("amount", type=int)
+@click.argument("amount", callback=lambda ctx, param, val: parse_decimal_amount(val))
 @click.option(
     "--fee",
-    type=int,
-    default=0,
+    default="0",
+    callback=lambda ctx, param, val: parse_decimal_amount(val),
     help="Transaction fee.",
 )
 @click.option(
