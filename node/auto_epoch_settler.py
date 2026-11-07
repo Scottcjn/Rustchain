@@ -39,17 +39,23 @@ UNSETTLED_LOOKBACK = _env_int("RUSTCHAIN_UNSETTLED_LOOKBACK", 500)
 
 
 def get_current_slot():
-    """Get current slot from node API"""
-    try:
-        resp = requests.get(f"{NODE_URL}/api/stats", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            epoch = data.get("epoch", 0)
-            return epoch * SLOTS_PER_EPOCH
-    except requests.RequestException as e:
-        logger.warning("Error getting current slot: %s", e)
-    except Exception as e:
-        logger.error("Unexpected error getting current slot: %s", e)
+    """Get current slot from node API (/epoch is canonical; /api/stats fallback)."""
+    for endpoint in ("/epoch", "/api/stats"):
+        try:
+            resp = requests.get(f"{NODE_URL}{endpoint}", timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict):
+                    slot = data.get("slot")
+                    epoch = data.get("epoch")
+                    if isinstance(slot, int) and not isinstance(slot, bool) and slot > 0:
+                        return slot
+                    if isinstance(epoch, int) and not isinstance(epoch, bool) and epoch >= 0:
+                        return epoch * SLOTS_PER_EPOCH
+        except requests.RequestException as e:
+            logger.warning("Error getting current slot from %s: %s", endpoint, e)
+        except Exception as e:
+            logger.error("Unexpected error getting current slot from %s: %s", endpoint, e)
     return None
 
 
@@ -82,20 +88,42 @@ def get_unsettled_epochs():
                     return []
 
             unsettled = []
-            for epoch in range(max(0, current_epoch - UNSETTLED_LOOKBACK), current_epoch):
-                headers = db.execute(
-                    "SELECT COUNT(*) FROM headers WHERE slot BETWEEN ? AND ?",
-                    (epoch * SLOTS_PER_EPOCH, (epoch + 1) * SLOTS_PER_EPOCH - 1)
+            has_enroll_table = (
+                db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='epoch_enroll'"
                 ).fetchone()
-                has_headers = headers and headers[0] > 0
+                is not None
+            )
+            has_headers_table = (
+                db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='headers'"
+                ).fetchone()
+                is not None
+            )
+            for epoch in range(max(0, current_epoch - UNSETTLED_LOOKBACK), current_epoch):
+                has_activity = False
+                if has_headers_table:
+                    headers = db.execute(
+                        "SELECT COUNT(*) FROM headers WHERE slot BETWEEN ? AND ?",
+                        (epoch * SLOTS_PER_EPOCH, (epoch + 1) * SLOTS_PER_EPOCH - 1),
+                    ).fetchone()
+                    if headers and headers[0] > 0:
+                        has_activity = True
+                if not has_activity and has_enroll_table:
+                    enrolled = db.execute(
+                        "SELECT COUNT(*) FROM epoch_enroll WHERE epoch = ?",
+                        (epoch,),
+                    ).fetchone()
+                    if enrolled and enrolled[0] > 0:
+                        has_activity = True
 
                 settled = db.execute(
                     "SELECT settled FROM epoch_state WHERE epoch=?",
-                    (epoch,)
+                    (epoch,),
                 ).fetchone()
                 is_settled = settled and int(settled[0]) == 1
 
-                if has_headers and not is_settled:
+                if has_activity and not is_settled:
                     unsettled.append(epoch)
 
             return unsettled
