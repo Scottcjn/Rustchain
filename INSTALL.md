@@ -89,8 +89,15 @@ After installation, you'll have the following structure at `~/.rustchain/`:
 │   └── lib/                # Installed packages (requests, etc.)
 ├── rustchain_miner.py      # Main miner script
 ├── fingerprint_checks.py   # Hardware attestation module
+├── config.json             # Miner config: wallet ID and node URL (written by setup.sh)
 ├── start.sh                # Convenience start script
 └── miner.log               # Miner logs (if auto-start enabled)
+```
+
+**Where is my config?** The repository installers keep the miner config at `~/.rustchain/config.json`. If you installed via the web one-liner from `https://rustchain.org/install.sh`, the miner lives under `/opt/rustchain-miner/` and its config is at `/opt/rustchain-miner/config.json`. To read whichever file exists:
+
+```bash
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
 ```
 
 ## Auto-Start Configuration
