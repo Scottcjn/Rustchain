@@ -1,0 +1,37 @@
+name: rustchain-explorer
+
+on:
+  push:
+    branches:
+      - bounty-726-rustchain-explorer
+    paths:
+      - "crates/rustchain-explorer/**"
+      - ".github/workflows/rustchain-explorer.yml"
+  pull_request:
+    paths:
+      - "crates/rustchain-explorer/**"
+      - ".github/workflows/rustchain-explorer.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/rustchain-explorer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt -- --check
+      - name: Test
+        run: cargo test --all-features
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Docs
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps
+      - name: Package
+        run: cargo package
