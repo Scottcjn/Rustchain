@@ -2845,13 +2845,33 @@ def resolve_enroll_weight_device(conn, miner_pk: str, data: dict) -> tuple:
             (miner_pk,),
         ).fetchone()
         if row and row[0]:
-            return str(row[0]), str(row[1] or "default")
+            fam = str(row[0])
+            arc = str(row[1] or "default")
+            if fam.lower() in ("x86", "x86_64") and arc.lower() in _X86_VINTAGE_REWARD_ARCHES:
+                # Vintage x86 tiers in miner_attest_recent are general device labels,
+                # not reward-vouched tiers. Only honour them on /epoch/enroll when
+                # corroborated by a verified measurement report in the enroll body.
+                fp_body = data.get("fingerprint") if isinstance(data, dict) else None
+                if isinstance(fp_body, dict) and fp_body:
+                    clamped = _derive_enroll_weight_device(
+                        {"device_family": fam, "device_arch": arc},
+                        fp_body,
+                        fingerprint_passed=True,
+                        measurement_report_verified=bool(data.get("canonical_payload_verified")),
+                    )
+                    return str(clamped["device_family"]), str(clamped["device_arch"])
+                return "x86", "default"
+            return fam, arc
     except sqlite3.Error:
         pass
     device = data.get("device")
     if not isinstance(device, dict):
         device = {}
-    return str(device.get("family", "x86")), str(device.get("arch", "default"))
+    fam_fallback = str(device.get("family", "x86"))
+    arc_fallback = str(device.get("arch", "default"))
+    if fam_fallback.lower() in ("x86", "x86_64") and arc_fallback.lower() in _X86_VINTAGE_REWARD_ARCHES:
+        return "x86", "default"
+    return fam_fallback, arc_fallback
 
 
 def _claimed_family_and_arch(device: dict) -> tuple:
@@ -3406,34 +3426,35 @@ def _simd_measurement_exceeds_vintage_arch(data: dict, claimed_arch: str) -> boo
 def _classify_validated_x86_brand(cpu_brand: str):
     """Map an anchored CPU brand to (reward arch, CPUID family)."""
     brand = " ".join(str(cpu_brand or "").strip().split()).lower()
-    vendor = r"(?:(?:genuineintel|authenticamd|intel(?:\(r\))?|amd)\s+)?"
-    speed = r"\d+(?:\.\d+)?(?:\s*[-/]\s*\d+(?:\.\d+)?)?\s*(?:mhz|ghz)?"
+    vendor = r"(?:(?:genuineintel|authenticamd|cyrixinstead|centaurhauls|intel(?:\(r\))?|amd|ibm|ti|texas\s+instruments|st|stmicroelectronics|ulsi|umc|SGS-Thomson)\s+)?"
+    speed = r"(?:@\s*)?\d+(?:\.\d+)?(?:\s*[-/]\s*\d+(?:\.\d+)?)?\s*(?:mhz|ghz)?"
     patterns = (
-        ("386", 3, rf"^{vendor}(?:i?80386|i?386|am386)(?:[\s/-]?[a-z0-9]+)*$"),
+        ("386", 3, rf"^{vendor}(?:i?80386|i?386|am386|cx386|ibm\s*386)(?:[\s/-]?[a-z0-9]+)*$"),
         (
             "486",
             4,
-            rf"^{vendor}(?:(?:i?80486|i?486|am486)(?:[\s/-]?[a-z0-9]+)*|"
-            rf"am5x86(?:-[a-z0-9]+)?|cyrix\s+cx486(?:[a-z0-9/-]+)?)$",
+            rf"^{vendor}(?:(?:i?80486|i?486|am486|ti486|ibm\s*486|umc\s*u5)(?:[\s/-]?[a-z0-9]+)*|"
+            rf"(?:amd\s+)?(?:am)?5x86(?:[\s/-]?[a-z0-9]+)*|"
+            rf"(?:cyrix\s+)?(?:cx)?486(?:[\s/-]?[a-z0-9]+)*)$",
         ),
-        ("pentium_mmx", 5, rf"^{vendor}pentium(?:\(r\))?\s+mmx(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
-        ("pentium_pro", 6, rf"^{vendor}pentium(?:\(r\))?\s+pro(?:\s+processor)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        ("pentium_mmx", 5, rf"^{vendor}pentium(?:\(r\))?(?:\s+processor)?\s+(?:with\s+)?mmx(?:\s+technology)?(?:\s+processor)?(?:\s+{speed})?$"),
+        ("pentium_pro", 6, rf"^{vendor}pentium(?:\(r\))?\s+pro(?:\s+(?:cpu|processor))?(?:\s+{speed})?$"),
         (
             "pentium_iii",
             6,
-            rf"^{vendor}pentium(?:\(r\))?\s+iii"
+            rf"^{vendor}(?:mobile\s+)?pentium(?:\(r\))?\s+iii(?:\s+mobile)?"
             rf"(?:\s+\((?:katmai|coppermine|tualatin)\)|"
-            rf"(?:\s+(?:cpu|processor))?(?:\s+family)?(?:\s+{speed})?)$",
+            rf"(?:\s+(?:cpu|processor))?(?:\s+family)?(?:\s*[-m]+)?(?:\s+{speed})?)$",
         ),
         (
             "pentium_ii",
             6,
             rf"^{vendor}(?:mobile\s+)?pentium(?:\(r\))?\s+ii"
             rf"(?:\s+\((?:klamath|deschutes|dixon)\)|"
-            rf"(?:\s+(?:cpu|processor))?(?:\s+{speed})?)$",
+            rf"(?:\s+(?:cpu|processor|overdrive))?(?:\s+{speed})?)$",
         ),
-        ("pentium_m", 6, rf"^{vendor}pentium(?:\(r\))?\s+m(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
-        ("pentium", 5, rf"^{vendor}pentium(?:\(r\))?(?:\s+(?:cpu|processor))?(?:\s+{speed})?$"),
+        ("pentium_m", 6, rf"^{vendor}pentium(?:\(r\))?\s+m(?:\s+(?:cpu|processor))?(?:\s+\d{{3}})?(?:\s+{speed})?$"),
+        ("pentium", 5, rf"^{vendor}pentium(?:\(r\))?(?:\s+(?:cpu|processor|s))?(?:\s+{speed})?$"),
     )
     for arch, cpu_family, pattern in patterns:
         if re.fullmatch(pattern, brand, flags=re.IGNORECASE):

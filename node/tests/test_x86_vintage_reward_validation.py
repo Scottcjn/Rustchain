@@ -383,6 +383,52 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         self.assertEqual(self.mod._derive_enroll_weight_device(verified, fp)["device_arch"], "default")
         self.assertEqual(verified, {"device_family": "x86", "device_arch": "486"})
 
+    def test_resolve_enroll_weight_device_clamps_uncorroborated_vintage_x86_from_attest_recent(self):
+        """A miner that failed attestation (stored in miner_attest_recent with
+        device_arch='486' for inventory) cannot bypass _derive_enroll_weight_device
+        by calling POST /epoch/enroll directly without corroborated measurements."""
+        import sqlite3
+
+        conn = sqlite3.connect(":memory:")
+        conn.execute(
+            "CREATE TABLE miner_attest_recent (miner TEXT PRIMARY KEY, device_family TEXT, device_arch TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO miner_attest_recent VALUES ('spoof_miner', 'x86', '486')"
+        )
+        # 1. No corroborated fingerprint in enroll body -> clamped to x86/default
+        fam, arch = self.mod.resolve_enroll_weight_device(conn, "spoof_miner", {})
+        self.assertEqual((fam, arch), ("x86", "default"))
+
+        # 2. Body fallback without miner_attest_recent row also clamps vintage x86
+        fam2, arch2 = self.mod.resolve_enroll_weight_device(
+            conn, "unknown_miner", {"device": {"family": "x86", "arch": "386"}}
+        )
+        self.assertEqual((fam2, arch2), ("x86", "default"))
+
+        # 3. Corroborated, canonical-verified 486 payload preserves x86/486
+        fp = _fingerprint("Am486DX4", 4)
+        fam3, arch3 = self.mod.resolve_enroll_weight_device(
+            conn,
+            "spoof_miner",
+            {"fingerprint": fp, "canonical_payload_verified": True},
+        )
+        self.assertEqual((fam3, arch3), ("x86", "486"))
+
+    def test_extended_real_world_vintage_x86_brands_and_pentium_m_numbering(self):
+        cases = (
+            ("TI486DX2-66", 4, "486"),
+            ("IBM 486SLC2", 4, "486"),
+            ("AMD 5x86-133", 4, "486"),
+            ("Pentium(R) Processor with MMX technology 200MHz", 5, "pentium_mmx"),
+            ("Intel(R) Pentium(R) M processor 725 @ 1.60GHz", 6, "pentium_m_banias"),
+            ("Intel(R) Pentium(R) M processor 755 @ 2.00GHz", 6, "pentium_m_dothan"),
+        )
+        for brand, family, arch in cases:
+            with self.subTest(brand=brand):
+                fp = _fingerprint(brand, family)
+                self.assertEqual(self._reward(arch, fp)["device_arch"], arch)
+
 
 if __name__ == "__main__":
     unittest.main()
