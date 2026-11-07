@@ -64,8 +64,8 @@ clawrtc --version
 # 导出钱包信息
 clawrtc wallet show > wallet_info.txt
 
-# 记录矿工配置
-cat ~/.rustchain/config.json > config.backup
+# 记录矿工配置（兼容 /opt/rustchain-miner/config.json 与 ~/.rustchain/config.json，参见 WALLET_SETUP.md#where-is-my-config）
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json > config.backup
 ```
 
 ### 3. 检查系统要求
@@ -320,8 +320,8 @@ pip uninstall clawrtc
 # 4. 安装 v1.0.0
 python3 -m pip install clawrtc==1.0.0
 
-# 5. 恢复配置
-cp config.backup ~/.rustchain/config.json
+# 5. 恢复配置（仓库安装器为 ~/.rustchain/config.json，rustchain.org/install.sh 为 /opt/rustchain-miner/config.json；参见 WALLET_SETUP.md#where-is-my-config）
+cp config.backup ~/.rustchain/config.json  # 或 sudo cp config.backup /opt/rustchain-miner/config.json
 
 # 6. 重启矿工
 systemctl --user start rustchain-miner  # Linux

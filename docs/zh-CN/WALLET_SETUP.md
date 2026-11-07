@@ -55,13 +55,13 @@ curl -sL https://rustchain.org/install.sh | bash
 - `victus-x86-scott`
 - `RTC14f06ee294f327f5685d3de5e1ed501cffab33e7`
 
-在 Linux 上，安装程序将矿机配置保存在这里：
+在 Linux 上，根据你运行的安装程序不同，矿机配置保存在 `/opt/rustchain-miner/config.json` 或 `~/.rustchain/config.json`（参见[我的配置文件在哪里？](#我的配置文件在哪里)）：
 
 ```bash
-cat /opt/rustchain-miner/config.json
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
 ```
 
-你应该能看到一个 `wallet_id` 字段。
+你应该能看到一个 `wallet_id`（或 `wallet_name`）字段。
 
 示例：
 
@@ -70,6 +70,21 @@ cat /opt/rustchain-miner/config.json
   "wallet_id": "victus-x86-scott",
   "node_url": "https://rustchain.org"
 }
+```
+
+### 我的配置文件在哪里？
+
+根据安装方式不同，RustChain 有两个标准矿机配置文件路径：
+
+| 配置文件路径 | 由哪个安装程序写入 |
+|--------------|-------------------|
+| `/opt/rustchain-miner/config.json` | 网页一键安装脚本（`curl -sL https://rustchain.org/install.sh \| bash`）与 `scripts/install.sh`（`INSTALL_DIR="/opt/rustchain-miner"`） |
+| `~/.rustchain/config.json` | 仓库内置安装脚本（`setup.sh`、`install.sh`、`install-miner.sh` —— `INSTALL_DIR="$HOME/.rustchain"`，参见 [`INSTALL.md`](../../INSTALL.md)） |
+
+运行以下单行命令即可自动读取任意存在路径下的配置：
+
+```bash
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
 ```
 
 如果你的目标是以下情况，此方法最合适：
@@ -358,7 +373,7 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 
 备份什么内容取决于你是如何创建钱包的：
 
-- 矿机安装：保存打印出的钱包 ID 并复制 `/opt/rustchain-miner/config.json`
+- 矿机安装：保存打印出的钱包 ID 并复制 `/opt/rustchain-miner/config.json` 或 `~/.rustchain/config.json`（参见[我的配置文件在哪里？](#我的配置文件在哪里)）
 - 安全版 GUI：备份 24 个单词的 seed phrase 和 `~/.rustchain/wallets/*.json`
 - 编程式钱包：备份 seed phrase 以及你创建的任何加密密钥库
 
@@ -393,7 +408,7 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 
 通常在以下位置：
 
-- 矿机安装：`/opt/rustchain-miner/config.json`
+- 矿机安装：`/opt/rustchain-miner/config.json`（`rustchain.org/install.sh` / `scripts/install.sh`）或 `~/.rustchain/config.json`（`setup.sh` / `install.sh` / `install-miner.sh` —— 参见[我的配置文件在哪里？](#我的配置文件在哪里)）
 - 运行中的 Linux 矿机：有时也在 `/tmp/local_miner_wallet.txt`
 - 安全版 GUI 和 CLI 密钥库：`~/.rustchain/wallets/`
 - 编程式钱包：你保存它的任何位置
@@ -403,7 +418,7 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 按以下顺序尝试：
 
 ```bash
-cat /opt/rustchain-miner/config.json
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
 ls ~/.rustchain/wallets
 curl -sk https://rustchain.org/api/miners
 ```
