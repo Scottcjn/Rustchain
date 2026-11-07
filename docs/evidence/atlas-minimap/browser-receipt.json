@@ -1,0 +1,285 @@
+{
+  "browser": "Chromium",
+  "playwright": "1.62.1",
+  "noInterception": true,
+  "rendering": "SwiftShader software WebGL",
+  "proxyUsed": true,
+  "tlsTrustRelaxed": true,
+  "backend": "No local Beacon backend; real public GET APIs and built-in legacy fallback only",
+  "scenarios": [
+    {
+      "mobile": false,
+      "initial": {
+        "cities": 8,
+        "agents": 117,
+        "rect": {
+          "x": 1083,
+          "y": 643,
+          "width": 172,
+          "height": 132
+        },
+        "backing": {
+          "width": 170,
+          "height": 130
+        },
+        "clientWidth": 170,
+        "clientHeight": 130,
+        "pointerEvents": "none",
+        "hitTarget": "atlas-canvas",
+        "overflow": false,
+        "pixels": {
+          "amber": 158,
+          "green": 267,
+          "cyan": 59
+        },
+        "camera": {
+          "x": -19.304673228992836,
+          "y": 180,
+          "z": 279.33372440778084
+        },
+        "cameraMark": {
+          "x": 74.15700660825489,
+          "y": 8
+        },
+        "cityMarks": 8,
+        "agentMarks": 117,
+        "renderer": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+      },
+      "afterPan": {
+        "cities": 8,
+        "agents": 117,
+        "rect": {
+          "x": 1083,
+          "y": 643,
+          "width": 172,
+          "height": 132
+        },
+        "backing": {
+          "width": 170,
+          "height": 130
+        },
+        "clientWidth": 170,
+        "clientHeight": 130,
+        "pointerEvents": "none",
+        "hitTarget": "atlas-canvas",
+        "overflow": false,
+        "pixels": {
+          "amber": 158,
+          "green": 267,
+          "cyan": 56
+        },
+        "camera": {
+          "x": -3.097758495887046,
+          "y": 174.2803809427226,
+          "z": 284.4198354522929
+        },
+        "cameraMark": {
+          "x": 81.23137839459609,
+          "y": 8
+        },
+        "cityMarks": 8,
+        "agentMarks": 117,
+        "renderer": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+      },
+      "after": {
+        "cities": 8,
+        "agents": 117,
+        "rect": {
+          "x": 1083,
+          "y": 643,
+          "width": 172,
+          "height": 132
+        },
+        "backing": {
+          "width": 170,
+          "height": 130
+        },
+        "clientWidth": 170,
+        "clientHeight": 130,
+        "pointerEvents": "none",
+        "hitTarget": "atlas-canvas",
+        "overflow": false,
+        "pixels": {
+          "amber": 160,
+          "green": 249,
+          "cyan": 66
+        },
+        "camera": {
+          "x": 4.378489332341232,
+          "y": 138.57533592328707,
+          "z": 231.1203040564918
+        },
+        "cameraMark": {
+          "x": 85.46167112683074,
+          "y": 8
+        },
+        "cityMarks": 8,
+        "agentMarks": 117,
+        "renderer": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+      },
+      "drawCount": 57,
+      "minimumDrawIntervalMs": 100.10000000149012,
+      "firstDrawIntervalsMs": [
+        134,
+        100.70000000298023,
+        116.19999999552965,
+        100.70000000298023,
+        105.39999999850988,
+        133.89999999850988,
+        129.70000000298023,
+        132.39999999850988,
+        118.20000000298023,
+        152.39999999850988
+      ],
+      "rafFrames": 1582,
+      "failedRequests": [
+        {
+          "url": "http://localhost:8071/relay/discover",
+          "error": "net::ERR_CONNECTION_REFUSED"
+        },
+        {
+          "url": "https://swarmhub.onrender.com/api/v1/agents",
+          "error": "net::ERR_FAILED"
+        },
+        {
+          "url": "http://localhost:8071/api/contracts",
+          "error": "net::ERR_CONNECTION_REFUSED"
+        },
+        {
+          "url": "http://localhost:8071/api/bounties",
+          "error": "net::ERR_CONNECTION_REFUSED"
+        },
+        {
+          "url": "http://localhost:8071/api/bounties/sync",
+          "error": "net::ERR_CONNECTION_REFUSED"
+        },
+        {
+          "url": "http://localhost:8071/api/reputation",
+          "error": "net::ERR_CONNECTION_REFUSED"
+        }
+      ],
+      "pageErrors": [],
+      "externalWrites": []
+    },
+    {
+      "mobile": true,
+      "initial": {
+        "cities": 8,
+        "agents": 117,
+        "rect": {
+          "x": 247,
+          "y": 733,
+          "width": 128,
+          "height": 96
+        },
+        "backing": {
+          "width": 252,
+          "height": 188
+        },
+        "clientWidth": 126,
+        "clientHeight": 94,
+        "pointerEvents": "none",
+        "hitTarget": "atlas-canvas",
+        "overflow": false,
+        "pixels": {
+          "amber": 685,
+          "green": 417,
+          "cyan": 209
+        },
+        "camera": {
+          "x": -36.019904500768845,
+          "y": 180.00000000000003,
+          "z": 277.6734889753713
+        },
+        "cameraMark": {
+          "x": 49.316862640659856,
+          "y": 8
+        },
+        "cityMarks": 8,
+        "agentMarks": 117,
+        "renderer": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+      },
+      "afterPan": null,
+      "after": {
+        "cities": 8,
+        "agents": 117,
+        "rect": {
+          "x": 247,
+          "y": 733,
+          "width": 128,
+          "height": 96
+        },
+        "backing": {
+          "width": 252,
+          "height": 188
+        },
+        "clientWidth": 126,
+        "clientHeight": 94,
+        "pointerEvents": "none",
+        "hitTarget": "atlas-canvas",
+        "overflow": false,
+        "pixels": {
+          "amber": 685,
+          "green": 417,
+          "cyan": 207
+        },
+        "camera": {
+          "x": -20.68339016531076,
+          "y": 83.78051329200278,
+          "z": 133.80673535860072
+        },
+        "cameraMark": {
+          "x": 54.57819044815792,
+          "y": 10.538022107421682
+        },
+        "cityMarks": 8,
+        "agentMarks": 117,
+        "renderer": "WebGL 2.0 (OpenGL ES 3.0 Chromium)"
+      },
+      "drawCount": 64,
+      "minimumDrawIntervalMs": 99.89999999850988,
+      "firstDrawIntervalsMs": [
+        137.39999999850988,
+        116.70000000298023,
+        100.39999999850988,
+        102.10000000149012,
+        113.79999999701977,
+        117.20000000298023,
+        103,
+        114.39999999850988,
+        115.39999999850988,
+        101.79999999701977
+      ],
+      "rafFrames": 2310,
+      "failedRequests": [
+        {
+          "url": "http://localhost:8071/relay/discover",
+          "error": "net::ERR_CONNECTION_REFUSED"
+        },
+        {
+          "url": "https://swarmhub.onrender.com/api/v1/agents",
+          "error": "net::ERR_FAILED"
+        },
+        {
+          "url": "http://localhost:8071/api/contracts",
+          "error": "net::ERR_CONNECTION_REFUSED"
+        },
+        {
+          "url": "http://localhost:8071/api/bounties",
+          "error": "net::ERR_CONNECTION_REFUSED"
+        },
+        {
+          "url": "http://localhost:8071/api/reputation",
+          "error": "net::ERR_CONNECTION_REFUSED"
+        },
+        {
+          "url": "http://localhost:8071/api/bounties/sync",
+          "error": "net::ERR_CONNECTION_REFUSED"
+        }
+      ],
+      "pageErrors": [],
+      "externalWrites": []
+    }
+  ],
+  "version": "151.0.7922.34"
+}
