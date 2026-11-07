@@ -1,5 +1,8 @@
 name: Markdown Link Checker
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main, master]
