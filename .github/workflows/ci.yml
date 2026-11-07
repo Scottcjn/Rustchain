@@ -56,6 +56,11 @@ jobs:
     - name: Verify relative documentation links
       run: python tools/check_relative_links.py
 
+    - name: Run shared node_probe and monitor suites (#17180)
+      run: |
+        pip install prometheus_client respx httpx pyyaml
+        pytest monitoring/tests/test_node_probe.py status/test_status.py health-dashboard/test_health_dashboard.py monitoring/alerts/tests/ tools/node-health-cli/tests/test_node_health.py tools/test_node_health_total_miners.py -v
+
     - name: Run tests with pytest (blocking)
       env:
         RC_ADMIN_KEY: "0123456789abcdef0123456789abcdef"
