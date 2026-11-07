@@ -15,7 +15,7 @@ The reasoning is both environmental and security-driven. Extending the useful li
 
 ## Mining and the token
 
-Miners submit attestations to a RustChain node, which scores the hardware and issues RTC across epoch-based distributions. The token also exists on Solana as **wRTC**, so wallets, agents, and the broader ecosystem can transact in the wrapped form while the attestation chain stays anchored and independently verifiable. Unlike native mining rewards, wRTC is [swappable on Raydium](../README.md#wrtc-on-solana), although the project describes its liquidity as experimental and very thin.
+Miners submit attestations to a RustChain node, which scores the hardware and issues RTC across epoch-based distributions.
 
 ## Beacon Atlas and the agent economy
 
