@@ -52,7 +52,11 @@ class UrlCheckConfig:
         "twitter.com",
         "x.com",
         "discord.com",
+        "dev.to",
+        "medium.com",
     ])
+    check_article_quality: bool = True
+    min_article_words: int = 250
 
 
 @dataclass
@@ -119,8 +123,10 @@ class Config:
                 timeout=uc.get("timeout", 5),
                 require_https=uc.get("require_https", True),
                 allowed_domains=uc.get("allowed_domains", [
-                    "github.com", "twitter.com", "x.com", "discord.com",
+                    "github.com", "twitter.com", "x.com", "discord.com", "dev.to", "medium.com",
                 ]),
+                check_article_quality=uc.get("check_article_quality", True),
+                min_article_words=uc.get("min_article_words", 250),
             )
         
         if "payout" in data:

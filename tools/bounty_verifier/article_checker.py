@@ -7,6 +7,7 @@ or article URL is live, mentions RustChain, and was authored by the claimant.
 """
 
 import logging
+import re
 from typing import Dict, Optional, Tuple
 
 import requests
@@ -58,7 +59,13 @@ class ArticleChecker:
                 return False, details
 
             soup = BeautifulSoup(resp.text, "lxml")
-            text = soup.get_text(separator=" ").lower()
+            raw_text = soup.get_text(separator=" ")
+            text = raw_text.lower()
+
+            # Word count analysis
+            words = [w for w in re.split(r"\s+", raw_text.strip()) if len(w) > 0]
+            word_count = len(words)
+            details["word_count"] = str(word_count)
 
             # Check for RustChain mentions
             mentions_rustchain = any(kw in text for kw in self.REQUIRED_KEYWORDS)
