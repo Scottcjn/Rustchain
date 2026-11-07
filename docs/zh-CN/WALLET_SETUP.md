@@ -33,6 +33,25 @@ RustChain 使用 **RTC** 作为其原生代币。项目文档中常用的参考�
 
 使用 `curl -sk`，因为公共节点使用的是自签名 TLS 证书。
 
+## 我的配置在哪里？
+
+有两个安装程序会写入矿机配置，但它们使用的目录并不相同：
+
+| 安装程序 | 配置路径 |
+|---|---|
+| `rustchain.org` 的 `install.sh` | `/opt/rustchain-miner/config.json` |
+| 本仓库的 `setup.sh` / `install-miner.sh` | `~/.rustchain/config.json` |
+
+`/opt` 路径只有在运行过 `rustchain.org` 的安装程序之后才会存在。如果你是从仓库安装的，请按仓库的目录结构来，不要去找 `/opt`。
+
+无论用的是哪个安装程序，下面这条命令都能找到配置：
+
+```bash
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
+```
+
+文件里有你的 `wallet_id`。本指南的其他部分与它位于哪个路径无关，命令打印出哪一个就按哪一个来。
+
 ## 1. 获取 RTC 钱包的三种方式
 
 ### 方法 A：安装矿机并让 RustChain 为你创建一个钱包
@@ -55,10 +74,10 @@ curl -sL https://rustchain.org/install.sh | bash
 - `victus-x86-scott`
 - `RTC14f06ee294f327f5685d3de5e1ed501cffab33e7`
 
-在 Linux 上，安装程序将矿机配置保存在这里：
+在 Linux 上，`rustchain.org` 的安装程序把矿机配置写到 `/opt/rustchain-miner/config.json`，而本仓库的 `setup.sh` 和 `install-miner.sh` 写到 `~/.rustchain/config.json`（见[我的配置在哪里？](#我的配置在哪里)）：
 
 ```bash
-cat /opt/rustchain-miner/config.json
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
 ```
 
 你应该能看到一个 `wallet_id` 字段。
@@ -358,7 +377,7 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 
 备份什么内容取决于你是如何创建钱包的：
 
-- 矿机安装：保存打印出的钱包 ID 并复制 `/opt/rustchain-miner/config.json`
+- 矿机安装：保存打印出的钱包 ID，并复制 `/opt/rustchain-miner/config.json` 或 `~/.rustchain/config.json` 中你的安装程序实际写入的那一个（[我的配置在哪里？](#我的配置在哪里)）
 - 安全版 GUI：备份 24 个单词的 seed phrase 和 `~/.rustchain/wallets/*.json`
 - 编程式钱包：备份 seed phrase 以及你创建的任何加密密钥库
 
@@ -391,9 +410,9 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 
 ### 我的钱包存储在哪里？
 
-通常在以下位置：
+通常在以下位置。路径取决于安装程序：`/opt/rustchain-miner/config.json` 只在运行过 `rustchain.org` 安装程序后存在，`~/.rustchain/config.json` 则由仓库的安装程序写入（[我的配置在哪里？](#我的配置在哪里)）：
 
-- 矿机安装：`/opt/rustchain-miner/config.json`
+- 矿机安装：`/opt/rustchain-miner/config.json` 或 `~/.rustchain/config.json`
 - 运行中的 Linux 矿机：有时也在 `/tmp/local_miner_wallet.txt`
 - 安全版 GUI 和 CLI 密钥库：`~/.rustchain/wallets/`
 - 编程式钱包：你保存它的任何位置
@@ -403,7 +422,7 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 按以下顺序尝试：
 
 ```bash
-cat /opt/rustchain-miner/config.json
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
 ls ~/.rustchain/wallets
 curl -sk https://rustchain.org/api/miners
 ```
