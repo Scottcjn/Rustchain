@@ -3,14 +3,133 @@ BoTTube API Client
 """
 
 import json
+import os
 import ssl
 import urllib.request
 import urllib.parse
-from typing import Optional, Dict, Any, List
+from dataclasses import dataclass, field
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
 from urllib.error import URLError, HTTPError
 from urllib.request import Request
 
-from .exceptions import BoTTubeError, AuthenticationError, APIError, UploadError
+import httpx
+
+from .exceptions import (
+    BoTTubeError,
+    AuthenticationError,
+    APIError,
+    UploadError,
+    ServiceError,
+    InsufficientBalanceError,
+    ExpiredTokenError,
+    UnknownServiceError,
+    QuantityCapExceededError,
+)
+
+
+def _money(value: Any) -> Decimal:
+    """Strict money parse. JSON numbers arrive as Decimal via parse_float."""
+    if isinstance(value, bool):
+        raise TypeError(f"bool is not a money value: {value!r}")
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, int):
+        return Decimal(value)
+    if isinstance(value, str):
+        return Decimal(value)
+    if value is None:
+        return Decimal(0)
+    raise TypeError(f"money values must be Decimal/str/int, never float: {value!r}")
+
+
+def _first(data: Dict[str, Any], keys: List[str]) -> Any:
+    """First present value among keys."""
+    for key in keys:
+        if data.get(key) is not None:
+            return data[key]
+    return None
+
+
+def _api_key_from_config() -> Optional[str]:
+    """Read api_key from BOTTUBE_CONFIG_FILE or ~/.bottube/config.json.
+
+    Secret comes from env/config only, never a CLI flag (shell history),
+    and is never logged.
+    """
+    path = os.environ.get("BOTTUBE_CONFIG_FILE") or os.path.join(
+        os.path.expanduser("~"), ".bottube", "config.json"
+    )
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    key = data.get("api_key") if isinstance(data, dict) else None
+    return key.strip() if isinstance(key, str) and key.strip() else None
+
+
+@dataclass(frozen=True)
+class ServiceOffer:
+    """A purchasable RTC service with an exact Decimal price."""
+
+    key: str
+    name: str = ""
+    description: str = ""
+    price: Decimal = Decimal(0)
+    currency: str = "RTC"
+    max_quantity: Optional[int] = None
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ServiceOffer":
+        return cls(
+            key=str(data.get("key") or data.get("service") or ""),
+            name=str(data.get("name") or ""),
+            description=str(data.get("description") or ""),
+            price=_money(_first(data, ["price_rtc", "unit_price", "price", "cost"])),
+            currency=str(data.get("currency") or "RTC"),
+            max_quantity=data.get("max_quantity"),
+            raw=dict(data),
+        )
+
+
+@dataclass(frozen=True)
+class PurchaseReceipt:
+    """A paid service purchase; total_cost is exact Decimal math."""
+
+    token: str
+    service: str
+    quantity: int
+    unit_price: Decimal
+    total_cost: Decimal
+    status: str = ""
+    expires_at: Optional[str] = None
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: Dict[str, Any],
+        service: Optional[str] = None,
+        quantity: Optional[int] = None,
+    ) -> "PurchaseReceipt":
+        qty = int(_first(data, ["quantity"]) if data.get("quantity") is not None
+                  else (quantity or 1))
+        unit = _money(_first(data, ["unit_price", "price_rtc", "price"]))
+        total = _first(data, ["total_cost", "total", "amount"])
+        # Server omits the total: compute it in Decimal, never float.
+        total = _money(total) if total is not None else unit * qty
+        return cls(
+            token=str(_first(data, ["token", "purchase_token"]) or ""),
+            service=str(_first(data, ["service", "service_key"]) or service or ""),
+            quantity=qty,
+            unit_price=unit,
+            total_cost=total,
+            status=str(data.get("status") or ""),
+            expires_at=data.get("expires_at"),
+            raw=dict(data),
+        )
 
 
 class BoTTubeClient:
@@ -54,7 +173,13 @@ class BoTTubeClient:
             retry_count: Number of retries on failure
             retry_delay: Delay between retries (seconds)
         """
-        self.api_key = api_key
+        # Secret resolution order: explicit arg -> BOTTUBE_API_KEY env -> config
+        # file. Never a CLI flag (shell history) and never logged.
+        self.api_key = (
+            api_key
+            or os.environ.get("BOTTUBE_API_KEY")
+            or _api_key_from_config()
+        )
         self.base_url = base_url.rstrip("/")
         self.verify_ssl = verify_ssl
         self.timeout = timeout
@@ -561,6 +686,120 @@ class BoTTubeClient:
             endpoint = f"{endpoint}?{query}"
         
         return self._request("GET", endpoint)
+
+    # ========== RTC Services (spend RTC on paid services) ==========
+
+    def _services_request(
+        self,
+        method: str,
+        endpoint: str,
+        json_body: Optional[Dict[str, Any]] = None
+    ) -> Any:
+        """HTTP for /api/rtc/* via httpx; JSON floats become Decimal.
+
+        shortcut: single attempt per call (no urllib retry loop here) —
+        upgrade if transient 5xx on pay/use is seen in production.
+        """
+        with httpx.Client(base_url=self.base_url, timeout=self.timeout) as http:
+            response = http.request(
+                method, endpoint, json=json_body, headers=self._get_headers()
+            )
+        if response.is_success:
+            text = response.text
+            return json.loads(text, parse_float=Decimal) if text.strip() else {}
+        raise self._services_error(endpoint, response)
+
+    @staticmethod
+    def _services_error(endpoint: str, response: httpx.Response) -> BoTTubeError:
+        """Map HTTP status/error body to an explicit service exception."""
+        try:
+            data = json.loads(response.text or "{}", parse_float=Decimal)
+        except ValueError:
+            data = {}
+        error = data.get("error") if isinstance(data, dict) else None
+        if isinstance(error, str):
+            error = {"message": error}
+        if not isinstance(error, dict):
+            error = {}
+        code = str(error.get("code") or "").lower()
+        message = str(
+            error.get("message")
+            or code
+            or response.reason_phrase
+            or "request failed"
+        )
+        status = response.status_code
+        signal = f"{code} {message}".lower()
+        kwargs = {"status_code": status, "endpoint": endpoint}
+        if status == 402 or "insufficient" in signal:
+            return InsufficientBalanceError(message, **kwargs)
+        if "expired" in signal:
+            return ExpiredTokenError(message, **kwargs)
+        if status == 404 or "unknown_service" in signal or "not_found" in signal:
+            return UnknownServiceError(message, **kwargs)
+        if "cap" in signal or "max_quantity" in signal or "quantity_limit" in signal:
+            return QuantityCapExceededError(message, **kwargs)
+        if status in (401, 403):
+            return AuthenticationError(message)
+        return APIError(message, status_code=status, endpoint=endpoint)
+
+    def list_services(self) -> List[ServiceOffer]:
+        """
+        List purchasable RTC services with exact Decimal prices.
+
+        Example:
+            >>> for offer in client.list_services():
+            ...     print(offer.key, offer.price, offer.currency)
+        """
+        data = self._services_request("GET", "/api/rtc/services")
+        items = data.get("services", []) if isinstance(data, dict) else data
+        return [ServiceOffer.from_dict(item) for item in items]
+
+    def pay(self, service_key: str, quantity: int = 1) -> PurchaseReceipt:
+        """
+        Buy an RTC service; returns a receipt with token and Decimal costs.
+
+        Raises:
+            ServiceError: invalid service_key or quantity.
+            InsufficientBalanceError: RTC balance too low (HTTP 402).
+            UnknownServiceError: service key does not exist.
+            QuantityCapExceededError: quantity above the per-order cap.
+        """
+        if not isinstance(service_key, str) or not service_key.strip():
+            raise ServiceError("service_key must be a non-empty string")
+        if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 1:
+            raise ServiceError(
+                f"quantity must be a positive integer, got {quantity!r}"
+            )
+        data = self._services_request(
+            "POST",
+            "/api/rtc/pay",
+            {"service": service_key.strip(), "quantity": quantity},
+        )
+        receipt = data if isinstance(data, dict) else {}
+        return PurchaseReceipt.from_dict(
+            receipt, service=service_key.strip(), quantity=quantity
+        )
+
+    def use(self, service_token: str, **payload: Any) -> Dict[str, Any]:
+        """
+        Redeem a purchased service token with an arbitrary JSON payload.
+
+        Raises:
+            ExpiredTokenError: the token is expired or spent.
+        """
+        if not isinstance(service_token, str) or not service_token.strip():
+            raise ServiceError("service_token must be a non-empty string")
+        body: Dict[str, Any] = {"token": service_token.strip()}
+        body.update(payload)
+        data = self._services_request("POST", "/api/rtc/use", body)
+        return data if isinstance(data, dict) else {"result": data}
+
+    def purchases(self) -> List[PurchaseReceipt]:
+        """List the authenticated account's purchase history."""
+        data = self._services_request("GET", "/api/rtc/purchases")
+        items = data.get("purchases", []) if isinstance(data, dict) else data
+        return [PurchaseReceipt.from_dict(item) for item in items]
 
     # ========== Context Manager ==========
 

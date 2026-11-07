@@ -8,14 +8,36 @@ License: MIT
 
 __version__ = "0.1.0"
 
-from .client import BoTTubeClient, create_client
-from .exceptions import BoTTubeError, AuthenticationError, APIError, UploadError
+from .client import (
+    BoTTubeClient,
+    PurchaseReceipt,
+    ServiceOffer,
+    create_client,
+)
+from .exceptions import (
+    APIError,
+    AuthenticationError,
+    BoTTubeError,
+    ExpiredTokenError,
+    InsufficientBalanceError,
+    QuantityCapExceededError,
+    ServiceError,
+    UnknownServiceError,
+    UploadError,
+)
 
 __all__ = [
-    "BoTTubeClient",
-    "create_client",
-    "BoTTubeError",
-    "AuthenticationError",
     "APIError",
+    "AuthenticationError",
+    "BoTTubeClient",
+    "BoTTubeError",
+    "ExpiredTokenError",
+    "InsufficientBalanceError",
+    "PurchaseReceipt",
+    "QuantityCapExceededError",
+    "ServiceError",
+    "ServiceOffer",
+    "UnknownServiceError",
     "UploadError",
+    "create_client",
 ]
