@@ -337,14 +337,16 @@ def settle_epoch_rip200(db_path, epoch: int, enable_anti_double_mining: bool = T
                     current,
                     existing_conn=db,
                 )
+                if not isinstance(result, dict) or not result.get("ok"):
+                    db.rollback()
+                    return result
                 # The callee wrote rewards + settled flag on our connection but
                 # does NOT commit (caller owns the transaction).  Mirror those
                 # credits into the UTXO model first (no-op when dual-write is
                 # off), then commit both together: this branch is the one
                 # production takes, and it used to return before any mint.
                 adm_utxo = _dual_write_mint_rewards(db, epoch, _db_path_from(db_path))
-                if isinstance(result, dict):
-                    result["utxo_dual_write"] = adm_utxo
+                result["utxo_dual_write"] = adm_utxo
                 db.commit()
                 return result
             except Exception as e:
