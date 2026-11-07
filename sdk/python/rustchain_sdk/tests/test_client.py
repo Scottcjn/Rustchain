@@ -478,3 +478,49 @@ class TestRustChainClientAttestation:
         async with RustChainClient() as client:
             result = await client.attest_submit("pk-hex", "response", "sig")
         assert result["status"] == "attested"
+
+
+class TestRustChainClientGetErrorDetail:
+    """#8567 — GET failures must preserve the parsed backend error and body."""
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_preserves_error_message_and_body(self):
+        """A JSON 503 keeps the backend `error` text and the parsed body."""
+        detail = {"error": "fixture temporarily unavailable", "retry_after": 60}
+        respx.get(f"{DEFAULT_NODE_URL}/health").mock(
+            return_value=httpx.Response(503, json=detail)
+        )
+        async with RustChainClient() as client:
+            with pytest.raises(APIError) as exc_info:
+                await client.health()
+        error = exc_info.value
+        assert error.status_code == 503
+        assert "fixture temporarily unavailable" in str(error)
+        assert error.response_body == detail
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_prefers_message_over_error(self):
+        """`message` wins when both keys are present, matching the POST helper."""
+        respx.get(f"{DEFAULT_NODE_URL}/health").mock(
+            return_value=httpx.Response(400, json={"message": "bad request", "error": "ignored"})
+        )
+        async with RustChainClient() as client:
+            with pytest.raises(APIError) as exc_info:
+                await client.health()
+        assert "bad request" in str(exc_info.value)
+        assert exc_info.value.response_body == {"message": "bad request", "error": "ignored"}
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_handles_non_json_error_body(self):
+        """A non-JSON error body falls back to httpx's status text, no crash."""
+        respx.get(f"{DEFAULT_NODE_URL}/health").mock(
+            return_value=httpx.Response(502, text="<html>bad gateway</html>")
+        )
+        async with RustChainClient() as client:
+            with pytest.raises(APIError) as exc_info:
+                await client.health()
+        assert exc_info.value.status_code == 502
+        assert exc_info.value.response_body == {}
