@@ -1,0 +1,32 @@
+name: Python SDK CLI tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sdk/python/**"
+      - ".github/workflows/sdk-python-cli.yml"
+  pull_request:
+    paths:
+      - "sdk/python/**"
+      - ".github/workflows/sdk-python-cli.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  cli-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dev dependencies
+        run: pip install -r sdk/python/requirements-dev.txt
+      - name: Run CLI test suite
+        run: pytest sdk/python/tests/test_cli.py -v -rxX
