@@ -12,6 +12,8 @@ import os
 import tempfile
 import sqlite3
 import hashlib
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -21,6 +23,38 @@ def _canonical_agent_id(pubkey_hex):
     """根据 Ed25519 公钥派生规范 Beacon agent_id。"""
     clean = pubkey_hex[2:] if pubkey_hex.startswith(('0x', '0X')) else pubkey_hex
     return f"bcn_{hashlib.sha256(bytes.fromhex(clean)).hexdigest()[:12]}"
+
+
+def _new_identity(agent_id):
+    private_key = Ed25519PrivateKey.generate()
+    pubkey_hex = private_key.public_key().public_bytes(
+        Encoding.Raw, PublicFormat.Raw
+    ).hex()
+    return agent_id, private_key, pubkey_hex
+
+
+def _signed_join_headers(private_key, agent_id, body):
+    body_bytes = body.encode("utf-8") if isinstance(body, str) else body
+    timestamp = str(int(time.time()))
+    nonce = hashlib.blake2b(
+        f"{agent_id}:{timestamp}:{time.time_ns()}".encode(),
+        digest_size=16,
+    ).hexdigest()
+    body_hash = hashlib.sha256(body_bytes or b"").hexdigest()
+    message = "\n".join([
+        "POST",
+        "/beacon/join",
+        body_hash,
+        timestamp,
+        nonce,
+        agent_id,
+    ]).encode("utf-8")
+    return {
+        "X-Agent-Id": agent_id,
+        "X-Agent-Timestamp": timestamp,
+        "X-Agent-Nonce": nonce,
+        "X-Agent-Signature": private_key.sign(message).hex(),
+    }
 
 
 class TestBeaconJoinRouting(unittest.TestCase):
@@ -114,9 +148,9 @@ class TestBeaconJoinRouting(unittest.TestCase):
         registration (prevents identity takeover). Re-sending the same
         pubkey_hex with a changed name updates the mutable field only.
         """
-        pubkey = '0xaaaabbbbccccddddaaaabbbbccccddddaaaabbbbccccddddaaaabbbbccccdddd'
+        agent_id, private_key, pubkey = _new_identity('bcn_upsert_test')
         payload1 = {
-            'agent_id': 'bcn_upsert_test',
+            'agent_id': agent_id,
             'pubkey_hex': pubkey,
             'name': 'Original Name',
         }
@@ -136,10 +170,12 @@ class TestBeaconJoinRouting(unittest.TestCase):
             'name': 'Updated Name',
         }
 
+        body2 = json.dumps(payload2)
         response2 = self.client.post(
             '/beacon/join',
-            data=json.dumps(payload2),
-            content_type='application/json'
+            data=body2,
+            content_type='application/json',
+            headers=_signed_join_headers(private_key, agent_id, body2),
         )
         self.assertEqual(response2.status_code, 200)
 
@@ -155,6 +191,61 @@ class TestBeaconJoinRouting(unittest.TestCase):
                 ('bcn_upsert_test',)
             ).fetchone()[0]
             self.assertEqual(count, 1)
+
+    def test_join_existing_agent_unsigned_mutation_rejected(self):
+        """Existing agents require proof of private-key possession to mutate."""
+        agent_id, private_key, pubkey = _new_identity('bcn_unsigned_target')
+        first = {
+            'agent_id': agent_id,
+            'pubkey_hex': pubkey,
+            'name': 'Original Name',
+        }
+        self.assertEqual(
+            self.client.post('/beacon/join', json=first).status_code,
+            200,
+        )
+
+        unsigned = {
+            'agent_id': agent_id,
+            'pubkey_hex': pubkey,
+            'name': 'Attacker Rename',
+        }
+        response = self.client.post('/beacon/join', json=unsigned)
+        self.assertEqual(response.status_code, 401)
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            row = conn.execute(
+                "SELECT name, status FROM relay_agents WHERE agent_id = ?",
+                (agent_id,),
+            ).fetchone()
+        self.assertEqual(row, ('Original Name', 'active'))
+
+    def test_join_inactive_agent_unsigned_reactivation_rejected(self):
+        """Unsigned rejoin cannot move an existing inactive agent to active."""
+        agent_id, private_key, pubkey = _new_identity('bcn_inactive_target')
+        first = {
+            'agent_id': agent_id,
+            'pubkey_hex': pubkey,
+            'name': 'Dormant Agent',
+        }
+        self.assertEqual(self.client.post('/beacon/join', json=first).status_code, 200)
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            conn.execute(
+                "UPDATE relay_agents SET status = 'inactive' WHERE agent_id = ?",
+                (agent_id,),
+            )
+            conn.commit()
+
+        response = self.client.post('/beacon/join', json=first)
+        self.assertEqual(response.status_code, 401)
+
+        with sqlite3.connect(self.test_db_path) as conn:
+            status = conn.execute(
+                "SELECT status FROM relay_agents WHERE agent_id = ?",
+                (agent_id,),
+            ).fetchone()[0]
+        self.assertEqual(status, 'inactive')
 
     def test_join_pubkey_takeover_rejected(self):
         """POST /beacon/join rejects pubkey_hex change for existing agent (403).
@@ -437,10 +528,10 @@ class TestBeaconJoinRouting(unittest.TestCase):
 
     def test_join_allows_idempotent_existing_coinbase_address(self):
         """POST /beacon/join accepts the same payment address for an existing agent."""
-        pubkey = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef'
+        agent_id, private_key, pubkey = _new_identity('bcn_wallet_idempotent')
         original_coinbase = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd'
         payload1 = {
-            'agent_id': 'bcn_wallet_idempotent',
+            'agent_id': agent_id,
             'pubkey_hex': pubkey,
             'name': 'Original Name',
             'coinbase_address': original_coinbase,
@@ -458,17 +549,19 @@ class TestBeaconJoinRouting(unittest.TestCase):
             'name': 'Updated Name',
             'coinbase_address': original_coinbase.upper().replace('X', 'x', 1),
         }
+        body2 = json.dumps(payload2)
         response2 = self.client.post(
             '/beacon/join',
-            data=json.dumps(payload2),
+            data=body2,
             content_type='application/json',
+            headers=_signed_join_headers(private_key, agent_id, body2),
         )
         self.assertEqual(response2.status_code, 200)
 
         with sqlite3.connect(self.test_db_path) as conn:
             row = conn.execute(
                 "SELECT name, coinbase_address FROM relay_agents WHERE agent_id = ?",
-                ('bcn_wallet_idempotent',)
+                (agent_id,)
             ).fetchone()
             self.assertEqual(row[0], 'Updated Name')
             self.assertEqual(row[1], original_coinbase)
@@ -757,11 +850,11 @@ class TestBeaconJoinRouting(unittest.TestCase):
         pubkey_hex is immutable after first registration (security patch 03bf96a),
         so the "update" step changes the name while keeping the same pubkey_hex.
         """
-        pubkey = '0x1111' + '00' * 30
+        agent_id, private_key, pubkey = _new_identity('bcn_workflow')
 
         # Step 1: Register agent
         payload1 = {
-            'agent_id': 'bcn_workflow',
+            'agent_id': agent_id,
             'pubkey_hex': pubkey,
             'name': 'Workflow Agent v1',
         }
@@ -787,10 +880,12 @@ class TestBeaconJoinRouting(unittest.TestCase):
             'name': 'Workflow Agent v2',
         }
 
+        body3 = json.dumps(payload3)
         response3 = self.client.post(
             '/beacon/join',
-            data=json.dumps(payload3),
-            content_type='application/json'
+            data=body3,
+            content_type='application/json',
+            headers=_signed_join_headers(private_key, agent_id, body3),
         )
         self.assertEqual(response3.status_code, 200)
 
