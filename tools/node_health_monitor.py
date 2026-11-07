@@ -18,6 +18,13 @@ import urllib.request
 import urllib.error
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional, Any
+from pathlib import Path
+
+try:
+    from monitoring.node_probe import probe_health, validate_health_payload, ProbeState
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from monitoring.node_probe import probe_health, validate_health_payload, ProbeState
 
 # ── ANSI color codes ─────────────────────────────────────────────────────────
 GREEN  = "\033[92m"
@@ -118,6 +125,19 @@ class NodeHealthMonitor:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 elapsed_ms = (time.monotonic() - start) * 1000
                 raw = resp.read().decode("utf-8", errors="replace")
+                ct = resp.headers.get("Content-Type", "") if hasattr(resp, "headers") else ""
+                
+                # Check specifically for HTML SPA / captive portal impostor
+                if "<html" in raw.lower() or "text/html" in ct.lower():
+                    return NodeStatus(
+                        url=url,
+                        status="impostor",
+                        response_time_ms=round(elapsed_ms, 1),
+                        epoch=None,
+                        miners=None,
+                        error=f"Impostor detected (HTML response): {raw[:60]!r}",
+                    )
+
                 try:
                     data = json.loads(raw)
                 except json.JSONDecodeError:
@@ -126,16 +146,6 @@ class NodeHealthMonitor:
                     data = None
 
                 # A 200 is not evidence of a node.
-                #
-                # RustChain node 4 stopped being a node and the host was reused
-                # for a single-page app. An SPA answers 200 on EVERY unknown
-                # path, so /status returned 200 with HTML, json.loads failed,
-                # the body was quietly replaced with {}, and the node was
-                # reported "online" indefinitely because status was decided
-                # purely on response time. The loss went unnoticed for months.
-                #
-                # A node is online only if it answered with JSON that actually
-                # carries node state. Anything else is impersonating one.
                 if data is None:
                     return NodeStatus(
                         url=url,
@@ -143,7 +153,7 @@ class NodeHealthMonitor:
                         response_time_ms=round(elapsed_ms, 1),
                         epoch=None,
                         miners=None,
-                        error=(f"/status returned {len(raw)} bytes of non-JSON "
+                        error=(f"{path} returned {len(raw)} bytes of non-JSON "
                                f"(is this still a node?): {raw[:60]!r}"),
                     )
 
