@@ -11783,28 +11783,66 @@ def api_ready():
     except Exception:
         return jsonify({"ready": False, "version": APP_VERSION}), 503
 
+def _open_db_readonly(path, timeout=3):
+    """Open the node DB read-only for health probes.
+
+    A plain ``sqlite3.connect`` on a wrong or deleted ``DB_PATH`` silently
+    creates a fresh empty database, so a health check built on it reports an
+    "empty node" instead of a broken one.  ``mode=ro`` makes a missing file
+    raise ``sqlite3.OperationalError`` and never writes anything to disk.
+    """
+    from urllib.parse import quote
+    uri = "file:" + quote(os.path.abspath(path)) + "?mode=ro"
+    return sqlite3.connect(uri, uri=True, timeout=timeout)
+
+
 @app.route('/health/sync', methods=['GET'])
 @app.route('/api/sync-status', methods=['GET'])
 def api_sync_status():
-    """Sync status health check for monitoring systems (Prometheus, Datadog) (fixes #8507)"""
-    net_block = max(0, current_slot())
-    curr_block = 0
-    try:
-        with sqlite3.connect(DB_PATH, timeout=3) as db:
-            tbl = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='headers'").fetchone()
-            if tbl:
-                row = db.execute("SELECT slot FROM headers ORDER BY slot DESC LIMIT 1").fetchone()
-                if row is not None and row[0] is not None:
-                    curr_block = int(row[0])
-    except Exception:
-        pass
+    """Sync status health check for monitoring systems (Prometheus, Datadog) (fixes #8507).
 
-    is_synced = (net_block - curr_block) <= 2 and curr_block > 0
+    200 + ``ok: true`` means the node's chain DB was read successfully;
+    ``is_synced`` then says whether the local tip is within 2 slots of the
+    network slot.  Any failure to read the DB (missing/locked/corrupt file,
+    missing ``headers`` table) returns 503 + ``ok: false`` with a typed
+    ``error`` field, mirroring ``/ready`` (#8617).  A health check must never
+    report healthy while the storage behind it is broken.
+    """
+    def _unavailable(error):
+        return jsonify({
+            "ok": False,
+            "is_synced": False,
+            "error": error,
+        }), 503
+
+    try:
+        net_block = max(0, int(current_slot()))
+        db = _open_db_readonly(DB_PATH)
+        try:
+            tbl = db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='headers'"
+            ).fetchone()
+            if not tbl:
+                # init_db() always creates `headers`; its absence means the DB
+                # is not the node's (wrong path) or the schema never ran.
+                return _unavailable("headers_table_missing")
+            row = db.execute("SELECT MAX(slot) FROM headers").fetchone()
+        finally:
+            db.close()
+    except sqlite3.Error:
+        return _unavailable("db_unavailable")
+    except Exception:
+        return _unavailable("sync_status_unavailable")
+
+    curr_block = int(row[0]) if row and row[0] is not None else 0
+    lag = max(0, net_block - curr_block)
+    is_synced = curr_block > 0 and lag <= 2
     return jsonify({
+        "ok": True,
         "is_synced": bool(is_synced),
         "current_block": curr_block,
         "network_block": net_block,
-        "lag_slots": max(0, net_block - curr_block)
+        "lag_slots": lag,
     }), 200
 
 @app.route('/metrics', methods=['GET'])
