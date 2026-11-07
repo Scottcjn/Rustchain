@@ -18,6 +18,13 @@ from xml.sax.saxutils import escape as xml_escape
 import requests
 from flask import Flask, render_template, jsonify, Response
 
+try:
+    from monitoring.node_probe import probe_health, validate_response, ProbeState
+except ImportError:
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from monitoring.node_probe import probe_health, validate_response, ProbeState
+
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 # ── Node Configuration ────────────────────────────────────────────
@@ -67,39 +74,42 @@ def save_state():
 
 
 def check_node(node):
-    """Poll a single node and return status dict."""
+    """Poll a single node and return status dict validated by shared node_probe."""
     start = time.time()
     try:
         _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
         _verify = _cert if os.path.exists(_cert) else True
         resp = requests.get(node["endpoint"], timeout=10, verify=_verify)
         elapsed_ms = round((time.time() - start) * 1000)
-        if resp.status_code == 200:
-            try:
-                data = resp.json()
-            except ValueError:
-                data = {}
-            return {
-                "up": True,
-                "status_code": resp.status_code,
-                "response_ms": elapsed_ms,
-                "version": data.get("version", "unknown"),
-                "uptime": data.get("uptime", data.get("uptime_seconds", 0)),
-                "active_miners": data.get("active_miners", data.get("miners", 0)),
-                "current_epoch": data.get("epoch", data.get("current_epoch", 0)),
-                "checked_at": datetime.utcnow().isoformat() + "Z",
-            }
+
+        probe = validate_response(resp, response_time_ms=elapsed_ms, url=node["endpoint"])
+        is_up = (probe.state == ProbeState.UP.value)
+        data = probe.data or {}
+
+        res = {
+            "up": is_up,
+            "state": probe.state,
+            "status_code": resp.status_code,
+            "response_ms": elapsed_ms,
+            "checked_at": datetime.utcnow().isoformat() + "Z",
+        }
+        if is_up:
+            res["version"] = data.get("version", "unknown")
+            res["uptime"] = data.get("uptime", data.get("uptime_seconds", data.get("uptime_s", 0)))
+            res["active_miners"] = data.get("active_miners", data.get("miners", 0))
+            res["current_epoch"] = data.get("epoch", data.get("current_epoch", 0))
+        elif probe.state == ProbeState.IMPOSTOR.value:
+            res["version"] = "impostor"
+            res["error"] = f"Impostor detected: {probe.reason}"
         else:
-            return {
-                "up": False,
-                "status_code": resp.status_code,
-                "response_ms": elapsed_ms,
-                "checked_at": datetime.utcnow().isoformat() + "Z",
-            }
+            res["version"] = "unknown"
+            res["error"] = probe.error or f"Node {probe.state}"
+        return res
     except Exception as e:
         elapsed_ms = round((time.time() - start) * 1000)
         return {
             "up": False,
+            "state": "unreachable",
             "error": str(e)[:200],
             "response_ms": elapsed_ms,
             "checked_at": datetime.utcnow().isoformat() + "Z",
@@ -242,12 +252,14 @@ def rss_feed():
 
 # ── Main ──────────────────────────────────────────────────────────
 
-load_state()
-# Start background poller
-poller_thread = threading.Thread(target=poller_loop, daemon=True)
-poller_thread.start()
-# Do an immediate poll
-poll_all()
+def start_poller():
+    """Start background poller thread and perform initial poll."""
+    load_state()
+    poller_thread = threading.Thread(target=poller_loop, daemon=True)
+    poller_thread.start()
+    poll_all()
+
 
 if __name__ == "__main__":
+    start_poller()
     app.run(host="0.0.0.0", port=8050, debug=False)
