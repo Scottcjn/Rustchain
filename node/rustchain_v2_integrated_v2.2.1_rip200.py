@@ -3155,8 +3155,9 @@ def _detect_x86_vintage(cpu_brand: str, machine: str, simd_data: dict):
     cpu_lower = cpu_brand.lower()
     machine_lower = (machine or "").lower()
 
-    # Pentium M family — \b boundary + (?!\d) avoids false-matching "Pentium M4".
-    if re.search(r"\bpentium(?:\(r\))?\s+m\b(?!\d)", cpu_lower):
+    # Pentium M and Celeron M family — \b boundary + (?!\d) avoids false-matching "Pentium M4".
+    # Celeron M is a disabled Pentium M on the same Banias/Dothan/Yonah core (issue #8578).
+    if re.search(r"\b(?:pentium|celeron)(?:\(r\))?\s+m\b(?!\d)", cpu_lower):
         # Parse clock speed from brand string ("1500MHz" or "1.5GHz" form).
         speed_mhz = None
         mhz = re.search(r"(\d+)\s*mhz", cpu_lower)
@@ -3167,15 +3168,27 @@ def _detect_x86_vintage(cpu_brand: str, machine: str, simd_data: dict):
             if ghz:
                 speed_mhz = int(float(ghz.group(1)) * 1000)
 
+        # Check SIMD flags for SSE3 (Yonah Celeron M 4xx carries SSE3; Dothan validator rejects it)
+        simd_flags = []
+        if isinstance(simd_data, dict):
+            simd_flags = simd_data.get("flags") or simd_data.get("sample_flags") or []
+        has_sse3 = "sse3" in simd_flags or "pni" in simd_flags
+
         if machine_lower in ("i686", "i386", "x86", ""):
-            # 32-bit-only Pentium M = Banias or Dothan. Banias max clock was 1.7GHz.
-            pm_arch = "pentium_m_banias" if (speed_mhz and speed_mhz <= 1700) else "pentium_m_dothan"
+            # 32-bit-only: Banias max clock was 1.7GHz; Dothan topped out at 1.7GHz for Celeron M.
+            # Celeron M > 1.7GHz or with SSE3 is Yonah (allowed SSE3 in validator).
+            if has_sse3 or ("celeron" in cpu_lower and speed_mhz and speed_mhz > 1700):
+                pm_arch = "pentium_m_yonah"
+            elif speed_mhz and speed_mhz <= 1700:
+                pm_arch = "pentium_m_banias"
+            else:
+                pm_arch = "pentium_m_dothan"
         else:
-            # 64-bit-capable Pentium M brand = Yonah (first Core/Core Duo).
+            # 64-bit-capable Pentium M / Celeron M (Merom) = Yonah/Merom tier.
             pm_arch = "pentium_m_yonah"
 
-        print(f"[X86_VINTAGE] Pentium M: brand={cpu_brand[:50]!r} "
-              f"machine={machine_lower} speed={speed_mhz}MHz -> x86/{pm_arch}")
+        print(f"[X86_VINTAGE] Pentium/Celeron M: brand={cpu_brand[:50]!r} "
+              f"machine={machine_lower} speed={speed_mhz}MHz sse3={has_sse3} -> x86/{pm_arch}")
         return {"device_family": "x86", "device_arch": pm_arch}
 
     # Pentium III — \biii\b guards against matching "Pentium II" prefix.
@@ -3432,7 +3445,13 @@ def _classify_validated_x86_brand(cpu_brand: str):
             rf"(?:\s+\((?:klamath|deschutes|dixon)\)|"
             rf"(?:\s+(?:cpu|processor))?(?:\s+{speed})?)$",
         ),
-        ("pentium_m", 6, rf"^{vendor}pentium(?:\(r\))?\s+m(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        (
+            "pentium_m",
+            6,
+            rf"^{vendor}(?:pentium|celeron)(?:\(r\))?\s+m"
+            rf"(?:\s+(?:cpu|processor))?(?:\s+[0-9a-z]+)?"
+            rf"(?:\s*@)?(?:\s+{speed})?$",
+        ),
         ("pentium", 5, rf"^{vendor}pentium(?:\(r\))?(?:\s+(?:cpu|processor))?(?:\s+{speed})?$"),
     )
     for arch, cpu_family, pattern in patterns:
@@ -3665,10 +3684,12 @@ def _derive_enroll_weight_device(
         )
         if oracle_arch in ("x86_64", "amd64"):
             observed_arch = "pentium_m_yonah"
+        elif isinstance(oracle_flags, (list, tuple, set)) and ("sse3" in oracle_flags or "pni" in oracle_flags):
+            observed_arch = "pentium_m_yonah"
         elif speed_mhz is not None and speed_mhz <= 1700:
             observed_arch = "pentium_m_banias"
         elif speed_mhz is not None:
-            observed_arch = "pentium_m_dothan"
+            observed_arch = "pentium_m_dothan" if "celeron" not in model else "pentium_m_yonah"
         else:
             # An undifferentiated Pentium M cannot justify the highest subtype.
             observed_arch = "pentium_m_yonah"

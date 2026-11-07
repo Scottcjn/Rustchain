@@ -302,5 +302,21 @@
     "source": "https://github.com/i3boyacc/QEMU-Panel/blob/1a1dd6ded00803968bdda43581b9e3860475e085/emu_x86.cs",
     "device": {"family": "x86_64", "arch": "modern", "machine": "x86_64", "cpu": "Intel(R) Core(TM)2 Duo CPU T7700 @ 2.40GHz", "model": "QEMU Standard PC"},
     "expected": {"device_family": "x86_64", "device_arch": "modern"}
+  },
+  {
+    "id": "asus-eee-pc-701-celeron-m-900",
+    "category": "vintage_x86",
+    "provenance": "Asus Eee PC 701 4G with Intel Celeron M 353 (900MHz) i686",
+    "source": "https://github.com/linuxhw/HWInfo/blob/31b81aef173d9530eee80e016b90a4bd5c908e59/Logs/lshw",
+    "device": {
+      "family": "x86",
+      "arch": "modern",
+      "machine": "i686",
+      "cpu": "Intel(R) Celeron(R) M processor 900MHz"
+    },
+    "expected": {
+      "device_family": "x86",
+      "device_arch": "pentium_m_banias"
+    }
   }
 ]

@@ -365,6 +365,19 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         self.assertEqual(self._reward("pentium_m_banias", fp)["device_arch"], "pentium_m_banias")
         self.assertEqual(self._reward("pentium_m_dothan", fp)["device_arch"], "pentium_m_dothan")
 
+    def test_celeron_m_banias_claim_and_reward(self):
+        fp = _fingerprint("Intel(R) Celeron(R) M processor 1.50GHz", 6)
+        self.assertEqual(self._reward("pentium_m_banias", fp)["device_arch"], "pentium_m_banias")
+
+    def test_celeron_m_yonah_sse3_claim_and_reward(self):
+        fp = _fingerprint("Intel(R) Celeron(R) M CPU 420 @ 1.60GHz", 6)
+        fp["checks"]["simd_identity"]["data"]["sample_flags"] = ["fpu", "sse", "sse2", "sse3"]
+        fp["checks"]["simd_identity"]["data"]["flags"] = ["fpu", "sse", "sse2", "sse3"]
+        fp["checks"]["simd_identity"]["data"]["simd_flags_count"] = 4
+        fp["checks"]["simd_identity"]["data"]["has_sse"] = True
+        fp["checks"]["device_age_oracle"]["data"]["flags_sample"] = ["fpu", "sse", "sse2", "sse3"]
+        self.assertEqual(self._reward("pentium_m_yonah", fp)["device_arch"], "pentium_m_yonah")
+
     def test_undifferentiated_pentium_m_cannot_keep_higher_subtype(self):
         fp = _fingerprint("Intel Pentium M", 6)
         self.assertEqual(self._reward("pentium_m_banias", fp)["device_arch"], "pentium_m_yonah")

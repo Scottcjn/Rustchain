@@ -68,6 +68,44 @@ def test_pentium_name_boundaries_do_not_overlap(cpu, expected_arch):
     assert _classify(device)["device_arch"] == expected_arch
 
 
+@pytest.mark.parametrize(
+    ("cpu", "expected_arch"),
+    [
+        ("Intel(R) Celeron(R) M processor 1.50GHz", "pentium_m_banias"),
+        ("Intel Celeron M 900MHz", "pentium_m_banias"),
+        ("Intel Celeron M processor 1.80GHz", "pentium_m_yonah"),
+        ("Intel Celeron D 330", "modern"),
+        ("Intel Celeron M4", "modern"),
+    ],
+)
+def test_celeron_m_name_boundaries_and_classification(cpu, expected_arch):
+    device = {"family": "x86", "arch": "modern", "machine": "i686", "cpu": cpu}
+    assert _classify(device)["device_arch"] == expected_arch
+
+
+def test_celeron_m_sse3_fingerprint_promotes_to_yonah():
+    device = {
+        "family": "x86",
+        "arch": "modern",
+        "machine": "i686",
+        "cpu": "Intel(R) Celeron(R) M CPU 420 @ 1.60GHz",
+    }
+    fingerprint = {
+        "checks": {
+            "simd_identity": {
+                "passed": True,
+                "data": {
+                    "flags": ["sse", "sse2", "sse3"],
+                    "sample_flags": ["sse", "sse2", "sse3"],
+                    "simd_flags_count": 3,
+                    "has_sse": True,
+                },
+            }
+        }
+    }
+    assert _classify(device, fingerprint)["device_arch"] == "pentium_m_yonah"
+
+
 def _hardware_weight(classification: dict) -> float:
     family = classification["device_family"]
     arch = classification["device_arch"]
