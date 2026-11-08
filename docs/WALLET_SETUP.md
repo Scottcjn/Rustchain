@@ -55,10 +55,10 @@ Example wallet IDs:
 - `victus-x86-scott`
 - `RTC14f06ee294f327f5685d3de5e1ed501cffab33e7`
 
-On Linux, the installer saves the miner config here:
+On Linux, the one-line installer saves the miner config to `/opt/rustchain-miner/config.json`. The repo-based installers keep everything under `~/.rustchain/` instead (`setup.sh` writes `~/.rustchain/config.json`) — see [Where is my config?](#where-is-my-config). Either way:
 
 ```bash
-cat /opt/rustchain-miner/config.json
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
 ```
 
 You should see a `wallet_id` field.
@@ -358,7 +358,7 @@ If someone knows only your public wallet name, they still cannot send your funds
 
 What to back up depends on how you created it:
 
-- Miner install: save the printed wallet ID and copy `/opt/rustchain-miner/config.json`
+- Miner install: save the printed wallet ID and copy your miner config — `/opt/rustchain-miner/config.json` or `~/.rustchain/config.json`, depending on which installer you ran ([Where is my config?](#where-is-my-config))
 - Secure GUI: back up the 24-word seed phrase and `~/.rustchain/wallets/*.json`
 - Programmatic wallet: back up the seed phrase and any encrypted keystore you create
 
@@ -389,11 +389,28 @@ You must never post your seed phrase or private key.
 
 ## 6. Common questions
 
+### Where is my config?
+
+There are two miner config locations, and which one exists depends on how you installed:
+
+| Path | Written by |
+|---|---|
+| `/opt/rustchain-miner/config.json` | `scripts/install.sh`, the one-liner served as `curl -sL https://rustchain.org/install.sh \| bash` |
+| `~/.rustchain/config.json` | the repo's [`setup.sh`](../setup.sh) setup wizard |
+
+The other repo installers (`install-miner.sh`, `install.sh`) keep the wallet in `~/.rustchain/start.sh` and `~/.rustchain/config.env` instead of a JSON config.
+
+Find your config either way with:
+
+```bash
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
+```
+
 ### Where is my wallet stored?
 
 Usually here:
 
-- Miner install: `/opt/rustchain-miner/config.json`
+- Miner install: `/opt/rustchain-miner/config.json` (rustchain.org installer) or `~/.rustchain/config.json` (`setup.sh`) — see [Where is my config?](#where-is-my-config)
 - Running Linux miner: sometimes also `/tmp/local_miner_wallet.txt`
 - Secure GUI and CLI keystores: `~/.rustchain/wallets/`
 - Programmatic wallet: wherever you saved it
@@ -403,7 +420,7 @@ Usually here:
 Try these in order:
 
 ```bash
-cat /opt/rustchain-miner/config.json
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
 ls ~/.rustchain/wallets
 curl -sk https://rustchain.org/api/miners
 ```

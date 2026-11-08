@@ -263,6 +263,8 @@ Create `~/.rustchain/config.json`:
 }
 ```
 
+Note: installers write this file to different locations — see [Where is my config?](WALLET_SETUP.md#where-is-my-config).
+
 #### Step 6: Download Fingerprint Module
 
 ```bash
