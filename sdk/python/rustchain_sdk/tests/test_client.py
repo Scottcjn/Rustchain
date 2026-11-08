@@ -93,6 +93,36 @@ class TestRustChainClientHealth:
             with pytest.raises(APIError, match="Expected JSON object response"):
                 await client.health()
 
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_health_http_error_preserves_error_field_and_response_body(self):
+        """GET HTTP error preserves 'error' message and response_body."""
+        payload = {"error": "fixture temporarily unavailable", "retry_after": 60}
+        respx.get(f"{DEFAULT_NODE_URL}/health").mock(
+            return_value=httpx.Response(503, json=payload)
+        )
+        async with RustChainClient() as client:
+            with pytest.raises(APIError) as exc_info:
+                await client.health()
+        assert exc_info.value.status_code == 503
+        assert "fixture temporarily unavailable" in exc_info.value.message
+        assert exc_info.value.response_body == payload
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_health_http_error_preserves_message_field_and_response_body(self):
+        """GET HTTP error preserves 'message' field and response_body."""
+        payload = {"message": "node under maintenance", "code": 5031}
+        respx.get(f"{DEFAULT_NODE_URL}/health").mock(
+            return_value=httpx.Response(503, json=payload)
+        )
+        async with RustChainClient() as client:
+            with pytest.raises(APIError) as exc_info:
+                await client.health()
+        assert exc_info.value.status_code == 503
+        assert "node under maintenance" in exc_info.value.message
+        assert exc_info.value.response_body == payload
+
 
 class TestRustChainClientEpoch:
     """Test epoch endpoint."""
