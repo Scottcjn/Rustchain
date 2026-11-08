@@ -25,6 +25,18 @@ curl -sSL https://raw.githubusercontent.com/Scottcjn/Rustchain/main/install-mine
 
 This skips the interactive wallet prompt and uses the specified wallet name.
 
+### Where is my config?
+
+Depending on how you installed RustChain, your miner configuration file is saved at:
+- `~/.rustchain/config.json` (when installing via `install-miner.sh` or repository `setup.sh`)
+- `/opt/rustchain-miner/config.json` (when installing system-wide via `scripts/install.sh`)
+
+To view your config regardless of which installer was used:
+```bash
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
+```
+For complete configuration options, see [Where is my config?](docs/WALLET_SETUP.md#where-is-my-config).
+
 ## Supported Platforms
 
 ### Linux
