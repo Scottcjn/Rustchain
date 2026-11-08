@@ -55,10 +55,19 @@ curl -sL https://rustchain.org/install.sh | bash
 - `victus-x86-scott`
 - `RTC14f06ee294f327f5685d3de5e1ed501cffab33e7`
 
-在 Linux 上，安装程序将矿机配置保存在这里：
+### 我的配置文件在哪里？
+
+根据您安装 RustChain 的方式，矿机配置文件（`config.json`）保存在以下两个标准位置之一：
+
+- **系统全局/生产安装程序**（`curl -sSL https://rustchain.org/install.sh | bash` 或 `scripts/install.sh`）：
+  `/opt/rustchain-miner/config.json`
+- **用户/源码仓库安装程序**（`setup.sh`、`install-miner.sh` 或本地开发）：
+  `~/.rustchain/config.json`
+
+无论使用哪个安装程序，都可以运行以下单行命令查看矿机配置：
 
 ```bash
-cat /opt/rustchain-miner/config.json
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
 ```
 
 你应该能看到一个 `wallet_id` 字段。
@@ -358,7 +367,7 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 
 备份什么内容取决于你是如何创建钱包的：
 
-- 矿机安装：保存打印出的钱包 ID 并复制 `/opt/rustchain-miner/config.json`
+- 矿机安装：保存打印出的钱包 ID 并复制 `/opt/rustchain-miner/config.json`（或 `~/.rustchain/config.json`，取决于安装程序；参见[我的配置文件在哪里？](#我的配置文件在哪里)）
 - 安全版 GUI：备份 24 个单词的 seed phrase 和 `~/.rustchain/wallets/*.json`
 - 编程式钱包：备份 seed phrase 以及你创建的任何加密密钥库
 
@@ -393,7 +402,7 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 
 通常在以下位置：
 
-- 矿机安装：`/opt/rustchain-miner/config.json`
+- 矿机安装：`/opt/rustchain-miner/config.json` 或 `~/.rustchain/config.json`（参见[我的配置文件在哪里？](#我的配置文件在哪里)）
 - 运行中的 Linux 矿机：有时也在 `/tmp/local_miner_wallet.txt`
 - 安全版 GUI 和 CLI 密钥库：`~/.rustchain/wallets/`
 - 编程式钱包：你保存它的任何位置
@@ -403,7 +412,7 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 按以下顺序尝试：
 
 ```bash
-cat /opt/rustchain-miner/config.json
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
 ls ~/.rustchain/wallets
 curl -sk https://rustchain.org/api/miners
 ```
