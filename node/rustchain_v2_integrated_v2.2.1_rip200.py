@@ -2838,6 +2838,18 @@ def resolve_enroll_weight_device(conn, miner_pk: str, data: dict) -> tuple:
     the request body only when no stored verified device exists (legacy /
     pre-migration rows), mirroring the resolve_enroll_fingerprint fallback so
     deployed miners are not regressed. Robust to a missing row/column.
+
+    SECURITY (#16271): ``miner_attest_recent`` carries the GENERAL classifier
+    identity (requirement 4 of the vintage anti-spoof bounty), not a reward-
+    vouched tier — the #8022 corroboration clamp in _derive_enroll_weight_device
+    only runs inside the attestation handler's auto-enroll. An x86-vintage tier
+    read back here therefore has no corroborated evidence in THIS call and must
+    fall to the neutral x86 rate. No honest miner loses a tier it already earns:
+    an attestation that passes validation auto-enrolls the current epoch first
+    (INSERT OR IGNORE, first enrollment wins) with the corroborated reward tier,
+    so this endpoint only ever decides epochs where the miner has not attested
+    since its last stored identity. The unsigned request-body fallback is clamped
+    for the same reason: a bare ``x86``/``486`` claim with no evidence at all.
     """
     try:
         row = conn.execute(
@@ -2845,13 +2857,33 @@ def resolve_enroll_weight_device(conn, miner_pk: str, data: dict) -> tuple:
             (miner_pk,),
         ).fetchone()
         if row and row[0]:
-            return str(row[0]), str(row[1] or "default")
+            fam, arc = str(row[0]), str(row[1] or "default")
+            if _enroll_x86_vintage_is_uncorroborated(fam, arc):
+                return "x86", "default"
+            return fam, arc
     except sqlite3.Error:
         pass
     device = data.get("device")
     if not isinstance(device, dict):
         device = {}
-    return str(device.get("family", "x86")), str(device.get("arch", "default"))
+    fam = str(device.get("family", "x86"))
+    arc = str(device.get("arch", "default"))
+    if _enroll_x86_vintage_is_uncorroborated(fam, arc):
+        return "x86", "default"
+    return fam, arc
+
+
+def _enroll_x86_vintage_is_uncorroborated(family: str, arch: str) -> bool:
+    """True when an x86-vintage reward tier reaches /epoch/enroll uncorroborated.
+
+    Single test shared by both resolve_enroll_weight_device branches (stored
+    verified device and unsigned body fallback) so neither can drift apart from
+    the _derive_enroll_weight_device gate that guards the attestation path.
+    """
+    return (
+        str(family or "").strip().lower() in ("x86", "x86_64")
+        and str(arch or "").strip().lower() in _X86_VINTAGE_REWARD_ARCHES
+    )
 
 
 def _claimed_family_and_arch(device: dict) -> tuple:

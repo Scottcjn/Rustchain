@@ -1051,8 +1051,13 @@ def _calculate_anti_double_mining_rewards_conn(
             # filtered weights.
             weight = enrolled_weights[miner_id]
         else:
-            weight = _safe_weight(get_time_aged_multiplier(device_arch, chain_age_years),
-                                  miner_id, "arch multiplier")
+            # No epoch_enroll snapshot -> no corroboration vouch (#16271): an
+            # x86-vintage label settles at the neutral modern rate, exactly as
+            # in rip_200_round_robin_1cpu1vote.calculate_epoch_rewards_time_aged.
+            from rip_200_round_robin_1cpu1vote import sanitize_unvouched_x86_vintage_arch
+            weight = _safe_weight(get_time_aged_multiplier(
+                sanitize_unvouched_x86_vintage_arch(device_arch), chain_age_years),
+                miner_id, "arch multiplier")
 
         if weight > 0 and fingerprint_ok == 1:
             try:
