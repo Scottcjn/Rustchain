@@ -1,0 +1,7 @@
+# Python SDK development dependencies
+click>=8.0.0
+httpx>=0.25.0
+cryptography>=41.0.0
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+respx>=0.21.0
