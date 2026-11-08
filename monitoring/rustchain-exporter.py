@@ -5,9 +5,17 @@ Exposes RustChain node metrics in Prometheus format
 """
 import time
 import os
+import sys
+from pathlib import Path
 import requests
 from prometheus_client import start_http_server, Gauge, Counter, Info
 import logging
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from monitoring.node_probe import validate_requests_response
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('rustchain-exporter')
@@ -38,6 +46,23 @@ avg_antiquity_multiplier = Gauge('rustchain_avg_antiquity_multiplier', 'Average 
 
 scrape_errors = Counter('rustchain_scrape_errors_total', 'Total number of scrape errors')
 scrape_duration_seconds = Gauge('rustchain_scrape_duration_seconds', 'Duration of last scrape')
+last_successful_scrape_timestamp = Gauge(
+    'rustchain_last_successful_scrape_timestamp',
+    'Unix timestamp of the last successful healthy node scrape'
+)
+
+
+def probe_node_health():
+    """Fetch and validate /health using monitoring.node_probe."""
+    try:
+        url = f"{RUSTCHAIN_NODE}/health"
+        verify = TLS_CA_BUNDLE if TLS_CA_BUNDLE else TLS_VERIFY
+        response = requests.get(url, verify=verify, timeout=10)
+        return validate_requests_response(response, url=url)
+    except Exception as e:
+        logger.error(f"Error probing /health: {e}")
+        scrape_errors.inc()
+        return None
 
 
 def fetch_json(endpoint):
@@ -63,13 +88,28 @@ def collect_metrics():
     start_time = time.time()
     
     try:
-        # Health metrics
-        health = fetch_json('/health')
-        if health:
-            node_health.set(1 if health.get('ok') else 0)
-            node_uptime_seconds.set(health.get('uptime_s', 0))
-            node_db_status.set(1 if health.get('db_rw') else 0)
-            node_version.info({'version': health.get('version', 'unknown')})
+        # Health metrics validated via shared node_probe
+        probe = probe_node_health()
+        if probe is not None and probe.state == 'up':
+            node_health.set(1)
+            node_uptime_seconds.set(probe.uptime_s or 0)
+            node_db_status.set(1 if probe.db_rw else 0)
+            node_version.info({'version': probe.version or 'unknown'})
+            last_successful_scrape_timestamp.set(time.time())
+        else:
+            # Always set gauge to 0 on ANY failed, degraded, or impostor scrape
+            node_health.set(0)
+            if probe is not None:
+                if probe.db_rw is not None:
+                    node_db_status.set(1 if probe.db_rw else 0)
+                else:
+                    node_db_status.set(0)
+                logger.error(
+                    f"Health check not up (state={probe.state}): {probe.error}"
+                )
+                scrape_errors.inc()
+            else:
+                node_db_status.set(0)
         
         # Epoch metrics
         epoch = fetch_json('/epoch')
@@ -116,6 +156,7 @@ def collect_metrics():
         
     except Exception as e:
         logger.error(f"Error collecting metrics: {e}")
+        node_health.set(0)
         scrape_errors.inc()
 
 

@@ -12,12 +12,19 @@ Usage:
 
 import argparse
 import json
+from pathlib import Path
 import sys
 import time
 import urllib.request
 import urllib.error
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional, Any
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from monitoring.node_probe import probe_health, validate_health_response
 
 # ── ANSI color codes ─────────────────────────────────────────────────────────
 GREEN  = "\033[92m"
@@ -57,7 +64,7 @@ DEFAULT_NODES = [
 @dataclass
 class NodeStatus:
     url: str
-    status: str           # "online" | "slow" | "offline"
+    status: str           # "online" | "slow" | "impostor" | "degraded" | "offline"
     response_time_ms: Optional[float]
     epoch: Optional[int]
     miners: Optional[int]
@@ -67,6 +74,7 @@ class NodeStatus:
     # perfectly healthy through the 84-epoch settlement outage of 2026-03-03 to
     # 2026-05-27. None means the node does not report it (older build).
     settlement_lag_epochs: Optional[int] = None
+    state: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -117,7 +125,24 @@ class NodeHealthMonitor:
             )
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 elapsed_ms = (time.monotonic() - start) * 1000
-                raw = resp.read().decode("utf-8", errors="replace")
+                raw_bytes = resp.read()
+                raw = raw_bytes.decode("utf-8", errors="replace")
+                headers = getattr(resp, "headers", None)
+                content_type = None
+                if headers is not None and hasattr(headers, "get"):
+                    ct = headers.get("Content-Type") or headers.get("content-type")
+                    if isinstance(ct, str):
+                        content_type = ct
+
+                # Always run shared node_probe validation first for /health or HTML/non-JSON
+                probe = validate_health_response(
+                    status_code=200,
+                    body=raw,
+                    content_type=content_type,
+                    url=f"{url}{path}",
+                    response_ms=round(elapsed_ms, 1),
+                )
+
                 try:
                     data = json.loads(raw)
                 except json.JSONDecodeError:
@@ -126,26 +151,42 @@ class NodeHealthMonitor:
                     data = None
 
                 # A 200 is not evidence of a node.
-                #
-                # RustChain node 4 stopped being a node and the host was reused
-                # for a single-page app. An SPA answers 200 on EVERY unknown
-                # path, so /status returned 200 with HTML, json.loads failed,
-                # the body was quietly replaced with {}, and the node was
-                # reported "online" indefinitely because status was decided
-                # purely on response time. The loss went unnoticed for months.
-                #
-                # A node is online only if it answered with JSON that actually
-                # carries node state. Anything else is impersonating one.
-                if data is None:
+                if data is None or (content_type and "text/html" in content_type.lower()):
                     return NodeStatus(
                         url=url,
-                        status="offline",
+                        status="impostor",
                         response_time_ms=round(elapsed_ms, 1),
                         epoch=None,
                         miners=None,
-                        error=(f"/status returned {len(raw)} bytes of non-JSON "
+                        error=(f"impostor: {path} returned {len(raw)} bytes of non-JSON/HTML "
                                f"(is this still a node?): {raw[:60]!r}"),
+                        state="impostor",
                     )
+
+                if path == "/health" or ("ok" in data and "version" in data and "uptime_s" in data):
+                    if probe.state in ("impostor", "degraded"):
+                        return NodeStatus(
+                            url=url,
+                            status=probe.state,
+                            response_time_ms=round(elapsed_ms, 1),
+                            epoch=data.get("epoch") or data.get("current_epoch"),
+                            miners=(data.get("miners") or data.get("active_miners")
+                                    or data.get("enrolled_miners")),
+                            error=probe.error,
+                            state=probe.state,
+                        )
+                    if probe.state == "up" and data.get("epoch") is None and data.get("current_epoch") is None:
+                        status_word = "slow" if elapsed_ms > SLOW_THRESHOLD_MS else "online"
+                        return NodeStatus(
+                            url=url,
+                            status=status_word,
+                            response_time_ms=round(elapsed_ms, 1),
+                            epoch=None,
+                            miners=(data.get("miners") or data.get("active_miners")
+                                    or data.get("enrolled_miners")),
+                            error=None,
+                            state="up",
+                        )
 
                 epoch  = data.get("epoch") or data.get("current_epoch")
                 miners = (data.get("miners") or data.get("active_miners")
@@ -162,16 +203,16 @@ class NodeHealthMonitor:
                 except (TypeError, ValueError):
                     miners = None
 
-                # JSON with no epoch is not node state either — it is some
-                # other service that happens to speak JSON on this address.
+                # JSON with no epoch and no valid /health signature is an impostor.
                 if epoch is None:
                     return NodeStatus(
                         url=url,
-                        status="offline",
+                        status="impostor",
                         response_time_ms=round(elapsed_ms, 1),
                         epoch=None,
                         miners=miners,
-                        error="/status carried no epoch (not a RustChain node?)",
+                        error=f"impostor: {path} carried no epoch or valid /health keys (not a RustChain node?)",
+                        state="impostor",
                     )
 
                 lag = data.get("settlement_lag_epochs")
@@ -181,10 +222,6 @@ class NodeHealthMonitor:
                     lag = None
 
                 status = "slow" if elapsed_ms > SLOW_THRESHOLD_MS else "online"
-                # A settlement stall does not make the node offline — it is
-                # answering, and miners must keep enrolling so the stalled
-                # epochs stay reconstructible. Report it, do not hide it in
-                # the status word.
                 err = None
                 if lag is not None and lag >= SETTLEMENT_LAG_THRESHOLD:
                     err = (f"settlement stalled: {lag} epochs since last settled "
@@ -197,6 +234,7 @@ class NodeHealthMonitor:
                     miners=miners,
                     error=err,
                     settlement_lag_epochs=lag,
+                    state="degraded" if err else "up",
                 )
 
         except urllib.error.HTTPError as exc:
@@ -251,14 +289,8 @@ class NodeHealthMonitor:
         if statuses is None:
             statuses = self.check_all()
 
-        online = [s for s in statuses if s.status != "offline"]
+        online = [s for s in statuses if s.status in ("online", "slow", "up")]
         nodes_online = len(online)
-        # The attestation nodes are replicas of one shared ledger, so each online
-        # node reports the SAME network-wide miner count (the sibling tools
-        # ledger_verify / node_sync_validator flag any divergence as a mismatch).
-        # Summing per-node counts would multiply the true figure by the number of
-        # online nodes, so take the agreed value (max is robust to a node that is
-        # mid-sync and momentarily reporting fewer miners).
         miner_counts = [s.miners for s in online if s.miners is not None]
         total_miners = max(miner_counts) if miner_counts else 0
 
@@ -267,9 +299,17 @@ class NodeHealthMonitor:
         split_brain  = self.detect_split_brain(statuses)
 
         alerts: List[str] = []
-        offline_nodes = [s for s in statuses if s.status == "offline"]
-        slow_nodes    = [s for s in statuses if s.status == "slow"]
+        offline_nodes  = [s for s in statuses if s.status in ("offline", "down", "unreachable")]
+        impostor_nodes = [s for s in statuses if s.status == "impostor" or s.state == "impostor"]
+        degraded_nodes = [s for s in statuses if s.status == "degraded" or s.state == "degraded"]
+        slow_nodes     = [s for s in statuses if s.status == "slow"]
 
+        if impostor_nodes:
+            urls = ", ".join(s.url for s in impostor_nodes)
+            alerts.append(f"Impostor node(s) detected (invalid /health body): {urls}")
+        if degraded_nodes:
+            urls = ", ".join(s.url for s in degraded_nodes)
+            alerts.append(f"Node(s) degraded: {urls}")
         if offline_nodes:
             urls = ", ".join(s.url for s in offline_nodes)
             alerts.append(f"Node(s) offline: {urls}")
@@ -309,7 +349,7 @@ class NodeHealthMonitor:
         """
         if statuses is None:
             statuses = self.check_all()
-        epochs = {s.epoch for s in statuses if s.status != "offline" and s.epoch is not None}
+        epochs = {s.epoch for s in statuses if s.status in ("online", "slow", "up") and s.epoch is not None}
         return len(epochs) > 1
 
 
