@@ -222,8 +222,8 @@ def test_wallet_send_human_output_shows_transfer_figures(node_mock):
     body = json.loads(transfer.calls[0].request.content)
     assert body["from_address"] == ADDR
     assert body["to_address"] == OTHER
-    assert Decimal(str(body["amount_rtc"])) == Decimal("5")
-    assert Decimal(str(body["fee_rtc"])) == Decimal("1")
+    assert Decimal(str(body["amount_rtc"])) == Decimal(5)
+    assert Decimal(str(body["fee_rtc"])) == Decimal(1)
     assert re.fullmatch(r"[0-9a-f]{128}", body["signature"])
     assert body["public_key"] == WALLET.public_key_hex
     # cross-network replay binding must not regress
