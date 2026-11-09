@@ -1,0 +1,93 @@
+name: Machine Census Submission
+description: Put a physical machine that attests on RustChain on the public Machine Census (https://rustchain.org/census/)
+title: "[Census] "
+labels: [census]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## RustChain Machine Census
+        The census is a public preservation record of real machines running RustChain.
+        **Listing is free and earns no RTC. The census is a preservation record.**
+
+        Before you submit:
+        1. Run the RustChain miner on the machine (https://rustchain.org/how-to-mine-rtc.html).
+        2. Take a photo that shows **the machine**, **its serial plate**, and **a sheet of paper with this written by hand**:
+           `RTC CENSUS <your GitHub handle> <today's date>`
+
+        This issue is public: anyone can see the photo and your GitHub handle here. You may cover all but the last 4 characters of the serial number.
+        The census page itself never shows wallets, miner IDs or IP addresses. A maintainer reviews every submission.
+
+  - type: input
+    id: model
+    attributes:
+      label: Machine model
+      placeholder: Power Mac G4 (Mirrored Drive Doors)
+    validations:
+      required: true
+
+  - type: input
+    id: year
+    attributes:
+      label: Year
+      description: Year the model was made or released, as best you know.
+      placeholder: "2002"
+    validations:
+      required: true
+
+  - type: input
+    id: cpu
+    attributes:
+      label: CPU
+      placeholder: Dual PowerPC G4 7455, 1.25 GHz
+    validations:
+      required: true
+
+  - type: textarea
+    id: photos
+    attributes:
+      label: Photo URL(s)
+      description: Drag photos into this box or paste links. At least one photo must show the machine, its serial plate and the handwritten census code together.
+    validations:
+      required: true
+
+  - type: input
+    id: display-name
+    attributes:
+      label: Display name for credit (optional)
+      description: Shown on the census page next to the machine. Leave blank or write "anonymous" to stay anonymous.
+      placeholder: anonymous
+    validations:
+      required: false
+
+  - type: input
+    id: running
+    attributes:
+      label: How long has it been running RustChain?
+      placeholder: Since March 2026, about 20 hours a day
+    validations:
+      required: true
+
+  - type: input
+    id: miner-id
+    attributes:
+      label: Miner ID (optional, for maintainers only)
+      description: Lets a maintainer confirm the machine is attesting and check the 60 days for Gold. It is never copied to the census page, but this issue is public, so filling it in links your GitHub handle to the miner ID here. Leave it blank if you prefer and say so below; a maintainer will ask how to check privately.
+    validations:
+      required: false
+
+  - type: textarea
+    id: story
+    attributes:
+      label: Story (optional)
+      description: Where it came from, what you fixed, what it means to you. A short version may be shown on the census page.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: attest
+    attributes:
+      label: Confirmation
+      options:
+        - label: I own or care for this machine; the photo includes the handwritten code.
+          required: true

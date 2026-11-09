@@ -18,9 +18,8 @@
 
 ## The question
 
-The published reference rate is $0.15 (tier schedule: $0.10 base → $0.15 at 1,000+
-holders → $0.20 at 2,000+). The reference rate is an internal accounting unit, not a
-market price.
+The published reference rate is $0.15. The reference rate is an internal accounting
+unit, not a market price.
 
 **What if you valued RTC on fundamentals instead — what the ecosystem would cost to
 replace, and what an RTC has actually purchased? Is the reference rate honest,
@@ -89,12 +88,10 @@ Replacement cost ($1.5–2.5M) divided by each supply basis:
 - Even on the **most hostile basis** — full theoretical dilution against the
   discounted code-only number, ignoring hardware, IP, the dataset, and the
   proof-of-physical-hardware moat entirely — coverage ($0.18–0.30) sits **above**
-  the $0.15 reference tier.
-- On economically meaningful supply, coverage is **20–40× the tier rate**.
-- Therefore the published rate is **conservative, not aspirational**: the tier
-  schedule walks the ask *toward* where measured fundamentals already sit, rather
-  than ahead of them. Most tokens invert this — priced at large multiples of
-  anything measurable behind them.
+  the $0.15 reference rate.
+- On economically meaningful supply, coverage is **20–40× the reference rate**.
+- Therefore the published rate is **conservative**: it sits below where measured
+  fundamentals already are, not ahead of them.
 - **Coverage is not a price.** RTC has no off-ramp and is not traded by the project. This
   analysis answers one question only: *is the reference rate honest?* The measured
   answer is yes — with room below fundamentals, not above them.

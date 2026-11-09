@@ -1,44 +1,28 @@
 #!/usr/bin/env python3
 """RustChain /api/tokenomics endpoint.
 
-Read-only. Serves the published RTC reference rate, live holder count,
-and the holder-milestone schedule codified at rustchain-bounties#12458.
+Read-only. Serves the fixed RTC supply, live holder/wallet counts and
+circulating supply from the ledger, plus a plain statement of what RTC is.
 
-The current rate is read from tokenomics_config.json next to this file so
-milestone flips are an ops action (edit config + announce), not a deploy.
+RTC carries no USD reference rate and no holder-count price schedule: it is
+an experimental token with no cash value and no off-ramp (see POLICY).
 Registered from wsgi.py via register_tokenomics(app, DB_PATH).
 """
 
-import json
-import os
 import sqlite3
 import time
 from contextlib import closing
 
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-_CONFIG_PATH = os.path.join(_BASE_DIR, "tokenomics_config.json")
-
 TOTAL_SUPPLY_RTC = 8_388_608  # 2^23, consensus-enforced
 UNIT = 1_000_000  # uRTC per RTC
 
-# Holder milestones per rustchain-bounties#12458 (one-way ratchet,
-# announced 24-48h ahead, never retroactive)
-MILESTONES = [
-    {"holders": 761, "reference_rate_usd": 0.10, "label": "genesis"},
-    {"holders": 1000, "reference_rate_usd": 0.15, "label": "1k holders"},
-    {"holders": 2000, "reference_rate_usd": 0.20, "label": "2k holders"},
-]
+POLICY = ("RTC is an experimental token used inside the RustChain ecosystem to "
+          "recognize contributions and pay for services. It has no cash value and no "
+          "off-ramp: no exchange listing, no redemption, no conversion to cash. "
+          "Bounty amounts are set in RTC per bounty.")
 
 _cache = {"ts": 0.0, "holders": 0, "wallets": 0, "circulating_rtc": 0.0}
 _CACHE_TTL_S = 60
-
-
-def _read_rate() -> float:
-    try:
-        with open(_CONFIG_PATH) as f:
-            return float(json.load(f)["reference_rate_usd"])
-    except (OSError, ValueError, KeyError):
-        return 0.15  # last published rate as fallback
 
 
 def _ledger_stats(db_path: str) -> dict:
@@ -70,27 +54,13 @@ def register_tokenomics(app, db_path: str):
         except sqlite3.Error:
             return jsonify({"ok": False, "error": "ledger unavailable"}), 503
 
-        rate = _read_rate()
-        holders = stats["holders"]
-        upcoming = [m for m in MILESTONES if m["reference_rate_usd"] > rate]
-        next_milestone = None
-        if upcoming:
-            nxt = min(upcoming, key=lambda m: m["holders"])
-            next_milestone = dict(nxt, holders_remaining=max(0, nxt["holders"] - holders))
-
         return jsonify({
             "ok": True,
             "token": "RTC",
             "total_supply_rtc": TOTAL_SUPPLY_RTC,
-            "reference_rate_usd": rate,
-            "rate_basis": ("internal reference rate for bounty accounting, "
-                           "not a market price or promise of convertibility"),
-            "holders": holders,
+            "holders": stats["holders"],
             "wallets": stats["wallets"],
             "circulating_rtc": stats["circulating_rtc"],
-            "milestones": MILESTONES,
-            "next_milestone": next_milestone,
-            "policy": ("one-way ratchet, announced 24-48h ahead, not retroactive "
-                       "(github.com/Scottcjn/rustchain-bounties/issues/12458)"),
+            "policy": POLICY,
             "as_of": int(time.time()),
         })

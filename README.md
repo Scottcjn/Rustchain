@@ -429,28 +429,11 @@ Total premine: **6%** (503,316 RTC = 4 × 125,829.12, one per founder wallet). P
 
 Emission is a fixed 1.5 RTC per epoch and does not halve. It continues at that rate until the 8,388,608 RTC (2²³) supply cap is reached, consistent with RIP-0004 and the running node. This matches the "Fixed forever" cap noted above.
 
-### Reference rate climbs as holder count grows
+### Bounty sizing
 
-The published USD-equivalent reference rate for RTC moves up as the network gains wallet holders. **Per-bounty RTC awards scale DOWN inversely**, so the *reference value paid per finding* stays stable as the reference rate steps up. There is currently no registered live API for that internal reference rate; the table and linked policy issue below are the published source. For machine-readable chain emission values, [`GET /epoch`](docs/READ_ONLY_API_CONTRACT.md#get-epoch) returns the confirmed epoch pot, epoch size, enrollment count, and fixed total supply. This distinction resolves the broken endpoint claim reported in [#7910](https://github.com/Scottcjn/Rustchain/issues/7910).
+Bounty amounts are set in RTC per bounty and may change over time. RTC is an experimental in-ecosystem token with no cash value and no off-ramp.
 
-| Holder count | Reference rate | Bounty rate scale |
-|--------------|----------------|-------------------|
-| Genesis (~761 holders) | $0.10 | initial |
-| ~1,000+ holders (today) | $0.15 | **Current** |
-| 2,000 holders | $0.20 | ~50% of current |
-
-**Examples after first reduction (at 1,000 holders / $0.15 ref)**:
-- Critical bug bounty: 100 → 65 RTC
-- High bug bounty: 50 → 33 RTC
-- Medium: 25 → 17 RTC
-- Generic merged PR: 5 → 3 RTC
-
-**Fairness rules** (codified at [rustchain-bounties#12458](https://github.com/Scottcjn/rustchain-bounties/issues/12458)):
-- Not retroactive — work submitted under the old rate gets the old rate
-- Announced ahead — 24-48 hour heads-up before each milestone
-- One-way ratchet — rates ONLY go down as the reference rate steps up, never back up
-
-Rewards aren't anchored to a nominal RTC number; they're anchored to the reference value of the underlying work. As the internal reference rate steps up, the reward count per finding drops while the reference value stays consistent. **The math protects both the contributor and the program.**
+For machine-readable chain emission values, [`GET /epoch`](docs/READ_ONLY_API_CONTRACT.md#get-epoch) returns the confirmed epoch pot, epoch size, enrollment count, and fixed total supply (see [#7910](https://github.com/Scottcjn/Rustchain/issues/7910)).
 
 > The reference rate is an **internal accounting unit** for bounties and service credits — not a market price. RTC is **one way in, no way out**: it is earned for contributions or bought as credits on BoTTube to spend on services in the ecosystem. There is no off-ramp. See [Earn & Spend RTC](https://github.com/Scottcjn/rustchain-bounties/blob/main/docs/EARN_AND_SPEND.md).
 

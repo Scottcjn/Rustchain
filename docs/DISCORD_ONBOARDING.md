@@ -40,12 +40,9 @@ participant a real on-chain RTC address, and adds a loyalty bonus for members wh
 
 ## Why it matters
 
-This onboarding takes RustChain from **766 on-chain holders to ~1,065**, crossing the
-**1,000-holder threshold**. Per the published tokenomics, that lifts the internal
-**reference rate from $0.10 to $0.15 per RTC**.
+This onboarding takes RustChain from **766 on-chain holders to ~1,065**.
 
-> **Note on the reference rate:** $0.15 is RustChain's *internal reference rate*, scaled by
-> holder count. RTC has no off-ramp — it is earned and spent inside the ecosystem, and the reference
+> **Note on the reference rate:** $0.15 is RustChain's *internal reference rate*. RTC has no off-ramp — it is earned and spent inside the ecosystem, and the reference
 > rate is an accounting benchmark for bounty/reward sizing, not a market price.
 
 ## Claiming & custody
