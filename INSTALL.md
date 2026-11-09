@@ -93,6 +93,20 @@ After installation, you'll have the following structure at `~/.rustchain/`:
 └── miner.log               # Miner logs (if auto-start enabled)
 ```
 
+### Where is my config?
+
+Depending on how you installed the miner, your wallet and configuration live in different paths (see [Where is my config? in `docs/WALLET_SETUP.md`](docs/WALLET_SETUP.md#where-is-my-config)):
+
+- **`install-miner.sh` (this guide)**: Passes `--wallet <WALLET>` directly in `~/.rustchain/start.sh` and the systemd/launchd service file (does not write a `config.json`).
+- **`setup.sh` (interactive repo wizard)**: Writes `~/.rustchain/config.json` (`"wallet_name"`).
+- **`https://rustchain.org/install.sh` (`scripts/install.sh`)**: Writes `/opt/rustchain-miner/config.json` (`"wallet_id"`).
+
+To inspect a JSON config from either `/opt/rustchain-miner/config.json` or `~/.rustchain/config.json`:
+
+```bash
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
+```
+
 ## Auto-Start Configuration
 
 ### Linux (systemd)
