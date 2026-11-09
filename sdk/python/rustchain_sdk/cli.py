@@ -399,6 +399,236 @@ async def _attest(wallet_address: str, seed_phrase: list, node: str, as_json: bo
         sys.exit(1)
 
 
+# ─────────────────────────────────────────────────────────────────
+# BoTTube RTC Services Commands (rustchain services ...)
+# ─────────────────────────────────────────────────────────────────
+
+@main.group(name="services")
+def services_group():
+    """BoTTube RTC-payable services (list, buy, use, purchases)."""
+    pass
+
+
+@services_group.command(name="list")
+@click.option(
+    "--url",
+    "base_url",
+    default="https://bottube.ai",
+    help="BoTTube base URL.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output as JSON.",
+)
+def services_list(base_url: str, as_json: bool):
+    """List available BoTTube RTC-payable services."""
+    from decimal import Decimal
+    from .bottube import BoTTubeClient, BoTTubeError
+
+    try:
+        client = BoTTubeClient(base_url=base_url)
+        offers = client.list_services()
+        if as_json:
+            click.echo(json.dumps([o.to_dict() for o in offers], indent=2))
+        else:
+            click.echo(f"Available BoTTube Services ({len(offers)}):")
+            for o in offers:
+                click.echo(
+                    f"   {o.service_key:<18} {o.price_rtc} RTC  ({o.uses} use(s)) — {o.name}: {o.description}"
+                )
+    except BoTTubeError as e:
+        click.echo(f"❌  Error: {e}", err=True)
+        sys.exit(1)
+
+
+@services_group.command(name="buy")
+@click.argument("service_key")
+@click.option(
+    "--qty",
+    "quantity",
+    type=int,
+    default=1,
+    help="Quantity to purchase (1-100).",
+)
+@click.option(
+    "--yes",
+    "-y",
+    "assume_yes",
+    is_flag=True,
+    help="Skip confirmation prompt.",
+)
+@click.option(
+    "--url",
+    "base_url",
+    default="https://bottube.ai",
+    help="BoTTube base URL.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output as JSON.",
+)
+def services_buy(
+    service_key: str,
+    quantity: int,
+    assume_yes: bool,
+    base_url: str,
+    as_json: bool,
+):
+    """Purchase a BoTTube RTC service and return its service token."""
+    from decimal import Decimal
+    from .bottube import (
+        BoTTubeClient,
+        BoTTubeError,
+        MAX_PURCHASE_QUANTITY,
+    )
+
+    if quantity < 1 or quantity > MAX_PURCHASE_QUANTITY:
+        click.echo(f"❌  Error: quantity must be between 1 and {MAX_PURCHASE_QUANTITY}", err=True)
+        sys.exit(1)
+
+    try:
+        client = BoTTubeClient(base_url=base_url)
+        unit_price = None
+        try:
+            for offer in client.list_services():
+                if offer.service_key == service_key:
+                    unit_price = offer.price_rtc
+                    break
+        except Exception:
+            unit_price = None
+
+        if unit_price is not None:
+            total_cost = unit_price * Decimal(quantity)
+            summary_line = f"{service_key}: {unit_price} RTC × {quantity} = {total_cost} RTC"
+        else:
+            summary_line = f"{service_key}: quantity={quantity}"
+
+        if not assume_yes:
+            if not click.confirm(f"Confirm purchase ({summary_line})?", default=False):
+                click.echo("Purchase cancelled.", err=True)
+                sys.exit(1)
+        elif not as_json:
+            click.echo(f"Purchasing {summary_line}...")
+
+        receipt = client.pay(service_key, quantity=quantity)
+        if as_json:
+            click.echo(json.dumps(receipt.to_dict(), indent=2))
+        else:
+            click.echo(f"✅  Purchased {receipt.service} ({receipt.service_key})")
+            click.echo(f"   Amount Paid:       {receipt.amount_rtc} RTC (qty {receipt.quantity})")
+            click.echo(f"   Service Token:     {receipt.service_token}")
+            click.echo(f"   Uses Remaining:    {receipt.uses_remaining}")
+            if receipt.balance_remaining is not None:
+                click.echo(f"   Balance Remaining: {receipt.balance_remaining} RTC")
+    except BoTTubeError as e:
+        click.echo(f"❌  Error: {e}", err=True)
+        sys.exit(1)
+
+
+@services_group.command(name="use")
+@click.argument("token")
+@click.argument("params", nargs=-1)
+@click.option(
+    "--payload",
+    "payload_json",
+    default=None,
+    help="Optional JSON object payload.",
+)
+@click.option(
+    "--url",
+    "base_url",
+    default="https://bottube.ai",
+    help="BoTTube base URL.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output as JSON.",
+)
+def services_use(
+    token: str,
+    params: tuple,
+    payload_json: Optional[str],
+    base_url: str,
+    as_json: bool,
+):
+    """Consume one use of a BoTTube service token (optionally passing KEY=VALUE pairs)."""
+    from .bottube import BoTTubeClient, BoTTubeError
+
+    payload = {}
+    if payload_json:
+        try:
+            parsed = json.loads(payload_json)
+            if not isinstance(parsed, dict):
+                raise ValueError("--payload must be a JSON object")
+            payload.update(parsed)
+        except Exception as e:
+            click.echo(f"❌  Error parsing --payload: {e}", err=True)
+            sys.exit(1)
+
+    for item in params:
+        if "=" not in item:
+            click.echo(f"❌  Error: invalid parameter '{item}' (expected KEY=VALUE)", err=True)
+            sys.exit(1)
+        k, v = item.split("=", 1)
+        payload[k.strip()] = v
+
+    try:
+        client = BoTTubeClient(base_url=base_url)
+        result = client.use(token, **payload)
+        if as_json:
+            click.echo(json.dumps(result.to_dict(), indent=2))
+        else:
+            click.echo(f"✅  Service token redeemed ({result.service_key})")
+            click.echo(f"   Uses Remaining: {result.uses_remaining}")
+            if result.expires_at is not None:
+                click.echo(f"   Expires At:     {result.expires_at}")
+    except BoTTubeError as e:
+        click.echo(f"❌  Error: {e}", err=True)
+        sys.exit(1)
+
+
+@services_group.command(name="purchases")
+@click.option(
+    "--url",
+    "base_url",
+    default="https://bottube.ai",
+    help="BoTTube base URL.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output as JSON.",
+)
+def services_purchases(base_url: str, as_json: bool):
+    """List RTC service purchases for the authenticated BoTTube agent."""
+    from .bottube import BoTTubeClient, BoTTubeError
+
+    try:
+        client = BoTTubeClient(base_url=base_url)
+        history = client.purchases()
+        if as_json:
+            click.echo(json.dumps(history.to_dict(), indent=2))
+        else:
+            click.echo(f"RTC Service Purchases ({len(history.purchases)}):")
+            if history.balance is not None:
+                click.echo(f"Current Balance: {history.balance} RTC")
+            for p in history.purchases:
+                click.echo(
+                    f"   {p.service_key:<18} qty={p.quantity} cost={p.amount_rtc} RTC "
+                    f"status={p.status} uses={p.uses_remaining}/{p.uses_total}"
+                )
+    except BoTTubeError as e:
+        click.echo(f"❌  Error: {e}", err=True)
+        sys.exit(1)
+
+
 # Allow running as `python -m rustchain_sdk.cli`
 if __name__ == "__main__":
     main()
