@@ -951,7 +951,47 @@ class MacMiner:
             print("[{}] {}".format(ts, reason))
         ok = self.attest()
         self._record_attest_outcome(ok)
+        if ok:
+            self.enroll()
         return ok
+
+    def enroll(self):
+        """Enroll in the current epoch so finalize_epoch distributes RTC rewards."""
+        try:
+            current_epoch = None
+            ep_resp = self.transport.get("/epoch", timeout=10)
+            if ep_resp.status_code == 200:
+                current_epoch = ep_resp.json().get("epoch")
+
+            attest_miner_id = self._attestation_miner_id()
+            payload = {
+                "miner_pubkey": self.wallet,
+                "miner_id": attest_miner_id,
+                "device": {
+                    "family": self.hw_info.get("family", "Apple Silicon"),
+                    "arch": self.hw_info.get("arch", "arm64"),
+                },
+                "fingerprint": self.fingerprint_data,
+            }
+            if self.signing_key and current_epoch is not None:
+                enroll_msg = "{}|{}|{}".format(self.wallet, attest_miner_id, current_epoch).encode("utf-8")
+                payload["signature"] = self.signing_key.sign(enroll_msg).signature.hex()
+                payload["public_key"] = self.signing_pubkey_hex
+
+            resp = self.transport.post("/epoch/enroll", json=payload, timeout=30)
+            if resp.status_code == 200:
+                res = resp.json()
+                if res.get("ok"):
+                    self._last_enrolled_epoch = current_epoch
+                    print(success("  [OK] Enrolled in Epoch {} | Weight: {}x".format(
+                        res.get("epoch", current_epoch), res.get("weight", 1.2)
+                    )))
+                    return True
+            print(warning("  Enrollment response: HTTP {} {}".format(resp.status_code, resp.text[:200])))
+            return False
+        except Exception as e:
+            print(warning("  Enrollment error: {}".format(e)))
+            return False
 
     def check_eligibility(self):
         """Check lottery eligibility."""
@@ -968,30 +1008,33 @@ class MacMiner:
             return {"eligible": False, "reason": str(e)}
 
     def submit_header(self, slot):
-        """Submit header for slot."""
+        """Submit signed block header using canonical BLAKE2b-256 preimage."""
         try:
             chain_miner_id = self.wallet
-            message = "slot:{}:miner:{}:ts:{}".format(slot, chain_miner_id, int(time.time()))
-            message_hex = message.encode().hex()
+            header = {
+                "slot": slot,
+                "miner": chain_miner_id,
+                "timestamp": int(time.time()),
+            }
+            canonical_json = json.dumps(header, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            canonical_msg = hashlib.blake2b(canonical_json, digest_size=32).digest()
+            message_hex = canonical_msg.hex()
+
             if self.signing_key:
-                sig_data = self.signing_key.sign(message.encode()).signature.hex()
+                sig_data = self.signing_key.sign(canonical_msg).signature.hex()
                 pubkey = self.signing_pubkey_hex
             else:
                 sig_data = hashlib.sha512(
-                    "{}{}".format(message, self.wallet).encode()
+                    "{}{}".format(message_hex, self.wallet).encode()
                 ).hexdigest()
                 pubkey = self.wallet
 
             header_payload = {
                 "miner_id": chain_miner_id,
-                "header": {
-                    "slot": slot,
-                    "miner": chain_miner_id,
-                    "timestamp": int(time.time())
-                },
+                "header": header,
                 "message": message_hex,
                 "signature": sig_data,
-                "pubkey": pubkey
+                "pubkey": pubkey,
             }
 
             resp = self.transport.post(
@@ -1008,7 +1051,7 @@ class MacMiner:
                     self.shares_accepted += 1
                     return True, result
                 return False, result
-            return False, {"error": "HTTP {}".format(resp.status_code)}
+            return False, {"error": "HTTP {}: {}".format(resp.status_code, resp.text[:200])}
 
         except Exception as e:
             return False, {"error": str(e)}
@@ -1018,9 +1061,16 @@ class MacMiner:
         ts = datetime.now().strftime('%H:%M:%S')
         print("\n[{}] Starting miner...".format(ts))
 
-        # Initial attestation (backed off; see try_attest)
-        while not self.shutdown_requested and not self.try_attest():
-            self.sleep_until_shutdown(max(1.0, self._next_attest_at - time.time()))
+        # Check if node already holds a fresh attestation for this miner before spending hourly budget
+        init_elig = self.check_eligibility()
+        if init_elig.get("reason") != "not_attested" and init_elig.get("slot", 0) > 0:
+            print(success("  Existing node attestation active (slot {}); enrolling in epoch...".format(init_elig.get("slot"))))
+            self.attestation_valid_until = time.time() + (ATTESTATION_TTL // 2)
+            self.enroll()
+        else:
+            # Initial attestation (backed off; see try_attest)
+            while not self.shutdown_requested and not self.try_attest():
+                self.sleep_until_shutdown(max(1.0, self._next_attest_at - time.time()))
         if self.shutdown_requested:
             print("Miner stopped gracefully.")
             return
@@ -1043,6 +1093,8 @@ class MacMiner:
                 # Check eligibility
                 eligibility = self.check_eligibility()
                 slot = eligibility.get("slot", 0)
+                if slot > 0 and (slot // 144) != getattr(self, "_last_enrolled_epoch", None):
+                    self.enroll()
 
                 if eligibility.get("eligible"):
                     ts = datetime.now().strftime('%H:%M:%S')
