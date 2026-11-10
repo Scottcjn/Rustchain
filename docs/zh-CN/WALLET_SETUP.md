@@ -55,13 +55,13 @@ curl -sL https://rustchain.org/install.sh | bash
 - `victus-x86-scott`
 - `RTC14f06ee294f327f5685d3de5e1ed501cffab33e7`
 
-在 Linux 上，安装程序将矿机配置保存在这里：
+在 Linux 和 macOS 上，矿机配置文件位置取决于你使用的安装程序（参见 [我的配置文件在哪里？](#我的配置文件在哪里)）：
 
 ```bash
-cat /opt/rustchain-miner/config.json
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
 ```
 
-你应该能看到一个 `wallet_id` 字段。
+你应该能看到一个 `wallet_id`（由 `rustchain.org/install.sh` 生成）或 `wallet_name`（由 `setup.sh` 生成）字段。
 
 示例：
 
@@ -358,7 +358,7 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 
 备份什么内容取决于你是如何创建钱包的：
 
-- 矿机安装：保存打印出的钱包 ID 并复制 `/opt/rustchain-miner/config.json`
+- 矿机安装：保存打印出的钱包 ID 并复制 `/opt/rustchain-miner/config.json` 或 `~/.rustchain/config.json`（参见 [我的配置文件在哪里？](#我的配置文件在哪里)）
 - 安全版 GUI：备份 24 个单词的 seed phrase 和 `~/.rustchain/wallets/*.json`
 - 编程式钱包：备份 seed phrase 以及你创建的任何加密密钥库
 
@@ -389,11 +389,27 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 
 ## 6. 常见问题
 
+### 我的配置文件在哪里？
+
+矿机配置文件路径取决于你使用的安装方式（参见英文版 [Where is my config?](../WALLET_SETUP.md#where-is-my-config)）：
+
+- `curl -sL https://rustchain.org/install.sh | bash`（`scripts/install.sh`）：写入 `/opt/rustchain-miner/config.json`（字段 `"wallet_id"`）
+- `./setup.sh`（仓库交互式向导）或手动创建：写入 `~/.rustchain/config.json`（字段 `"wallet_name"`）
+- `./install-miner.sh`（仓库虚拟环境安装脚本）：不生成 `config.json`，而是将 `--wallet <WALLET>` 直接写入 `~/.rustchain/start.sh` 及 systemd/launchd 服务文件
+- `./install.sh`（旧版安装脚本）：写入 `~/.rustchain/config.env`
+
+使用以下单行命令即可同时查找两个 JSON 配置文件路径：
+
+```bash
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
+```
+
 ### 我的钱包存储在哪里？
 
-通常在以下位置：
+通常在以下位置（参见 [我的配置文件在哪里？](#我的配置文件在哪里)）：
 
-- 矿机安装：`/opt/rustchain-miner/config.json`
+- 矿机安装：`/opt/rustchain-miner/config.json`（`rustchain.org/install.sh`）或 `~/.rustchain/config.json`（`setup.sh`）
+- 仓库 `install-miner.sh` / `install.sh`：`~/.rustchain/start.sh` 或 `~/.rustchain/config.env`
 - 运行中的 Linux 矿机：有时也在 `/tmp/local_miner_wallet.txt`
 - 安全版 GUI 和 CLI 密钥库：`~/.rustchain/wallets/`
 - 编程式钱包：你保存它的任何位置
@@ -403,7 +419,8 @@ RustChain 要求 Ed25519 签名，以便网络可以验证：
 按以下顺序尝试：
 
 ```bash
-cat /opt/rustchain-miner/config.json
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
+grep -E -- "--wallet|WALLET" ~/.rustchain/start.sh ~/.rustchain/config.env 2>/dev/null
 ls ~/.rustchain/wallets
 curl -sk https://rustchain.org/api/miners
 ```
