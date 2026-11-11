@@ -1,236 +1,231 @@
-# SPDX-License-Identifier: MIT
-"""RustChain LangChain tools.
+"""
+LangChain `BaseTool` and `RustChainToolkit` implementation for RustChain (`Bounty #3074`).
 
-A LangChain ``BaseTool`` exposing read-only RustChain node endpoints so an
-LLM agent can check wallet balances, list ecosystem bounties, inspect node
-health, and read the current epoch — all against the public RustChain node
-(https://rustchain.org, wallet = any string, no auth).
-
-Dependencies: ``langchain-core`` and ``httpx`` (or ``requests``).
+Supports both `langchain_core.tools.BaseTool` (when installed) and a zero-dependency
+compatible `BaseTool` shim so unit tests and lightweight agents run in any Python environment.
 """
 
 from __future__ import annotations
 
 import json
-import os
-from typing import Any, Dict, List, Optional
+import re
+import ssl
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Any, Dict, List, Optional, Type
 
-from langchain_core.tools import BaseTool
-from pydantic import BaseModel, Field
+try:
+    from langchain_core.tools import BaseTool  # type: ignore
+except ImportError:
+    class BaseTool:  # type: ignore
+        """Lightweight BaseTool fallback when `langchain_core` is not installed."""
+        name: str = "base_tool"
+        description: str = ""
 
-try:  # httpx preferred (async-capable), fall back to requests
-    import httpx
+        def __init__(self, **kwargs: Any) -> None:
+            for k, v in kwargs.items():
+                setattr(self, k, v)
 
-    _HTTPX = True
-except ImportError:  # pragma: no cover - environment fallback
-    httpx = None  # type: ignore[assignment]
-    _HTTPX = False
-    import requests
+        def invoke(self, input_data: Any = None, **kwargs: Any) -> Any:
+            if isinstance(input_data, dict):
+                return self._run(**input_data)
+            if isinstance(input_data, str):
+                return self._run(input_data)
+            return self._run(**kwargs)
 
-DEFAULT_NODE = "https://rustchain.org"
-DEFAULT_BOUNTIES_REPO = "Scottcjn/rustchain-bounties"
-TIMEOUT_S = 15.0
-
-
-class _Client:
-    """Tiny sync HTTP helper so the tools don't drag in a full SDK."""
-
-    def __init__(self, node_url: str, timeout: float = TIMEOUT_S, headers: Optional[Dict[str, str]] = None):
-        self.node_url = node_url.rstrip("/")
-        self.timeout = timeout
-        self.headers = headers or {}
-
-    def get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        url = f"{self.node_url}{path}"
-        try:
-            if _HTTPX:
-                resp = httpx.get(url, params=params, headers=self.headers, timeout=self.timeout)
-            else:
-                resp = requests.get(url, params=params, headers=self.headers, timeout=self.timeout)
-            resp.raise_for_status()
-        except Exception as exc:
-            return {"ok": False, "error": str(exc)}
-        try:
-            return resp.json()
-        except ValueError:
-            return {"ok": False, "error": "non_json_response", "status": resp.status_code}
+        def run(self, tool_input: Any = None, **kwargs: Any) -> Any:
+            return self.invoke(tool_input, **kwargs)
 
 
-# ---------------------------------------------------------------------------
-# Schemas (pydantic) — one input schema per tool improves tool-call reliability.
-# ---------------------------------------------------------------------------
+DEFAULT_NODE_URLS = (
+    "https://rustchain.org",
+    "https://50.28.86.131",
+)
+BOUNTIES_API_URL = "https://api.github.com/repos/Scottcjn/rustchain-bounties/issues"
+RTC_REWARD_RE = re.compile(r"(\d+(?:\.\d+)?)\s*RTC", re.IGNORECASE)
 
-class CheckBalanceInput(BaseModel):
-    wallet_id: str = Field(
-        description="The RustChain wallet id / miner address to look up. "
-        "Any string wallet is accepted (agent-native, no auth)."
+
+class RustChainTool(BaseTool):
+    """
+    Native LangChain tool for interacting with the RustChain Mainnet node and bounty board.
+
+    Exposes:
+      - `check_balance(wallet_id: str) -> float`
+      - `list_bounties(limit: int = 10) -> list[dict]`
+      - `get_node_health() -> dict`
+      - `get_current_epoch() -> dict`
+    """
+
+    name: str = "rustchain"
+    description: str = (
+        "Interact with the RustChain Proof-of-Antiquity blockchain and bounty board: "
+        "check RTC wallet balances, inspect node health and current epoch, and list open RTC bounties."
     )
+    node_url: str = "https://50.28.86.131"
+    fallback_node_url: str = "https://rustchain.org"
+    verify_ssl: bool = False
+    timeout: int = 15
 
+    def _http_get_json(self, url: str, headers: Optional[Dict[str, str]] = None) -> Any:
+        ctx = None if self.verify_ssl else ssl._create_unverified_context()
+        req_headers = {
+            "User-Agent": "langchain-rustchain/0.2.0",
+            "Accept": "application/json",
+        }
+        if headers:
+            req_headers.update(headers)
+        req = urllib.request.Request(url, headers=req_headers, method="GET")
+        with urllib.request.urlopen(req, context=ctx, timeout=self.timeout) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            return json.loads(raw) if raw else {}
 
-class ListBountiesInput(BaseModel):
-    limit: int = Field(
-        default=10,
-        ge=1,
-        le=50,
-        description="Maximum number of open bounties to return.",
-    )
+    def _node_get(self, path: str) -> Dict[str, Any]:
+        last_err: Optional[Exception] = None
+        for base in (self.node_url, self.fallback_node_url):
+            if not base:
+                continue
+            url = f"{base.rstrip('/')}/{path.lstrip('/')}"
+            try:
+                data = self._http_get_json(url)
+                if isinstance(data, dict):
+                    return data
+            except Exception as e:
+                last_err = e
+        raise RuntimeError(f"RustChain node request failed for {path}: {last_err}")
 
+    def check_balance(self, wallet_id: str) -> float:
+        """Query the RTC balance of a RustChain wallet or miner ID."""
+        if not wallet_id or not isinstance(wallet_id, str) or not wallet_id.strip():
+            raise ValueError("wallet_id must be a non-empty string")
+        encoded = urllib.parse.quote(wallet_id.strip())
+        data = self._node_get(f"/wallet/balance?miner_id={encoded}")
+        for key in ("amount_rtc", "balance_rtc", "balance", "rtc"):
+            if key in data and data[key] is not None:
+                return float(data[key])
+        if "amount_i64" in data and data["amount_i64"] is not None:
+            return round(float(data["amount_i64"]) / 1_000_000.0, 6)
+        return 0.0
 
-class GetNodeHealthInput(BaseModel):
-    pass
+    def get_node_health(self) -> Dict[str, Any]:
+        """Return live `/health` status from the RustChain Mainnet node."""
+        return self._node_get("/health")
 
+    def get_current_epoch(self) -> Dict[str, Any]:
+        """Return live `/epoch` telemetry from the RustChain Mainnet node."""
+        return self._node_get("/epoch")
 
-class GetCurrentEpochInput(BaseModel):
-    pass
+    def list_bounties(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """List open bounties from `Scottcjn/rustchain-bounties` with parsed RTC rewards."""
+        if limit <= 0:
+            return []
+        per_page = min(max(limit * 2, 20), 100)
+        url = f"{BOUNTIES_API_URL}?state=open&labels=bounty&per_page={per_page}"
+        raw_issues = self._http_get_json(url)
+        if not isinstance(raw_issues, list):
+            return []
+        bounties: List[Dict[str, Any]] = []
+        for iss in raw_issues:
+            if not isinstance(iss, dict) or "pull_request" in iss:
+                continue
+            title = iss.get("title") or ""
+            body = iss.get("body") or ""
+            m = RTC_REWARD_RE.search(title) or RTC_REWARD_RE.search(body[:400])
+            reward_rtc = float(m.group(1)) if m else 0.0
+            bounties.append(
+                {
+                    "issue_number": int(iss["number"]),
+                    "title": title,
+                    "reward_rtc": reward_rtc,
+                    "url": iss.get("html_url") or f"https://github.com/Scottcjn/rustchain-bounties/issues/{iss['number']}",
+                    "labels": [lbl.get("name", "") for lbl in iss.get("labels", []) if isinstance(lbl, dict)],
+                    "comments": int(iss.get("comments", 0)),
+                }
+            )
+            if len(bounties) >= limit:
+                break
+        return bounties
 
+    def _run(
+        self,
+        action: str = "health",
+        wallet_id: Optional[str] = None,
+        limit: int = 10,
+        **kwargs: Any,
+    ) -> Any:
+        """Dispatch a tool action (`balance`, `bounties`, `health`, `epoch`)."""
+        act = (action or "health").strip().lower()
+        if act in ("balance", "check_balance"):
+            if not wallet_id:
+                raise ValueError("wallet_id is required when action='balance'")
+            return self.check_balance(wallet_id)
+        if act in ("bounties", "list_bounties"):
+            return self.list_bounties(limit=int(limit))
+        if act in ("health", "get_node_health"):
+            return self.get_node_health()
+        if act in ("epoch", "get_current_epoch"):
+            return self.get_current_epoch()
+        raise ValueError(f"Unsupported RustChainTool action: {action!r}")
 
-# ---------------------------------------------------------------------------
-# Tools
-# ---------------------------------------------------------------------------
 
 class RustChainBalanceTool(BaseTool):
-    """Check the RTC balance of a RustChain wallet."""
-
     name: str = "rustchain_check_balance"
-    description: str = (
-        "Check the RTC balance of a RustChain wallet id. "
-        "Returns the balance in RTC (and the raw integer amount). "
-        "Use for questions like 'how much RTC does wallet X hold?'."
-    )
-    args_schema: type[BaseModel] = CheckBalanceInput
+    description: str = "Check the RTC balance for a RustChain wallet address or miner ID."
 
-    node_url: str = DEFAULT_NODE
+    def __init__(self, client: Optional[RustChainTool] = None, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._client = client or RustChainTool()
 
-    def _run(self, wallet_id: str) -> str:
-        client = _Client(self.node_url)
-        data = client.get(
-            "/wallet/balance", params={"miner_id": wallet_id}
-        )
-        if not data.get("ok", True):
-            return json.dumps({"ok": False, "error": data.get("error", "unknown")})
-        return json.dumps(
-            {
-                "ok": True,
-                "wallet_id": data.get("miner_id", wallet_id),
-                "balance_rtc": data.get("amount_rtc", 0.0),
-                "balance_raw": data.get("amount_i64", 0),
-            }
-        )
+    def _run(self, wallet_id: str, **kwargs: Any) -> float:
+        return self._client.check_balance(wallet_id)
 
 
 class RustChainBountiesTool(BaseTool):
-    """List open RustChain ecosystem bounties."""
-
     name: str = "rustchain_list_bounties"
-    description: str = (
-        "List currently open RustChain ecosystem bounties (Earn RTC by "
-        "contributing: code, docs, security, community). Returns the most "
-        "recent open bounties with their issue number, title, and labels."
-    )
-    args_schema: type[BaseModel] = ListBountiesInput
+    description: str = "List open RustChain bounties from Scottcjn/rustchain-bounties."
 
-    bounties_repo: str = DEFAULT_BOUNTIES_REPO
+    def __init__(self, client: Optional[RustChainTool] = None, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._client = client or RustChainTool()
 
-    def _run(self, limit: int = 10) -> str:
-        # Bounties are tracked as GitHub issues labelled ``bounty`` in the
-        # rustchain-bounties repo. Use the public GitHub REST API.
-        # Reads GH_TOKEN or GITHUB_TOKEN from the environment for higher
-        # rate limits (optional — the endpoint is unauthenticated-friendly).
-        headers = {}
-        token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
-        if token:
-            headers["Authorization"] = f"Bearer {token}"
-        client = _Client("https://api.github.com", headers=headers)
-        data = client.get(
-            f"/repos/{self.bounties_repo}/issues",
-            params={"state": "open", "labels": "bounty", "per_page": limit},
-        )
-        if isinstance(data, list):
-            items = []
-            for issue in data:
-                items.append(
-                    {
-                        "number": issue.get("number"),
-                        "title": issue.get("title"),
-                        "url": issue.get("html_url"),
-                        "labels": [
-                            lbl.get("name")
-                            for lbl in issue.get("labels", [])
-                        ],
-                    }
-                )
-            return json.dumps({"ok": True, "count": len(items), "bounties": items})
-        return json.dumps({"ok": False, "error": str(data)})
+    def _run(self, limit: int = 10, **kwargs: Any) -> List[Dict[str, Any]]:
+        return self._client.list_bounties(limit=int(limit))
 
 
-class RustChainNodeHealthTool(BaseTool):
-    """Read RustChain node health status."""
+class RustChainHealthTool(BaseTool):
+    name: str = "rustchain_node_health"
+    description: str = "Get live health status of the RustChain Mainnet node."
 
-    name: str = "rustchain_get_node_health"
-    description: str = (
-        "Get the current health status of the RustChain public node: "
-        "database read/write availability, tip age, uptime, and version. "
-        "Use to answer 'is RustChain up / healthy?'."
-    )
-    args_schema: type[BaseModel] = GetNodeHealthInput
+    def __init__(self, client: Optional[RustChainTool] = None, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._client = client or RustChainTool()
 
-    node_url: str = DEFAULT_NODE
-
-    def _run(self) -> str:
-        client = _Client(self.node_url)
-        data = client.get("/health")
-        return json.dumps(data)
+    def _run(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        return self._client.get_node_health()
 
 
-class RustChainCurrentEpochTool(BaseTool):
-    """Read the current RustChain epoch."""
+class RustChainEpochTool(BaseTool):
+    name: str = "rustchain_current_epoch"
+    description: str = "Get current epoch, slot, and miner count from the RustChain Mainnet node."
 
-    name: str = "rustchain_get_current_epoch"
-    description: str = (
-        "Get the current RustChain epoch, current slot, enrolled miner count, "
-        "and per-epoch RTC emission. Use for questions about the current "
-        "consensus epoch / mining round."
-    )
-    args_schema: type[BaseModel] = GetCurrentEpochInput
+    def __init__(self, client: Optional[RustChainTool] = None, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._client = client or RustChainTool()
 
-    node_url: str = DEFAULT_NODE
-
-    def _run(self) -> str:
-        client = _Client(self.node_url)
-        data = client.get("/epoch")
-        return json.dumps(data)
+    def _run(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        return self._client.get_current_epoch()
 
 
-# Handy collection for loading all tools at once.
-ALL_RUSTCHAIN_TOOLS: List[BaseTool] = [
-    RustChainBalanceTool(),
-    RustChainBountiesTool(),
-    RustChainNodeHealthTool(),
-    RustChainCurrentEpochTool(),
-]
+class RustChainToolkit:
+    """Toolkit bundling all 4 RustChain tools for LangChain agents."""
 
+    def __init__(self, node_url: str = "https://50.28.86.131") -> None:
+        self.tool = RustChainTool(node_url=node_url)
 
-def get_tools(node_url: str = DEFAULT_NODE, bounties_repo: str = DEFAULT_BOUNTIES_REPO) -> List[BaseTool]:
-    """Return a fresh list of all RustChain tools with custom endpoints.
-
-    Args:
-        node_url: RustChain node base URL (defaults to the public node).
-        bounties_repo: ``owner/repo`` of the bounty issue tracker
-            (defaults to Scottcjn/rustchain-bounties).
-    """
-    return [
-        RustChainBalanceTool(node_url=node_url),
-        RustChainBountiesTool(bounties_repo=bounties_repo),
-        RustChainNodeHealthTool(node_url=node_url),
-        RustChainCurrentEpochTool(node_url=node_url),
-    ]
-
-
-__all__ = [
-    "RustChainBalanceTool",
-    "RustChainBountiesTool",
-    "RustChainNodeHealthTool",
-    "RustChainCurrentEpochTool",
-    "ALL_RUSTCHAIN_TOOLS",
-    "get_tools",
-]
+    def get_tools(self) -> List[BaseTool]:
+        return [
+            RustChainBalanceTool(client=self.tool),
+            RustChainBountiesTool(client=self.tool),
+            RustChainHealthTool(client=self.tool),
+            RustChainEpochTool(client=self.tool),
+        ]
