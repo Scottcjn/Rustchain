@@ -677,24 +677,33 @@ class UtxoDB:
             merged.append(box)
         return merged
 
-    def count_unspent_for_address(self, address: str) -> int:
+    def count_unspent_for_address(self, address: str, conn: Optional[sqlite3.Connection] = None) -> int:
         """Count unspent boxes for an address without materializing them."""
-        conn = self._conn()
+        own = conn is None
+        if own:
+            conn = self._conn()
         try:
-            row = conn.execute(
+            cur = conn.cursor()
+            cur.row_factory = sqlite3.Row
+            row = cur.execute(
                 """SELECT COUNT(*) AS n FROM utxo_boxes
                    WHERE owner_address = ? AND spent_at IS NULL""",
                 (address,),
             ).fetchone()
             return row['n']
         finally:
-            conn.close()
+            if own:
+                conn.close()
 
-    def get_balance(self, address: str) -> int:
+    def get_balance(self, address: str, conn: Optional[sqlite3.Connection] = None) -> int:
         """Sum of all unspent box values for an address (nanoRTC)."""
-        conn = self._conn()
+        own = conn is None
+        if own:
+            conn = self._conn()
         try:
-            row = conn.execute(
+            cur = conn.cursor()
+            cur.row_factory = sqlite3.Row
+            row = cur.execute(
                 """SELECT COALESCE(SUM(value_nrtc), 0) AS total
                    FROM utxo_boxes
                    WHERE owner_address = ? AND spent_at IS NULL""",
@@ -702,7 +711,8 @@ class UtxoDB:
             ).fetchone()
             return row['total']
         finally:
-            conn.close()
+            if own:
+                conn.close()
 
     def count_unspent(self, conn: Optional[sqlite3.Connection] = None) -> int:
         """Total number of unspent boxes."""
@@ -1481,9 +1491,13 @@ class UtxoDB:
         always recomputes (the memo is still refreshed).
         """
         own = conn is None
+        started_tx = False
         if own:
             conn = self._conn()
-            conn.execute("BEGIN")  # pin one read snapshot
+        if not conn.in_transaction:
+            conn.execute("BEGIN")  # pin one read snapshot (#17058)
+            started_tx = True
+        conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone()
         try:
             if not self._state_memo_installed(conn):
                 summary = self._compute_state_summary(conn)
@@ -1518,11 +1532,13 @@ class UtxoDB:
             self._store_state_memo(conn, summary)
             return summary
         finally:
-            if own:
+            if started_tx:
                 try:
                     conn.rollback()
-                finally:
-                    conn.close()
+                except Exception:
+                    pass
+            if own:
+                conn.close()
 
     # -- integrity -----------------------------------------------------------
 
@@ -1547,12 +1563,15 @@ class UtxoDB:
         # match the totals reported beside it (and a models_agree verdict drawn
         # across two different database states).
         own = conn is None
+        started_tx = False
         if own:
             conn = self._conn()
-            # Pin a read snapshot: without an open transaction each SELECT sees
-            # the latest commit, so a settlement landing between the totals and
-            # the root read would still split the report across two states.
+        if not conn.in_transaction:
+            # Pin a read snapshot (#17058): even when caller passes a connection,
+            # ensure an explicit read transaction is active and pinned.
             conn.execute("BEGIN")
+            started_tx = True
+        conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone()
         try:
             if use_memo:
                 summary = self.state_summary(conn=conn)
@@ -1609,11 +1628,13 @@ class UtxoDB:
 
             return result
         finally:
-            if own:
+            if started_tx:
                 try:
                     conn.rollback()  # read-only: release the snapshot
-                finally:
-                    conn.close()
+                except Exception:
+                    pass
+            if own:
+                conn.close()
 
     @staticmethod
     def _check_mirror_provenance(conn: sqlite3.Connection, result: dict) -> None:
