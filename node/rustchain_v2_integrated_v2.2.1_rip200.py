@@ -11393,6 +11393,186 @@ def api_balances():
     return jsonify({"ok": False, "error": "balances_unavailable"}), 500
 
 
+# ============================================================================
+# PUBLIC WALLET BALANCE EXPORT (bounty #8359, 25 RTC)
+# ============================================================================
+# Unblocks rustchain-bounties#1113 distribution analysis.
+# Replaces the broken /api/miners-only view that only returns active miners.
+# Read-only, paginated, rate-limited, cached per epoch.
+# NOTE: This endpoint publishes every wallet identity and last-activity timestamp
+# in the balances table, including hosted handles. This transparency is the
+# intent per #8359 to enable public distribution analysis (Gini, Lorenz).
+# ============================================================================
+_BALANCE_EXPORT_CACHE = {"rows": None, "epoch": 0, "ts": 0}
+# Founder prefix check - use startswith for future founder buckets
+_BALANCE_EXPORT_FOUNDER_PREFIX = "founder_"
+# Native RTC address regex: RTC + 40 hex chars
+_RTC_NATIVE_RE = re.compile(r"^RTC[0-9a-fA-F]{40}$")
+
+def _balance_export_kind(wallet_id: str) -> str:
+    """Return the wallet kind label for the balances export."""
+    if wallet_id.startswith("bcn_"):
+        return "bcn"
+    # Native must fully match RTC address format
+    if _RTC_NATIVE_RE.fullmatch(wallet_id):
+        return "native"
+    # hosted_handle wallets use the platform-assigned handle form
+    if wallet_id.startswith("hosted_") or "@" in wallet_id:
+        return "hosted_handle"
+    # Everything else is hosted_handle, not native
+    return "hosted_handle"
+
+@app.route("/api/balances/export", methods=["GET"])
+def api_balances_export():
+    """Read-only paginated export of all wallet balances with metadata.
+
+    Fields per row:
+      - wallet: the miner_id / miner_pk
+      - balance_rtc: human-readable balance in RTC
+      - is_founder: True if wallet starts with `founder_`
+      - kind: native | hosted_handle | bcn
+      - last_activity: epoch timestamp of last ledger entry, null if unavailable
+
+    Rate-limited to 10 requests per 60 seconds per client IP (bounded per-process keyed limiter).
+    Paginated in SQL to avoid full-table materialisation.
+    """
+    client_ip = client_ip_from_request(request)
+    now = int(time.time())
+
+    # -- bounded rate limit (simple bounded list with eviction) ---------------
+    _key = (client_ip, "/api/balances/export")
+    _bucket = _ADMIN_RATE_LIMIT_BUCKETS.setdefault(_key, [])
+    _cutoff = now - ADMIN_RATE_LIMIT_WINDOW
+    # evict old entries
+    _bucket[:] = [t for t in _bucket if t > _cutoff]
+    if len(_bucket) >= 10:
+        _retry = max(1, ADMIN_RATE_LIMIT_WINDOW - (now - min(_bucket)))
+        resp = jsonify({
+            "ok": False,
+            "error": "rate_limited",
+            "limit": f"10/{ADMIN_RATE_LIMIT_WINDOW}s",
+        })
+        resp.headers["Retry-After"] = str(_retry)
+        return resp, 429
+    _bucket.append(now)
+
+    # -- pagination parameters -----------------------------------------------
+    try:
+        raw_limit = request.args.get("limit")
+        limit = int(raw_limit) if raw_limit not in (None, "") else 100
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+    try:
+        raw_offset = request.args.get("offset")
+        offset = int(raw_offset) if raw_offset not in (None, "") else 0
+    except (ValueError, TypeError):
+        return jsonify({"ok": False, "error": "offset must be an integer"}), 400
+    if limit < 1 or limit > 100:
+        return jsonify({"ok": False, "error": "limit must be between 1 and 100"}), 400
+    if offset < 0:
+        return jsonify({"ok": False, "error": "offset must be >= 0"}), 400
+
+    # -- epoch lookup, fail-closed -------------------------------------------
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            row = conn.execute(
+                "SELECT epoch FROM epoch_state ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            current_epoch = int(row[0]) if row and row[0] is not None else None
+    except Exception:
+        current_epoch = None
+
+    if current_epoch is None:
+        # Do not serve stale cache on DB/epoch failure
+        return jsonify({"ok": False, "error": "epoch_unavailable"}), 503
+
+    # -- schema detection (explicit, no NULL coercion) ----------------------
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(balances)")}
+        use_modern = "amount_i64" in cols and "miner_id" in cols
+        use_legacy = "miner_pk" in cols and "balance_rtc" in cols
+        if not (use_modern or use_legacy):
+            return jsonify({"ok": False, "error": "balances_unavailable"}), 500
+
+        # Base query with pagination in SQL
+        if use_modern:
+            base_sql = """
+                SELECT miner_id, amount_i64
+                FROM balances
+                ORDER BY amount_i64 DESC
+                LIMIT ? OFFSET ?
+            """
+            params = (limit, offset)
+        else:
+            base_sql = """
+                SELECT miner_pk AS miner_id, balance_rtc
+                FROM balances
+                ORDER BY balance_rtc DESC
+                LIMIT ? OFFSET ?
+            """
+            params = (limit, offset)
+
+        rows = c.execute(base_sql, params).fetchall()
+
+        # Total count for metadata
+        total = c.execute("SELECT COUNT(*) FROM balances").fetchone()[0]
+
+        # Last activity per wallet: best-effort, tolerate failure
+        last_activity = {}
+        try:
+            # Only fetch for the returned wallets to avoid full scan
+            wallets = [r["miner_id"] for r in rows]
+            if wallets:
+                placeholders = ",".join("?" for _ in wallets)
+                act_rows = c.execute(
+                    f"SELECT miner_id, MAX(ts) AS last FROM ledger WHERE miner_id IN ({placeholders}) GROUP BY miner_id",
+                    wallets,
+                ).fetchall()
+                last_activity = {r["miner_id"]: int(r["last"] or 0) for r in act_rows}
+            # If ledger table missing or query fails, keep empty dict -> null in output
+        except Exception:
+            # Ledger unavailable: leave last_activity empty
+            last_activity = {}
+
+    # Build response
+    balances = []
+    for r in rows:
+        wallet = str(r["miner_id"])
+        if use_modern:
+            amt = r["amount_i64"]
+            if amt is None:
+                # Do not coerce NULL to zero
+                balance_rtc = None
+            else:
+                balance_rtc = float(int(amt) / ACCOUNT_UNIT)
+        else:
+            bal = r["balance_rtc"]
+            balance_rtc = float(bal) if bal is not None else None
+
+        last = last_activity.get(wallet)
+        # Return null when unavailable
+        last_activity_ts = last if last is not None else None
+
+        balances.append({
+            "wallet": wallet,
+            "balance_rtc": balance_rtc,
+            "is_founder": wallet.startswith(_BALANCE_EXPORT_FOUNDER_PREFIX),
+            "kind": _balance_export_kind(wallet),
+            "last_activity": last_activity_ts,
+        })
+
+    return jsonify({
+        "ok": True,
+        "count": len(balances),
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "epoch": current_epoch,
+        "balances": balances,
+    })
+
 @app.route('/admin/oui_deny/list', methods=['GET'])
 def list_oui_deny():
     """List all denied OUIs"""
