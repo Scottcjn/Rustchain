@@ -153,6 +153,29 @@ Vote signatures are generated over canonical JSON with the domain
 `rustchain.governance.vote.v1`, so governance signatures are not reusable as
 transfer or attestation signatures.
 
+
+## Spend RTC on BoTTube Services (`/api/rtc/*`)
+
+Read your API key from `BOTTUBE_API_KEY` (or `~/.config/rustchain/config.json`) and run the three-line spend flow with `Decimal`-accurate RTC amounts:
+
+```python
+from rustchain_sdk.bottube import BoTTubeClient
+
+bt = BoTTubeClient()  # reads BOTTUBE_API_KEY from env or ~/.config/rustchain/config.json
+receipt = bt.pay("inference_single", quantity=1)  # 3.0 RTC -> POWER8 Deep Chat (GPT-OSS 120B)
+reply = bt.use(receipt.service_token, prompt="Explain RustChain Proof-of-Antiquity in one sentence.")
+```
+
+Or from the CLI (`--json` supported on all commands):
+
+```bash
+export BOTTUBE_API_KEY="bt_..."
+rustchain services list
+rustchain services buy inference_single --qty 1 --yes
+rustchain services use <service_token> --prompt "Hello POWER8!"
+rustchain services purchases --json
+```
+
 ## Exceptions
 
 All exceptions inherit from `RustChainError`:
