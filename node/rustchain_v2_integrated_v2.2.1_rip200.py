@@ -3155,18 +3155,18 @@ def _detect_x86_vintage(cpu_brand: str, machine: str, simd_data: dict):
     cpu_lower = cpu_brand.lower()
     machine_lower = (machine or "").lower()
 
+    # Parse clock speed from brand string ("1500MHz" or "1.50GHz" form) shared by Pentium M / Celeron M.
+    speed_mhz = None
+    mhz = re.search(r"(\d+)\s*mhz", cpu_lower)
+    if mhz:
+        speed_mhz = int(mhz.group(1))
+    else:
+        ghz = re.search(r"(\d+(?:\.\d+)?)\s*ghz", cpu_lower)
+        if ghz:
+            speed_mhz = int(float(ghz.group(1)) * 1000)
+
     # Pentium M family — \b boundary + (?!\d) avoids false-matching "Pentium M4".
     if re.search(r"\bpentium(?:\(r\))?\s+m\b(?!\d)", cpu_lower):
-        # Parse clock speed from brand string ("1500MHz" or "1.5GHz" form).
-        speed_mhz = None
-        mhz = re.search(r"(\d+)\s*mhz", cpu_lower)
-        if mhz:
-            speed_mhz = int(mhz.group(1))
-        else:
-            ghz = re.search(r"(\d+(?:\.\d+)?)\s*ghz", cpu_lower)
-            if ghz:
-                speed_mhz = int(float(ghz.group(1)) * 1000)
-
         if machine_lower in ("i686", "i386", "x86", ""):
             # 32-bit-only Pentium M = Banias or Dothan. Banias max clock was 1.7GHz.
             pm_arch = "pentium_m_banias" if (speed_mhz and speed_mhz <= 1700) else "pentium_m_dothan"
@@ -3177,6 +3177,19 @@ def _detect_x86_vintage(cpu_brand: str, machine: str, simd_data: dict):
         print(f"[X86_VINTAGE] Pentium M: brand={cpu_brand[:50]!r} "
               f"machine={machine_lower} speed={speed_mhz}MHz -> x86/{pm_arch}")
         return {"device_family": "x86", "device_arch": pm_arch}
+
+    # Celeron M = disabled Pentium M on the same Banias/Dothan/Yonah silicon (issue #8578).
+    if re.search(r"\bceleron(?:\(r\))?\s+m\b(?!\d)", cpu_lower):
+        if machine_lower in ("i686", "i386", "x86", ""):
+            # Same clock split as Pentium M: Banias topped out at 1.7 GHz.
+            cm_arch = "pentium_m_banias" if (speed_mhz and speed_mhz <= 1700) else "pentium_m_dothan"
+        else:
+            # 64-bit-capable Celeron M 5xx (Merom).
+            cm_arch = "pentium_m_yonah"
+
+        print(f"[X86_VINTAGE] Celeron M: brand={cpu_brand[:50]!r} "
+              f"machine={machine_lower} speed={speed_mhz}MHz -> x86/{cm_arch}")
+        return {"device_family": "x86", "device_arch": cm_arch}
 
     # Pentium III — \biii\b guards against matching "Pentium II" prefix.
     if re.search(r"\bpentium(?:\(r\))?\s+iii\b", cpu_lower):
@@ -3432,7 +3445,13 @@ def _classify_validated_x86_brand(cpu_brand: str):
             rf"(?:\s+\((?:klamath|deschutes|dixon)\)|"
             rf"(?:\s+(?:cpu|processor))?(?:\s+{speed})?)$",
         ),
-        ("pentium_m", 6, rf"^{vendor}pentium(?:\(r\))?\s+m(?:\s+(?:cpu|processor))?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$"),
+        (
+            "pentium_m",
+            6,
+            rf"^{vendor}(?:pentium|celeron)(?:\(r\))?\s+m"
+            rf"(?:\s+(?:cpu|processor))?(?:\s+\d{{3,4}}[a-z]?)?"
+            rf"(?:\s+@)?(?:\s+\d+(?:\.\d+)?\s*(?:mhz|ghz)?)?$",
+        ),
         ("pentium", 5, rf"^{vendor}pentium(?:\(r\))?(?:\s+(?:cpu|processor))?(?:\s+{speed})?$"),
     )
     for arch, cpu_family, pattern in patterns:
