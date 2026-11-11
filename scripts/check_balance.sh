@@ -4,7 +4,7 @@
 #
 # Exit codes:
 #   0 — success, balance printed to stdout
-#   1 — usage error (missing or invalid wallet address)
+#   1 — usage/environment error (missing or invalid wallet address, missing jq dependency, or --help)
 #   2 — network error (DNS, timeout, connection refused)
 #   3 — bad response (non-200 HTTP, malformed JSON, missing fields)
 
@@ -19,7 +19,7 @@ Usage: $0 <WALLET_ADDRESS>
 
 Exit codes:
   0  success (balance printed to stdout)
-  1  usage error (missing or invalid wallet address, or --help)
+  1  usage/environment error (missing or invalid wallet address, missing jq dependency, or --help)
   2  network error (DNS, timeout, connection refused)
   3  bad response (non-200 HTTP, malformed JSON, missing fields, type mismatch)
 EOF
@@ -40,7 +40,14 @@ if [[ -z "$WALLET" || ${#WALLET} -lt 10 ]]; then
     exit 1
 fi
 
-URL="${RPC_ENDPOINT}/api/balance?wallet=${WALLET}"
+if ! command -v jq >/dev/null 2>&1; then
+    echo "Error: required dependency 'jq' is not installed" >&2
+    exit 1
+fi
+
+# Contract path per compatibility_lab/read_only_api.openapi.json (getWalletBalance);
+# the previous /api/balance?wallet= path 404s against real nodes (Rustchain#7889).
+URL="${RPC_ENDPOINT}/wallet/balance?miner_id=${WALLET}"
 
 # Capture body and HTTP status separately
 HTTP_CODE=0
@@ -74,7 +81,13 @@ if [[ "$HTTP_CODE" != "200" ]]; then
     exit 3
 fi
 
-# Validate JSON structure
+# Malformed JSON must be reported distinctly from a well-formed response
+# that merely lacks the expected fields (Rustchain#7889 follow-up).
+if ! echo "$BODY" | jq -e . >/dev/null 2>&1; then
+    echo "Error: malformed JSON response from ${URL}" >&2
+    exit 3
+fi
+
 BALANCE=$(echo "$BODY" | jq -r '.amount_rtc // empty' 2>/dev/null || true)
 RETURNED_WALLET=$(echo "$BODY" | jq -r '.miner_id // .wallet // empty' 2>/dev/null || true)
 
