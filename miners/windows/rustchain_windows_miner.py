@@ -791,7 +791,7 @@ class RustChainMiner:
             else:
                 self.last_header_error = self._response_diagnostic(response)
                 self.last_header_retryable = self._is_retryable_header_status(
-                    response.status_code
+                    response.status_code, result
                 )
         except Exception as e:
             self.last_header_error = f"header request failed: {e}"
@@ -808,8 +808,16 @@ class RustChainMiner:
         return False
 
     @staticmethod
-    def _is_retryable_header_status(status_code):
+    def _is_retryable_header_status(status_code, payload=None):
         """Return whether an HTTP response represents a temporary failure."""
+        if isinstance(payload, dict):
+            if isinstance(payload.get("retryable"), bool):
+                return payload["retryable"]
+            err_text = f"{payload.get('code', '')} {payload.get('error', '')} {payload.get('message', '')}".lower()
+            if any(tok in err_text for tok in ("restarting", "temporarily_unavailable", "rate_limit", "try_again", "syncing")):
+                return True
+            if any(tok in err_text for tok in ("no pubkey", "malformed", "bad_signature", "invalid_signature", "message_header_mismatch")):
+                return False
         if status_code in HEADER_RETRYABLE_STATUS_CODES:
             return True
         return 500 <= status_code <= 599
