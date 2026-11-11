@@ -105,6 +105,24 @@ def wallet_balance(address: str, node: str, as_json: bool):
     asyncio.run(_wallet_balance(address, node, as_json))
 
 
+def _extract_balance_and_nonce(result: dict) -> tuple:
+    """Extract canonical amount_rtc (or legacy balance alias) and nonce from /wallet/balance response."""
+    if not isinstance(result, dict):
+        return None, 0
+    balance = None
+    for key in ("amount_rtc", "balance_rtc", "balance"):
+        if key in result and result[key] is not None and not isinstance(result[key], bool):
+            balance = result[key]
+            break
+    if balance is None and "amount_i64" in result:
+        raw_i64 = result.get("amount_i64")
+        if isinstance(raw_i64, (int, float)) and not isinstance(raw_i64, bool):
+            scaled = raw_i64 / 1_000_000
+            balance = int(scaled) if scaled == int(scaled) else scaled
+    nonce = result.get("nonce", 0)
+    return balance, nonce
+
+
 async def _wallet_balance(address: str, node: str, as_json: bool):
     try:
         async with RustChainClient(base_url=node) as client:
@@ -112,10 +130,12 @@ async def _wallet_balance(address: str, node: str, as_json: bool):
             if as_json:
                 click.echo(json.dumps(result, indent=2))
             else:
-                balance = result.get("balance", 0)
-                nonce = result.get("nonce", 0)
+                balance, nonce = _extract_balance_and_nonce(result)
                 click.echo(f"Address:  {address}")
-                click.echo(f"Balance:  {balance} RTC")
+                if balance is None:
+                    click.echo("Balance:  unavailable")
+                else:
+                    click.echo(f"Balance:  {balance} RTC")
                 click.echo(f"Nonce:    {nonce}")
     except RustChainError as e:
         click.echo(f"❌  Error: {e}", err=True)
