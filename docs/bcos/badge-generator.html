@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BCOS v2 — Beacon Certified Open Source Badge Generator</title>
+  <style>
+    :root {
+      --bg: #0b0f0c;
+      --panel: #111814;
+      --border: #28593a;
+      --phosphor: #33ff66;
+      --amber: #ffb000;
+      --muted: #7aa885;
+      --danger: #ff5555;
+      --font-mono: "IBM Plex Mono", "Courier New", Courier, monospace;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background-color: var(--bg);
+      color: var(--phosphor);
+      font-family: var(--font-mono);
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 920px;
+      margin: 0 auto;
+      border: 2px solid var(--border);
+      background: var(--panel);
+      padding: 24px;
+      box-shadow: 0 0 24px rgba(51, 255, 102, 0.08);
+    }
+    h1 {
+      margin-top: 0;
+      color: var(--amber);
+      font-size: 1.5rem;
+      letter-spacing: 0.04em;
+      border-bottom: 1px dashed var(--border);
+      padding-bottom: 12px;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 0.92rem;
+      margin-bottom: 20px;
+    }
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 180px auto;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    input, select, button, textarea {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      background: #070b08;
+      color: var(--phosphor);
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+    }
+    button {
+      background: #173823;
+      color: var(--phosphor);
+      cursor: pointer;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+    button:hover {
+      background: var(--phosphor);
+      color: #070b08;
+    }
+    .preview-box {
+      border: 1px solid var(--border);
+      background: #070b08;
+      padding: 18px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .meta-card {
+      border: 1px solid var(--border);
+      padding: 10px 12px;
+      background: #080d0a;
+    }
+    .meta-label {
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+    }
+    .meta-val {
+      color: var(--amber);
+      font-size: 1rem;
+      word-break: break-all;
+    }
+    .snippet-block {
+      margin-bottom: 16px;
+    }
+    .snippet-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    textarea {
+      width: 100%;
+      height: 64px;
+      resize: vertical;
+    }
+    .status-msg {
+      color: var(--amber);
+      margin-bottom: 12px;
+      min-height: 1.4em;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>[BCOS v2] BEACON CERTIFIED OPEN SOURCE // BADGE GENERATOR</h1>
+    <p class="subtitle">
+      Enter a GitHub repository (<code>owner/repo</code>) or BCOS certificate ID (<code>BCOS-xxxxxxxx</code>)
+      to verify its on-chain attestation and generate Markdown &amp; HTML trust badges.
+    </p>
+
+    <div class="controls">
+      <input
+        id="queryInput"
+        type="text"
+        placeholder="e.g. BCOS-a1b2c3d4 or Scottcjn/Rustchain"
+        value="BCOS-demo0001"
+      />
+      <select id="styleSelect" aria-label="Badge Style">
+        <option value="flat">Style: flat</option>
+        <option value="flat-square">Style: flat-square</option>
+        <option value="for-the-badge">Style: for-the-badge</option>
+      </select>
+      <button id="lookupBtn" type="button">Lookup &amp; Generate</button>
+    </div>
+
+    <div id="statusMsg" class="status-msg">Ready.</div>
+
+    <div class="preview-box">
+      <div>
+        <div class="meta-label">Live SVG Badge Preview</div>
+        <div style="margin-top: 8px;">
+          <a id="badgeLink" href="https://rustchain.org/bcos" target="_blank" rel="noopener">
+            <img id="badgeImg" src="/bcos/badge/BCOS-demo0001.svg?style=flat" alt="BCOS Certified" />
+          </a>
+        </div>
+      </div>
+      <div>
+        <span class="meta-label">Style Variant:</span>
+        <span id="activeStyleLabel" class="meta-val">flat</span>
+      </div>
+    </div>
+
+    <div class="meta-grid">
+      <div class="meta-card">
+        <div class="meta-label">Certificate ID</div>
+        <div id="metaCertId" class="meta-val">BCOS-demo0001</div>
+      </div>
+      <div class="meta-card">
+        <div class="meta-label">Repository</div>
+        <div id="metaRepo" class="meta-val">Scottcjn/Rustchain</div>
+      </div>
+      <div class="meta-card">
+        <div class="meta-label">Tier &amp; Trust Score</div>
+        <div id="metaScore" class="meta-val">L1 (85 / 100)</div>
+      </div>
+      <div class="meta-card">
+        <div class="meta-label">Verification Status</div>
+        <div id="metaVerified" class="meta-val">VERIFIED</div>
+      </div>
+    </div>
+
+    <div class="snippet-block">
+      <div class="snippet-header">
+        <span>Markdown Embed (<code>README.md</code>)</span>
+        <button type="button" onclick="copyField('markdownSnippet')">Copy Markdown</button>
+      </div>
+      <textarea id="markdownSnippet" readonly></textarea>
+    </div>
+
+    <div class="snippet-block">
+      <div class="snippet-header">
+        <span>HTML Embed</span>
+        <button type="button" onclick="copyField('htmlSnippet')">Copy HTML</button>
+      </div>
+      <textarea id="htmlSnippet" readonly></textarea>
+    </div>
+
+    <div class="snippet-block">
+      <div class="snippet-header">
+        <span>Direct SVG Badge URL</span>
+        <button type="button" onclick="copyField('svgUrlSnippet')">Copy URL</button>
+      </div>
+      <textarea id="svgUrlSnippet" style="height: 44px;" readonly></textarea>
+    </div>
+  </div>
+
+  <script>
+    function buildSnippets(certId, style) {
+      const origin = window.location.origin && window.location.origin !== "null"
+        ? window.location.origin
+        : "https://rustchain.org";
+      const suffix = style && style !== "flat" ? `?style=${encodeURIComponent(style)}` : "";
+      const badgeUrl = `${origin}/bcos/badge/${encodeURIComponent(certId)}.svg${suffix}`;
+      const verifyUrl = `${origin}/bcos/verify/${encodeURIComponent(certId)}`;
+      const md = `[![BCOS Certified](${badgeUrl})](${verifyUrl})`;
+      const html = `<a href="${verifyUrl}" target="_blank" rel="noopener"><img src="${badgeUrl}" alt="BCOS Certified" /></a>`;
+      return { badgeUrl, verifyUrl, md, html };
+    }
+
+    function updateUI(certData) {
+      const style = document.getElementById("styleSelect").value || "flat";
+      const certId = certData.cert_id || "BCOS-unknown";
+      const snippets = buildSnippets(certId, style);
+
+      document.getElementById("activeStyleLabel").textContent = style;
+      document.getElementById("badgeImg").src = `/bcos/badge/${encodeURIComponent(certId)}.svg?style=${encodeURIComponent(style)}`;
+      document.getElementById("badgeLink").href = snippets.verifyUrl;
+      document.getElementById("metaCertId").textContent = certId;
+      document.getElementById("metaRepo").textContent = certData.repo || "N/A";
+      document.getElementById("metaScore").textContent = `${certData.tier || "L1"} (${certData.trust_score ?? 0} / 100)`;
+      document.getElementById("metaVerified").textContent = certData.verified !== false ? "VERIFIED" : "UNVERIFIED";
+
+      document.getElementById("markdownSnippet").value = snippets.md;
+      document.getElementById("htmlSnippet").value = snippets.html;
+      document.getElementById("svgUrlSnippet").value = snippets.badgeUrl;
+    }
+
+    async function lookupCertificate() {
+      const raw = (document.getElementById("queryInput").value || "").trim();
+      const statusEl = document.getElementById("statusMsg");
+      if (!raw) {
+        statusEl.textContent = "Please enter a BCOS certificate ID or owner/repo.";
+        return;
+      }
+      statusEl.textContent = `Querying BCOS registry for "${raw}"...`;
+      try {
+        if (raw.toUpperCase().startsWith("BCOS-")) {
+          const resp = await fetch(`/bcos/verify/${encodeURIComponent(raw)}`);
+          if (resp.ok) {
+            const data = await resp.json();
+            updateUI(data);
+            statusEl.textContent = `Loaded certificate ${data.cert_id} for ${data.repo}.`;
+            return;
+          }
+        }
+        const dirResp = await fetch("/bcos/directory?limit=100");
+        if (dirResp.ok) {
+          const dirData = await dirResp.json();
+          const certs = dirData.certificates || [];
+          const match = certs.find(c =>
+            (c.cert_id && c.cert_id.toLowerCase() === raw.toLowerCase()) ||
+            (c.repo && c.repo.toLowerCase() === raw.toLowerCase())
+          );
+          if (match) {
+            updateUI({ ...match, verified: true });
+            statusEl.textContent = `Found latest certificate ${match.cert_id} for ${match.repo}.`;
+            return;
+          }
+        }
+        updateUI({ cert_id: raw, repo: raw, tier: "??", trust_score: 0, verified: false });
+        statusEl.textContent = `No on-chain certificate found for "${raw}" — showing preview snippets.`;
+      } catch (err) {
+        updateUI({ cert_id: raw, repo: raw, tier: "L1", trust_score: 0, verified: false });
+        statusEl.textContent = `Offline preview mode for "${raw}".`;
+      }
+    }
+
+    function copyField(id) {
+      const el = document.getElementById(id);
+      el.select();
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(el.value);
+      } else {
+        document.execCommand("copy");
+      }
+      document.getElementById("statusMsg").textContent = `Copied ${id} to clipboard.`;
+    }
+
+    document.getElementById("lookupBtn").addEventListener("click", lookupCertificate);
+    document.getElementById("styleSelect").addEventListener("change", () => {
+      const certId = document.getElementById("metaCertId").textContent || "BCOS-demo0001";
+      const repo = document.getElementById("metaRepo").textContent || "Scottcjn/Rustchain";
+      updateUI({ cert_id: certId, repo: repo, tier: "L1", trust_score: 85, verified: true });
+    });
+
+    updateUI({ cert_id: "BCOS-demo0001", repo: "Scottcjn/Rustchain", tier: "L1", trust_score: 85, verified: true });
+  </script>
+</body>
+</html>
