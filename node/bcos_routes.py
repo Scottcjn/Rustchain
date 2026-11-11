@@ -228,8 +228,41 @@ BADGE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="2
 </svg>"""
 
 
-def _generate_badge_svg(tier: str, score: int) -> str:
-    """Generate SVG badge for a BCOS certification."""
+BADGE_FLAT_SQUARE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="20" data-style="flat-square">
+  <g shape-rendering="crispEdges">
+    <rect width="50" height="20" fill="#555"/>
+    <rect x="50" width="{right_width}" height="20" fill="{color}"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">
+    <text x="25" y="14">BCOS</text>
+    <text x="{text_x}" y="14">{label}</text>
+  </g>
+</svg>"""
+
+BADGE_FOR_THE_BADGE_SVG = """<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="28" data-style="for-the-badge">
+  <g shape-rendering="crispEdges">
+    <rect width="70" height="28" fill="#555"/>
+    <rect x="70" width="{right_width}" height="28" fill="{color}"/>
+  </g>
+  <g fill="#fff" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="10" font-weight="bold" letter-spacing="1">
+    <text x="35" y="18">BCOS</text>
+    <text x="{text_x}" y="18">{label}</text>
+  </g>
+</svg>"""
+
+SUPPORTED_BADGE_STYLES = ("flat", "flat-square", "for-the-badge")
+
+
+def _normalize_badge_style(style: str | None) -> str:
+    if not style or not isinstance(style, str):
+        return "flat"
+    cleaned = style.strip().lower()
+    return cleaned if cleaned in SUPPORTED_BADGE_STYLES else "flat"
+
+
+def _generate_badge_svg(tier: str, score: int, style: str = "flat") -> str:
+    """Generate SVG badge for a BCOS certification in `flat`, `flat-square`, or `for-the-badge` style."""
+    norm_style = _normalize_badge_style(style)
     # Color by tier
     colors = {
         "L0": "#4c1",     # Green
@@ -246,18 +279,50 @@ def _generate_badge_svg(tier: str, score: int) -> str:
     # value so a crafted tier cannot break out of <text> and inject active SVG
     # content (stored same-origin script execution). Reported privately
     # 2026-09-08 under rustchain-bounties#398 Step 3.
-    label = html.escape(f"{tier} {score}/100", quote=True)
+    raw_label = f"{tier} {score}/100"
+    if norm_style == "for-the-badge":
+        label = html.escape(raw_label.upper(), quote=True)
+        right_width = max(96, len(label) * 9 + 16)
+        width = 70 + right_width
+        text_x = 70 + right_width // 2
+        return BADGE_FOR_THE_BADGE_SVG.format(
+            width=width,
+            right_width=right_width,
+            color=color,
+            text_x=text_x,
+            label=label,
+        )
+
+    label = html.escape(raw_label, quote=True)
     right_width = max(70, len(label) * 7 + 10)
     width = 50 + right_width
     text_x = 50 + right_width // 2
 
-    return BADGE_SVG.format(
+    template = BADGE_FLAT_SQUARE_SVG if norm_style == "flat-square" else BADGE_SVG
+    return template.format(
         width=width,
         right_width=right_width,
         color=color,
         text_x=text_x,
         label=label,
     )
+
+
+def generate_badge_embeds(cert_id: str, style: str = "flat") -> dict:
+    """Return canonical Markdown and HTML embed snippets for a BCOS certificate badge."""
+    norm_style = _normalize_badge_style(style)
+    safe_cert = cert_id.replace(".svg", "").strip()
+    style_qs = f"?style={norm_style}" if norm_style != "flat" else ""
+    badge_url = _bcos_public_url(f"/bcos/badge/{safe_cert}.svg{style_qs}")
+    verify_url = _bcos_public_url(f"/bcos/verify/{safe_cert}")
+    return {
+        "cert_id": safe_cert,
+        "style": norm_style,
+        "badge_url": badge_url,
+        "verify_url": verify_url,
+        "markdown": f"[![BCOS Certified]({badge_url})]({verify_url})",
+        "html": f'<a href="{html.escape(verify_url, quote=True)}" target="_blank" rel="noopener"><img src="{html.escape(badge_url, quote=True)}" alt="BCOS Certified" /></a>',
+    }
 
 
 # ── Routes ────────────────────────────────────────────────────────
@@ -517,9 +582,10 @@ def bcos_certificate_pdf(cert_id):
 
 @bcos_bp.route("/bcos/badge/<cert_id>.svg", methods=["GET"])
 def bcos_badge_svg(cert_id):
-    """Generate SVG badge for a BCOS-certified repo."""
+    """Generate SVG badge for a BCOS-certified repo (`?style=flat|flat-square|for-the-badge`)."""
     # Strip .svg extension if present in cert_id
     cert_id = cert_id.replace(".svg", "")
+    style = _normalize_badge_style(request.args.get("style", "flat"))
 
     try:
         with sqlite3.connect(_DB_PATH) as conn:
@@ -531,17 +597,44 @@ def bcos_badge_svg(cert_id):
 
         if not row:
             # Return a "not found" badge
-            svg = _generate_badge_svg("??", 0)
+            svg = _generate_badge_svg("??", 0, style=style)
         else:
-            svg = _generate_badge_svg(row["tier"], row["trust_score"])
+            svg = _generate_badge_svg(row["tier"], row["trust_score"], style=style)
 
         return Response(svg, mimetype="image/svg+xml",
                         headers={"Cache-Control": "max-age=300"})
     except Exception:
         return Response(
-            _generate_badge_svg("ERR", 0),
+            _generate_badge_svg("ERR", 0, style=style),
             mimetype="image/svg+xml",
         )
+
+
+@bcos_bp.route("/bcos/badge-generator", methods=["GET"])
+def bcos_badge_generator_page():
+    """Serve the interactive BCOS v2 Badge Generator web tool (`#2292`)."""
+    cert_id = (request.args.get("cert_id") or "BCOS-demo0001").strip()
+    style = _normalize_badge_style(request.args.get("style", "flat"))
+    if request.args.get("format") == "json":
+        return jsonify({"ok": True, **generate_badge_embeds(cert_id, style=style)})
+
+    html_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "docs",
+        "bcos",
+        "badge-generator.html",
+    )
+    if os.path.exists(html_path):
+        with open(html_path, "r", encoding="utf-8") as fh:
+            return Response(fh.read(), mimetype="text/html")
+
+    embeds = generate_badge_embeds(cert_id, style=style)
+    fallback_html = (
+        "<!DOCTYPE html><html><head><title>BCOS v2 Badge Generator</title></head>"
+        f"<body><h1>BCOS v2 Badge Generator</h1><pre>{html.escape(embeds['markdown'])}</pre>"
+        f"<pre>{html.escape(embeds['html'])}</pre></body></html>"
+    )
+    return Response(fallback_html, mimetype="text/html")
 
 
 @bcos_bp.route("/bcos/directory", methods=["GET"])
