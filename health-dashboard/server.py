@@ -17,9 +17,13 @@ from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
+import sys
 import threading
 import requests
 from flask import Flask, jsonify, render_template_string, send_from_directory
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "monitoring"))
+from node_probe import STATE_IMPOSTOR, classify_health_data  # noqa: E402
 
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name, str(default))
@@ -100,7 +104,7 @@ class NodeStatus:
     name: str
     endpoint: str
     location: str
-    status: str  # 'up', 'down', 'degraded'
+    status: str  # 'up', 'degraded', 'impostor', 'down' (see monitoring/node_probe.py)
     response_time_ms: float
     version: str
     uptime_s: int
@@ -224,7 +228,9 @@ def cleanup_old_data():
 
 def check_node_health(node_config: dict) -> NodeStatus:
     """Check health of a single node"""
-    start_time = time.time()
+    # perf_counter, not time.time(): Windows clock granularity (~15ms) made
+    # sub-millisecond mocked/local checks measure an exact 0.0 in tests.
+    start_time = time.perf_counter()
     timestamp = datetime.now()
     
     try:
@@ -240,38 +246,38 @@ def check_node_health(node_config: dict) -> NodeStatus:
             timeout=10,
             verify=verify
         )
-        response_time_ms = (time.time() - start_time) * 1000
+        response_time_ms = (time.perf_counter() - start_time) * 1000
         
+        # A 200 alone is not evidence of a node: the body must validate via the
+        # shared probe (issue #17180). An SPA/parking host answering 200 with
+        # HTML on every path is an impostor, not "up".
         if response.status_code == 200:
-            data = response.json()
-            return NodeStatus(
-                node_id=node_config['id'],
-                name=node_config['name'],
-                endpoint=node_config['endpoint'],
-                location=node_config['location'],
-                status='up',
-                response_time_ms=response_time_ms,
-                version=data.get('version', 'unknown'),
-                uptime_s=data.get('uptime_s', 0),
-                active_miners=data.get('active_miners', 0),
-                current_epoch=data.get('epoch', 0),
-                timestamp=timestamp
+            try:
+                data = response.json()
+            except ValueError:
+                data = None
+            state, reason = classify_health_data(
+                200, response.headers.get('Content-Type', ''), data
             )
         else:
-            return NodeStatus(
-                node_id=node_config['id'],
-                name=node_config['name'],
-                endpoint=node_config['endpoint'],
-                location=node_config['location'],
-                status='down',
-                response_time_ms=response_time_ms,
-                version='unknown',
-                uptime_s=0,
-                active_miners=0,
-                current_epoch=0,
-                timestamp=timestamp,
-                error=f"HTTP {response.status_code}"
-            )
+            data = None
+            state, reason = classify_health_data(response.status_code, '', None)
+
+        data = data if isinstance(data, dict) else {}
+        return NodeStatus(
+            node_id=node_config['id'],
+            name=node_config['name'],
+            endpoint=node_config['endpoint'],
+            location=node_config['location'],
+            status=state,  # 'up' | 'degraded' | 'impostor' | 'down'
+            response_time_ms=response_time_ms,
+            version=data.get('version', 'unknown'),
+            uptime_s=data.get('uptime_s', 0),
+            active_miners=data.get('active_miners', 0),
+            current_epoch=data.get('epoch', 0),
+            timestamp=timestamp,
+            error=reason
+        )
             
     except requests.exceptions.Timeout:
         return NodeStatus(
@@ -280,7 +286,7 @@ def check_node_health(node_config: dict) -> NodeStatus:
             endpoint=node_config['endpoint'],
             location=node_config['location'],
             status='down',
-            response_time_ms=(time.time() - start_time) * 1000,
+            response_time_ms=(time.perf_counter() - start_time) * 1000,
             version='unknown',
             uptime_s=0,
             active_miners=0,
@@ -295,7 +301,7 @@ def check_node_health(node_config: dict) -> NodeStatus:
             endpoint=node_config['endpoint'],
             location=node_config['location'],
             status='down',
-            response_time_ms=(time.time() - start_time) * 1000,
+            response_time_ms=(time.perf_counter() - start_time) * 1000,
             version='unknown',
             uptime_s=0,
             active_miners=0,
@@ -310,7 +316,7 @@ def check_node_health(node_config: dict) -> NodeStatus:
             endpoint=node_config['endpoint'],
             location=node_config['location'],
             status='down',
-            response_time_ms=(time.time() - start_time) * 1000,
+            response_time_ms=(time.perf_counter() - start_time) * 1000,
             version='unknown',
             uptime_s=0,
             active_miners=0,
@@ -333,7 +339,13 @@ def detect_status_change(old_status: dict, new_status: NodeStatus):
             incident_type = 'node_down'
             details = f"Node {new_status.name} went DOWN. Error: {new_status.error or 'Unknown'}"
             logger.warning(f"INCIDENT: {details}")
-        elif old == 'down' and new == 'up':
+        elif new == STATE_IMPOSTOR:
+            # 200 on every path but no node body — the host was repurposed.
+            incident_type = 'node_impostor'
+            details = (f"Node {new_status.name} answers HTTP 200 but is not a "
+                       f"RustChain node. Reason: {new_status.error or 'Unknown'}")
+            logger.warning(f"INCIDENT: {details}")
+        elif old in ('down', STATE_IMPOSTOR) and new == 'up':
             incident_type = 'node_recovery'
             details = f"Node {new_status.name} recovered and is back UP"
             logger.info(f"INCIDENT: {details}")
@@ -456,7 +468,8 @@ def api_status():
         'last_updated': datetime.now().isoformat(),
         'total_nodes': len(NODES),
         'nodes_up': sum(1 for s in current_status.values() if s['status'] == 'up'),
-        'nodes_down': sum(1 for s in current_status.values() if s['status'] == 'down')
+        'nodes_down': sum(1 for s in current_status.values() if s['status'] == 'down'),
+        'nodes_impostor': sum(1 for s in current_status.values() if s['status'] == STATE_IMPOSTOR)
     })
 
 
@@ -707,6 +720,16 @@ HTML_TEMPLATE = '''
             color: var(--danger);
         }
         
+        .status-badge.impostor {
+            background: rgba(168, 85, 247, 0.2);
+            color: #a855f7;
+        }
+        
+        .status-badge.degraded {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+        }
+        
         .node-metrics {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -854,6 +877,10 @@ HTML_TEMPLATE = '''
                 <div class="value down" id="nodes-down">-</div>
             </div>
             <div class="summary-card">
+                <h3>Impostors</h3>
+                <div class="value impostor" id="nodes-impostor" style="color: #a855f7;">-</div>
+            </div>
+            <div class="summary-card">
                 <h3>Overall Status</h3>
                 <div class="value" id="overall-status">-</div>
             </div>
@@ -959,6 +986,7 @@ HTML_TEMPLATE = '''
             document.getElementById('total-nodes').textContent = data.total_nodes;
             document.getElementById('nodes-up').textContent = data.nodes_up;
             document.getElementById('nodes-down').textContent = data.nodes_down;
+            document.getElementById('nodes-impostor').textContent = data.nodes_impostor || 0;
             
             const overall = document.getElementById('overall-status');
             if (data.nodes_up === data.total_nodes) {

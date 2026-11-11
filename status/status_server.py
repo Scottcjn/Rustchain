@@ -8,6 +8,7 @@ Polls every 60 seconds, tracks 24h uptime history, logs incidents.
 """
 
 import json
+import sys
 import time
 import threading
 import os
@@ -17,6 +18,13 @@ from xml.sax.saxutils import escape as xml_escape
 
 import requests
 from flask import Flask, render_template, jsonify, Response
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "monitoring"))
+from node_probe import (  # noqa: E402
+    STATE_DEGRADED,
+    STATE_UP,
+    classify_health_data,
+)
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -67,39 +75,56 @@ def save_state():
 
 
 def check_node(node):
-    """Poll a single node and return status dict."""
+    """Poll a single node and return status dict.
+
+    A 200 alone never means "up" — the body must validate as a RustChain
+    /health payload via the shared probe (issue #17180). An HTML/JSON answer
+    from a repurposed host is reported as ``impostor``, not healthy.
+    """
     start = time.time()
     try:
         _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
         _verify = _cert if os.path.exists(_cert) else True
         resp = requests.get(node["endpoint"], timeout=10, verify=_verify)
         elapsed_ms = round((time.time() - start) * 1000)
+        checked_at = datetime.utcnow().isoformat() + "Z"
         if resp.status_code == 200:
             try:
                 data = resp.json()
             except ValueError:
-                data = {}
-            return {
-                "up": True,
-                "status_code": resp.status_code,
-                "response_ms": elapsed_ms,
-                "version": data.get("version", "unknown"),
-                "uptime": data.get("uptime", data.get("uptime_seconds", 0)),
-                "active_miners": data.get("active_miners", data.get("miners", 0)),
-                "current_epoch": data.get("epoch", data.get("current_epoch", 0)),
-                "checked_at": datetime.utcnow().isoformat() + "Z",
-            }
+                data = None
+            state, reason = classify_health_data(
+                resp.status_code, resp.headers.get("Content-Type", ""), data
+            )
         else:
-            return {
-                "up": False,
-                "status_code": resp.status_code,
-                "response_ms": elapsed_ms,
-                "checked_at": datetime.utcnow().isoformat() + "Z",
-            }
+            state, reason = classify_health_data(resp.status_code, "", None)
+        base = {
+            "up": state in (STATE_UP, STATE_DEGRADED),
+            "state": state,
+            "status_code": resp.status_code,
+            "response_ms": elapsed_ms,
+            "checked_at": checked_at,
+        }
+        if not base["up"]:
+            base["error"] = reason
+            return base
+        data = data or {}
+        base.update({
+            "version": data.get("version", "unknown"),
+            "uptime": data.get(
+                "uptime", data.get("uptime_seconds", data.get("uptime_s", 0))
+            ),
+            "active_miners": data.get("active_miners", data.get("miners", 0)),
+            "current_epoch": data.get("epoch", data.get("current_epoch", 0)),
+        })
+        if state == STATE_DEGRADED:
+            base["error"] = reason
+        return base
     except Exception as e:
         elapsed_ms = round((time.time() - start) * 1000)
         return {
             "up": False,
+            "state": "unreachable",
             "error": str(e)[:200],
             "response_ms": elapsed_ms,
             "checked_at": datetime.utcnow().isoformat() + "Z",
