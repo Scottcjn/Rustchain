@@ -11,19 +11,19 @@ Complete ERC-20 token contract deployment package for RustChain Token (wRTC) on 
 
 ## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Quick Start](#quick-start)
-- [Contract Features](#contract-features)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [Deployment](#deployment)
-- [Verification](#verification)
-- [Contract Interaction](#contract-interaction)
-- [Testing](#testing)
-- [Security Considerations](#security-considerations)
-- [Integration Guide](#integration-guide)
-- [API Reference](#api-reference)
-- [Troubleshooting](#troubleshooting)
+- [Overview](#-overview)
+- [Quick Start](#-quick-start)
+- [Contract Features](#-contract-features)
+- [Installation](#-installation)
+- [Configuration](#-configuration)
+- [Deployment](#-deployment)
+- [Verification](#-verification)
+- [Contract Interaction](#-contract-interaction)
+- [Testing](#-testing)
+- [Security Considerations](#-security-considerations)
+- [Integration Guide](#-integration-guide)
+- [API Reference](#-api-reference)
+- [Troubleshooting](#-troubleshooting)
 
 ---
 

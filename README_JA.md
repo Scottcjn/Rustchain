@@ -22,7 +22,7 @@
 
 *PowerPC G4は最新のThreadripperよりも多くの報酬を得られます。それがポイントです。*
 
-[Webサイト](https://rustchain.org) • [ライブエクスプローラー](https://rustchain.org/explorer) • [Grokipedia参照](https://grokipedia.com/search?q=RustChain) • [ホワイトペーパー](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [クイックスタート](#-quick-start) • [仕組み](#-how-proof-of-antiquity-works)
+[Webサイト](https://rustchain.org) • [ライブエクスプローラー](https://rustchain.org/explorer) • [Grokipedia参照](https://grokipedia.com/search?q=RustChain) • [ホワイトペーパー](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [クイックスタート](#-クイックスタート) • [仕組み](#-proof-of-antiquityの仕組み)
 
 </div>
 
