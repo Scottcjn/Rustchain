@@ -149,6 +149,132 @@ def test_score_interpretation_levels():
         assert "interpretation" in details
     print("  interpretation levels: PASS")
 
+
+from arch_cross_validation import (
+    validate_x86_vintage_reward_tier,
+    classify_anchored_x86_vintage_brand,
+    has_validated_measurement_evidence,
+)
+
+
+def _make_x86_fp(brand: str, family: int, measurements: bool = True, **extra_checks):
+    checks = {
+        "device_age_oracle": {
+            "passed": True,
+            "data": {
+                "cpu_model": brand,
+                "cpu_family": str(family),
+                "arch": "i686",
+                "flags_sample": [],
+                "mismatch_reasons": [],
+                "confidence": 0.85,
+            },
+        },
+    }
+    if measurements:
+        checks["cache_timing"] = {
+            "passed": True,
+            "data": {
+                "l1_ns": 40.0,
+                "l2_ns": 80.0,
+                "l3_ns": 240.0,
+                "l2_l1_ratio": 2.0,
+                "l3_l2_ratio": 3.0,
+            },
+        }
+        checks["simd_identity"] = {
+            "passed": True,
+            "data": {
+                "arch": "i686",
+                "simd_flags_count": 1,
+                "has_sse": False,
+                "has_avx": False,
+                "has_altivec": False,
+                "has_neon": False,
+                "sample_flags": ["fpu"],
+            },
+        }
+    checks.update(extra_checks)
+    return {"checks": checks}
+
+
+def test_bounty_16271_tscless_486_and_386_keep_tier():
+    fp_486 = _make_x86_fp(
+        "Am486DX4",
+        4,
+        clock_drift={"passed": False, "data": {"fail_reason": "rdtsc_unavailable", "cv": 0}},
+    )
+    fp_486["all_passed"] = False
+    res_486 = validate_x86_vintage_reward_tier("486", fp_486)
+    assert res_486 == {"device_family": "x86", "device_arch": "486"}
+
+    fp_386 = _make_x86_fp("Am386DX", 3)
+    res_386 = validate_x86_vintage_reward_tier("386", fp_386)
+    assert res_386 == {"device_family": "x86", "device_arch": "386"}
+
+
+def test_bounty_16271_anchored_brand_and_family_boundaries():
+    # Pentium III (family 6) must NOT match family-5 'pentium'
+    fp_p3 = _make_x86_fp("Intel Pentium III 800MHz", 6)
+    assert validate_x86_vintage_reward_tier("pentium", fp_p3)["device_arch"] == "default"
+    assert validate_x86_vintage_reward_tier("pentium_iii", fp_p3)["device_arch"] == "pentium_iii"
+
+    # Pentium 4 / Core i7 must clamp to default
+    fp_p4 = _make_x86_fp("Intel(R) Pentium(R) 4 CPU 3.00GHz", 15)
+    assert validate_x86_vintage_reward_tier("pentium", fp_p4)["device_arch"] == "default"
+    fp_i7 = _make_x86_fp("Intel Core i7-9750H", 6)
+    assert validate_x86_vintage_reward_tier("486", fp_i7)["device_arch"] == "default"
+
+    # Mixed-case & literal Linux kernel model names accepted
+    for brand, fam, arch in [
+        ("pEnTiUm 200", 5, "pentium"),
+        ("Pentium 75 - 200", 5, "pentium"),
+        ("Pentium 60/66", 5, "pentium"),
+        ("486 DX/2", 4, "486"),
+        ("Am5x86-WT", 4, "486"),
+        ("Cyrix Cx486DX2", 4, "486"),
+        ("Pentium III (Coppermine)", 6, "pentium_iii"),
+        ("Pentium II (Deschutes)", 6, "pentium_ii"),
+    ]:
+        fp = _make_x86_fp(brand, fam)
+        assert validate_x86_vintage_reward_tier(arch, fp)["device_arch"] == arch
+
+
+def test_bounty_16271_validated_evidence_and_simd_contradictions():
+    # Bare brand without measurements -> clamp
+    fp_bare = _make_x86_fp("Am486DX4", 4, measurements=False)
+    assert validate_x86_vintage_reward_tier("486", fp_bare)["device_arch"] == "default"
+
+    # Unvalidated cache_timing (missing passed=True or inconsistent ratio) -> clamp
+    fp_bad_ratio = _make_x86_fp("Am486DX4", 4)
+    fp_bad_ratio["checks"]["cache_timing"]["data"]["l2_l1_ratio"] = 9.5
+    assert not has_validated_measurement_evidence(fp_bad_ratio)
+    assert validate_x86_vintage_reward_tier("486", fp_bad_ratio)["device_arch"] == "default"
+
+    # Modern SIMD flags (even on failed check or alias) -> clamp
+    fp_sse2 = _make_x86_fp(
+        "Am486DX4",
+        4,
+        simd_identity={"passed": False, "data": {"sample_flags": ["sse2"]}},
+    )
+    assert validate_x86_vintage_reward_tier("486", fp_sse2)["device_arch"] == "default"
+
+
+def test_bounty_16271_down_only_disambiguation_and_no_blast_radius():
+    # Plain Pentium 200 claiming pentium_mmx downgrades to pentium; MMX claiming pentium stays pentium
+    fp_p5 = _make_x86_fp("Intel Pentium 200", 5)
+    assert validate_x86_vintage_reward_tier("pentium_mmx", fp_p5)["device_arch"] == "pentium"
+    fp_mmx = _make_x86_fp("Intel Pentium MMX 233MHz", 5)
+    assert validate_x86_vintage_reward_tier("pentium", fp_mmx)["device_arch"] == "pentium"
+
+    # Caller device_info dict is never mutated
+    caller_device = {"device_family": "x86", "device_arch": "486"}
+    fp_spoof = _make_x86_fp("Intel Core i7-9750H", 6)
+    res = validate_x86_vintage_reward_tier("486", fp_spoof, device_info=caller_device)
+    assert res["device_arch"] == "default"
+    assert caller_device == {"device_family": "x86", "device_arch": "486"}
+
+
 if __name__ == "__main__":
     print("\n=== arch_cross_validation unit tests ===\n")
     test_normalize_arch()

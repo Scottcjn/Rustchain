@@ -368,6 +368,9 @@ def score_clock_consistency(claimed_arch: str, clock_features: Dict) -> Tuple[fl
     score = 1.0
     cv = clock_features.get("cv", 0)
     if cv == 0:
+        # Bounty #16271 Req #1: Honest TSC-less vintage x86 (386/486) has no RDTSC
+        if (claimed_arch or "").strip().lower() in ("386", "486", "i386", "i486", "vintage_x86"):
+            return 1.0, []
         issues.append("no_clock_cv_data")
         return 0.3, issues
     cv_min, cv_max = cv_range
@@ -508,6 +511,303 @@ def validate_arch_consistency(
     else:
         details["interpretation"] = "CONFIRMED_SPOOFED: clear arch mismatch"
     return overall_score, details
+
+
+
+# ─────────────────────────────────────────────────────────────────
+# Bounty #16271: Hardened x86 Vintage-Arch Reward Validation (Anti-Spoof)
+# ─────────────────────────────────────────────────────────────────
+import re as _re
+
+X86_VINTAGE_TIER_PROFILES = {
+    "386": {"family": 3, "max_simd": "none", "rank": 60, "multiplier": 2.5},
+    "486": {"family": 4, "max_simd": "none", "rank": 50, "multiplier": 2.0},
+    "pentium": {"family": 5, "max_simd": "none", "rank": 40, "multiplier": 1.6},
+    "pentium_mmx": {"family": 5, "max_simd": "mmx", "rank": 35, "multiplier": 1.5},
+    "pentium_pro": {"family": 6, "max_simd": "none", "rank": 32, "multiplier": 1.5},
+    "pentium_ii": {"family": 6, "max_simd": "mmx", "rank": 30, "multiplier": 1.4},
+    "pentium_iii": {"family": 6, "max_simd": "sse", "rank": 25, "multiplier": 1.3},
+    "pentium_m_banias": {"family": 6, "max_simd": "sse2", "rank": 20, "multiplier": 1.25},
+    "pentium_m_dothan": {"family": 6, "max_simd": "sse2", "rank": 18, "multiplier": 1.2},
+    "pentium_m_yonah": {"family": 6, "max_simd": "sse3", "rank": 15, "multiplier": 1.15},
+    "pentium_m": {"family": 6, "max_simd": "sse2", "rank": 15, "multiplier": 1.15},
+}
+
+_SIMD_GENERATION_ORDER = {
+    "none": 0,
+    "mmx": 1,
+    "sse": 2,
+    "sse2": 3,
+    "sse3": 4,
+    "ssse3": 5,
+    "sse4": 6,
+    "avx": 7,
+    "modern_non_x86": 99,
+}
+
+# Anchored, case-insensitive brand patterns (order matters: specific subtypes before general 'pentium')
+_ANCHORED_X86_BRAND_PATTERNS = [
+    (_re.compile(r"\b(?:i?386|am386[a-z0-9/-]*|cx386[a-z0-9/-]*)\b", _re.IGNORECASE), "386", 3),
+    (_re.compile(r"\b(?:i?486(?:\s*dx/?[24]?)?|am486[a-z0-9/-]*|am5x86[a-z0-9/-]*|cx486[a-z0-9/-]*|cyrix\s+cx486[a-z0-9/-]*)\b", _re.IGNORECASE), "486", 4),
+    (_re.compile(r"\bpentium(?:\(r\))?\s+(?:iii|3)\b", _re.IGNORECASE), "pentium_iii", 6),
+    (_re.compile(r"\b(?:mobile\s+)?pentium(?:\(r\))?\s+(?:ii|2)\b", _re.IGNORECASE), "pentium_ii", 6),
+    (_re.compile(r"\bpentium(?:\(r\))?\s+pro\b", _re.IGNORECASE), "pentium_pro", 6),
+    (_re.compile(r"\bpentium(?:\(r\))?\s+m\b", _re.IGNORECASE), "pentium_m", 6),
+    (_re.compile(r"\bpentium(?:\(r\))?(?:\s+w/\s+|\s+with\s+|\s+)mmx\b", _re.IGNORECASE), "pentium_mmx", 5),
+    # Reject Pentium 4 / D / Dual-Core / Extreme / Celeron / Xeon / Core before plain family-5 Pentium
+    (_re.compile(r"\bpentium(?:\(r\))?\s+(?:4|iv|d|dual[-\s]core|extreme|g\d+|n\d+|j\d+|silver|gold)\b", _re.IGNORECASE), "modern_x86", None),
+    (_re.compile(r"\b(?:core(?:\(tm\))?\s*(?:2|i[3579]|ultra)|ryzen|epyc|threadripper|xeon|apple\s+m[1-9])\b", _re.IGNORECASE), "modern_x86", None),
+    # Classic P5 Pentium (e.g. "Pentium 200", "Pentium 75 - 200", "Pentium 60/66", "Intel Pentium")
+    (_re.compile(r"\bpentium(?:\(r\))?(?:\s+(?:60/66|75\s*-\s*200|\d{2,3}(?:\s*mhz)?))?(?!\s*(?:iii|ii|iv|pro|mmx|m\b|4|d\b|dual|extreme|g\d|n\d|j\d|silver|gold))\b", _re.IGNORECASE), "pentium", 5),
+]
+
+
+def classify_anchored_x86_vintage_brand(cpu_brand: str, cpu_family: Any = None) -> Optional[str]:
+    """
+    Anchored, case-insensitive classification of a vintage x86 CPU brand + family.
+    Returns canonical vintage tier key (e.g. '486', 'pentium', 'pentium_mmx', 'pentium_iii')
+    or None if the brand/family is modern, mismatched, or unverified.
+    """
+    if not cpu_brand or not isinstance(cpu_brand, str):
+        return None
+    brand_clean = cpu_brand.strip()
+    if not brand_clean:
+        return None
+
+    parsed_family: Optional[int] = None
+    if cpu_family is not None and not isinstance(cpu_family, bool):
+        try:
+            parsed_family = int(str(cpu_family).strip())
+        except (ValueError, TypeError):
+            parsed_family = None
+
+    for pattern, tier_arch, expected_family in _ANCHORED_X86_BRAND_PATTERNS:
+        if pattern.search(brand_clean):
+            if tier_arch == "modern_x86":
+                return None
+            if expected_family is not None:
+                if parsed_family is None or parsed_family != expected_family:
+                    return None
+            return tier_arch
+    return None
+
+
+def _is_positive_number(val: Any) -> bool:
+    return isinstance(val, (int, float)) and not isinstance(val, bool) and val > 0
+
+
+def has_validated_measurement_evidence(fingerprint: Dict) -> bool:
+    """
+    Requirement #2 (#16271): Corroboration must come from a check that explicitly
+    `passed is True` with real numeric measurements (and server-consistent ratios),
+    never from an unvalidated dict, boolean-only metric, or legacy array shape.
+    """
+    if not isinstance(fingerprint, dict):
+        return False
+    checks = fingerprint.get("checks")
+    if not isinstance(checks, dict):
+        return False
+
+    # 1. Cache timing: requires explicit passed=True and positive l1_ns & l2_ns with consistent l2_l1_ratio
+    cache_chk = checks.get("cache_timing")
+    if isinstance(cache_chk, dict) and cache_chk.get("passed") is True:
+        cdata = cache_chk.get("data")
+        if isinstance(cdata, dict):
+            l1 = cdata.get("l1_ns")
+            l2 = cdata.get("l2_ns")
+            ratio = cdata.get("l2_l1_ratio")
+            if _is_positive_number(l1) and _is_positive_number(l2):
+                expected_ratio = l2 / l1
+                if ratio is None or (_is_positive_number(ratio) and abs(float(ratio) - expected_ratio) <= 0.5):
+                    return True
+            latencies = cdata.get("latencies")
+            tone_ratios = cdata.get("tone_ratios")
+            if isinstance(latencies, dict) and isinstance(tone_ratios, list) and len(tone_ratios) > 0:
+                if all(_is_positive_number(r) for r in tone_ratios):
+                    return True
+
+    # 2. Thermal drift: requires explicit passed=True and positive numeric drift/stdev measurement
+    thermal_chk = checks.get("thermal_drift")
+    if isinstance(thermal_chk, dict) and thermal_chk.get("passed") is True:
+        tdata = thermal_chk.get("data")
+        if isinstance(tdata, dict):
+            if _is_positive_number(tdata.get("thermal_drift_pct")) or _is_positive_number(tdata.get("drift_stdev")):
+                return True
+
+    # 3. Instruction jitter: requires explicit passed=True and positive numeric jitter measurement
+    jitter_chk = checks.get("instruction_jitter")
+    if isinstance(jitter_chk, dict) and jitter_chk.get("passed") is True:
+        jdata = jitter_chk.get("data")
+        if isinstance(jdata, dict):
+            if _is_positive_number(jdata.get("jitter_ns")) or _is_positive_number(jdata.get("cv")):
+                return True
+
+    return False
+
+
+def _detect_highest_observed_simd_generation(fingerprint: Dict) -> Tuple[int, List[str]]:
+    """
+    Inspect all SIMD-bearing checks (even failed checks and aliases like `simd_bias`
+    or `device_age_oracle.flags_sample`) to extract negative/contradictory SIMD evidence.
+    """
+    highest = 0
+    contradictions: List[str] = []
+    if not isinstance(fingerprint, dict):
+        return highest, contradictions
+    checks = fingerprint.get("checks")
+    if not isinstance(checks, dict):
+        return highest, contradictions
+
+    for chk_name, chk_obj in checks.items():
+        if not isinstance(chk_obj, dict):
+            continue
+        data = chk_obj.get("data")
+        if not isinstance(data, dict):
+            continue
+
+        if data.get("has_altivec") is True or data.get("has_neon") is True:
+            highest = max(highest, _SIMD_GENERATION_ORDER["modern_non_x86"])
+            contradictions.append(f"{chk_name}:non_x86_simd")
+        if data.get("has_avx512") is True or data.get("has_avx2") is True or data.get("has_avx") is True:
+            highest = max(highest, _SIMD_GENERATION_ORDER["avx"])
+            contradictions.append(f"{chk_name}:avx")
+        if data.get("has_sse4") is True:
+            highest = max(highest, _SIMD_GENERATION_ORDER["sse4"])
+        if data.get("has_sse3") is True:
+            highest = max(highest, _SIMD_GENERATION_ORDER["sse3"])
+        if data.get("has_sse2") is True:
+            highest = max(highest, _SIMD_GENERATION_ORDER["sse2"])
+        if data.get("has_sse") is True:
+            highest = max(highest, _SIMD_GENERATION_ORDER["sse"])
+        if data.get("has_mmx") is True:
+            highest = max(highest, _SIMD_GENERATION_ORDER["mmx"])
+
+        for flag_list_key in ("sample_flags", "flags_sample", "flags"):
+            raw_flags = data.get(flag_list_key)
+            if isinstance(raw_flags, list):
+                for flg in raw_flags:
+                    if not isinstance(flg, str):
+                        continue
+                    fl = flg.strip().lower()
+                    if fl in ("avx", "avx2", "avx512", "avx512f"):
+                        highest = max(highest, _SIMD_GENERATION_ORDER["avx"])
+                    elif fl in ("sse4", "sse4_1", "sse4_2", "sse4.1", "sse4.2", "sse4a"):
+                        highest = max(highest, _SIMD_GENERATION_ORDER["sse4"])
+                    elif fl in ("ssse3",):
+                        highest = max(highest, _SIMD_GENERATION_ORDER["ssse3"])
+                    elif fl in ("sse3", "pni"):
+                        highest = max(highest, _SIMD_GENERATION_ORDER["sse3"])
+                    elif fl == "sse2":
+                        highest = max(highest, _SIMD_GENERATION_ORDER["sse2"])
+                    elif fl in ("sse", "xmm"):
+                        highest = max(highest, _SIMD_GENERATION_ORDER["sse"])
+                    elif fl == "mmx":
+                        highest = max(highest, _SIMD_GENERATION_ORDER["mmx"])
+                    elif fl in ("neon", "altivec", "asimd"):
+                        highest = max(highest, _SIMD_GENERATION_ORDER["modern_non_x86"])
+
+    return highest, contradictions
+
+
+def validate_x86_vintage_reward_tier(
+    claimed_arch: str,
+    fingerprint: Dict,
+    device_info: Optional[Dict] = None,
+    measurement_report_verified: bool = True,
+) -> Dict[str, str]:
+    """
+    Harden x86 vintage-arch reward validation (#16271) for the enroll-weight path:
+    1. Does NOT gate 386/486 on `fingerprint_passed` or `clock_drift` (honest TSC-less vintage keeps tier).
+    2. Requires explicitly passed measurement-bearing evidence + complete `device_age_oracle` & `simd_identity`.
+    3. Uses anchored, case-insensitive brand + cpu_family matching.
+    4. Does NOT mutate `device_info` (zero blast radius outside enroll-weight).
+    5. Disambiguates tiers downward only (`pentium_mmx` -> `pentium` if brand is plain Pentium;
+       `pentium_m_banias` -> `pentium_m_yonah` when undifferentiated Pentium M).
+    """
+    base_family = "x86"
+    if isinstance(device_info, dict) and isinstance(device_info.get("device_family"), str):
+        base_family = device_info["device_family"]
+
+    claimed_norm = (claimed_arch or "").strip().lower()
+    if claimed_norm in ("i386",):
+        claimed_norm = "386"
+    elif claimed_norm in ("i486",):
+        claimed_norm = "486"
+
+    if claimed_norm not in X86_VINTAGE_TIER_PROFILES:
+        return {"device_family": base_family, "device_arch": claimed_arch or "default"}
+
+    if not measurement_report_verified:
+        return {"device_family": base_family, "device_arch": "default"}
+
+    if not isinstance(fingerprint, dict) or not isinstance(fingerprint.get("checks"), dict):
+        return {"device_family": base_family, "device_arch": "default"}
+
+    checks = fingerprint["checks"]
+
+    # Require validated measurement evidence (cache_timing / thermal_drift / instruction_jitter)
+    if not has_validated_measurement_evidence(fingerprint):
+        return {"device_family": base_family, "device_arch": "default"}
+
+    # Require explicit passed device_age_oracle with flags_sample present
+    oracle = checks.get("device_age_oracle")
+    if not isinstance(oracle, dict) or oracle.get("passed") is not True:
+        return {"device_family": base_family, "device_arch": "default"}
+    oracle_data = oracle.get("data")
+    if not isinstance(oracle_data, dict) or not isinstance(oracle_data.get("flags_sample"), list):
+        return {"device_family": base_family, "device_arch": "default"}
+
+    # Require explicit passed simd_identity with complete observation (sample_flags covers simd_flags_count)
+    simd_chk = checks.get("simd_identity")
+    if not isinstance(simd_chk, dict) or simd_chk.get("passed") is not True:
+        return {"device_family": base_family, "device_arch": "default"}
+    simd_data = simd_chk.get("data")
+    if not isinstance(simd_data, dict):
+        return {"device_family": base_family, "device_arch": "default"}
+    sample_flags = simd_data.get("sample_flags")
+    flags_count = simd_data.get("simd_flags_count")
+    if isinstance(flags_count, int) and isinstance(sample_flags, list):
+        if flags_count > len(sample_flags) and len(sample_flags) <= 1:
+            return {"device_family": base_family, "device_arch": "default"}
+
+    # Anchored brand + family verification from validated oracle
+    cpu_model = oracle_data.get("cpu_model") or ""
+    cpu_family = oracle_data.get("cpu_family")
+    corroborated_tier = classify_anchored_x86_vintage_brand(cpu_model, cpu_family)
+    if not corroborated_tier:
+        return {"device_family": base_family, "device_arch": "default"}
+
+    # Check negative/contradictory SIMD evidence across ALL checks
+    highest_simd, _ = _detect_highest_observed_simd_generation(fingerprint)
+    claimed_profile = X86_VINTAGE_TIER_PROFILES[claimed_norm]
+    max_allowed_simd = _SIMD_GENERATION_ORDER[claimed_profile["max_simd"]]
+    if highest_simd > max_allowed_simd:
+        return {"device_family": base_family, "device_arch": "default"}
+
+    # Tier compatibility & down-only disambiguation (Req #5)
+    if claimed_norm in ("386", "486", "pentium_pro", "pentium_ii", "pentium_iii"):
+        if corroborated_tier != claimed_norm:
+            return {"device_family": base_family, "device_arch": "default"}
+        return {"device_family": base_family, "device_arch": claimed_norm}
+
+    if claimed_norm in ("pentium", "pentium_mmx"):
+        if corroborated_tier not in ("pentium", "pentium_mmx"):
+            return {"device_family": base_family, "device_arch": "default"}
+        # Down-only: if miner claims pentium_mmx on plain pentium, downgrade to pentium;
+        # if miner claims pentium on pentium_mmx, never inflate (keep pentium).
+        if claimed_norm == "pentium_mmx" and corroborated_tier == "pentium":
+            return {"device_family": base_family, "device_arch": "pentium"}
+        return {"device_family": base_family, "device_arch": claimed_norm}
+
+    if claimed_norm in ("pentium_m", "pentium_m_banias", "pentium_m_dothan", "pentium_m_yonah"):
+        if corroborated_tier != "pentium_m":
+            return {"device_family": base_family, "device_arch": "default"}
+        # Undifferentiated "Intel Pentium M" without clock/model suffix downgrades to lowest subtype
+        if not _re.search(r"\d+\s*(?:mhz|ghz)", cpu_model, _re.IGNORECASE):
+            return {"device_family": base_family, "device_arch": "pentium_m_yonah"}
+        return {"device_family": base_family, "device_arch": claimed_norm}
+
+    return {"device_family": base_family, "device_arch": "default"}
 
 
 if __name__ == "__main__":
