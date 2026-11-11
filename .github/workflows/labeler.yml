@@ -11,7 +11,10 @@ permissions:
 jobs:
   label:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/labeler@v7
+      - name: Apply PR labels
+        uses: actions/labeler@v5
+        timeout-minutes: 3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
