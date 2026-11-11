@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain)
 [![Contributors](https://img.shields.io/github/contributors/Scottcjn/Rustchain?color=brightgreen)](https://github.com/Scottcjn/Rustchain/graphs/contributors)
 [![Last Commit](https://img.shields.io/github/last-commit/Scottcjn/Rustchain?color=blue)](https://github.com/Scottcjn/Rustchain/commits/main)
 [![Open Issues](https://img.shields.io/github/issues/Scottcjn/Rustchain?color=orange)](https://github.com/Scottcjn/Rustchain/issues)
@@ -22,9 +22,10 @@
 
 *आपका PowerPC G4 एक आधुनिक Threadripper से भी अधिक कमा सकता है। यही इसका उद्देश्य है।*
 
-[वेबसाइट](https://rustchain.org) • [लाइव एक्सप्लोरर](https://rustchain.org/explorer) • [Grokipedia संदर्भ](https://grokipedia.com/search?q=RustChain) • [व्हाइटपेपर](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [क्विक स्टार्ट](#-quick-start) • [यह कैसे काम करता है](#-how-proof-of-antiquity-works)
+[वेबसाइट](https://rustchain.org) • [लाइव एक्सप्लोरर](https://rustchain.org/explorer) • [Grokipedia संदर्भ](https://grokipedia.com/search?q=RustChain) • [व्हाइटपेपर](docs/RustChain_Whitepaper_Flameholder_v0.97.pdf) • [क्विक स्टार्ट](#-क्विक-स्टार्ट) • [यह कैसे काम करता है](README.md#how-proof-of-antiquity-works)
 
 </div>
+
 ### ⚡ क्विक स्टार्ट
 
 ### वन-लाइन इंस्टॉल (अनुशंसित)
