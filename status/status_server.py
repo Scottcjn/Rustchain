@@ -67,26 +67,38 @@ def save_state():
 
 
 def check_node(node):
-    """Poll a single node and return status dict."""
+    """Poll a single node and validate /health body via monitoring.node_probe."""
+    import sys as _sys
+    _root = str(Path(__file__).resolve().parents[1])
+    if _root not in _sys.path:
+        _sys.path.insert(0, _root)
+    from monitoring.node_probe import classify_health_response
+
     start = time.time()
     try:
         _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
         _verify = _cert if os.path.exists(_cert) else True
         resp = requests.get(node["endpoint"], timeout=10, verify=_verify)
         elapsed_ms = round((time.time() - start) * 1000)
-        if resp.status_code == 200:
-            try:
-                data = resp.json()
-            except ValueError:
-                data = {}
+        probe = classify_health_response(
+            node["endpoint"],
+            resp.status_code,
+            resp.text,
+            content_type=resp.headers.get("Content-Type", ""),
+            response_ms=elapsed_ms,
+        )
+        if probe.state in ("up", "degraded", "impostor"):
+            data = probe.raw_data
             return {
-                "up": True,
+                "up": probe.state == "up",
+                "state": probe.state,
                 "status_code": resp.status_code,
                 "response_ms": elapsed_ms,
-                "version": data.get("version", "unknown"),
-                "uptime": data.get("uptime", data.get("uptime_seconds", 0)),
+                "version": probe.version or "unknown",
+                "uptime": probe.uptime_s or 0,
                 "active_miners": data.get("active_miners", data.get("miners", 0)),
                 "current_epoch": data.get("epoch", data.get("current_epoch", 0)),
+                "error": probe.error,
                 "checked_at": datetime.utcnow().isoformat() + "Z",
             }
         else:

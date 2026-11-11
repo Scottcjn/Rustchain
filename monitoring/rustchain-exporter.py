@@ -38,17 +38,42 @@ avg_antiquity_multiplier = Gauge('rustchain_avg_antiquity_multiplier', 'Average 
 
 scrape_errors = Counter('rustchain_scrape_errors_total', 'Total number of scrape errors')
 scrape_duration_seconds = Gauge('rustchain_scrape_duration_seconds', 'Duration of last scrape')
+last_successful_scrape_timestamp = Gauge(
+    'rustchain_last_successful_scrape_timestamp',
+    'Unix timestamp of the last validated RustChain /health scrape'
+)
+
+
+def probe_node_health():
+    """Fetch and validate /health via monitoring.node_probe."""
+    import sys as _sys
+    from pathlib import Path as _Path
+    _root = str(_Path(__file__).resolve().parents[1])
+    if _root not in _sys.path:
+        _sys.path.insert(0, _root)
+    from monitoring.node_probe import classify_health_response
+
+    try:
+        url = f"{RUSTCHAIN_NODE}/health"
+        verify = TLS_CA_BUNDLE if TLS_CA_BUNDLE else TLS_VERIFY
+        response = requests.get(url, verify=verify, timeout=10)
+        return classify_health_response(
+            url,
+            response.status_code,
+            response.text,
+            content_type=response.headers.get("Content-Type", ""),
+        )
+    except Exception as e:
+        logger.error(f"Error probing /health: {e}")
+        scrape_errors.inc()
+        return None
 
 
 def fetch_json(endpoint):
     """Fetch JSON data from RustChain node API"""
     try:
         url = f"{RUSTCHAIN_NODE}{endpoint}"
-        # Determine verification behavior
-        verify = TLS_VERIFY
-        if TLS_CA_BUNDLE:
-            verify = TLS_CA_BUNDLE
-        
+        verify = TLS_CA_BUNDLE if TLS_CA_BUNDLE else TLS_VERIFY
         response = requests.get(url, verify=verify, timeout=10)
         response.raise_for_status()
         return response.json()
@@ -63,13 +88,20 @@ def collect_metrics():
     start_time = time.time()
     
     try:
-        # Health metrics
-        health = fetch_json('/health')
-        if health:
-            node_health.set(1 if health.get('ok') else 0)
-            node_uptime_seconds.set(health.get('uptime_s', 0))
+        # Health metrics validated via shared probe
+        probe = probe_node_health()
+        if probe is not None and probe.state == 'up':
+            health = probe.raw_data
+            node_health.set(1)
+            node_uptime_seconds.set(probe.uptime_s or 0)
             node_db_status.set(1 if health.get('db_rw') else 0)
-            node_version.info({'version': health.get('version', 'unknown')})
+            node_version.info({'version': probe.version or 'unknown', 'state': probe.state})
+            last_successful_scrape_timestamp.set(time.time())
+        else:
+            node_health.set(0)
+            node_db_status.set(0)
+            if probe is not None and probe.state != 'up':
+                scrape_errors.inc()
         
         # Epoch metrics
         epoch = fetch_json('/epoch')
