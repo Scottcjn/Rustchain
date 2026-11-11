@@ -2,9 +2,11 @@
 """Regression coverage for bounty #16271 vintage-x86 reward validation."""
 import importlib.util
 import os
+import sys
 import tempfile
 import unittest
 
+from _node_test_utils import release_node_modules
 
 NODE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 MODULE_PATH = os.path.join(NODE_DIR, "rustchain_v2_integrated_v2.2.1_rip200.py")
@@ -39,11 +41,27 @@ class X86VintageRewardValidationTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls._tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
-        os.environ.setdefault("RUSTCHAIN_DB_PATH", os.path.join(cls._tmp.name, "x86-reward.db"))
-        os.environ.setdefault("RC_ADMIN_KEY", "0123456789abcdef0123456789abcdef")
+        # Capture/restore (mirrors test_enroll_weight_device_spoof): this class
+        # cleans up its temp dir in tearDownClass, so a leaked env var would
+        # strand any later node-module suite on a deleted database path.
+        cls._prev = {k: os.environ.get(k) for k in ("RUSTCHAIN_DB_PATH", "RC_ADMIN_KEY")}
+        os.environ["RUSTCHAIN_DB_PATH"] = os.path.join(cls._tmp.name, "x86-reward.db")
+        os.environ["RC_ADMIN_KEY"] = "0123456789abcdef0123456789abcdef"
+        release_node_modules()
         spec = importlib.util.spec_from_file_location("rcnode_x86_reward_test", MODULE_PATH)
         cls.mod = importlib.util.module_from_spec(spec)
+        sys.modules["rcnode_x86_reward_test"] = cls.mod
         spec.loader.exec_module(cls.mod)
+
+    @classmethod
+    def tearDownClass(cls):
+        release_node_modules()
+        for k, v in cls._prev.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        cls._tmp.cleanup()
 
     def _reward(self, arch, fingerprint):
         return self.mod._derive_enroll_weight_device(
