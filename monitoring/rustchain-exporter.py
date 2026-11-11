@@ -5,9 +5,18 @@ Exposes RustChain node metrics in Prometheus format
 """
 import time
 import os
+import sys
 import requests
 from prometheus_client import start_http_server, Gauge, Counter, Info
 import logging
+
+# Shared body-validating probe (issue #17180). node_probe.py sits next to this
+# file; the explicit path insert keeps it importable when tests load this
+# module by file path.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+from node_probe import probe_health
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('rustchain-exporter')
@@ -19,11 +28,22 @@ SCRAPE_INTERVAL = int(os.environ.get('SCRAPE_INTERVAL', 30))  # seconds
 TLS_VERIFY = os.environ.get('TLS_VERIFY', 'true').lower() in ('true', '1', 'yes')
 TLS_CA_BUNDLE = os.environ.get('TLS_CA_BUNDLE', None)  # Optional CA cert path
 
+
+def _tls_verify():
+    """requests-style verify value for the probe."""
+    return TLS_CA_BUNDLE if TLS_CA_BUNDLE else TLS_VERIFY
+
+
 # Prometheus metrics
 node_health = Gauge('rustchain_node_health', 'Node health status (1=healthy, 0=unhealthy)')
 node_uptime_seconds = Gauge('rustchain_node_uptime_seconds', 'Node uptime in seconds')
 node_db_status = Gauge('rustchain_node_db_status', 'Database read/write status (1=ok, 0=error)')
 node_version = Info('rustchain_node_version', 'Node version information')
+# Issue #17180: the health gauge used to keep its last value (1) across failed
+# scrapes. The last-success timestamp makes a stuck-at-1 gauge detectable.
+last_successful_scrape_timestamp = Gauge(
+    'rustchain_last_successful_scrape_timestamp',
+    'Unix timestamp of the last scrape that got a genuine RustChain /health body')
 
 epoch_number = Gauge('rustchain_epoch_number', 'Current epoch number')
 epoch_slot = Gauge('rustchain_epoch_slot', 'Current slot in epoch')
@@ -63,13 +83,23 @@ def collect_metrics():
     start_time = time.time()
     
     try:
-        # Health metrics
-        health = fetch_json('/health')
-        if health:
-            node_health.set(1 if health.get('ok') else 0)
+        # Health metrics — decided by the shared body validator, not the status
+        # code (issue #17180): an HTML-200 SPA must drive the gauge to 0 and
+        # stop advancing the last-success timestamp.
+        health_probe = probe_health(f"{RUSTCHAIN_NODE}/health", timeout=10,
+                                    verify=_tls_verify())
+        if health_probe.is_node:
+            health = health_probe.data or {}
+            node_health.set(1 if health_probe.state == 'up' else 0)
             node_uptime_seconds.set(health.get('uptime_s', 0))
             node_db_status.set(1 if health.get('db_rw') else 0)
             node_version.info({'version': health.get('version', 'unknown')})
+            last_successful_scrape_timestamp.set(time.time())
+        else:
+            node_health.set(0)
+            scrape_errors.inc()
+            logger.warning(f"health scrape failed: state={health_probe.state} "
+                           f"error={health_probe.error}")
         
         # Epoch metrics
         epoch = fetch_json('/epoch')
