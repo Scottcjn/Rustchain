@@ -74,12 +74,14 @@ if [ "$DRY_RUN" -eq 1 ]; then
         Linux)
             MINER_PATH="linux/rustchain_linux_miner.py"
             FINGERPRINT_PATH="linux/fingerprint_checks.py"
+            MINER_CRYPTO_URL="${BASE_URL}/miners/linux/miner_crypto.py"
             ;;
         Darwin)
-            MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
+            MINER_PATH="macos/rustchain_mac_miner_v2.5.py"
             FINGERPRINT_PATH="macos/fingerprint_checks.py"
+            MINER_CRYPTO_URL="${BASE_URL}/miners/macos/miner_crypto.py"
             ;;
-        *)      echo -e "${RED}Unsupported OS: $OS${NC}"; exit 1 ;;
+        *)      printf "%bUnsupported OS: %s (supported: Linux, macOS/Darwin)%b\n" "${RED}" "$OS" "${NC}" >&2; exit 1 ;;
     esac
 
     if [ -z "$WALLET" ]; then
@@ -124,13 +126,15 @@ case "$OS" in
         echo "  OS: Linux"
         MINER_PATH="linux/rustchain_linux_miner.py"
         FINGERPRINT_PATH="linux/fingerprint_checks.py"
+        MINER_CRYPTO_URL="${BASE_URL}/miners/linux/miner_crypto.py"
         ;;
     Darwin)
         echo "  OS: macOS"
-        MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
+        MINER_PATH="macos/rustchain_mac_miner_v2.5.py"
         FINGERPRINT_PATH="macos/fingerprint_checks.py"
+        MINER_CRYPTO_URL="${BASE_URL}/miners/macos/miner_crypto.py"
         ;;
-    *)      echo -e "${RED}  Unsupported OS: $OS${NC}"; exit 1 ;;
+    *)      printf "%b  Unsupported OS: %s (supported: Linux, macOS/Darwin)%b\n" "${RED}" "$OS" "${NC}" >&2; exit 1 ;;
 esac
 
 MINER_URL="${BASE_URL}/miners/${MINER_PATH}"
@@ -217,13 +221,13 @@ echo -e "${GREEN}[2/6]${NC} Checking Python..."
 
 PYTHON=""
 for cmd in python3 python; do
-    if command -v $cmd &>/dev/null; then
-        ver=$($cmd --version 2>&1 | grep -E '[0-9]+\.[0-9]+' | head -1)
+    if command -v "$cmd" &>/dev/null; then
+        ver=$("$cmd" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
         major=$(echo "$ver" | cut -d. -f1)
         minor=$(echo "$ver" | cut -d. -f2)
         if [ "$major" -ge 3 ] && [ "$minor" -ge 6 ]; then
-            PYTHON=$cmd
-            echo "  Found: $cmd ($($cmd --version 2>&1))"
+            PYTHON="$cmd"
+            echo "  Found: $cmd ($("$cmd" --version 2>&1))"
             break
         fi
     fi
@@ -231,14 +235,18 @@ done
 
 if [ -z "$PYTHON" ]; then
     echo -e "${RED}  Python 3.6+ required but not found.${NC}"
-    echo "  Install with: sudo apt install python3 python3-pip"
+    if [ "$OS" = "Darwin" ]; then
+        echo "  Install on macOS with: brew install python3 (or download from https://www.python.org)"
+    else
+        echo "  Install Python 3 using your system package manager (e.g., apt, dnf, pacman, or apk)"
+    fi
     exit 1
 fi
 
 # Check for requests module
-if ! $PYTHON -c "import requests" 2>/dev/null; then
+if ! "$PYTHON" -c "import requests" 2>/dev/null; then
     echo "  Installing requests module..."
-    $PYTHON -m pip install --user requests --quiet 2>/dev/null || \
+    "$PYTHON" -m pip install --user requests --quiet 2>/dev/null || \
         pip3 install --user requests --quiet 2>/dev/null || \
         echo -e "${YELLOW}  Warning: Could not install 'requests'. Install manually: pip3 install requests${NC}"
 fi
@@ -254,7 +262,7 @@ if [ -z "$WALLET" ]; then
     DEFAULT_WALLET="${HOSTNAME:-miner}-$(echo "$ARCH" | tr '[:upper:]' '[:lower:]')"
 
     echo "  Enter your wallet name (or press Enter for: $DEFAULT_WALLET)"
-    echo -n "  Wallet: "
+    printf "  Wallet: "
     read -r WALLET
     [ -z "$WALLET" ] && WALLET="$DEFAULT_WALLET"
 fi
@@ -305,13 +313,13 @@ cd "$DIR"
 
 PYTHON=""
 for cmd in python3 python; do
-    if command -v $cmd &>/dev/null; then
-        PYTHON=$cmd
+    if command -v "$cmd" &>/dev/null; then
+        PYTHON="$cmd"
         break
     fi
 done
 
-exec $PYTHON -u "$DIR/rustchain_miner.py" --wallet "$WALLET" 2>&1
+exec "$PYTHON" -u "$DIR/rustchain_miner.py" --wallet "$WALLET" 2>&1
 SCRIPT
 chmod +x "$INSTALL_DIR/start-miner.sh"
 
