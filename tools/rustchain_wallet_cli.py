@@ -21,6 +21,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sys
 import time
@@ -285,7 +286,17 @@ def cmd_import(args):
 
 
 def cmd_export(args):
-    ks = _load_keystore(args.wallet)
+    try:
+        ks = _load_keystore(args.wallet)
+    except FileNotFoundError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return EXIT_WALLET_NOT_FOUND
+    except ValueError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return EXIT_USAGE_ERROR
+    except Exception as e:
+        print(f"ERROR: Invalid keystore JSON - {e}", file=sys.stderr)
+        return EXIT_BAD_RESPONSE
     print(json.dumps(ks, indent=2))
     return EXIT_SUCCESS
 
@@ -318,16 +329,38 @@ def _safe_json_object(r: "requests.Response") -> "tuple[dict | None, int]":
     return data, rc
 
 
+def _validate_numeric_balance(value) -> "tuple[float | int | None, str | None]":
+    """Validate that a balance field is a real finite non-negative number."""
+    if isinstance(value, bool) or value is None:
+        return None, f"Invalid amount_rtc value: {value!r}"
+    if isinstance(value, (int, float)):
+        if value != value or value == float("inf") or value == float("-inf") or value < 0:
+            return None, f"Out-of-range amount_rtc value: {value!r}"
+        return value, None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not re.fullmatch(r"[0-9]+(\.[0-9]+)?", stripped):
+            return None, f"Non-numeric amount_rtc value: {value!r}"
+        return float(stripped), None
+    return None, f"Unsupported amount_rtc type: {type(value).__name__}"
+
+
 def cmd_balance(args):
+    wallet_id = getattr(args, "wallet_id", None)
+    if not isinstance(wallet_id, str) or not wallet_id.strip() or any(ch.isspace() for ch in wallet_id.strip()):
+        print("ERROR: Invalid or empty wallet address", file=sys.stderr)
+        return EXIT_USAGE_ERROR
+    wallet_id = wallet_id.strip()
+
     url = f"{NODE_URL}/wallet/balance"
     try:
-        r = requests.get(url, params={"miner_id": args.wallet_id}, timeout=12, verify=VERIFY_SSL)
+        r = requests.get(url, params={"miner_id": wallet_id}, timeout=12, verify=VERIFY_SSL)
     except requests.exceptions.RequestException as e:
         print(f"ERROR: Network error - {e}", file=sys.stderr)
         return EXIT_NETWORK_ERROR
 
     if r.status_code == 404:
-        print(f"ERROR: Wallet '{args.wallet_id}' not found", file=sys.stderr)
+        print(f"ERROR: Wallet '{wallet_id}' not found", file=sys.stderr)
         return EXIT_WALLET_NOT_FOUND
 
     if r.status_code != 200:
@@ -338,6 +371,14 @@ def cmd_balance(args):
     if data is None:
         return rc
 
+    if data.get("ok") is False or ("error" in data and "amount_rtc" not in data and "balance_rtc" not in data):
+        err_msg = str(data.get("error") or data.get("message") or "request failed")
+        if "not found" in err_msg.lower() or "unknown wallet" in err_msg.lower():
+            print(f"ERROR: Wallet '{wallet_id}' not found ({err_msg})", file=sys.stderr)
+            return EXIT_WALLET_NOT_FOUND
+        print(f"ERROR: Server rejected balance query - {err_msg}", file=sys.stderr)
+        return EXIT_BAD_RESPONSE
+
     if "amount_rtc" not in data:
         # Fallback: accept "balance_rtc" as an alias
         if "balance_rtc" in data:
@@ -345,7 +386,22 @@ def cmd_balance(args):
         else:
             print("ERROR: Response missing 'amount_rtc' field", file=sys.stderr)
             return EXIT_BAD_RESPONSE
-    data["wallet_id"] = args.wallet_id
+
+    validated_amount, err_reason = _validate_numeric_balance(data["amount_rtc"])
+    if err_reason is not None:
+        print(f"ERROR: {err_reason}", file=sys.stderr)
+        return EXIT_BAD_RESPONSE
+    data["amount_rtc"] = validated_amount
+
+    returned_wallet = data.get("miner_id") or data.get("wallet")
+    if isinstance(returned_wallet, str) and returned_wallet and returned_wallet != wallet_id:
+        print(
+            f"ERROR: Response wallet '{returned_wallet}' does not match requested '{wallet_id}'",
+            file=sys.stderr,
+        )
+        return EXIT_BAD_RESPONSE
+
+    data["wallet_id"] = wallet_id
     print(json.dumps(data, indent=2))
     return EXIT_SUCCESS
 
