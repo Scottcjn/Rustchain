@@ -1,0 +1,110 @@
+# SPDX-License-Identifier: MIT
+name: "BCOS v2 — Beacon Certified Open Source Scan"
+description: "Scan any repository with the BCOS v2 Trust Score Engine, post a PR trust report, and anchor attestations on RustChain."
+author: "RustChain / Beacon Certified Open Source"
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  tier:
+    description: "Target BCOS certification tier (L0, L1, or L2)"
+    required: false
+    default: "L1"
+  reviewer:
+    description: "Reviewer GitHub handle or identifier (required for L2 human review attestation)"
+    required: false
+    default: ""
+  repo-path:
+    description: "Path to the repository to scan"
+    required: false
+    default: "."
+  node-url:
+    description: "RustChain node base URL for /bcos/attest and badge generation"
+    required: false
+    default: "https://rustchain.org"
+  signing-key-hex:
+    description: "Optional 64-hex-char Ed25519 signing seed/private key for on-chain attestation"
+    required: false
+    default: ""
+  admin-key:
+    description: "Optional X-Admin-Key for node /bcos/attest submission"
+    required: false
+    default: ""
+  github-token:
+    description: "GitHub token used to post or update PR trust score comments"
+    required: false
+    default: ""
+  post-pr-comment:
+    description: "Whether to post/update a BCOS trust score breakdown comment on pull requests (true/false)"
+    required: false
+    default: "true"
+  attest-on-merge:
+    description: "Whether to submit the attestation to /bcos/attest on push/merge events (true/false)"
+    required: false
+    default: "true"
+  fail-on-tier-unmet:
+    description: "Whether to exit non-zero if trust_score does not meet the target tier threshold (true/false)"
+    required: false
+    default: "false"
+  output-file:
+    description: "Path where the BCOS v2 JSON attestation report should be written"
+    required: false
+    default: "bcos-report.json"
+
+outputs:
+  trust_score:
+    description: "Computed BCOS trust score (0-100)"
+    value: ${{ steps.bcos_scan.outputs.trust_score }}
+  cert_id:
+    description: "Deterministic BCOS certificate ID (BCOS-xxxxxxxx)"
+    value: ${{ steps.bcos_scan.outputs.cert_id }}
+  tier_met:
+    description: "Whether the repository met the target BCOS tier threshold (true/false)"
+    value: ${{ steps.bcos_scan.outputs.tier_met }}
+  commitment:
+    description: "BLAKE2b-256 hex commitment of the canonical BCOS v2 report"
+    value: ${{ steps.bcos_scan.outputs.commitment }}
+  badge_url:
+    description: "Public SVG badge URL for the certificate"
+    value: ${{ steps.bcos_scan.outputs.badge_url }}
+  verify_url:
+    description: "Public verification URL for the certificate"
+    value: ${{ steps.bcos_scan.outputs.verify_url }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install optional BCOS scanner tools
+      shell: bash
+      run: |
+        python3 -m pip install --upgrade pip --quiet --timeout 60 --retries 3 || true
+        python3 -m pip install pip-licenses pynacl --quiet --timeout 60 --retries 3 || true
+
+    - name: Run BCOS v2 Engine Scan, PR Comment & On-Chain Attestation
+      id: bcos_scan
+      shell: bash
+      env:
+        BCOS_TIER: ${{ inputs.tier }}
+        BCOS_REVIEWER: ${{ inputs.reviewer }}
+        BCOS_REPO_PATH: ${{ inputs.repo-path }}
+        BCOS_NODE_URL: ${{ inputs.node-url }}
+        BCOS_SIGNING_KEY_HEX: ${{ inputs.signing-key-hex }}
+        BCOS_ADMIN_KEY: ${{ inputs.admin-key }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        BCOS_POST_PR_COMMENT: ${{ inputs.post-pr-comment }}
+        BCOS_ATTEST_ON_MERGE: ${{ inputs.attest-on-merge }}
+        BCOS_FAIL_ON_TIER_UNMET: ${{ inputs.fail-on-tier-unmet }}
+        BCOS_OUTPUT_FILE: ${{ inputs.output-file }}
+      run: |
+        python3 "${{ github.action_path }}/tools/bcos_action_runner.py" \
+          --path "${BCOS_REPO_PATH}" \
+          --tier "${BCOS_TIER}" \
+          --reviewer "${BCOS_REVIEWER}" \
+          --node-url "${BCOS_NODE_URL}" \
+          --output "${BCOS_OUTPUT_FILE}"
