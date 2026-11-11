@@ -47,6 +47,7 @@ class HealthStatus:
     backup_age_hours: Optional[float]
     tip_age_slots: Optional[int]
     error: Optional[str]
+    state: str = "unknown"
 
 
 @dataclass
@@ -116,30 +117,35 @@ def fetch_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
 
 
 def check_health(node_url: str, timeout: int) -> HealthStatus:
-    """Check node health status"""
+    """Check node health status using shared monitoring.node_probe validator"""
+    from pathlib import Path as _Path
+    _root = str(_Path(__file__).resolve().parents[2])
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
+    from monitoring.node_probe import classify_health_response, probe_health
+
+    url = f"{node_url.rstrip('/')}/health"
     try:
-        url = f"{node_url.rstrip('/')}/health"
-        data = fetch_json(url, timeout)
-        
-        return HealthStatus(
-            ok=bool(data.get("ok", False)),
-            version=data.get("version"),
-            uptime_s=data.get("uptime_s"),
-            db_rw=data.get("db_rw"),
-            backup_age_hours=data.get("backup_age_hours"),
-            tip_age_slots=data.get("tip_age_slots"),
-            error=None
-        )
-    except Exception as e:
-        return HealthStatus(
-            ok=False,
-            version=None,
-            uptime_s=None,
-            db_rw=None,
-            backup_age_hours=None,
-            tip_age_slots=None,
-            error=str(e)
-        )
+        req = Request(url, headers={"Accept": "application/json"})
+        with urlopen(req, timeout=timeout) as response:
+            status_code = getattr(response, "status", 200)
+            headers = getattr(response, "headers", {}) or {}
+            content_type = headers.get("Content-Type", "") if hasattr(headers, "get") else ""
+            payload = response.read().decode("utf-8", errors="replace")
+        probe = classify_health_response(url, status_code, payload, content_type=content_type)
+    except Exception:
+        probe = probe_health(node_url, timeout=timeout)
+
+    return HealthStatus(
+        ok=(probe.state == "up"),
+        version=probe.version,
+        uptime_s=int(probe.uptime_s) if probe.uptime_s is not None else None,
+        db_rw=probe.db_rw,
+        backup_age_hours=probe.backup_age_hours,
+        tip_age_slots=probe.tip_age_slots,
+        error=probe.error,
+        state=probe.state,
+    )
 
 
 def check_epoch(node_url: str, timeout: int) -> EpochStatus:
