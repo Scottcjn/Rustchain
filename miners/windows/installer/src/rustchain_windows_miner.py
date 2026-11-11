@@ -16,6 +16,7 @@ import statistics
 import uuid
 import subprocess
 import re
+import random
 import argparse
 try:
     import tkinter as tk
@@ -43,9 +44,29 @@ except ImportError:
     FINGERPRINT_AVAILABLE = False
 
 # Configuration
-RUSTCHAIN_API = "https://rustchain.org"
+LEGACY_DEAD_API = "http://50.28.86.131:8088"
+RUSTCHAIN_API = os.environ.get("RUSTCHAIN_API", "https://50.28.86.131").rstrip("/")
+
+
+def _normalize_node_url(url: str | None) -> str:
+    cleaned = (url or "").strip().rstrip("/")
+    if not cleaned or cleaned == LEGACY_DEAD_API:
+        return RUSTCHAIN_API
+    return cleaned
+
+
+def _tls_verify_setting():
+    ca_bundle = os.environ.get("RUSTCHAIN_CA_BUNDLE", "").strip()
+    if ca_bundle:
+        return ca_bundle
+    verify_env = os.environ.get("RUSTCHAIN_VERIFY_TLS", "0").strip().lower()
+    return verify_env in ("1", "true", "yes")
 WALLET_DIR = Path.home() / ".rustchain"
 CONFIG_FILE = WALLET_DIR / "config.json"
+
+HEADER_RETRY_BASE_SECONDS = 10
+HEADER_RETRY_CAP_SECONDS = 300
+HEADER_RETRYABLE_STATUS_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 # TLS verification: pinned cert or system CA bundle
 _CERT_PATH = str(WALLET_DIR / "node_cert.pem")
@@ -319,19 +340,27 @@ def _windows_fingerprint_checks():
 
 class RustChainMiner:
     """Mining engine for RustChain"""
-    def __init__(self, wallet_address):
+    def __init__(self, wallet_address, node_url=None):
         self.wallet_address = wallet_address
         self.mining = False
         self.shares_submitted = 0
         self.shares_accepted = 0
         self.miner_id = f"windows_{hashlib.md5(wallet_address.encode()).hexdigest()[:8]}"
-        self.node_url = RUSTCHAIN_API
+        self.node_url = _normalize_node_url(node_url)
+        self.tls_verify = _tls_verify_setting()
         self.attestation_valid_until = 0
         self.last_enroll = 0
         self.enrolled = False
         self.hw_info = self._get_hw_info()
         self.last_entropy = {}
         self.last_attestation_error = ""
+        self.last_header_error = ""
+        self.last_header_retryable = False
+        self.header_retry_in_seconds = 0
+        self._last_submitted_slot = None
+        self._header_retry_slot = None
+        self._header_retry_attempts = 0
+        self._next_header_retry_at = 0.0
         self.fingerprint_data = None
         self._run_fingerprint_checks()
 
@@ -374,20 +403,33 @@ class RustChainMiner:
                     continue
 
                 # Check eligibility
-                eligible = self.check_eligibility()
-                if eligible:
-                    header = self.generate_header()
+                eligibility = self.check_eligibility()
+                if isinstance(eligibility, dict):
+                    is_eligible = bool(eligibility.get("eligible"))
+                    slot = eligibility.get("slot")
+                else:
+                    is_eligible = bool(eligibility)
+                    slot = None
+                if is_eligible and (slot is None or self._header_submission_due(slot)):
+                    header = self.generate_header(slot)
                     success = self.submit_header(header)
                     self.shares_submitted += 1
                     if success:
                         self.shares_accepted += 1
                     if callback:
-                        callback({
+                        share_event = {
                             "type": "share",
+                            "slot": slot,
                             "submitted": self.shares_submitted,
                             "accepted": self.shares_accepted,
-                            "success": success
-                        })
+                            "success": success,
+                        }
+                        if not success and self.last_header_error:
+                            share_event["error"] = self.last_header_error
+                            share_event["retryable"] = self.last_header_retryable
+                            if self.last_header_retryable:
+                                share_event["retry_in_seconds"] = self.header_retry_in_seconds
+                        callback(share_event)
                 time.sleep(10)
             except Exception as e:
                 if callback:
@@ -474,6 +516,26 @@ class RustChainMiner:
             "sample_count": len(samples),
             "samples_preview": samples[:12],
         }
+
+    def check_node_health(self) -> dict:
+        """Probe GET {self.node_url}/health and return structured node health status (#179)."""
+        try:
+            resp = requests.get(
+                f"{self.node_url}/health",
+                timeout=10,
+                verify=self.tls_verify,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict):
+                    return {"ok": bool(data.get("ok", True)), "status_code": 200, "data": data}
+            return {
+                "ok": False,
+                "status_code": resp.status_code,
+                "error": self._response_diagnostic(resp),
+            }
+        except Exception as e:
+            return {"ok": False, "status_code": 0, "error": str(e)}
 
     def attest(self):
         """Perform hardware attestation for PoA."""
@@ -588,43 +650,139 @@ class RustChainMiner:
         try:
             response = requests.get(
                 f"{self.node_url}/lottery/eligibility",
-                params={"miner_id": self.miner_id},
+                params={"miner_id": self.wallet_address},
                 timeout=10,
                 verify=TLS_VERIFY,
             )
             if response.ok:
                 data = response.json()
-                return data.get("eligible", False)
-        except:
-            pass
-        return False
+                if isinstance(data, dict):
+                    return data
+            return {
+                "eligible": False,
+                "reason": f"HTTP {getattr(response, 'status_code', 'unknown')}",
+            }
+        except Exception as e:
+            return {"eligible": False, "reason": str(e)}
 
-    def generate_header(self):
+    def generate_header(self, slot=None):
         """Generate mining header"""
         timestamp = int(time.time())
         nonce = os.urandom(4).hex()
+        inner_header = {
+            "miner": self.wallet_address,
+            "timestamp": timestamp,
+            "nonce": nonce,
+        }
+        if slot is not None:
+            inner_header["slot"] = int(slot)
         header = {
             "miner_id": self.miner_id,
             "wallet": self.wallet_address,
             "timestamp": timestamp,
-            "nonce": nonce
+            "nonce": nonce,
+            "header": inner_header,
         }
-        header_str = json.dumps(header, sort_keys=True)
+        header_str = json.dumps(inner_header, sort_keys=True)
         header["hash"] = hashlib.sha256(header_str.encode()).hexdigest()
         return header
 
-    def submit_header(self, header):
-        """Submit mining header"""
+    def submit_header(self, payload):
+        """Submit one signed header and classify failures for retry policy."""
+        slot = payload.get("header", {}).get("slot") if isinstance(payload, dict) else None
+        if slot is None and isinstance(payload, dict):
+            slot = payload.get("slot")
+        self.last_header_retryable = False
+        self.header_retry_in_seconds = 0
         try:
             response = requests.post(
                 f"{self.node_url}/headers/ingest_signed",
-                json=header,
-                timeout=5,
+                json=payload,
+                timeout=15,
                 verify=TLS_VERIFY,
             )
-            return response.status_code == 200
-        except:
+            try:
+                result = response.json()
+            except Exception:
+                result = None
+            success = (
+                response.status_code == 200
+                and isinstance(result, dict)
+                and bool(result.get("ok"))
+            )
+            if success:
+                self.last_header_error = ""
+                if slot is not None:
+                    self._last_submitted_slot = slot
+                self._reset_header_retry()
+                return True
+            else:
+                self.last_header_error = self._response_diagnostic(response)
+                self.last_header_retryable = self._is_retryable_header_status(
+                    response.status_code, result
+                )
+        except Exception as e:
+            self.last_header_error = f"header request failed: {e}"
+            self.last_header_retryable = True
+
+        if self.last_header_retryable and slot is not None:
+            self.header_retry_in_seconds = self._schedule_header_retry(slot)
+        else:
+            if slot is not None:
+                self._last_submitted_slot = slot
+            self._reset_header_retry()
+        return False
+
+    @staticmethod
+    def _is_retryable_header_status(status_code, payload=None):
+        """Return whether an HTTP response represents a temporary failure."""
+        if isinstance(payload, dict):
+            if isinstance(payload.get("retryable"), bool):
+                return payload["retryable"]
+            err_text = f"{payload.get('code', '')} {payload.get('error', '')} {payload.get('message', '')}".lower()
+            if any(tok in err_text for tok in ("restarting", "temporarily_unavailable", "rate_limit", "try_again", "syncing")):
+                return True
+            if any(tok in err_text for tok in ("no pubkey", "malformed", "bad_signature", "invalid_signature", "message_header_mismatch")):
+                return False
+        if status_code in HEADER_RETRYABLE_STATUS_CODES:
+            return True
+        return 500 <= status_code <= 599
+
+    def _header_submission_due(self, slot, now=None):
+        """Return whether *slot* can be submitted under the retry policy."""
+        if slot == self._last_submitted_slot:
             return False
+        if slot != self._header_retry_slot:
+            return True
+        if now is None:
+            now = time.monotonic()
+        return now >= self._next_header_retry_at
+
+    def _schedule_header_retry(self, slot, now=None):
+        """Schedule and return the bounded exponential delay for *slot*."""
+        if slot != self._header_retry_slot:
+            self._header_retry_slot = slot
+            self._header_retry_attempts = 0
+        self._header_retry_attempts += 1
+        exponent = min(self._header_retry_attempts - 1, 10)
+        base_delay = min(
+            HEADER_RETRY_BASE_SECONDS * (2 ** exponent),
+            HEADER_RETRY_CAP_SECONDS,
+        )
+        delay = min(
+            base_delay * random.uniform(0.75, 1.25),
+            HEADER_RETRY_CAP_SECONDS,
+        )
+        if now is None:
+            now = time.monotonic()
+        self._next_header_retry_at = now + delay
+        return delay
+
+    def _reset_header_retry(self):
+        """Clear retry state after success or a terminal rejection."""
+        self._header_retry_slot = None
+        self._header_retry_attempts = 0
+        self._next_header_retry_at = 0.0
 
 class RustChainGUI:
     """Windows GUI for RustChain"""
@@ -731,6 +889,43 @@ class RustChainGUI:
         """Run the GUI"""
         self.root.mainloop()
 
+def _format_headless_event(evt):
+    t = evt.get("type")
+    if t == "share":
+        ok = "OK" if evt.get("success") else "FAIL"
+        line = (
+            f"[share] slot={evt.get('slot')} "
+            f"submitted={evt.get('submitted')} "
+            f"accepted={evt.get('accepted')} {ok}"
+        )
+        if not evt.get("success") and evt.get("error"):
+            line += f" error={evt['error']}"
+            if evt.get("retryable"):
+                line += f" class=retryable retry_in={evt.get('retry_in_seconds')}s"
+            else:
+                line += " class=terminal no_retry"
+        return line
+    if t == "attest":
+        return (
+            f"[attest] {evt.get('message')} "
+            f"miner_id={evt.get('miner_id')} "
+            f"ttl={evt.get('attestation_ttl_seconds')}s"
+        )
+    if t == "enroll":
+        return f"[enroll] {evt.get('message')} miner_id={evt.get('miner_id')}"
+    if t == "status":
+        enrolled = "yes" if evt.get("enrolled") else "no"
+        return (
+            f"[status] {evt.get('message')} "
+            f"miner_id={evt.get('miner_id')} "
+            f"enrolled={enrolled} "
+            f"attest_ttl={evt.get('attestation_ttl_seconds')}s"
+        )
+    if t == "error":
+        return f"[error] {evt.get('message')}"
+    return None
+
+
 def run_headless(wallet_address: str, node_url: str) -> int:
     wallet = RustChainWallet()
     active_wallet = wallet_address or wallet.wallet_data["address"]
@@ -738,15 +933,13 @@ def run_headless(wallet_address: str, node_url: str) -> int:
     miner.node_url = node_url
 
     def cb(evt):
-        if evt.get("type") == "share":
-            ok = "OK" if evt.get("success") else "FAIL"
-            print(
-                f"[share] submitted={evt.get('submitted')} "
-                f"accepted={evt.get('accepted')} {ok}",
-                flush=True,
-            )
-        elif evt.get("type") == "error":
-            print(f"[error] {evt.get('message')}", file=sys.stderr, flush=True)
+        line = _format_headless_event(evt)
+        if not line:
+            return
+        if evt.get("type") == "error":
+            print(line, file=sys.stderr, flush=True)
+        else:
+            print(line, flush=True)
 
     print("RustChain Windows miner: headless mode", flush=True)
     print(f"node={miner.node_url} miner_id={miner.miner_id}", flush=True)
