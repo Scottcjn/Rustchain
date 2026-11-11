@@ -1,0 +1,13 @@
+# Test dependencies for RustChain SDK CLI tests
+# Install in a dedicated venv: python -m venv .venv-cli-tests && .venv-cli-tests/bin/pip install -r requirements-dev.txt
+
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+click>=8.1.0
+respx>=0.21.0
+httpx>=0.25.0
+cryptography>=41.0.0
+
+# For type checking (optional)
+# mypy>=1.5.0
+# types-requests>=2.31.0
