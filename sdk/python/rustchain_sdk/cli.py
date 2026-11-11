@@ -122,15 +122,43 @@ async def _wallet_balance(address: str, node: str, as_json: bool):
         sys.exit(1)
 
 
+class _RtcAmountParamType(click.ParamType):
+    name = "rtc_amount"
+
+    def __init__(self, allow_zero: bool = False):
+        self.allow_zero = allow_zero
+
+    def convert(self, value, param, ctx):
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            num = float(value)
+        else:
+            try:
+                num = float(str(value).strip())
+            except (TypeError, ValueError):
+                self.fail(f"{value!r} is not a valid RTC amount.", param, ctx)
+        import math
+        if not math.isfinite(num):
+            self.fail(f"{value!r} must be a finite RTC amount.", param, ctx)
+        if self.allow_zero and num < 0:
+            self.fail("Fee cannot be negative.", param, ctx)
+        if not self.allow_zero and num <= 0:
+            self.fail("Amount must be greater than zero.", param, ctx)
+        return int(num) if num.is_integer() else num
+
+
+RTC_AMOUNT = _RtcAmountParamType(allow_zero=False)
+RTC_FEE = _RtcAmountParamType(allow_zero=True)
+
+
 @wallet_group.command(name="send")
 @click.argument("from_address")
 @click.argument("to_address")
-@click.argument("amount", type=int)
+@click.argument("amount", type=RTC_AMOUNT)
 @click.option(
     "--fee",
-    type=int,
+    type=RTC_FEE,
     default=0,
-    help="Transaction fee.",
+    help="Transaction fee in RTC (supports fractional values such as 0.01).",
 )
 @click.option(
     "--seed",
@@ -152,8 +180,8 @@ async def _wallet_balance(address: str, node: str, as_json: bool):
 def wallet_send(
     from_address: str,
     to_address: str,
-    amount: int,
-    fee: int,
+    amount: float,
+    fee: float,
     seed_phrase: str,
     node: str,
     as_json: bool,
@@ -208,6 +236,7 @@ async def _wallet_send(
 # ─────────────────────────────────────────────────────────────────
 
 @main.command(name="node")
+@click.argument("action", required=False, type=click.Choice(["status"], case_sensitive=False))
 @click.option(
     "--node",
     default=DEFAULT_NODE_URL,
@@ -219,8 +248,8 @@ async def _wallet_send(
     is_flag=True,
     help="Output as JSON.",
 )
-def node_status(node: str, as_json: bool):
-    """Check node health status."""
+def node_status(action: Optional[str], node: str, as_json: bool):
+    """Check node health status (supports both `rustchain node` and `rustchain node status`)."""
     asyncio.run(_node_status(node, as_json))
 
 
@@ -246,6 +275,7 @@ async def _node_status(node: str, as_json: bool):
 # ─────────────────────────────────────────────────────────────────
 
 @main.command(name="epoch")
+@click.argument("action", required=False, type=click.Choice(["info"], case_sensitive=False))
 @click.option(
     "--node",
     default=DEFAULT_NODE_URL,
@@ -257,8 +287,8 @@ async def _node_status(node: str, as_json: bool):
     is_flag=True,
     help="Output as JSON.",
 )
-def epoch_info(node: str, as_json: bool):
-    """Get current epoch information."""
+def epoch_info(action: Optional[str], node: str, as_json: bool):
+    """Get current epoch information (supports both `rustchain epoch` and `rustchain epoch info`)."""
     asyncio.run(_epoch_info(node, as_json))
 
 
@@ -367,32 +397,45 @@ async def _attest(wallet_address: str, seed_phrase: list, node: str, as_json: bo
             # Step 1: Get attestation status
             status = await client.get_attestation_status(wallet.public_key_hex)
 
-            if as_json:
-                click.echo(json.dumps(status, indent=2))
-                return
-
             # Step 2: Request challenge
-            click.echo("📋  Requesting attestation challenge...")
+            if not as_json:
+                click.echo("📋  Requesting attestation challenge...")
             challenge_result = await client.attest_challenge(wallet.public_key_hex)
             challenge = challenge_result.get("challenge", "")
 
             if not challenge:
-                click.echo(f"⚠️  No challenge received. Status: {status}")
+                if as_json:
+                    click.echo(json.dumps({"status": status, "challenge": None, "submitted": False}, indent=2))
+                else:
+                    click.echo(f"⚠️  No challenge received. Status: {status}")
                 return
 
             # Step 3: Sign the challenge
             signature = wallet.sign(challenge.encode()).hex()
 
             # Step 4: Submit attestation
-            click.echo("📤  Submitting attestation...")
+            if not as_json:
+                click.echo("📤  Submitting attestation...")
             submit_result = await client.attest_submit(
                 wallet.public_key_hex,
                 challenge,
                 signature,
             )
 
-            click.echo(f"✅  Attestation submitted!")
-            click.echo(f"   Result: {json.dumps(submit_result)}")
+            if as_json:
+                click.echo(
+                    json.dumps(
+                        {
+                            "status": status,
+                            "challenge": challenge,
+                            "submission": submit_result,
+                        },
+                        indent=2,
+                    )
+                )
+            else:
+                click.echo(f"✅  Attestation submitted!")
+                click.echo(f"   Result: {json.dumps(submit_result)}")
 
     except RustChainError as e:
         click.echo(f"❌  Error: {e}", err=True)
