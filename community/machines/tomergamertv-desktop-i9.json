@@ -1,0 +1,21 @@
+{
+  "machine_name": "TomerGamerTV Intel Core i9 Windows Workstation",
+  "model": "Custom Performance Workstation (Intel Core i9)",
+  "model_identifier": "Intel64 Family 6 Model 183 Stepping 1",
+  "year_manufactured": 2023,
+  "architecture": "x86_64",
+  "cpu_cores": "32 logical cores / 24 physical cores detected by RustChain miner",
+  "memory_gb": 32,
+  "power_draw_watts": 125,
+  "usage": [
+    "RustChain miner preflight and hardware attestation testing",
+    "RIP-PoA hardware fingerprint validation (6/6 checks passed)",
+    "Autonomous agent development and bounty execution",
+    "Continuous software development and compute preservation"
+  ],
+  "description": "High-performance Intel Core i9 Windows workstation dedicated to active RustChain miner preflight execution, RIP-PoA hardware attestation (verified 6/6 checks: clock-skew, cache-timing, SIMD vector identity, thermal drift, instruction jitter, anti-emulation), consensus security auditing, and autonomous ecosystem contributions. Verified against live public bootstrap node https://rustchain.org with HTTP 200 health probe and node version 2.2.1-rip200.",
+  "wallet_name": "TomerGamerTV",
+  "wallet_address": "RTC77348349f80b46b3a3de75123fdfe4562aba926d",
+  "contributor": "TomerGamerTV",
+  "added_date": "2026-09-14"
+}
