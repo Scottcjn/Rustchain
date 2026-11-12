@@ -61,6 +61,8 @@ On Linux, the installer saves the miner config here:
 cat /opt/rustchain-miner/config.json
 ```
 
+> Note: the config path depends on which installer you used. `rustchain.org/install.sh` saves the config at `/opt/rustchain-miner/config.json` (may require `sudo cat`). The repo's `setup.sh` / `install-miner.sh` save it at `~/.rustchain/config.json` instead.
+
 You should see a `wallet_id` field.
 
 Example:
