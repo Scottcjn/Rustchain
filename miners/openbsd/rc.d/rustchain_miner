@@ -1,0 +1,17 @@
+#!/bin/sh
+#
+# $OpenBSD: rustchain_miner,v 1.0 2026/09/18 08:35:00 rustchain Exp $
+#
+# PROVIDE: rustchain_miner
+# REQUIRE: DAEMON
+# BEFORE:  LOGIN
+
+daemon="/usr/local/bin/python3"
+daemon_flags="/usr/local/share/rustchain/rustchain_openbsd_miner.py"
+daemon_user="_rustchain"
+
+. /etc/rc.d/rc.subr
+
+rc_reload=NO
+
+rc_cmd $1
