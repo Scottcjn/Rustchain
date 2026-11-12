@@ -76,7 +76,11 @@ if [ "$DRY_RUN" -eq 1 ]; then
             FINGERPRINT_PATH="linux/fingerprint_checks.py"
             ;;
         Darwin)
-            MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
+            if [ "$ARCH" = "x86_64" ] && ! sysctl -n sysctl.proc_translated 2>/dev/null | grep -q 1; then
+                MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
+            else
+                MINER_PATH="macos/rustchain_mac_miner_v2.5.py"
+            fi
             FINGERPRINT_PATH="macos/fingerprint_checks.py"
             ;;
         *)      echo -e "${RED}Unsupported OS: $OS${NC}"; exit 1 ;;
@@ -127,7 +131,11 @@ case "$OS" in
         ;;
     Darwin)
         echo "  OS: macOS"
-        MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
+        if [ "$ARCH" = "x86_64" ] && ! sysctl -n sysctl.proc_translated 2>/dev/null | grep -q 1; then
+            MINER_PATH="macos/rustchain_mac_miner_v2.4.py"
+        else
+            MINER_PATH="macos/rustchain_mac_miner_v2.5.py"
+        fi
         FINGERPRINT_PATH="macos/fingerprint_checks.py"
         ;;
     *)      echo -e "${RED}  Unsupported OS: $OS${NC}"; exit 1 ;;
@@ -231,7 +239,11 @@ done
 
 if [ -z "$PYTHON" ]; then
     echo -e "${RED}  Python 3.6+ required but not found.${NC}"
-    echo "  Install with: sudo apt install python3 python3-pip"
+    if [ "$OS" = "Linux" ]; then
+        echo "  Install with: sudo apt install python3 python3-pip"
+    elif [ "$OS" = "Darwin" ]; then
+        echo "  Install with: brew install python3"
+    fi
     exit 1
 fi
 
