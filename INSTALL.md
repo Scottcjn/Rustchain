@@ -93,6 +93,8 @@ After installation, you'll have the following structure at `~/.rustchain/`:
 └── miner.log               # Miner logs (if auto-start enabled)
 ```
 
+Note: this structure applies to the repo installers (`install-miner.sh`, `setup.sh`), which install under `~/.rustchain/`. The one-line site installer (`curl -sL https://rustchain.org/install.sh | bash`, `scripts/install.sh` in this repo) installs to `/opt/rustchain-miner/` instead and writes `/opt/rustchain-miner/config.json`. See [Where is my config?](docs/WALLET_SETUP.md#where-is-my-config) for both paths and a command that finds your config either way.
+
 ## Auto-Start Configuration
 
 ### Linux (systemd)

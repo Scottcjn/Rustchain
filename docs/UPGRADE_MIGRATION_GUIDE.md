@@ -68,6 +68,8 @@ clawrtc wallet show > wallet_info.txt
 cat ~/.rustchain/config.json > config.backup
 ```
 
+> 如果你是通过 `https://rustchain.org/install.sh` 安装的，配置文件在 `/opt/rustchain-miner/config.json` 而不是 `~/.rustchain/config.json`。两个路径的说明见 [Where is my config?](WALLET_SETUP.md#where-is-my-config)。
+
 ### 3. 检查系统要求
 
 | 平台 | 最低要求 | 推荐 |
@@ -327,6 +329,8 @@ cp config.backup ~/.rustchain/config.json
 systemctl --user start rustchain-miner  # Linux
 launchctl start com.rustchain.miner     # macOS
 ```
+
+> 官网安装程序（`https://rustchain.org/install.sh`）的配置文件在 `/opt/rustchain-miner/config.json`，恢复时请复制到对应路径。详见 [Where is my config?](WALLET_SETUP.md#where-is-my-config)。
 
 ---
 

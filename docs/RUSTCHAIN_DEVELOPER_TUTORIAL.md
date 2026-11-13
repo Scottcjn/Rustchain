@@ -263,6 +263,8 @@ Create `~/.rustchain/config.json`:
 }
 ```
 
+(If you installed the miner with the one-line installer instead, your config already exists at `/opt/rustchain-miner/config.json` — see [Where is my config?](WALLET_SETUP.md#where-is-my-config) for both paths.)
+
 #### Step 6: Download Fingerprint Module
 
 ```bash
