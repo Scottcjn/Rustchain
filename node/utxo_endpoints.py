@@ -1070,7 +1070,7 @@ def utxo_transfer():
                 "SELECT box_id, owner_address, value_nrtc FROM utxo_boxes "
                 "WHERE transaction_id = ? AND output_index = 0 AND owner_address = ?",
                 (tx_id, to_address),
-            ).fetchall()
+            ).fetchall()  # fetchall-ok: bounded-by-schema
             if len(recipient_boxes) != 1:
                 conn.rollback()
                 return jsonify({
