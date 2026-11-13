@@ -859,8 +859,7 @@ class UtxoDB:
                                   outputs: List[dict],
                                   data_inputs: List[str],
                                   fee: int,
-                                  timestamp: int,
-                                  timestamp_explicit: bool) -> bool:
+                                  timestamp: int) -> bool:
         """Return True only when a mempool claim is for this exact tx body."""
         row = conn.execute(
             "SELECT tx_data_json FROM utxo_mempool WHERE tx_id = ?",
@@ -883,10 +882,10 @@ class UtxoDB:
         mempool_fee = mempool_tx.get("fee_nrtc", 0)
         mempool_timestamp = mempool_tx.get("timestamp")
 
+        # Every mempool admission stores a timestamp pinned by the node.
+        # Missing or malformed timestamps are never accepted as a wildcard.
         if "timestamp" not in mempool_tx:
-            if timestamp_explicit:
-                return False
-            mempool_timestamp = timestamp
+            return False
 
         if (
             mempool_tx_type is None
@@ -1051,7 +1050,7 @@ class UtxoDB:
                 if claim_tx_id not in verified_claim_ids:
                     if not self._mempool_claim_matches_tx(
                         conn, claim_tx_id, tx_type, inputs, outputs,
-                        data_inputs, fee, ts, "timestamp" in tx
+                        data_inputs, fee, ts
                     ):
                         return abort()
                     verified_claim_ids.add(claim_tx_id)
@@ -1852,6 +1851,9 @@ class UtxoDB:
                 'inputs': [{'box_id': inp['box_id']} for inp in inputs],
                 'outputs': outputs,
                 'fee_nrtc': fee,
+                # Pin the admission timestamp even when the client omitted it.
+                # Block assembly must apply this exact persisted transaction
+                # intent, not regenerate a timestamp from a later node clock.
                 'timestamp': timestamp,
             }
             if data_inputs:
