@@ -29,12 +29,15 @@ class TestCheckNode:
     def test_healthy_node(self):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {
+        mock_resp.headers = {"Content-Type": "application/json"}
+        mock_resp.text = json.dumps({
+            "ok": True,
             "version": "1.2.3",
+            "uptime_s": 86400,
             "uptime_seconds": 86400,
             "active_miners": 5,
             "current_epoch": 42,
-        }
+        })
         with patch("status_server.requests.get", return_value=mock_resp):
             result = check_node(NODES[0])
         assert result["up"] is True
@@ -43,6 +46,18 @@ class TestCheckNode:
         assert result["current_epoch"] == 42
         assert "response_ms" in result
         assert "checked_at" in result
+
+    def test_impostor_html_200_returns_impostor(self):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"Content-Type": "text/html"}
+        mock_resp.text = "<!DOCTYPE html><html><body><h1>Captive Portal</h1></body></html>"
+        with patch("status_server.requests.get", return_value=mock_resp):
+            result = check_node(NODES[0])
+        assert result["up"] is False
+        assert result["state"] == "impostor"
+        assert result["version"] == "impostor"
+        assert "Impostor detected" in result["error"]
 
     def test_down_node_http_error(self):
         mock_resp = MagicMock()
@@ -71,7 +86,8 @@ class TestPollAll:
     def test_poll_all_healthy(self):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {"version": "1.0", "miners": 3, "epoch": 10}
+        mock_resp.headers = {"Content-Type": "application/json"}
+        mock_resp.text = json.dumps({"ok": True, "version": "1.0", "uptime_s": 100, "miners": 3, "epoch": 10})
         with patch("status_server.requests.get", return_value=mock_resp):
             with patch("status_server.save_state"):
                 poll_all()
@@ -83,7 +99,8 @@ class TestPollAll:
         # First poll: all up
         mock_up = MagicMock()
         mock_up.status_code = 200
-        mock_up.json.return_value = {"version": "1.0"}
+        mock_up.headers = {"Content-Type": "application/json"}
+        mock_up.text = json.dumps({"ok": True, "version": "1.0", "uptime_s": 100})
         with patch("status_server.requests.get", return_value=mock_up):
             with patch("status_server.save_state"):
                 poll_all()
@@ -95,7 +112,8 @@ class TestPollAll:
                 raise Exception("Connection refused")
             resp = MagicMock()
             resp.status_code = 200
-            resp.json.return_value = {"version": "1.0"}
+            resp.headers = {"Content-Type": "application/json"}
+            resp.text = json.dumps({"ok": True, "version": "1.0", "uptime_s": 100})
             return resp
 
         with patch("status_server.requests.get", side_effect=side_effect):
@@ -110,7 +128,8 @@ class TestPollAll:
         node_status["node-1"] = {"up": False, "name": "Node 1"}
         mock_up = MagicMock()
         mock_up.status_code = 200
-        mock_up.json.return_value = {"version": "1.0"}
+        mock_up.headers = {"Content-Type": "application/json"}
+        mock_up.json.return_value = {"ok": True, "version": "1.0", "uptime_s": 100}
         with patch("status_server.requests.get", return_value=mock_up):
             with patch("status_server.save_state"):
                 poll_all()
@@ -124,7 +143,8 @@ class TestAPI:
     def test_status_endpoint(self, client):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {"version": "1.0", "miners": 2, "epoch": 5}
+        mock_resp.headers = {"Content-Type": "application/json"}
+        mock_resp.json.return_value = {"ok": True, "version": "1.0", "uptime_s": 100, "miners": 2, "epoch": 5}
         with patch("status_server.requests.get", return_value=mock_resp):
             with patch("status_server.save_state"):
                 poll_all()
