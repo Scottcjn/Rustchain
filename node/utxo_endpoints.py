@@ -1055,18 +1055,43 @@ def utxo_transfer():
             # account path (which consumes the mirror on settle). apply_transaction
             # exposes tx['tx_id']; the outputs of this tx are exactly the new boxes.
             tx_id = tx.get('tx_id')
-            if tx_id:
-                for b in conn.execute(
-                    "SELECT box_id, owner_address, value_nrtc FROM utxo_boxes "
-                    "WHERE transaction_id = ? AND output_index = 0",
-                    (tx_id,),
-                ).fetchall():  # fetchall-ok: bounded-by-schema (receiver output of one transfer tx)
-                    conn.execute(
-                        "INSERT OR REPLACE INTO account_mirror_boxes "
-                        "(box_id, account_wallet, value_nrtc, created_epoch) "
-                        "VALUES (?,?,?,?)",
-                        (b['box_id'], b['owner_address'], b['value_nrtc'], slot),
-                    )
+            if not tx_id:
+                conn.rollback()
+                return jsonify({
+                    'error': 'UTXO transfer did not expose its transaction id',
+                    'code': 'DUAL_WRITE_TX_ID_MISSING',
+                }), 500
+
+            # Exactly one recipient-owned output at index 0 must be mirrored.
+            # Filtering only by output index is insufficient: a malformed or
+            # unexpected output could otherwise be attributed to the wrong
+            # wallet. A zero-row result must never return a successful transfer.
+            recipient_boxes = conn.execute(
+                "SELECT box_id, owner_address, value_nrtc FROM utxo_boxes "
+                "WHERE transaction_id = ? AND output_index = 0 AND owner_address = ?",
+                (tx_id, to_address),
+            ).fetchall()
+            if len(recipient_boxes) != 1:
+                conn.rollback()
+                return jsonify({
+                    'error': 'Expected exactly one recipient-owned UTXO output for dual-write',
+                    'code': 'DUAL_WRITE_RECIPIENT_OUTPUT_INVALID',
+                    'matched_outputs': len(recipient_boxes),
+                }), 500
+
+            recipient_box = recipient_boxes[0]
+            cursor = conn.execute(
+                "INSERT INTO account_mirror_boxes "
+                "(box_id, account_wallet, value_nrtc, created_epoch) "
+                "VALUES (?,?,?,?)",
+                (recipient_box['box_id'], to_address, recipient_box['value_nrtc'], slot),
+            )
+            if cursor.rowcount != 1:
+                conn.rollback()
+                return jsonify({
+                    'error': 'Recipient UTXO mirror insertion failed',
+                    'code': 'DUAL_WRITE_MIRROR_INSERT_FAILED',
+                }), 500
 
             # Consensus invariant (#2819): a wallet's unspent mirror value must never
             # exceed its account balance — mirror > balance IS the double-spend

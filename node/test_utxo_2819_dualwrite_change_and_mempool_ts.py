@@ -11,6 +11,8 @@
     the caller omitted 'timestamp', allowing _mempool_claim_matches_tx() to
    match when apply_transaction() is called in a later second.
 """
+import hashlib
+import json
 import os
 import sqlite3
 import sys
@@ -18,6 +20,7 @@ import tempfile
 import time
 import types
 import unittest
+from unittest.mock import patch
 
 NODE_DIR = os.path.abspath(os.path.dirname(__file__))
 if NODE_DIR not in sys.path:
@@ -79,6 +82,7 @@ except ImportError:
     flask_mod.jsonify = jsonify
     sys.modules["flask"] = flask_mod
 
+import utxo_db
 import utxo_endpoints
 from utxo_db import UtxoDB, UNIT
 from utxo_endpoints import register_utxo_blueprint
@@ -145,6 +149,22 @@ class TestBounty2819DualWriteChangeAndMempoolTimestamp(unittest.TestCase):
         self.assertEqual(self.utxo_db.get_balance(SENDER), 75 * UNIT)
         self.assertEqual(self.utxo_db.get_balance(RECIPIENT), 25 * UNIT)
 
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                """SELECT b.owner_address, b.output_index, m.box_id
+                   FROM utxo_boxes AS b
+                   LEFT JOIN account_mirror_boxes AS m ON m.box_id = b.box_id
+                   WHERE b.owner_address IN (?, ?)
+                   ORDER BY b.created_at, b.output_index""",
+                (SENDER, RECIPIENT),
+            ).fetchall()
+        recipient_outputs = [r for r in rows if r[0] == RECIPIENT and r[1] == 0]
+        sender_change = [r for r in rows if r[0] == SENDER and r[1] == 1]
+        self.assertEqual(len(recipient_outputs), 2)
+        self.assertTrue(all(r[2] is not None for r in recipient_outputs))
+        self.assertEqual(len(sender_change), 2)
+        self.assertTrue(all(r[2] is None for r in sender_change))
+
     def test_self_transfer_is_rejected(self):
         self._seed(SENDER, 100)
         r = self.client.post("/utxo/transfer", json={
@@ -154,19 +174,68 @@ class TestBounty2819DualWriteChangeAndMempoolTimestamp(unittest.TestCase):
         self.assertEqual(r.status_code, 400, r.get_json())
         self.assertEqual(r.get_json().get("code"), "SELF_TRANSFER_NOT_ALLOWED")
 
-    def test_mempool_claim_matches_tx_when_timestamp_omitted_across_seconds(self):
+    def test_mempool_pins_server_timestamp_and_rejects_missing_or_mismatched_apply(self):
         self._seed(SENDER, 50)
         box_id = self.utxo_db.get_unspent_for_address(SENDER)[0]["box_id"]
-        tx_no_ts = {
-            "tx_id": "claim_tx_without_explicit_ts",
+        admission_time = 1_700_000_000
+        fee_nrtc = 1
+        outputs = [{
+            "address": RECIPIENT,
+            "value_nrtc": 50 * UNIT - fee_nrtc,
+            "tokens_json": "[]",
+            "registers_json": "{}",
+        }]
+        identity = {
             "tx_type": "transfer",
-            "inputs": [{"box_id": box_id}],
-            "outputs": [{"address": RECIPIENT, "value_nrtc": 50 * UNIT}],
-            "fee_nrtc": 0,
+            "inputs": [box_id],
+            "data_inputs": [],
+            "outputs": outputs,
+            "fee_nrtc": fee_nrtc,
+            "timestamp": admission_time,
+            "block_height": 2,
         }
-        self.assertTrue(self.utxo_db.mempool_add(tx_no_ts))
-        time.sleep(1.1)
-        self.assertTrue(self.utxo_db.apply_transaction(tx_no_ts, block_height=2))
+        canonical_tx_id = hashlib.sha256(
+            json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        tx_without_timestamp = {
+            "tx_id": canonical_tx_id,
+            "tx_type": "transfer",
+            "inputs": [{"box_id": box_id, "spending_proof": "test-fixture-proof"}],
+            "outputs": outputs,
+            "fee_nrtc": fee_nrtc,
+        }
+
+        with patch.object(utxo_db.time, "time", return_value=admission_time):
+            self.assertTrue(self.utxo_db.mempool_add(tx_without_timestamp))
+
+        with sqlite3.connect(self.db_path) as conn:
+            raw = conn.execute(
+                "SELECT tx_data_json FROM utxo_mempool WHERE tx_id = ?",
+                (canonical_tx_id,),
+            ).fetchone()[0]
+        pinned_tx = json.loads(raw)
+        self.assertEqual(pinned_tx["timestamp"], admission_time)
+
+        # A later node clock must not silently substitute a new timestamp.
+        with patch.object(utxo_db.time, "time", return_value=admission_time + 100):
+            self.assertFalse(
+                self.utxo_db.apply_transaction(tx_without_timestamp, block_height=2),
+                "applying the original timestamp-less request must fail closed",
+            )
+            self.assertTrue(
+                self.utxo_db.apply_transaction(pinned_tx, block_height=2),
+                "the exact server-pinned mempool payload must apply",
+            )
+
+        with sqlite3.connect(self.db_path) as conn:
+            applied = conn.execute(
+                "SELECT timestamp FROM utxo_transactions WHERE tx_id = ?",
+                (canonical_tx_id,),
+            ).fetchone()
+        self.assertIsNotNone(applied)
+        self.assertEqual(applied[0], admission_time)
+        self.assertEqual(self.utxo_db.get_balance(RECIPIENT), 50 * UNIT - fee_nrtc)
+
 
 
 if __name__ == "__main__":
