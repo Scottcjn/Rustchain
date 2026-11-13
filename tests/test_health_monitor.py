@@ -51,6 +51,38 @@ def _make_raw_response(raw: str, status: int = 200) -> MagicMock:
     return mock_r
 
 
+# A genuine /health body, as served by node api_health (ok/version/uptime_s).
+HEALTH_OK = b'{"ok": true, "version": "2.2.1", "uptime_s": 3600, "db_rw": true, "tip_age_slots": 1}'
+
+
+def _make_raw_response_bytes(raw: bytes, content_type: str = "application/json") -> MagicMock:
+    mock_r = MagicMock()
+    mock_r.__enter__ = lambda s: s
+    mock_r.__exit__ = MagicMock(return_value=False)
+    mock_r.read = MagicMock(return_value=raw)
+    mock_r.status = 200
+    headers = MagicMock()
+    headers.get = lambda name, default=None: content_type if name == "Content-Type" else default
+    mock_r.headers = headers
+    return mock_r
+
+
+def make_dispatch_urlopen(status_body, health_body=HEALTH_OK, health_ct="application/json"):
+    """URL-aware urlopen fake: /health gets the health body, anything else the
+    status body. The monitor probes /health through the shared probe first,
+    then reads epoch/miners from the status endpoints."""
+    def fake_urlopen(req, timeout=None):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        if url.rstrip("/").endswith("/health"):
+            if isinstance(health_body, Exception):
+                raise health_body
+            return _make_raw_response_bytes(health_body, health_ct)
+        if isinstance(status_body, Exception):
+            raise status_body
+        return _make_raw_response_bytes(status_body)
+    return fake_urlopen
+
+
 def _online_status(url: str, epoch: int = 10, miners: int = 5,
                    rt_ms: float = 100.0) -> NodeStatus:
     return NodeStatus(url=url, status="online", response_time_ms=rt_ms,
@@ -73,22 +105,19 @@ class TestCheckNode(unittest.TestCase):
     @patch("urllib.request.urlopen")
     def test_healthy_node(self, mock_open):
         """A fast, valid JSON response → status=online."""
-        mock_open.return_value = _make_response({"epoch": 42, "miners": 8})
+        mock_open.side_effect = make_dispatch_urlopen(b'{"epoch": 42, "miners": 8}')
         result = self.monitor.check_node(self.url)
         self.assertEqual(result.status, "online")
         self.assertEqual(result.epoch,  42)
         self.assertEqual(result.miners, 8)
         self.assertIsNone(result.error)
+        self.assertEqual(result.probe_state, "up")
         self.assertGreaterEqual(result.response_time_ms, 0)
 
     @patch("urllib.request.urlopen")
     def test_slow_node(self, mock_open):
         """A node whose response time exceeds the threshold → status=slow."""
-        def slow_open(*a, **kw):
-            time.sleep(0)           # no real sleep in unit tests
-            return _make_response({"epoch": 5, "miners": 2})
-
-        mock_open.return_value = _make_response({"epoch": 5, "miners": 2})
+        mock_open.side_effect = make_dispatch_urlopen(b'{"epoch": 5, "miners": 2}')
         result = self.monitor.check_node(self.url)
         # Manually force slow classification
         result.response_time_ms = SLOW_THRESHOLD_MS + 1
@@ -101,6 +130,7 @@ class TestCheckNode(unittest.TestCase):
         mock_open.side_effect = TimeoutError("timed out")
         result = self.monitor.check_node(self.url)
         self.assertEqual(result.status, "offline")
+        self.assertEqual(result.probe_state, "unreachable")
         self.assertIsNone(result.response_time_ms)
         self.assertIsNotNone(result.error)
 
@@ -122,15 +152,29 @@ class TestCheckNode(unittest.TestCase):
         )
         result = self.monitor.check_node(self.url)
         self.assertEqual(result.status, "slow")
+        self.assertEqual(result.probe_state, "down")
         self.assertIn("503", result.error)
 
     @patch("urllib.request.urlopen")
     def test_alternate_epoch_key(self, mock_open):
         """Nodes may use 'current_epoch' instead of 'epoch'."""
-        mock_open.return_value = _make_response({"current_epoch": 99, "active_miners": 3})
+        mock_open.side_effect = make_dispatch_urlopen(b'{"current_epoch": 99, "active_miners": 3}')
         result = self.monitor.check_node(self.url)
         self.assertEqual(result.epoch,  99)
         self.assertEqual(result.miners,  3)
+
+    @patch("urllib.request.urlopen")
+    def test_impostor_html_200_is_offline(self, mock_open):
+        """Issue #17180: an SPA answering 200 on /health is an impostor."""
+        spa = (b'<!doctype html><html><head><title>New API</title></head>'
+               b'<body><div id="root"></div></body></html>')
+        mock_open.side_effect = make_dispatch_urlopen(
+            b'{"epoch": 1}', health_body=spa, health_ct="text/html")
+        result = self.monitor.check_node(self.url)
+        self.assertEqual(result.status, "offline")
+        self.assertEqual(result.probe_state, "impostor")
+        self.assertIn("IMPOSTOR", result.error)
+        self.assertIsNone(result.epoch)
 
     @patch("urllib.request.urlopen")
     def test_json_without_node_state_is_not_online(self, mock_open):
@@ -146,11 +190,12 @@ class TestCheckNode(unittest.TestCase):
         every path. It was reported online for months and the fleet was
         believed to be four nodes when it was two.
         """
-        mock_open.return_value = _make_response({})
+        mock_open.side_effect = make_dispatch_urlopen(b'{}', health_body=b'{}')
         result = self.monitor.check_node(self.url)
         self.assertIsNone(result.epoch)
         self.assertIsNone(result.miners)
         self.assertEqual(result.status, "offline")
+        self.assertEqual(result.probe_state, "impostor")
         self.assertIsNotNone(result.error)
         self.assertIsNotNone(result.response_time_ms,
                              "reachability information must not be lost")
@@ -163,9 +208,10 @@ class TestCheckNode(unittest.TestCase):
         this address; the probe should say so rather than count it as a healthy
         node.
         """
-        mock_open.return_value = _make_raw_response("[]")
+        mock_open.side_effect = make_dispatch_urlopen(b'[]', health_body=b'[]')
         result = self.monitor.check_node(self.url)
         self.assertEqual(result.status, "offline")
+        self.assertEqual(result.probe_state, "impostor")
         self.assertIsNone(result.epoch)
         self.assertIsNone(result.miners)
         self.assertIsNotNone(result.error, "the operator needs to know WHY")

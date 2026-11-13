@@ -2,12 +2,29 @@
 """
 RustChain Prometheus Exporter
 Exposes RustChain node metrics in Prometheus format
+
+Liveness comes from the shared body-validating probe (monitoring/node_probe.py,
+issue #17180): a 200 with an HTML/non-node body is an `impostor`, and
+rustchain_node_health is set to 0 on ANY non-up probe state — it is never left
+at a stale value after a failed scrape.
 """
 import time
 import os
+import sys
+from pathlib import Path
 import requests
 from prometheus_client import start_http_server, Gauge, Counter, Info
 import logging
+
+# Import the shared node probe from the repo root (works both as a script and
+# as an imported module).
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from monitoring.node_probe import (  # noqa: E402
+    probe_health, ssl_context_for,
+    UP, DEGRADED, STATES,
+)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('rustchain-exporter')
@@ -20,7 +37,9 @@ TLS_VERIFY = os.environ.get('TLS_VERIFY', 'true').lower() in ('true', '1', 'yes'
 TLS_CA_BUNDLE = os.environ.get('TLS_CA_BUNDLE', None)  # Optional CA cert path
 
 # Prometheus metrics
-node_health = Gauge('rustchain_node_health', 'Node health status (1=healthy, 0=unhealthy)')
+node_health = Gauge('rustchain_node_health', 'Node health status (1=healthy, 0=any non-up probe state: down/impostor/degraded/unreachable)')
+node_probe_state = Gauge('rustchain_node_probe_state', 'Shared probe state of the last /health scrape (1 for the current state)', ['state'])
+last_successful_scrape = Gauge('rustchain_last_successful_scrape_timestamp', 'Unix timestamp of the last scrape where the node answered with a valid RustChain /health body')
 node_uptime_seconds = Gauge('rustchain_node_uptime_seconds', 'Node uptime in seconds')
 node_db_status = Gauge('rustchain_node_db_status', 'Database read/write status (1=ok, 0=error)')
 node_version = Info('rustchain_node_version', 'Node version information')
@@ -41,14 +60,14 @@ scrape_duration_seconds = Gauge('rustchain_scrape_duration_seconds', 'Duration o
 
 
 def fetch_json(endpoint):
-    """Fetch JSON data from RustChain node API"""
+    """Fetch JSON data from RustChain node API (non-health endpoints)"""
     try:
         url = f"{RUSTCHAIN_NODE}{endpoint}"
         # Determine verification behavior
         verify = TLS_VERIFY
         if TLS_CA_BUNDLE:
             verify = TLS_CA_BUNDLE
-        
+
         response = requests.get(url, verify=verify, timeout=10)
         response.raise_for_status()
         return response.json()
@@ -58,19 +77,45 @@ def fetch_json(endpoint):
         return None
 
 
+def _probe_ssl_context():
+    if TLS_CA_BUNDLE:
+        return ssl_context_for(ca_file=TLS_CA_BUNDLE)
+    return ssl_context_for(verify=TLS_VERIFY)
+
+
+def probe_node_health():
+    """Run the shared body-validating probe against the node's /health."""
+    return probe_health(
+        f"{RUSTCHAIN_NODE.rstrip('/')}/health",
+        timeout=10,
+        ssl_context=_probe_ssl_context(),
+    )
+
+
 def collect_metrics():
     """Collect all metrics from RustChain node"""
     start_time = time.time()
-    
+
     try:
-        # Health metrics
-        health = fetch_json('/health')
-        if health:
-            node_health.set(1 if health.get('ok') else 0)
-            node_uptime_seconds.set(health.get('uptime_s', 0))
-            node_db_status.set(1 if health.get('db_rw') else 0)
-            node_version.info({'version': health.get('version', 'unknown')})
-        
+        # Health metrics — decided by the shared probe, never by the HTTP
+        # status code alone. ANY non-up state (down, impostor, degraded,
+        # unreachable) sets the gauge to 0, so a failed scrape can never leave
+        # a stale "1" behind (issue #17180).
+        result = probe_node_health()
+        node_health.set(1 if result.state == UP else 0)
+        for state in STATES:
+            node_probe_state.labels(state=state).set(1 if result.state == state else 0)
+        if result.state in (UP, DEGRADED):
+            # A genuine RustChain node answered with a valid /health body.
+            last_successful_scrape.set(time.time())
+        if result.state != UP:
+            logger.warning(f"/health probe state={result.state}: {result.detail}")
+        if result.data:
+            node_uptime_seconds.set(result.data.get('uptime_s', 0) or 0)
+            db_ok = result.data.get('db_rw', result.data.get('db_ok'))
+            node_db_status.set(1 if db_ok else 0)
+            node_version.info({'version': str(result.version or 'unknown')})
+
         # Epoch metrics
         epoch = fetch_json('/epoch')
         if epoch:
@@ -113,10 +158,14 @@ def collect_metrics():
         duration = time.time() - start_time
         scrape_duration_seconds.set(duration)
         logger.info(f"Metrics collected in {duration:.2f}s")
-        
+
     except Exception as e:
         logger.error(f"Error collecting metrics: {e}")
         scrape_errors.inc()
+        # A scrape that blew up entirely is a failed scrape: health goes to 0.
+        node_health.set(0)
+        for state in STATES:
+            node_probe_state.labels(state=state).set(0)
 
 
 def main():

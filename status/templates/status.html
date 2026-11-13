@@ -7,7 +7,7 @@
 <title>RustChain Node Status</title>
 <style>
   :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --green: #3fb950;
-          --red: #f85149; --yellow: #d29922; --text: #e6edf3; --muted: #8b949e; }
+          --red: #f85149; --yellow: #d29922; --purple: #a371f7; --text: #e6edf3; --muted: #8b949e; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
          background: var(--bg); color: var(--text); min-height: 100vh; padding: 20px; }
@@ -18,6 +18,7 @@
              font-weight: 600; font-size: 1.1em; text-align: center; }
   .overall.operational { background: rgba(63,185,80,0.15); border: 1px solid var(--green); color: var(--green); }
   .overall.degraded { background: rgba(248,81,73,0.15); border: 1px solid var(--red); color: var(--red); }
+  .overall.impostor { background: rgba(163,113,247,0.15); border: 1px solid var(--purple); color: var(--purple); }
   .node-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
   @media (max-width: 600px) { .node-grid { grid-template-columns: 1fr; } }
   .node-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
@@ -26,6 +27,9 @@
   .status-badge { padding: 2px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; }
   .status-badge.up { background: rgba(63,185,80,0.2); color: var(--green); }
   .status-badge.down { background: rgba(248,81,73,0.2); color: var(--red); }
+  .status-badge.impostor { background: rgba(163,113,247,0.2); color: var(--purple); }
+  .status-badge.degraded { background: rgba(210,153,34,0.2); color: var(--yellow); }
+  .status-badge.unreachable { background: rgba(248,81,73,0.2); color: var(--red); }
   .node-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85em; }
   .stat-label { color: var(--muted); }
   .stat-value { font-weight: 500; }
@@ -42,6 +46,7 @@
   .incident:last-child { border-bottom: none; }
   .incident .event-down { color: var(--red); }
   .incident .event-recovered { color: var(--green); }
+  .incident .event-impostor { color: var(--purple); }
   .incident .time { color: var(--muted); }
   .empty { padding: 20px; text-align: center; color: var(--muted); }
   .response-graph { height: 60px; display: flex; align-items: flex-end; gap: 1px; margin-top: 8px; }
@@ -85,7 +90,7 @@ function escapeHtml(value) {
 // Whitelist of CSS class fragments safe to interpolate from server-side data.
 // Any class not in this set is dropped so an attacker cannot break out of the
 // attribute via a crafted node name, status string, or event label.
-const ALLOWED_STATUS_CLASSES = new Set(['up', 'down', 'recovered', 'unknown']);
+const ALLOWED_STATUS_CLASSES = new Set(['up', 'down', 'recovered', 'unknown', 'impostor', 'degraded', 'unreachable']);
 function safeClass(value, fallback = '') {
   return ALLOWED_STATUS_CLASSES.has(String(value)) ? String(value) : fallback;
 }
@@ -102,6 +107,9 @@ async function refresh() {
     if (status.overall === 'operational') {
       ov.className = 'overall operational';
       ov.textContent = '✅ All Systems Operational';
+    } else if (status.overall === 'impostor') {
+      ov.className = 'overall impostor';
+      ov.textContent = '🟣 IMPOSTOR detected — a host is answering 200 but is not a RustChain node';
     } else {
       ov.className = 'overall degraded';
       ov.textContent = '⚠️ Some Systems Degraded';
@@ -113,7 +121,12 @@ async function refresh() {
       const nid = node.name.toLowerCase().replace(/\s+/g, '-').replace('node-','node-');
       const nodeId = Object.keys(uptime).find(k => uptime[k].name === node.name) || '';
       const u = uptime[nodeId] || {};
-      const statusClass = safeClass(node.up ? 'up' : 'down');
+      const st = String(node.state || (node.up ? 'up' : 'down'));
+      const statusClass = safeClass(st, node.up ? 'up' : 'down');
+      const badgeText = st === 'up' ? 'Operational'
+        : st === 'impostor' ? 'IMPOSTOR'
+        : st === 'degraded' ? 'Degraded'
+        : 'Down';
       const card = document.createElement('div');
       card.className = 'node-card';
       // Build the static skeleton with safe DOM methods, then escape dynamic text.
@@ -124,7 +137,7 @@ async function refresh() {
       nameSpan.textContent = node.name ?? '';
       const badge = document.createElement('span');
       badge.className = `status-badge ${statusClass}`;
-      badge.textContent = node.up ? 'Operational' : 'Down';
+      badge.textContent = badgeText;
       header.append(nameSpan, badge);
 
       const stats = document.createElement('div');
@@ -191,14 +204,18 @@ async function refresh() {
     } else {
       for (const i of incidents.slice(0,20)) {
         const eventClass = safeClass(
-          i.event === 'down' ? 'down' : i.event === 'recovered' ? 'recovered' : 'unknown'
+          i.event === 'down' ? 'down'
+            : i.event === 'recovered' ? 'recovered'
+            : i.event === 'impostor' ? 'impostor'
+            : 'unknown'
         );
         const row = document.createElement('div');
         row.className = 'incident';
         const left = document.createElement('span');
         const evt = document.createElement('span');
         evt.className = `event-${eventClass}`;
-        evt.textContent = `${i.event==='down'?'🔴':'🟢'} ${i.node ?? ''} — ${i.event ?? ''}`;
+        const icon = i.event === 'recovered' ? '🟢' : '🔴';
+        evt.textContent = `${icon} ${i.node ?? ''} — ${i.event ?? ''}`;
         left.append(evt);
         if (i.detail) {
           left.append(document.createTextNode(` · ${i.detail}`));

@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "version": "2.2.1",
+  "uptime_s": 77120,
+  "db_rw": true,
+  "backup_age_hours": 1.0,
+  "tip_age_slots": 512
+}

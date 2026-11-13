@@ -3,9 +3,37 @@
 
 import json
 import os
+import sys
+import urllib.error
+from pathlib import Path
 import pytest
 from unittest.mock import patch, MagicMock
-from status_server import app, check_node, poll_all, NODES, node_status, history, incidents
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from monitoring.node_probe import ProbeResult, UP, DOWN, IMPOSTOR, UNREACHABLE  # noqa: E402
+
+# status_server polls all nodes once at import time; block the network for
+# that import so tests never touch the real node IPs.
+_import_blocker = patch(
+    "urllib.request.urlopen",
+    side_effect=urllib.error.URLError("blocked during test import"),
+)
+_import_blocker.start()
+from status_server import app, check_node, poll_all, NODES, node_status, history, incidents  # noqa: E402
+_import_blocker.stop()
+
+
+def _up_probe(**overrides):
+    """A ProbeResult for a genuine, healthy node."""
+    data = overrides.pop("data", None) or {
+        "ok": True, "version": "1.2.3", "uptime_s": 86400,
+        "active_miners": 5, "epoch": 42,
+    }
+    return ProbeResult(
+        state=UP, url=NODES[0]["endpoint"], status_code=200, response_ms=42.0,
+        ok=True, version=data.get("version"), uptime_s=data.get("uptime_s"),
+        data=data, **overrides,
+    )
 
 
 @pytest.fixture
@@ -27,64 +55,82 @@ class TestCheckNode:
     """Tests for individual node health checks."""
 
     def test_healthy_node(self):
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {
-            "version": "1.2.3",
-            "uptime_seconds": 86400,
-            "active_miners": 5,
-            "current_epoch": 42,
-        }
-        with patch("status_server.requests.get", return_value=mock_resp):
+        with patch("status_server.probe_health", return_value=_up_probe()):
             result = check_node(NODES[0])
         assert result["up"] is True
+        assert result["state"] == "up"
         assert result["version"] == "1.2.3"
         assert result["active_miners"] == 5
         assert result["current_epoch"] == 42
         assert "response_ms" in result
         assert "checked_at" in result
 
-    def test_down_node_http_error(self):
-        mock_resp = MagicMock()
-        mock_resp.status_code = 500
-        with patch("status_server.requests.get", return_value=mock_resp):
+    def test_impostor_node_html_200(self):
+        """HTTP 200 with an HTML body must NOT be up (issue #17180)."""
+        impostor = ProbeResult(
+            state=IMPOSTOR, url=NODES[0]["endpoint"], status_code=200,
+            response_ms=31.0, content_type="text/html",
+            detail="HTTP 200 with Content-Type text/html — an HTML page, not a RustChain node (impostor)",
+        )
+        with patch("status_server.probe_health", return_value=impostor):
             result = check_node(NODES[0])
         assert result["up"] is False
+        assert result["state"] == "impostor"
+        assert result["status_code"] == 200
+        assert "impostor" in result["error"].lower()
+
+    def test_down_node_http_error(self):
+        down = ProbeResult(state=DOWN, url=NODES[0]["endpoint"], status_code=500, detail="HTTP 500")
+        with patch("status_server.probe_health", return_value=down):
+            result = check_node(NODES[0])
+        assert result["up"] is False
+        assert result["state"] == "down"
         assert result["status_code"] == 500
 
     def test_down_node_connection_error(self):
-        with patch("status_server.requests.get", side_effect=Exception("Connection refused")):
+        unreach = ProbeResult(state=UNREACHABLE, url=NODES[0]["endpoint"], detail="Connection refused")
+        with patch("status_server.probe_health", return_value=unreach):
             result = check_node(NODES[0])
         assert result["up"] is False
+        assert result["state"] == "unreachable"
         assert "Connection refused" in result["error"]
 
     def test_down_node_timeout(self):
-        import requests as req
-        with patch("status_server.requests.get", side_effect=req.Timeout("timed out")):
+        with patch("status_server.probe_health", side_effect=Exception("timed out")):
             result = check_node(NODES[0])
         assert result["up"] is False
+        assert result["state"] == "unreachable"
 
 
 class TestPollAll:
     """Tests for the polling cycle."""
 
     def test_poll_all_healthy(self):
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {"version": "1.0", "miners": 3, "epoch": 10}
-        with patch("status_server.requests.get", return_value=mock_resp):
+        with patch("status_server.probe_health", return_value=_up_probe(
+                data={"ok": True, "version": "1.0", "miners": 3, "epoch": 10})):
             with patch("status_server.save_state"):
                 poll_all()
         assert len(node_status) == 4
         for nid, status in node_status.items():
             assert status["up"] is True
+            assert status["state"] == "up"
+
+    def test_poll_all_impostor_marks_node_not_up(self):
+        """An SPA answering 200 on /health must surface as impostor."""
+        impostor = ProbeResult(
+            state=IMPOSTOR, url=NODES[0]["endpoint"], status_code=200,
+            content_type="text/html", response_ms=20.0,
+            detail="HTTP 200 with Content-Type text/html — not a RustChain node (impostor)",
+        )
+        with patch("status_server.probe_health", return_value=impostor):
+            with patch("status_server.save_state"):
+                poll_all()
+        assert node_status["node-1"]["up"] is False
+        assert node_status["node-1"]["state"] == "impostor"
 
     def test_incident_logged_on_down(self):
         # First poll: all up
-        mock_up = MagicMock()
-        mock_up.status_code = 200
-        mock_up.json.return_value = {"version": "1.0"}
-        with patch("status_server.requests.get", return_value=mock_up):
+        with patch("status_server.probe_health", return_value=_up_probe()):
             with patch("status_server.save_state"):
                 poll_all()
         assert len(incidents) == 0
@@ -93,25 +139,43 @@ class TestPollAll:
         def side_effect(url, **kwargs):
             if "50.28.86.131" in url:
                 raise Exception("Connection refused")
-            resp = MagicMock()
-            resp.status_code = 200
-            resp.json.return_value = {"version": "1.0"}
-            return resp
+            return _up_probe()
 
-        with patch("status_server.requests.get", side_effect=side_effect):
+        with patch("status_server.probe_health", side_effect=side_effect):
             with patch("status_server.save_state"):
                 poll_all()
         assert len(incidents) >= 1
         assert incidents[0]["event"] == "down"
         assert "Node 1" in incidents[0]["node"]
 
+    def test_incident_logged_on_impostor(self):
+        with patch("status_server.probe_health", return_value=_up_probe()):
+            with patch("status_server.save_state"):
+                poll_all()
+        assert len(incidents) == 0
+
+        impostor = ProbeResult(
+            state=IMPOSTOR, url=NODES[0]["endpoint"], status_code=200,
+            content_type="text/html", response_ms=20.0,
+            detail="HTTP 200 with Content-Type text/html — not a RustChain node (impostor)",
+        )
+
+        def side_effect(url, **kwargs):
+            if "50.28.86.131" in url:
+                return impostor
+            return _up_probe()
+
+        with patch("status_server.probe_health", side_effect=side_effect):
+            with patch("status_server.save_state"):
+                poll_all()
+        assert len(incidents) >= 1
+        assert incidents[0]["event"] == "impostor"
+        assert "Node 1" in incidents[0]["node"]
+
     def test_incident_recovery(self):
         # Setup: node-1 is down
         node_status["node-1"] = {"up": False, "name": "Node 1"}
-        mock_up = MagicMock()
-        mock_up.status_code = 200
-        mock_up.json.return_value = {"version": "1.0"}
-        with patch("status_server.requests.get", return_value=mock_up):
+        with patch("status_server.probe_health", return_value=_up_probe()):
             with patch("status_server.save_state"):
                 poll_all()
         recovery = [i for i in incidents if i["event"] == "recovered" and "Node 1" in i["node"]]
@@ -122,10 +186,8 @@ class TestAPI:
     """Tests for API endpoints."""
 
     def test_status_endpoint(self, client):
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {"version": "1.0", "miners": 2, "epoch": 5}
-        with patch("status_server.requests.get", return_value=mock_resp):
+        with patch("status_server.probe_health", return_value=_up_probe(
+                data={"ok": True, "version": "1.0", "miners": 2, "epoch": 5})):
             with patch("status_server.save_state"):
                 poll_all()
         resp = client.get("/api/status")
@@ -134,13 +196,29 @@ class TestAPI:
         assert "nodes" in data
         assert "overall" in data
         assert data["overall"] == "operational"
+        assert data["nodes_up"] == 4
+        assert data["nodes_impostor"] == 0
 
     def test_status_degraded(self, client):
-        node_status["node-1"] = {"up": False, "name": "Node 1"}
-        node_status["node-2"] = {"up": True, "name": "Node 2"}
+        node_status["node-1"] = {"up": False, "state": "down", "name": "Node 1"}
+        node_status["node-2"] = {"up": True, "state": "up", "name": "Node 2"}
         resp = client.get("/api/status")
         data = json.loads(resp.data)
         assert data["overall"] == "degraded"
+
+    def test_status_impostor_overall(self, client):
+        """An impostor node must be visibly distinct from up in the API."""
+        node_status["node-1"] = {"up": False, "state": "impostor", "name": "Node 1",
+                                 "error": "HTTP 200 with Content-Type text/html"}
+        node_status["node-2"] = {"up": True, "state": "up", "name": "Node 2"}
+        resp = client.get("/api/status")
+        data = json.loads(resp.data)
+        assert data["overall"] == "impostor"
+        assert data["nodes_impostor"] == 1
+        assert data["nodes_up"] == 1
+        node1 = next(n for n in data["nodes"] if n["name"] == "Node 1")
+        assert node1["state"] == "impostor"
+        assert node1["up"] is False
 
     def test_history_endpoint(self, client):
         history["node-1"] = [{"t": "2026-03-24T12:00:00Z", "up": True, "ms": 50}]
@@ -209,7 +287,10 @@ class TestAPI:
         # Nodes must be built via safe DOM construction, not innerHTML
         assert "card.innerHTML" not in html
         assert "nameSpan.textContent = node.name" in html
-        assert "badge.textContent = node.up ? 'Operational' : 'Down'" in html
+        assert "badge.textContent = badgeText" in html
+        # impostor must be a whitelisted, rendered badge state (issue #17180)
+        assert "'impostor'" in html
+        assert "IMPOSTOR" in html
         # Incident rows must be built with createElement/textContent
         assert "evt.textContent = " in html
         assert "incEl.innerHTML" not in html
@@ -276,10 +357,7 @@ class TestHistoryTrimming:
             {"t": old_time, "up": True, "ms": 50},
             {"t": new_time, "up": True, "ms": 45},
         ]
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = {"version": "1.0"}
-        with patch("status_server.requests.get", return_value=mock_resp):
+        with patch("status_server.probe_health", return_value=_up_probe()):
             with patch("status_server.save_state"):
                 poll_all()
         # Old entry should be trimmed

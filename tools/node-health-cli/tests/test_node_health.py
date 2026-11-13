@@ -13,6 +13,9 @@ from pathlib import Path
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from monitoring.node_probe import ProbeResult, UP, IMPOSTOR, DEGRADED, UNREACHABLE  # noqa: E402
 
 from node_health import (
     HealthStatus, EpochStatus, ReachabilityStatus, CheckResult,
@@ -237,36 +240,73 @@ class TestFormatJson(unittest.TestCase):
 class TestCheckFunctions(unittest.TestCase):
     """Test check functions with mocked responses"""
     
-    @patch('node_health.urlopen')
-    def test_check_health_success(self, mock_urlopen):
+    @patch('node_health.probe_health')
+    def test_check_health_success(self, mock_probe):
         """Test health check with successful response"""
-        mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({
-            "ok": True,
-            "version": "2.2.1",
-            "uptime_s": 3600,
-            "db_rw": True,
-            "backup_age_hours": 1.0,
-            "tip_age_slots": 1
-        }).encode()
-        mock_response.__enter__.return_value = mock_response
-        mock_urlopen.return_value = mock_response
-        
+        mock_probe.return_value = ProbeResult(
+            state=UP, url="https://rustchain.org/health", status_code=200,
+            response_ms=50.0, ok=True, version="2.2.1", uptime_s=3600,
+            db_rw=True, tip_age_slots=1,
+            data={
+                "ok": True, "version": "2.2.1", "uptime_s": 3600,
+                "db_rw": True, "backup_age_hours": 1.0, "tip_age_slots": 1,
+            },
+        )
+
         result = check_health("https://rustchain.org", timeout=10)
-        
+
         self.assertTrue(result.ok)
+        self.assertEqual(result.probe_state, "up")
         self.assertEqual(result.version, "2.2.1")
         self.assertEqual(result.uptime_s, 3600)
+        self.assertEqual(result.backup_age_hours, 1.0)
         self.assertIsNone(result.error)
-    
-    @patch('node_health.urlopen')
-    def test_check_health_failure(self, mock_urlopen):
-        """Test health check with connection error"""
-        mock_urlopen.side_effect = URLError("Connection refused")
-        
+
+    @patch('node_health.probe_health')
+    def test_check_health_impostor_html_200(self, mock_probe):
+        """Issue #17180: HTTP 200 with an HTML body is an impostor, distinct
+        from a plain health failure."""
+        mock_probe.return_value = ProbeResult(
+            state=IMPOSTOR, url="https://rustchain.org/health", status_code=200,
+            response_ms=30.0, content_type="text/html",
+            detail="HTTP 200 with Content-Type text/html — an HTML page, not a RustChain node (impostor)",
+        )
+
         result = check_health("https://rustchain.org", timeout=10)
-        
+
         self.assertFalse(result.ok)
+        self.assertEqual(result.probe_state, "impostor")
+        self.assertIsNotNone(result.error)
+        self.assertIn("impostor", result.error.lower())
+
+    @patch('node_health.probe_health')
+    def test_check_health_degraded_ok_false(self, mock_probe):
+        """A real node reporting ok=false is degraded, not an impostor."""
+        mock_probe.return_value = ProbeResult(
+            state=DEGRADED, url="https://rustchain.org/health", status_code=200,
+            ok=False, version="2.2.1", uptime_s=99, db_rw=False,
+            data={"ok": False, "version": "2.2.1", "uptime_s": 99, "db_rw": False},
+            detail="ok=False; db_rw=false",
+        )
+
+        result = check_health("https://rustchain.org", timeout=10)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.probe_state, "degraded")
+        self.assertIn("ok=False", result.error)
+
+    @patch('node_health.probe_health')
+    def test_check_health_failure(self, mock_probe):
+        """Test health check with connection error"""
+        mock_probe.return_value = ProbeResult(
+            state=UNREACHABLE, url="https://rustchain.org/health",
+            detail="Connection refused",
+        )
+
+        result = check_health("https://rustchain.org", timeout=10)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.probe_state, "unreachable")
         self.assertIsNotNone(result.error)
         self.assertIn("Connection refused", result.error)
     

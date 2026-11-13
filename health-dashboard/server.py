@@ -9,7 +9,9 @@ import asyncio
 import json
 import logging
 import os
+import ssl
 import sqlite3
+import sys
 import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
@@ -20,6 +22,15 @@ from urllib.parse import urlparse
 import threading
 import requests
 from flask import Flask, jsonify, render_template_string, send_from_directory
+
+# Shared body-validating node probe (issue #17180): "up" is never decided from
+# the HTTP status code alone — a 200 answered by an HTML page is an impostor.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from monitoring.node_probe import (  # noqa: E402
+    probe_health, ProbeResult, UP, DOWN, IMPOSTOR, DEGRADED, UNREACHABLE,
+)
 
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name, str(default))
@@ -100,7 +111,7 @@ class NodeStatus:
     name: str
     endpoint: str
     location: str
-    status: str  # 'up', 'down', 'degraded'
+    status: str  # shared probe state: 'up' | 'down' | 'impostor' | 'degraded' | 'unreachable'
     response_time_ms: float
     version: str
     uptime_s: int
@@ -222,102 +233,56 @@ def cleanup_old_data():
         logger.info(f"Cleaned up {deleted} old records")
 
 
+def _probe_ssl_context(endpoint: str):
+    """Pinned node cert for HTTPS, default verification otherwise."""
+    if endpoint.startswith('https://'):
+        cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+        if os.path.exists(cert):
+            return ssl.create_default_context(cafile=cert)
+        return ssl.create_default_context()
+    return None  # plain HTTP has no TLS to verify
+
+
 def check_node_health(node_config: dict) -> NodeStatus:
-    """Check health of a single node"""
+    """Check health of a single node via the shared body-validating probe.
+
+    The status is the probe state, never the HTTP status code alone: a 200
+    answered by an HTML page (SPA/parking/captive portal) is 'impostor', and
+    'down' covers both non-2xx answers and unreachable hosts (issue #17180).
+    """
     start_time = time.time()
     timestamp = datetime.now()
-    
+    endpoint = node_config['endpoint']
+
     try:
-        # Use pinned cert for HTTPS, no verification needed for plain HTTP
-        _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
-        if 'https://' in node_config['endpoint']:
-            verify = _cert if os.path.exists(_cert) else True
-        else:
-            verify = False  # Plain HTTP has no TLS to verify
-        
-        response = requests.get(
-            node_config['endpoint'],
-            timeout=10,
-            verify=verify
-        )
-        response_time_ms = (time.time() - start_time) * 1000
-        
-        if response.status_code == 200:
-            data = response.json()
-            return NodeStatus(
-                node_id=node_config['id'],
-                name=node_config['name'],
-                endpoint=node_config['endpoint'],
-                location=node_config['location'],
-                status='up',
-                response_time_ms=response_time_ms,
-                version=data.get('version', 'unknown'),
-                uptime_s=data.get('uptime_s', 0),
-                active_miners=data.get('active_miners', 0),
-                current_epoch=data.get('epoch', 0),
-                timestamp=timestamp
-            )
-        else:
-            return NodeStatus(
-                node_id=node_config['id'],
-                name=node_config['name'],
-                endpoint=node_config['endpoint'],
-                location=node_config['location'],
-                status='down',
-                response_time_ms=response_time_ms,
-                version='unknown',
-                uptime_s=0,
-                active_miners=0,
-                current_epoch=0,
-                timestamp=timestamp,
-                error=f"HTTP {response.status_code}"
-            )
-            
-    except requests.exceptions.Timeout:
-        return NodeStatus(
-            node_id=node_config['id'],
-            name=node_config['name'],
-            endpoint=node_config['endpoint'],
-            location=node_config['location'],
-            status='down',
-            response_time_ms=(time.time() - start_time) * 1000,
-            version='unknown',
-            uptime_s=0,
-            active_miners=0,
-            current_epoch=0,
-            timestamp=timestamp,
-            error="Timeout"
-        )
-    except requests.exceptions.ConnectionError as e:
-        return NodeStatus(
-            node_id=node_config['id'],
-            name=node_config['name'],
-            endpoint=node_config['endpoint'],
-            location=node_config['location'],
-            status='down',
-            response_time_ms=(time.time() - start_time) * 1000,
-            version='unknown',
-            uptime_s=0,
-            active_miners=0,
-            current_epoch=0,
-            timestamp=timestamp,
-            error="Connection Error"
-        )
+        result = probe_health(endpoint, timeout=10, ssl_context=_probe_ssl_context(endpoint))
     except Exception as e:
-        return NodeStatus(
-            node_id=node_config['id'],
-            name=node_config['name'],
-            endpoint=node_config['endpoint'],
-            location=node_config['location'],
-            status='down',
-            response_time_ms=(time.time() - start_time) * 1000,
-            version='unknown',
-            uptime_s=0,
-            active_miners=0,
-            current_epoch=0,
-            timestamp=timestamp,
-            error=str(e)
-        )
+        result = ProbeResult(state=UNREACHABLE, url=endpoint, detail=str(e))
+
+    response_time_ms = (time.time() - start_time) * 1000
+    data = result.data or {}
+    if result.state == UP:
+        status, error = UP, None
+    elif result.state in (DOWN, UNREACHABLE):
+        status = DOWN
+        error = f"HTTP {result.status_code}" if result.state == DOWN else (result.detail or "unreachable")
+    else:  # impostor / degraded — surfaced distinctly, never collapsed to 'up'
+        status, error = result.state, (result.detail or result.state)
+
+    return NodeStatus(
+        node_id=node_config['id'],
+        name=node_config['name'],
+        endpoint=endpoint,
+        location=node_config['location'],
+        status=status,
+        response_time_ms=response_time_ms,
+        version=result.version or data.get('version', 'unknown'),
+        uptime_s=data.get('uptime_s', 0),
+        active_miners=data.get('active_miners', 0),
+        current_epoch=data.get('epoch', 0),
+        timestamp=timestamp,
+        error=error,
+    )
 
 
 def detect_status_change(old_status: dict, new_status: NodeStatus):
@@ -329,11 +294,20 @@ def detect_status_change(old_status: dict, new_status: NodeStatus):
     new = new_status.status
     
     if old != new:
-        if new == 'down':
+        if new in ('down', 'unreachable'):
             incident_type = 'node_down'
             details = f"Node {new_status.name} went DOWN. Error: {new_status.error or 'Unknown'}"
             logger.warning(f"INCIDENT: {details}")
-        elif old == 'down' and new == 'up':
+        elif new == 'impostor':
+            incident_type = 'node_impostor'
+            details = (f"Node {new_status.name} is an IMPOSTOR: HTTP 200 but not a "
+                       f"RustChain node. {new_status.error or ''}")
+            logger.warning(f"INCIDENT: {details}")
+        elif new == 'degraded':
+            incident_type = 'node_degraded'
+            details = f"Node {new_status.name} is DEGRADED. {new_status.error or ''}"
+            logger.warning(f"INCIDENT: {details}")
+        elif new == 'up' and old != 'up':
             incident_type = 'node_recovery'
             details = f"Node {new_status.name} recovered and is back UP"
             logger.info(f"INCIDENT: {details}")
@@ -451,12 +425,15 @@ def dashboard():
 @app.route('/api/status')
 def api_status():
     """API endpoint for current node status"""
+    statuses = list(current_status.values())
     return jsonify({
-        'nodes': list(current_status.values()),
+        'nodes': statuses,
         'last_updated': datetime.now().isoformat(),
         'total_nodes': len(NODES),
-        'nodes_up': sum(1 for s in current_status.values() if s['status'] == 'up'),
-        'nodes_down': sum(1 for s in current_status.values() if s['status'] == 'down')
+        'nodes_up': sum(1 for s in statuses if s['status'] == 'up'),
+        'nodes_down': sum(1 for s in statuses if s['status'] in ('down', 'unreachable')),
+        'nodes_impostor': sum(1 for s in statuses if s['status'] == 'impostor'),
+        'nodes_degraded': sum(1 for s in statuses if s['status'] == 'degraded'),
     })
 
 
@@ -701,8 +678,23 @@ HTML_TEMPLATE = '''
             background: rgba(34, 197, 94, 0.2);
             color: var(--success);
         }
-        
+
         .status-badge.down {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+
+        .status-badge.impostor {
+            background: rgba(168, 85, 247, 0.25);
+            color: #a855f7;
+        }
+
+        .status-badge.degraded {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+        }
+
+        .status-badge.unreachable {
             background: rgba(239, 68, 68, 0.2);
             color: var(--danger);
         }
@@ -854,6 +846,10 @@ HTML_TEMPLATE = '''
                 <div class="value down" id="nodes-down">-</div>
             </div>
             <div class="summary-card">
+                <h3>Impostors</h3>
+                <div class="value" id="nodes-impostor" style="color: #a855f7;">-</div>
+            </div>
+            <div class="summary-card">
                 <h3>Overall Status</h3>
                 <div class="value" id="overall-status">-</div>
             </div>
@@ -926,7 +922,7 @@ HTML_TEMPLATE = '''
                     <div class="node-metrics">
                         <div class="metric">
                             <div class="metric-label">Response Time</div>
-                            <div class="metric-value">${node.status === 'up' ? node.response_time_ms.toFixed(0) + ' ms' : 'N/A'}</div>
+                            <div class="metric-value">${node.response_time_ms != null ? node.response_time_ms.toFixed(0) + ' ms' : 'N/A'}</div>
                         </div>
                         <div class="metric">
                             <div class="metric-label">Version</div>
@@ -959,11 +955,15 @@ HTML_TEMPLATE = '''
             document.getElementById('total-nodes').textContent = data.total_nodes;
             document.getElementById('nodes-up').textContent = data.nodes_up;
             document.getElementById('nodes-down').textContent = data.nodes_down;
-            
+            document.getElementById('nodes-impostor').textContent = data.nodes_impostor ?? 0;
+
             const overall = document.getElementById('overall-status');
             if (data.nodes_up === data.total_nodes) {
                 overall.textContent = 'Healthy';
                 overall.style.color = 'var(--success)';
+            } else if ((data.nodes_impostor ?? 0) > 0) {
+                overall.textContent = 'IMPOSTOR detected';
+                overall.style.color = '#a855f7';
             } else if (data.nodes_up > 0) {
                 overall.textContent = 'Degraded';
                 overall.style.color = 'var(--warning)';
@@ -1122,10 +1122,18 @@ HTML_TEMPLATE = '''
             return colors[Math.floor(Math.random() * colors.length)];
         }
         
+        // Map dot color per probe state (impostor is distinct from up/down)
+        function statusColor(status) {
+            if (status === 'up') return '#22c55e';
+            if (status === 'impostor') return '#a855f7';
+            if (status === 'degraded') return '#f59e0b';
+            return '#ef4444';
+        }
+
         // Initialize map (simple SVG-based map)
         function initMap() {
             const mapDiv = document.getElementById('map');
-            
+
             // Simple node location visualization
             const locations = NODES.map(node => `
                 <div style="
@@ -1134,7 +1142,7 @@ HTML_TEMPLATE = '''
                     top: ${(90 - node.lat) / 180 * 100}%;
                     width: 12px;
                     height: 12px;
-                    background: ${current_status[node.id]?.status === 'up' ? '#22c55e' : '#ef4444'};
+                    background: ${statusColor(current_status[node.id]?.status)};
                     border: 2px solid white;
                     border-radius: 50%;
                     cursor: pointer;
@@ -1177,6 +1185,8 @@ HTML_TEMPLATE = '''
                         font-size: 0.8rem;
                     ">
                         <span style="color: #22c55e;">●</span> Online &nbsp;
+                        <span style="color: #a855f7;">●</span> Impostor &nbsp;
+                        <span style="color: #f59e0b;">●</span> Degraded &nbsp;
                         <span style="color: #ef4444;">●</span> Offline
                     </div>
                 </div>

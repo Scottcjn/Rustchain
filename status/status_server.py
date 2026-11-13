@@ -8,6 +8,8 @@ Polls every 60 seconds, tracks 24h uptime history, logs incidents.
 """
 
 import json
+import ssl
+import sys
 import time
 import threading
 import os
@@ -15,8 +17,15 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
-import requests
 from flask import Flask, render_template, jsonify, Response
+
+# Shared body-validating node probe (issue #17180): liveness is never decided
+# from the HTTP status code alone — a 200 with an HTML/non-node body is an
+# "impostor", not "up".
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from monitoring.node_probe import probe_health, UP, UNREACHABLE  # noqa: E402
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -66,44 +75,51 @@ def save_state():
     }, default=str, indent=2))
 
 
+def _node_ssl_context():
+    """Pinned node cert if present, otherwise default verification."""
+    cert = os.path.expanduser("~/.rustchain/node_cert.pem")
+    if os.path.exists(cert):
+        return ssl.create_default_context(cafile=cert)
+    return None  # probe_health then uses the default verifying context
+
+
 def check_node(node):
-    """Poll a single node and return status dict."""
+    """Poll a single node and return status dict.
+
+    "up" comes from the shared probe's validated state, never from the HTTP
+    status code alone: a 200 answered by an HTML page (SPA, parking page,
+    captive portal) comes back as state="impostor" with up=False.
+    """
     start = time.time()
+    endpoint = node["endpoint"]
     try:
-        _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
-        _verify = _cert if os.path.exists(_cert) else True
-        resp = requests.get(node["endpoint"], timeout=10, verify=_verify)
-        elapsed_ms = round((time.time() - start) * 1000)
-        if resp.status_code == 200:
-            try:
-                data = resp.json()
-            except ValueError:
-                data = {}
-            return {
-                "up": True,
-                "status_code": resp.status_code,
-                "response_ms": elapsed_ms,
-                "version": data.get("version", "unknown"),
-                "uptime": data.get("uptime", data.get("uptime_seconds", 0)),
-                "active_miners": data.get("active_miners", data.get("miners", 0)),
-                "current_epoch": data.get("epoch", data.get("current_epoch", 0)),
-                "checked_at": datetime.utcnow().isoformat() + "Z",
-            }
-        else:
-            return {
-                "up": False,
-                "status_code": resp.status_code,
-                "response_ms": elapsed_ms,
-                "checked_at": datetime.utcnow().isoformat() + "Z",
-            }
+        result = probe_health(endpoint, timeout=10, ssl_context=_node_ssl_context())
     except Exception as e:
         elapsed_ms = round((time.time() - start) * 1000)
         return {
             "up": False,
+            "state": UNREACHABLE,
             "error": str(e)[:200],
             "response_ms": elapsed_ms,
             "checked_at": datetime.utcnow().isoformat() + "Z",
         }
+    data = result.data or {}
+    elapsed_ms = (result.response_ms if result.response_ms is not None
+                  else (time.time() - start) * 1000)
+    out = {
+        "up": result.state == UP,
+        "state": result.state,  # up | down | impostor | degraded | unreachable
+        "status_code": result.status_code,
+        "response_ms": round(elapsed_ms),
+        "version": result.version or data.get("version", "unknown"),
+        "uptime": data.get("uptime_s", data.get("uptime", data.get("uptime_seconds", 0))),
+        "active_miners": data.get("active_miners", data.get("miners", 0)),
+        "current_epoch": data.get("epoch", data.get("current_epoch", 0)),
+        "checked_at": datetime.utcnow().isoformat() + "Z",
+    }
+    if result.state != UP:
+        out["error"] = result.detail or result.state
+    return out
 
 
 def poll_all():
@@ -116,12 +132,13 @@ def poll_all():
         now_up = result["up"]
 
         # Incident detection
+        state = result.get("state", "up" if now_up else "down")
         if was_up and not now_up:
             incidents.insert(0, {
                 "node": node["name"],
-                "event": "down",
+                "event": "impostor" if state == "impostor" else "down",
                 "time": result["checked_at"],
-                "detail": result.get("error", f"HTTP {result.get('status_code', '?')}"),
+                "detail": result.get("error", f"state={state} HTTP {result.get('status_code', '?')}"),
             })
         elif not was_up and now_up:
             incidents.insert(0, {
@@ -139,6 +156,7 @@ def poll_all():
         history[nid].append({
             "t": result["checked_at"],
             "up": result["up"],
+            "state": state,
             "ms": result.get("response_ms", 0),
         })
         # Trim to 24h
@@ -177,10 +195,19 @@ def index():
 @app.route("/api/status")
 def api_status():
     """Current status of all nodes."""
+    nodes = list(node_status.values())
+    if all(n.get("up") for n in nodes):
+        overall = "operational"
+    elif any(n.get("state") == "impostor" for n in nodes):
+        overall = "impostor"
+    else:
+        overall = "degraded"
     return jsonify({
-        "nodes": list(node_status.values()),
+        "nodes": nodes,
         "timestamp": datetime.utcnow().isoformat() + "Z",
-        "overall": "operational" if all(n.get("up") for n in node_status.values()) else "degraded",
+        "overall": overall,
+        "nodes_up": sum(1 for n in nodes if n.get("up")),
+        "nodes_impostor": sum(1 for n in nodes if n.get("state") == "impostor"),
     })
 
 

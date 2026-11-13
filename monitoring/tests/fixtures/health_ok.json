@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "version": "2.2.1",
+  "uptime_s": 1834521,
+  "db_rw": true,
+  "backup_age_hours": 2.5,
+  "tip_age_slots": 1,
+  "settlement_lag_epochs": 0,
+  "last_settled_epoch": 4321
+}

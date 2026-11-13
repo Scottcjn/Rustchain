@@ -16,6 +16,9 @@ from unittest.mock import Mock, patch, MagicMock
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from monitoring.node_probe import ProbeResult, UP, DOWN, IMPOSTOR, DEGRADED, UNREACHABLE  # noqa: E402
 
 from server import (
     NODES,
@@ -184,86 +187,107 @@ class TestDatabaseOperations(unittest.TestCase):
 
 
 class TestHealthCheck(unittest.TestCase):
-    """Test health check functionality"""
-    
-    @patch('server.requests.get')
-    def test_check_node_health_success(self, mock_get):
+    """Test health check functionality (driven by the shared node probe)"""
+
+    @staticmethod
+    def _up_probe():
+        return ProbeResult(
+            state=UP, url=NODES[0]['endpoint'], status_code=200, response_ms=42.0,
+            ok=True, version='1.0.0', uptime_s=3600, db_rw=True, tip_age_slots=1,
+            data={'version': '1.0.0', 'uptime_s': 3600, 'active_miners': 10,
+                  'epoch': 100, 'ok': True},
+        )
+
+    @patch('server.probe_health')
+    def test_check_node_health_success(self, mock_probe):
         """Test successful health check"""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            'version': '1.0.0',
-            'uptime_s': 3600,
-            'active_miners': 10,
-            'epoch': 100,
-            'ok': True
-        }
-        mock_get.return_value = mock_response
-        
+        mock_probe.return_value = self._up_probe()
+
         node_config = NODES[0]
         status = check_node_health(node_config)
-        
+
         self.assertEqual(status.status, 'up')
         self.assertEqual(status.version, '1.0.0')
         self.assertEqual(status.uptime_s, 3600)
         self.assertEqual(status.active_miners, 10)
         self.assertEqual(status.current_epoch, 100)
         self.assertIsNone(status.error)
-    
-    @patch('server.requests.get')
-    def test_check_node_health_http_error(self, mock_get):
+
+    @patch('server.probe_health')
+    def test_check_node_health_http_error(self, mock_probe):
         """Test health check with HTTP error"""
-        mock_response = Mock()
-        mock_response.status_code = 500
-        mock_get.return_value = mock_response
-        
+        mock_probe.return_value = ProbeResult(
+            state=DOWN, url=NODES[0]['endpoint'], status_code=500,
+            detail='HTTP 500: Internal Server Error')
+
         node_config = NODES[0]
         status = check_node_health(node_config)
-        
+
         self.assertEqual(status.status, 'down')
         self.assertEqual(status.error, 'HTTP 500')
-    
-    @patch('server.requests.get')
-    def test_check_node_health_timeout(self, mock_get):
-        """Test health check with timeout"""
-        import requests
-        mock_get.side_effect = requests.exceptions.Timeout()
-        
+
+    @patch('server.probe_health')
+    def test_check_node_health_impostor_html_200(self, mock_probe):
+        """HTTP 200 with an HTML body is an impostor, never 'up' (issue #17180)."""
+        mock_probe.return_value = ProbeResult(
+            state=IMPOSTOR, url=NODES[0]['endpoint'], status_code=200,
+            response_ms=25.0, content_type='text/html',
+            detail='HTTP 200 with Content-Type text/html — an HTML page, not a RustChain node (impostor)')
+
         node_config = NODES[0]
         status = check_node_health(node_config)
-        
+
+        self.assertEqual(status.status, 'impostor')
+        self.assertNotEqual(status.status, 'up')
+        self.assertIn('impostor', status.error.lower())
+
+    @patch('server.probe_health')
+    def test_check_node_health_degraded(self, mock_probe):
+        """A real node reporting ok=false is degraded, not up."""
+        mock_probe.return_value = ProbeResult(
+            state=DEGRADED, url=NODES[0]['endpoint'], status_code=200,
+            ok=False, version='1.0.0', uptime_s=10, db_rw=False,
+            data={'ok': False, 'version': '1.0.0', 'uptime_s': 10, 'db_rw': False},
+            detail='ok=False; db_rw=false')
+
+        node_config = NODES[0]
+        status = check_node_health(node_config)
+
+        self.assertEqual(status.status, 'degraded')
+        self.assertIn('ok=False', status.error)
+
+    @patch('server.probe_health')
+    def test_check_node_health_timeout(self, mock_probe):
+        """Test health check with timeout"""
+        mock_probe.return_value = ProbeResult(
+            state=UNREACHABLE, url=NODES[0]['endpoint'], detail='Timeout')
+
+        node_config = NODES[0]
+        status = check_node_health(node_config)
+
         self.assertEqual(status.status, 'down')
         self.assertEqual(status.error, 'Timeout')
-    
-    @patch('server.requests.get')
-    def test_check_node_health_connection_error(self, mock_get):
+
+    @patch('server.probe_health')
+    def test_check_node_health_connection_error(self, mock_probe):
         """Test health check with connection error"""
-        import requests
-        mock_get.side_effect = requests.exceptions.ConnectionError()
-        
+        mock_probe.return_value = ProbeResult(
+            state=UNREACHABLE, url=NODES[0]['endpoint'], detail='Connection Error')
+
         node_config = NODES[0]
         status = check_node_health(node_config)
-        
+
         self.assertEqual(status.status, 'down')
         self.assertEqual(status.error, 'Connection Error')
-    
-    @patch('server.requests.get')
-    def test_check_node_health_measures_response_time(self, mock_get):
+
+    @patch('server.probe_health')
+    def test_check_node_health_measures_response_time(self, mock_probe):
         """Test that health check measures response time"""
-        mock_response = Mock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            'version': '1.0.0',
-            'uptime_s': 3600,
-            'active_miners': 10,
-            'epoch': 100,
-            'ok': True
-        }
-        mock_get.return_value = mock_response
-        
+        mock_probe.return_value = self._up_probe()
+
         node_config = NODES[0]
         status = check_node_health(node_config)
-        
+
         # Response time should be positive
         self.assertGreater(status.response_time_ms, 0)
 
@@ -362,6 +386,30 @@ class TestIncidentDetection(unittest.TestCase):
         # No incident should be logged
         self.assertEqual(len(self.server_module.incident_log), 0)
     
+    def test_detect_impostor_incident(self):
+        """An impostor (200 + HTML) must raise its own incident, not 'down'."""
+        old_status = {'status': 'up'}
+        new_status = NodeStatus(
+            node_id='node1',
+            name='Test Node',
+            endpoint='http://test.com/health',
+            location='Test Location',
+            status='impostor',
+            response_time_ms=20,
+            version='unknown',
+            uptime_s=0,
+            active_miners=0,
+            current_epoch=0,
+            timestamp=datetime.now(),
+            error='HTTP 200 with Content-Type text/html — not a RustChain node (impostor)'
+        )
+
+        detect_status_change(old_status, new_status)
+
+        self.assertEqual(len(self.server_module.incident_log), 1)
+        self.assertEqual(self.server_module.incident_log[0]['incident_type'], 'node_impostor')
+        self.assertIn('IMPOSTOR', self.server_module.incident_log[0]['details'])
+
     def test_no_incident_on_none_old_status(self):
         """Test that no incident is logged when old status is None"""
         old_status = None

@@ -18,9 +18,18 @@ import json
 import sys
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
+
+# Shared body-validating node probe (issue #17180): /health is validated by
+# the same probe every other monitor uses, so a 200 with an HTML/non-node
+# body surfaces as probe_state="impostor" instead of a bare ok=False.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from monitoring.node_probe import probe_health, ProbeResult, UP, UNREACHABLE  # noqa: E402
 
 
 # Exit codes
@@ -47,6 +56,10 @@ class HealthStatus:
     backup_age_hours: Optional[float]
     tip_age_slots: Optional[int]
     error: Optional[str]
+    # Shared-probe state of /health: "up" | "down" | "impostor" | "degraded" |
+    # "unreachable". "impostor" = HTTP 200 but the answerer is not a RustChain
+    # node (HTML body, missing ok/version/uptime_s, or text/html content type).
+    probe_state: Optional[str] = None
 
 
 @dataclass
@@ -116,30 +129,31 @@ def fetch_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
 
 
 def check_health(node_url: str, timeout: int) -> HealthStatus:
-    """Check node health status"""
+    """Check node health status via the shared body-validating probe.
+
+    A missing `ok` key used to collapse to ok=False with no explanation; now a
+    200 answered by something that is not a RustChain node is reported as
+    probe_state="impostor" (issue #17180).
+    """
+    url = f"{node_url.rstrip('/')}/health"
     try:
-        url = f"{node_url.rstrip('/')}/health"
-        data = fetch_json(url, timeout)
-        
-        return HealthStatus(
-            ok=bool(data.get("ok", False)),
-            version=data.get("version"),
-            uptime_s=data.get("uptime_s"),
-            db_rw=data.get("db_rw"),
-            backup_age_hours=data.get("backup_age_hours"),
-            tip_age_slots=data.get("tip_age_slots"),
-            error=None
-        )
+        result = probe_health(url, timeout=timeout)
     except Exception as e:
-        return HealthStatus(
-            ok=False,
-            version=None,
-            uptime_s=None,
-            db_rw=None,
-            backup_age_hours=None,
-            tip_age_slots=None,
-            error=str(e)
-        )
+        result = ProbeResult(state=UNREACHABLE, url=url, detail=str(e))
+    data = result.data or {}
+
+    return HealthStatus(
+        ok=result.state == UP,
+        version=result.version if result.version is not None else data.get("version"),
+        uptime_s=result.uptime_s if result.uptime_s is not None else data.get("uptime_s"),
+        db_rw=(result.db_rw if result.db_rw is not None
+               else data.get("db_rw", data.get("db_ok"))),
+        backup_age_hours=data.get("backup_age_hours"),
+        tip_age_slots=(result.tip_age_slots if result.tip_age_slots is not None
+                       else data.get("tip_age_slots")),
+        error=None if result.state == UP else (result.detail or result.state),
+        probe_state=result.state,
+    )
 
 
 def check_epoch(node_url: str, timeout: int) -> EpochStatus:
@@ -284,6 +298,8 @@ def format_text(result: CheckResult, verbose: bool = False) -> str:
     # Health status
     health_icon = "✓" if result.health.ok else "✗"
     lines.append(f"[{health_icon}] Health Status")
+    probe_state = result.health.probe_state or ("up" if result.health.ok else "unknown")
+    lines.append(f"    Probe state: {probe_state}")
     if result.health.error:
         lines.append(f"    Error: {result.health.error}")
     else:
@@ -330,7 +346,9 @@ def format_text(result: CheckResult, verbose: bool = False) -> str:
     else:
         lines.append("STATUS: CHECKS FAILED")
         if not result.health.ok:
-            lines.append("  - Health check failed")
+            state = result.health.probe_state
+            suffix = f" [{state}]" if state else ""
+            lines.append(f"  - Health check failed{suffix}")
         if result.epoch.epoch is None:
             lines.append("  - Epoch check failed")
         if not all(r.reachable for r in result.reachability):

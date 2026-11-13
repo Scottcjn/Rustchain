@@ -17,7 +17,18 @@ import time
 import urllib.request
 import urllib.error
 from dataclasses import dataclass, asdict
-from typing import Dict, List, Optional, Any
+from pathlib import Path
+from typing import Dict, List, Optional, Any, Tuple
+
+# Shared body-validating node probe (issue #17180): liveness is never decided
+# from the HTTP status code alone — a 200 answered by an HTML page is an
+# "impostor", surfaced via NodeStatus.probe_state.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+from monitoring.node_probe import (  # noqa: E402
+    probe_health, UP, DOWN, IMPOSTOR, DEGRADED, UNREACHABLE,
+)
 
 # ── ANSI color codes ─────────────────────────────────────────────────────────
 GREEN  = "\033[92m"
@@ -67,6 +78,10 @@ class NodeStatus:
     # perfectly healthy through the 84-epoch settlement outage of 2026-03-03 to
     # 2026-05-27. None means the node does not report it (older build).
     settlement_lag_epochs: Optional[int] = None
+    # State from the shared /health probe (monitoring/node_probe.py):
+    # "up" | "down" | "impostor" | "degraded" | "unreachable". "impostor" means
+    # the host answered HTTP 200 but is not a RustChain node.
+    probe_state: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -99,6 +114,38 @@ class NodeHealthMonitor:
 
     # ── Per-node check ────────────────────────────────────────────────────────
 
+    def _fetch_status_json(self, url: str) -> Tuple[Optional[dict], str, Optional[str]]:
+        """Fetch the first status endpoint that answers with a JSON object.
+
+        Returns (data, path, error). data is None when no endpoint produced a
+        JSON object; error explains why. A 404 means this deployment does not
+        expose the path we asked for, so the next known endpoint is tried.
+        """
+        problems = []
+        for path in STATUS_ENDPOINTS:
+            req = urllib.request.Request(
+                f"{url}{path}",
+                headers={"Accept": "application/json", "User-Agent": "RustChain-HealthMonitor/1.0"},
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    raw = resp.read().decode("utf-8", errors="replace")
+            except urllib.error.HTTPError as exc:
+                if exc.code == 404:
+                    problems.append(f"{path}: 404")
+                    continue
+                return None, path, f"HTTP {exc.code}: {exc.reason}"
+            except Exception as exc:  # noqa: BLE001
+                return None, path, str(exc)
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                data = None
+            if isinstance(data, dict):
+                return data, path, None
+            problems.append(f"{path}: non-JSON body ({len(raw)} bytes)")
+        return None, STATUS_ENDPOINTS[0], "; ".join(problems) or "no endpoint answered"
+
     def check_node(self, url: str) -> NodeStatus:
         """
         Probe a single node. Returns a NodeStatus with:
@@ -107,133 +154,106 @@ class NodeHealthMonitor:
           epoch             current epoch number from node (None if unavailable)
           miners            active miner count (None if unavailable)
           error             error message string (None if OK)
+          probe_state       shared-probe state of /health: "up" | "down" |
+                            "impostor" | "degraded" | "unreachable"
+
+        Liveness and identity come from the shared probe of /health
+        (monitoring/node_probe.py), never from the HTTP status code alone.
+
+        A 200 is not evidence of a node. RustChain node 4 stopped being a node
+        and the host was reused for a single-page app, which answers 200 on
+        EVERY path. The old code quietly replaced the unparseable body with {}
+        and reported the node "online" for months. Now anything that is not a
+        genuine RustChain /health body is surfaced as probe_state="impostor".
         """
-        start = time.monotonic()
+        health_url = f"{url.rstrip('/')}/health"
+        probe = probe_health(health_url, timeout=self.timeout)
+        rt = probe.response_ms
+
+        if probe.state == UNREACHABLE:
+            return NodeStatus(
+                url=url, status="offline", response_time_ms=None,
+                epoch=None, miners=None,
+                error=f"/health unreachable: {probe.detail}", probe_state=UNREACHABLE,
+            )
+        if probe.state == IMPOSTOR:
+            return NodeStatus(
+                url=url, status="offline", response_time_ms=rt,
+                epoch=None, miners=None,
+                error=f"IMPOSTOR — {probe.detail}", probe_state=IMPOSTOR,
+            )
+        if probe.state == DOWN:
+            # The host answered /health with an error code — reachable but unwell.
+            return NodeStatus(
+                url=url, status="slow", response_time_ms=rt,
+                epoch=None, miners=None,
+                error=f"/health HTTP {probe.status_code}: {probe.detail}", probe_state=DOWN,
+            )
+
+        # probe.state is "up" or "degraded": a genuine node answered /health.
+        # Pull epoch/miners from the status endpoints for consensus tracking.
+        data, path, fetch_err = self._fetch_status_json(url)
+        if data is None:
+            return NodeStatus(
+                url=url, status="offline", response_time_ms=rt,
+                epoch=None, miners=None,
+                error=f"{fetch_err} (but /health probe says {probe.state})",
+                probe_state=probe.state,
+            )
+
+        epoch  = data.get("epoch") or data.get("current_epoch")
+        miners = (data.get("miners") or data.get("active_miners")
+                  or data.get("miner_count") or data.get("enrolled_miners"))
+
+        # Coerce to int if present, tolerating a malformed value rather
+        # than raising inside the probe.
         try:
-            path = getattr(self, "_status_path", None) or STATUS_ENDPOINTS[0]
-            req = urllib.request.Request(
-                f"{url}{path}",
-                headers={"Accept": "application/json", "User-Agent": "RustChain-HealthMonitor/1.0"},
-            )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                elapsed_ms = (time.monotonic() - start) * 1000
-                raw = resp.read().decode("utf-8", errors="replace")
-                try:
-                    data = json.loads(raw)
-                except json.JSONDecodeError:
-                    data = None
-                if not isinstance(data, dict):
-                    data = None
+            epoch = int(epoch) if epoch is not None else None
+        except (TypeError, ValueError):
+            epoch = None
+        try:
+            miners = int(miners) if miners is not None else None
+        except (TypeError, ValueError):
+            miners = None
 
-                # A 200 is not evidence of a node.
-                #
-                # RustChain node 4 stopped being a node and the host was reused
-                # for a single-page app. An SPA answers 200 on EVERY unknown
-                # path, so /status returned 200 with HTML, json.loads failed,
-                # the body was quietly replaced with {}, and the node was
-                # reported "online" indefinitely because status was decided
-                # purely on response time. The loss went unnoticed for months.
-                #
-                # A node is online only if it answered with JSON that actually
-                # carries node state. Anything else is impersonating one.
-                if data is None:
-                    return NodeStatus(
-                        url=url,
-                        status="offline",
-                        response_time_ms=round(elapsed_ms, 1),
-                        epoch=None,
-                        miners=None,
-                        error=(f"/status returned {len(raw)} bytes of non-JSON "
-                               f"(is this still a node?): {raw[:60]!r}"),
-                    )
-
-                epoch  = data.get("epoch") or data.get("current_epoch")
-                miners = (data.get("miners") or data.get("active_miners")
-                          or data.get("miner_count") or data.get("enrolled_miners"))
-
-                # Coerce to int if present, tolerating a malformed value rather
-                # than raising inside the probe.
-                try:
-                    epoch = int(epoch) if epoch is not None else None
-                except (TypeError, ValueError):
-                    epoch = None
-                try:
-                    miners = int(miners) if miners is not None else None
-                except (TypeError, ValueError):
-                    miners = None
-
-                # JSON with no epoch is not node state either — it is some
-                # other service that happens to speak JSON on this address.
-                if epoch is None:
-                    return NodeStatus(
-                        url=url,
-                        status="offline",
-                        response_time_ms=round(elapsed_ms, 1),
-                        epoch=None,
-                        miners=miners,
-                        error="/status carried no epoch (not a RustChain node?)",
-                    )
-
-                lag = data.get("settlement_lag_epochs")
-                try:
-                    lag = int(lag) if lag is not None else None
-                except (TypeError, ValueError):
-                    lag = None
-
-                status = "slow" if elapsed_ms > SLOW_THRESHOLD_MS else "online"
-                # A settlement stall does not make the node offline — it is
-                # answering, and miners must keep enrolling so the stalled
-                # epochs stay reconstructible. Report it, do not hide it in
-                # the status word.
-                err = None
-                if lag is not None and lag >= SETTLEMENT_LAG_THRESHOLD:
-                    err = (f"settlement stalled: {lag} epochs since last settled "
-                           f"(miners are enrolling and being paid nothing)")
-                return NodeStatus(
-                    url=url,
-                    status=status,
-                    response_time_ms=round(elapsed_ms, 1),
-                    epoch=epoch,
-                    miners=miners,
-                    error=err,
-                    settlement_lag_epochs=lag,
-                )
-
-        except urllib.error.HTTPError as exc:
-            elapsed_ms = (time.monotonic() - start) * 1000
-            # A 404 means this deployment does not expose the path we asked
-            # for, not that the node is unwell. Try the next known endpoint
-            # before concluding anything: asking /status of a node that only
-            # serves /epoch is how every real node came back "slow" forever.
-            if exc.code == 404:
-                tried = getattr(self, "_status_path", None) or STATUS_ENDPOINTS[0]
-                remaining = [p for p in STATUS_ENDPOINTS if p != tried]
-                for nxt in remaining:
-                    self._status_path = nxt
-                    try:
-                        result = self.check_node(url)
-                    finally:
-                        self._status_path = None
-                    if result.status != "offline" or "404" not in (result.error or ""):
-                        return result
-            # Node replied but with an error code — treat as degraded
+        # JSON with no epoch is not node state either — it is some
+        # other service that happens to speak JSON on this address.
+        if epoch is None:
             return NodeStatus(
-                url=url,
-                status="slow",
-                response_time_ms=round(elapsed_ms, 1),
-                epoch=None,
-                miners=None,
-                error=f"HTTP {exc.code}: {exc.reason}",
+                url=url, status="offline", response_time_ms=rt,
+                epoch=None, miners=miners,
+                error=f"{path} carried no epoch (not a RustChain node?)",
+                probe_state=probe.state,
             )
-        except Exception as exc:  # noqa: BLE001  (timeout, connection refused, etc.)
-            return NodeStatus(
-                url=url,
-                status="offline",
-                response_time_ms=None,
-                epoch=None,
-                miners=None,
-                error=str(exc),
-            )
+
+        lag = data.get("settlement_lag_epochs")
+        try:
+            lag = int(lag) if lag is not None else None
+        except (TypeError, ValueError):
+            lag = None
+
+        status = "slow" if (rt or 0) > SLOW_THRESHOLD_MS else "online"
+        # A settlement stall does not make the node offline — it is
+        # answering, and miners must keep enrolling so the stalled
+        # epochs stay reconstructible. Report it, do not hide it in
+        # the status word.
+        err = None
+        if probe.state == DEGRADED:
+            err = f"degraded: {probe.detail}"
+        if lag is not None and lag >= SETTLEMENT_LAG_THRESHOLD:
+            stall = (f"settlement stalled: {lag} epochs since last settled "
+                     f"(miners are enrolling and being paid nothing)")
+            err = f"{err}; {stall}" if err else stall
+        return NodeStatus(
+            url=url,
+            status=status,
+            response_time_ms=rt,
+            epoch=epoch,
+            miners=miners,
+            error=err,
+            settlement_lag_epochs=lag,
+            probe_state=probe.state,
+        )
 
     # ── Multi-node checks ─────────────────────────────────────────────────────
 
@@ -273,6 +293,13 @@ class NodeHealthMonitor:
         if offline_nodes:
             urls = ", ".join(s.url for s in offline_nodes)
             alerts.append(f"Node(s) offline: {urls}")
+        for s in statuses:
+            if getattr(s, "probe_state", None) == "impostor":
+                alerts.append(
+                    f"IMPOSTOR at {s.url}: HTTP 200 but not a RustChain node ({s.error})"
+                )
+            elif getattr(s, "probe_state", None) == "degraded":
+                alerts.append(f"Node degraded: {s.url} ({s.error})")
         if slow_nodes:
             urls = ", ".join(f"{s.url} ({s.response_time_ms:.0f}ms)" for s in slow_nodes)
             alerts.append(f"Slow response from: {urls}")

@@ -41,8 +41,9 @@ _spec.loader.exec_module(MOD)
 class _Resp(io.BytesIO):
     """Minimal stand-in for the urlopen context manager."""
 
-    def __init__(self, payload: bytes):
+    def __init__(self, payload: bytes, content_type: str = "application/json"):
         super().__init__(payload)
+        self._ct = content_type
 
     def __enter__(self):
         return self
@@ -50,11 +51,40 @@ class _Resp(io.BytesIO):
     def __exit__(self, *exc):
         return False
 
+    @property
+    def status(self):
+        return 200
 
-def _probe(payload: bytes):
+    @property
+    def headers(self):
+        class _H(dict):
+            def get(self, name, default=None):
+                if name == "Content-Type":
+                    return self._ct
+                return super().get(name, default)
+        h = _H()
+        h._ct = self._ct
+        return h
+
+
+# A genuine /health body as served by node api_health.
+REAL_HEALTH = b'{"ok": true, "version": "2.2.1", "uptime_s": 3600, "db_rw": true, "tip_age_slots": 1}'
+
+
+def _probe(payload: bytes, health_payload: bytes = REAL_HEALTH,
+           health_ct: str = "application/json"):
+    """Run check_node with a URL-aware urlopen fake: /health gets the health
+    body, every other path gets `payload` (the old tests mocked a single
+    response for all URLs)."""
     mon = MOD.NodeHealthMonitor(nodes=["http://example.invalid"])
-    with mock.patch.object(MOD.urllib.request, "urlopen",
-                           return_value=_Resp(payload)):
+
+    def fake_urlopen(req, timeout=None):
+        url = req.full_url if hasattr(req, "full_url") else str(req)
+        if url.rstrip("/").endswith("/health"):
+            return _Resp(health_payload, health_ct)
+        return _Resp(payload)
+
+    with mock.patch.object(MOD.urllib.request, "urlopen", fake_urlopen):
         return mon.check_node("http://example.invalid")
 
 
@@ -72,30 +102,36 @@ class ImpersonationTest(unittest.TestCase):
         self.assertEqual(st.status, "online")
         self.assertEqual(st.epoch, 254)
         self.assertEqual(st.miners, 19)
+        self.assertEqual(st.probe_state, "up")
         self.assertIsNone(st.error)
 
     def test_an_spa_serving_html_is_offline(self):
         """The exact failure: 200 + HTML was reported online for months."""
-        st = _probe(SPA_HTML)
+        st = _probe(SPA_HTML, health_payload=SPA_HTML, health_ct="text/html")
         self.assertEqual(st.status, "offline",
                          "a website answering 200 must not count as a node")
+        self.assertEqual(st.probe_state, "impostor")
         self.assertIsNone(st.epoch)
-        self.assertIn("non-JSON", st.error)
+        self.assertIn("not a RustChain node", st.error)
 
     def test_valid_json_from_an_unrelated_service_is_offline(self):
         """Some other API on the address speaks JSON but is not a node."""
-        st = _probe(b'{"error":{"message":"Invalid URL (GET /status)"}}')
+        st = _probe(b'{"error":{"message":"Invalid URL (GET /status)"}}',
+                    health_payload=b'{"error":{"message":"Invalid URL"}}')
         self.assertEqual(st.status, "offline")
-        self.assertIn("no epoch", st.error)
+        self.assertEqual(st.probe_state, "impostor")
+        self.assertIn("not a RustChain node", st.error)
 
     def test_an_empty_body_is_offline(self):
-        st = _probe(b"")
+        st = _probe(b"", health_payload=b"")
         self.assertEqual(st.status, "offline")
+        self.assertEqual(st.probe_state, "impostor")
 
     def test_a_json_array_is_offline(self):
         """json.loads succeeds but it is not an object."""
-        st = _probe(b"[1, 2, 3]")
+        st = _probe(b"[1, 2, 3]", health_payload=b"[1, 2, 3]")
         self.assertEqual(st.status, "offline")
+        self.assertEqual(st.probe_state, "impostor")
 
 
 class ToleranceTest(unittest.TestCase):
@@ -123,7 +159,7 @@ class ToleranceTest(unittest.TestCase):
 
     def test_response_time_is_still_reported_when_impersonating(self):
         """Operators need the timing even when the body is rejected."""
-        st = _probe(SPA_HTML)
+        st = _probe(SPA_HTML, health_payload=SPA_HTML, health_ct="text/html")
         self.assertIsNotNone(st.response_time_ms)
 
 
@@ -156,6 +192,8 @@ class EndpointDiscoveryTest(unittest.TestCase):
 
         def fake_urlopen(req, timeout=None):
             calls.append(req.full_url)
+            if req.full_url.endswith("/health"):
+                return _Resp(REAL_HEALTH)
             if req.full_url.endswith("/epoch"):
                 raise MOD.urllib.error.HTTPError(
                     req.full_url, 404, "NOT FOUND", {}, None)

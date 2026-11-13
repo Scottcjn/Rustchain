@@ -62,3 +62,8 @@ jobs:
         RC_P2P_SECRET: "ci-test-secret-00000000000000000000000000000000"
         DB_PATH: ":memory:"
       run: pytest tests/ -v --ignore=tests/test_epoch_settlement_formal.py --ignore=tests/test_rip201_bucket_spoof.py
+
+    - name: Run node monitor / shared probe tests (blocking, issue #17180)
+      run: |
+        pip install prometheus_client
+        STATUS_DATA_DIR="$(mktemp -d)" pytest monitoring/tests status/test_status.py health-dashboard/test_health_dashboard.py tools/test_node_health_total_miners.py tools/node-health-cli/tests -v
