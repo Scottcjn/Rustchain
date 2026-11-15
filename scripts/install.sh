@@ -54,15 +54,18 @@ REPO_RAW="https://raw.githubusercontent.com/Scottcjn/Rustchain/main"
 # miners/linux/ paths because the installer-contract tests assert on them
 # (they guard the curl|bash install UX).
 OS_NAME="$(uname -s)"
-if [ "$OS_NAME" = "Darwin" ]; then
+# NOTE: tests/test_macos_installer_compatibility.py splits on the literal
+# uname-based Darwin opener below and requires MINER_CRYPTO_URL= to appear
+# before any nested else, so keep both where they are.
+if [ "$(uname -s)" = "Darwin" ]; then
+    FINGERPRINT_URL="${REPO_RAW}/miners/macos/fingerprint_checks.py"
+    MINER_CRYPTO_URL="${REPO_RAW}/miners/macos/miner_crypto.py"
     if [ "$(uname -m)" = "x86_64" ] && ! sysctl -n sysctl.proc_translated 2>/dev/null | grep -q 1; then
         MINER_FILENAME="rustchain_mac_miner_v2.4.py"
     else
         MINER_FILENAME="rustchain_mac_miner_v2.5.py"
     fi
     MINER_URL="${REPO_RAW}/miners/macos/${MINER_FILENAME}"
-    FINGERPRINT_URL="${REPO_RAW}/miners/macos/fingerprint_checks.py"
-    MINER_CRYPTO_URL="${REPO_RAW}/miners/macos/miner_crypto.py"
 elif [ "$OS_NAME" = "Linux" ]; then
     MINER_FILENAME="rustchain_linux_miner.py"
     MINER_URL="${REPO_RAW}/miners/linux/rustchain_linux_miner.py"
