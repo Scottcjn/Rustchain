@@ -106,7 +106,7 @@ detect_vm() {
     # Check DMI vendor
     if [ -f /sys/class/dmi/id/sys_vendor ]; then
         local vendor
-        vendor=$(tr '[:upper:]' '[:lower:]') < /sys/class/dmi/id/sys_vendor 2>/dev/null
+        vendor=$(tr '[:upper:]' '[:lower:]' < /sys/class/dmi/id/sys_vendor 2>/dev/null)
         case "$vendor" in
             *qemu*|*kvm*|*vmware*|*virtualbox*|*xen*|*parallels*|*bochs*)
                 vm_detected=1
@@ -118,7 +118,7 @@ detect_vm() {
     # Check product name
     if [ -f /sys/class/dmi/id/product_name ]; then
         local product
-        product=$(tr '[:upper:]' '[:lower:]') < /sys/class/dmi/id/product_name 2>/dev/null
+        product=$(tr '[:upper:]' '[:lower:]' < /sys/class/dmi/id/product_name 2>/dev/null)
         case "$product" in
             *virtual*|*qemu*|*kvm*|*vmware*|*bochs*)
                 vm_detected=1
@@ -190,7 +190,7 @@ detect_arch() {
             family="ARM"
             # Detect Raspberry Pi
             if [ -f /proc/device-tree/model ]; then
-                rpi_model=$(tr -d '\0' || true) < /proc/device-tree/model 2>/dev/null
+                rpi_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)
                 case "$rpi_model" in
                     *"Raspberry Pi 5"*|*BCM2712*)
                         is_rpi=1; arch="rpi5" ;;
