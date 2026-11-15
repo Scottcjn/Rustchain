@@ -6,6 +6,9 @@
 # Supports: Linux (x86_64, aarch64, ppc64, ppc), macOS (x86_64, arm64)
 # Requires: curl, Python 3.9+
 # ============================================================================
+# SC1091: sourced files (/etc/os-release, venv activate) are not shellcheck inputs.
+# SC2059: printf format strings embed literal color-code constants only, never user data.
+# shellcheck disable=SC1091,SC2059
 set -euo pipefail
 
 # --- Colors ----------------------------------------------------------------
@@ -50,19 +53,31 @@ INSTALL_DIR="/opt/rustchain-miner"
 REPO_RAW="https://raw.githubusercontent.com/Scottcjn/Rustchain/main"
 
 # Platform-specific miner paths. Files live under miners/<os>/; hard-coding
-# miners/linux/ on macOS returned 404. The Linux branch keeps the literal
-# miners/linux/ paths because the installer-contract tests assert on them
-# (they guard the curl|bash install UX).
+# miners/linux/ on macOS returned 404 (Scottcjn/Rustchain#7975). The Linux
+# branch keeps the literal miners/linux/ paths because the installer-contract
+# tests assert on them (they guard the curl|bash install UX).
+# Fallbacks use the jsDelivr GitHub mirror: rustchain.org serves no per-file
+# .py copies, so the old https://rustchain.org/<file>.py fallback 404'd too.
+MIRROR_RAW="https://cdn.jsdelivr.net/gh/Scottcjn/Rustchain@main"
 if [ "$(uname -s)" = "Darwin" ]; then
     MINER_FILENAME="rustchain_mac_miner_v2.5.py"
     MINER_URL="${REPO_RAW}/miners/macos/${MINER_FILENAME}"
     FINGERPRINT_URL="${REPO_RAW}/miners/macos/fingerprint_checks.py"
+    # macOS miner v2.5 does not import miner_crypto; the URL is kept for the
+    # installer-contract test but is never downloaded on Darwin.
     MINER_CRYPTO_URL="${REPO_RAW}/miners/macos/miner_crypto.py"
+    MINER_FALLBACK="${MIRROR_RAW}/miners/macos/${MINER_FILENAME}"
+    FINGERPRINT_FALLBACK="${MIRROR_RAW}/miners/macos/fingerprint_checks.py"
+    COLOR_LOGS_URL="${REPO_RAW}/miners/macos/color_logs.py"
+    COLOR_LOGS_FALLBACK="${MIRROR_RAW}/miners/macos/color_logs.py"
 else
     MINER_FILENAME="rustchain_linux_miner.py"
     MINER_URL="${REPO_RAW}/miners/linux/rustchain_linux_miner.py"
     FINGERPRINT_URL="${REPO_RAW}/miners/linux/fingerprint_checks.py"
     MINER_CRYPTO_URL="${REPO_RAW}/miners/linux/miner_crypto.py"
+    MINER_FALLBACK="${MIRROR_RAW}/miners/linux/${MINER_FILENAME}"
+    FINGERPRINT_FALLBACK="${MIRROR_RAW}/miners/linux/fingerprint_checks.py"
+    MINER_CRYPTO_FALLBACK="${MIRROR_RAW}/miners/linux/miner_crypto.py"
 fi
 NODE_URL="https://50.28.86.131"
 BOUNTY_URL="https://github.com/Scottcjn/rustchain-bounties/issues/2451"
@@ -98,7 +113,7 @@ detect_vm() {
     # Check DMI vendor
     if [ -f /sys/class/dmi/id/sys_vendor ]; then
         local vendor
-        vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null | tr '[:upper:]' '[:lower:]')
+        vendor=$(tr '[:upper:]' '[:lower:]' < /sys/class/dmi/id/sys_vendor 2>/dev/null || true)
         case "$vendor" in
             *qemu*|*kvm*|*vmware*|*virtualbox*|*xen*|*parallels*|*bochs*)
                 vm_detected=1
@@ -110,7 +125,7 @@ detect_vm() {
     # Check product name
     if [ -f /sys/class/dmi/id/product_name ]; then
         local product
-        product=$(cat /sys/class/dmi/id/product_name 2>/dev/null | tr '[:upper:]' '[:lower:]')
+        product=$(tr '[:upper:]' '[:lower:]' < /sys/class/dmi/id/product_name 2>/dev/null || true)
         case "$product" in
             *virtual*|*qemu*|*kvm*|*vmware*|*bochs*)
                 vm_detected=1
@@ -182,7 +197,7 @@ detect_arch() {
             family="ARM"
             # Detect Raspberry Pi
             if [ -f /proc/device-tree/model ]; then
-                rpi_model=$(cat /proc/device-tree/model 2>/dev/null | tr -d '\0' || true)
+                rpi_model=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || true)
                 case "$rpi_model" in
                     *"Raspberry Pi 5"*|*BCM2712*)
                         is_rpi=1; arch="rpi5" ;;
@@ -291,13 +306,15 @@ ensure_python() {
     done
 
     if [ -n "$py" ]; then
-        ok "Python found: $py ($ver)"
+        # Status lines go to stderr: callers capture this function's stdout
+        # via $(...) and must receive ONLY the interpreter path.
+        ok "Python found: $py ($ver)" >&2
         echo "$py"
         return 0
     fi
 
     # Install Python
-    warn "Python 3.9+ not found. Installing..."
+    warn "Python 3.9+ not found. Installing..." >&2
     local os_id=""
     if [ -f /etc/os-release ]; then
         os_id=$(. /etc/os-release && echo "$ID")
@@ -338,26 +355,26 @@ ensure_python() {
         err "Python installation failed."
         exit 1
     fi
-    ok "Python installed: $py"
+    ok "Python installed: $py" >&2
     echo "$py"
 }
 
 # --- Install pip packages --------------------------------------------------
 ensure_pip_deps() {
     local py="$1"
-    info "Installing Python dependencies..."
+    info "Installing Python dependencies..." >&2
     "$py" -m pip install --quiet --break-system-packages requests psutil PyNaCl 2>/dev/null || \
     "$py" -m pip install --quiet requests psutil PyNaCl 2>/dev/null || \
     "$py" -m pip install --user --quiet requests psutil PyNaCl 2>/dev/null || \
-    warn "Could not install pip packages globally. Trying venv..."
+    warn "Could not install pip packages globally. Trying venv..." >&2
 
     if ! "$py" -c "import requests, psutil, nacl" 2>/dev/null; then
-        info "Creating virtual environment..."
+        info "Creating virtual environment..." >&2
         "$py" -m venv "${INSTALL_DIR}/venv"
         source "${INSTALL_DIR}/venv/bin/activate"
         pip install --quiet requests psutil PyNaCl
         py="${INSTALL_DIR}/venv/bin/python3"
-        ok "Virtual environment created at ${INSTALL_DIR}/venv"
+        ok "Virtual environment created at ${INSTALL_DIR}/venv" >&2
     fi
 
     echo "$py"
@@ -458,12 +475,20 @@ main() {
     banner "============================================="
     echo ""
 
-    # --- Check root / sudo for Linux ---
+    # --- Check root / sudo (Linux and macOS install into root-owned /opt) ---
     local os_name
     os_name=$(uname -s)
-    if [ "$os_name" = "Linux" ] && [ "$(id -u)" -ne 0 ]; then
+    case "$os_name" in
+        Linux|Darwin) ;;
+        *)
+            err "Unsupported OS: ${os_name}. This installer supports Linux and macOS only."
+            err "Other platforms have dedicated installers (e.g. install-miner-freebsd.sh)."
+            exit 1
+            ;;
+    esac
+    if [ "$(id -u)" -ne 0 ]; then
         if ! sudo -n true 2>/dev/null; then
-            warn "This installer needs sudo for /opt and systemd setup."
+            warn "This installer needs sudo for ${INSTALL_DIR} and service setup."
             warn "Re-run with: curl -sL https://rustchain.org/install.sh | sudo bash"
             # Continue anyway in case user can create dirs elsewhere
         fi
@@ -539,7 +564,9 @@ main() {
 
     # --- Create install directory ---
     info "Creating ${INSTALL_DIR}..."
-    if [ "$os_name" = "Linux" ]; then
+    if [ "$(id -u)" -ne 0 ] && command -v sudo &>/dev/null; then
+        # /opt is root-owned on Linux and macOS alike: a bare mkdir dies with
+        # "Permission denied" mid-install on any non-root Mac.
         sudo mkdir -p "${INSTALL_DIR}"
         sudo chown "$(whoami):$(id -gn)" "${INSTALL_DIR}"
     else
@@ -554,15 +581,15 @@ main() {
     info "Downloading miner files..."
     local miner_dest="${INSTALL_DIR}/rustchain_linux_miner.py"
     [ "$(uname -s)" = "Darwin" ] && miner_dest="${INSTALL_DIR}/${MINER_FILENAME}"
-    download_file "${MINER_URL}" "https://rustchain.org/${MINER_FILENAME}" "${miner_dest}" "miner"
-    download_file "${FINGERPRINT_URL}" "https://rustchain.org/fingerprint_checks.py" "${INSTALL_DIR}/fingerprint_checks.py" "fingerprint helper"
+    download_file "${MINER_URL}" "${MINER_FALLBACK}" "${miner_dest}" "miner"
+    download_file "${FINGERPRINT_URL}" "${FINGERPRINT_FALLBACK}" "${INSTALL_DIR}/fingerprint_checks.py" "fingerprint helper"
 
     if [ "$(uname -s)" = "Darwin" ]; then
         # macOS miner imports the sibling color_logs module.
-        download_file "${REPO_RAW}/miners/macos/color_logs.py" "https://rustchain.org/color_logs.py" "${INSTALL_DIR}/color_logs.py" "color log helper" || warn "color_logs.py unavailable; colored output disabled"
+        download_file "${COLOR_LOGS_URL}" "${COLOR_LOGS_FALLBACK}" "${INSTALL_DIR}/color_logs.py" "color log helper" || warn "color_logs.py unavailable; colored output disabled"
     else
         # Linux attestation signing helper (keeps the empty-file guard below).
-        download_file "${MINER_CRYPTO_URL}" "https://rustchain.org/miner_crypto.py" "${INSTALL_DIR}/miner_crypto.py" "miner signing helper"
+        download_file "${MINER_CRYPTO_URL}" "${MINER_CRYPTO_FALLBACK}" "${INSTALL_DIR}/miner_crypto.py" "miner signing helper"
     fi
 
     if [ ! -s "${miner_dest}" ]; then
