@@ -170,7 +170,7 @@ if (result.isValid()) {
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| Jackson | 2.16.1 | JSON processing |
+| Jackson | 2.18.11 | JSON processing |
 | picocli | 4.7.5 | CLI parsing |
 | SLF4J | 2.0.11 | Logging |
 | JUnit 5 | 5.10.1 | Testing |

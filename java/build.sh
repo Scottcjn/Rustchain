@@ -39,11 +39,11 @@ if [ ! -f target/lib/jackson-databind.jar ]; then
     
     # Jackson dependencies
     curl -sL -o "$LIB_DIR/jackson-databind.jar" \
-        "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-databind/2.16.1/jackson-databind-2.16.1.jar"
+        "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-databind/2.18.11/jackson-databind-2.18.11.jar"
     curl -sL -o "$LIB_DIR/jackson-core.jar" \
-        "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-core/2.16.1/jackson-core-2.16.1.jar"
+        "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-core/2.18.11/jackson-core-2.18.11.jar"
     curl -sL -o "$LIB_DIR/jackson-annotations.jar" \
-        "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-annotations/2.16.1/jackson-annotations-2.16.1.jar"
+        "https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-annotations/2.18.11/jackson-annotations-2.18.11.jar"
     
     # picocli
     curl -sL -o "$LIB_DIR/picocli.jar" \
