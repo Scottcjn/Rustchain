@@ -75,7 +75,23 @@ except ImportError:
     address_from_pubkey = canonical_json = get_or_create_keypair = sign_payload = None
 
 # Configuration
-RUSTCHAIN_API = "http://50.28.86.131:8088"
+LEGACY_DEAD_API = "http://50.28.86.131:8088"
+RUSTCHAIN_API = os.environ.get("RUSTCHAIN_API", "https://50.28.86.131").rstrip("/")
+
+
+def _normalize_node_url(url: str | None) -> str:
+    cleaned = (url or "").strip().rstrip("/")
+    if not cleaned or cleaned == LEGACY_DEAD_API:
+        return RUSTCHAIN_API
+    return cleaned
+
+
+def _tls_verify_setting():
+    ca_bundle = os.environ.get("RUSTCHAIN_CA_BUNDLE", "").strip()
+    if ca_bundle:
+        return ca_bundle
+    verify_env = os.environ.get("RUSTCHAIN_VERIFY_TLS", "0").strip().lower()
+    return verify_env in ("1", "true", "yes")
 WALLET_DIR = Path.home() / ".rustchain"
 CONFIG_FILE = WALLET_DIR / "config.json"
 WALLET_FILE = WALLET_DIR / "wallet.json"
@@ -493,6 +509,26 @@ class RustChainMiner:
         except Exception:
             pass
 
+    def check_node_health(self) -> dict:
+        """Probe GET {self.node_url}/health and return structured node health status (#179)."""
+        try:
+            resp = requests.get(
+                f"{self.node_url}/health",
+                timeout=10,
+                verify=self.tls_verify,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict):
+                    return {"ok": bool(data.get("ok", True)), "status_code": 200, "data": data}
+            return {
+                "ok": False,
+                "status_code": resp.status_code,
+                "error": self._response_diagnostic(resp),
+            }
+        except Exception as e:
+            return {"ok": False, "status_code": 0, "error": str(e)}
+
     def attest(self):
         """
         Perform hardware attestation for PoA.
@@ -791,7 +827,7 @@ class RustChainMiner:
             else:
                 self.last_header_error = self._response_diagnostic(response)
                 self.last_header_retryable = self._is_retryable_header_status(
-                    response.status_code
+                    response.status_code, result
                 )
         except Exception as e:
             self.last_header_error = f"header request failed: {e}"
@@ -808,8 +844,16 @@ class RustChainMiner:
         return False
 
     @staticmethod
-    def _is_retryable_header_status(status_code):
+    def _is_retryable_header_status(status_code, payload=None):
         """Return whether an HTTP response represents a temporary failure."""
+        if isinstance(payload, dict):
+            if isinstance(payload.get("retryable"), bool):
+                return payload["retryable"]
+            err_text = f"{payload.get('code', '')} {payload.get('error', '')} {payload.get('message', '')}".lower()
+            if any(tok in err_text for tok in ("restarting", "temporarily_unavailable", "rate_limit", "try_again", "syncing")):
+                return True
+            if any(tok in err_text for tok in ("no pubkey", "malformed", "bad_signature", "invalid_signature", "message_header_mismatch")):
+                return False
         if status_code in HEADER_RETRYABLE_STATUS_CODES:
             return True
         return 500 <= status_code <= 599
