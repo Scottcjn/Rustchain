@@ -1,0 +1,6 @@
+# Python SDK development requirements.
+# tests/test_cli.py mocks HTTP with respx: it intercepts httpx transports in
+# process, so the CLI suite needs no live node and never opens a socket.
+pytest>=7.0.0
+respx>=0.21.0
+cryptography>=41.0.0
