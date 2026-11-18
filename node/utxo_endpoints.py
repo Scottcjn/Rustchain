@@ -428,15 +428,43 @@ def register_utxo_blueprint(app, utxo_db: UtxoDB, db_path: str,
     print(f"[UTXO] Endpoints registered at /utxo/* (dual_write={'ON' if dual_write else 'OFF'})")
 
 
+
+def _begin_pinned_read_snapshot(conn: sqlite3.Connection) -> bool:
+    """Begin an explicit read transaction and immediately pin SQLite's read snapshot (#17058).
+
+    In SQLite, `BEGIN` (`BEGIN DEFERRED`) does not acquire a read snapshot until the
+    first SELECT statement executes. Executing `SELECT 1 FROM sqlite_master LIMIT 1`
+    immediately after `BEGIN` guarantees the snapshot is pinned even if a subsequent
+    optional table query (e.g. `balances` on a pure-UTXO DB) raises OperationalError,
+    or if `compute_state_root(conn=conn)` and `count_unspent(conn=conn)` are called
+    back-to-back.
+    """
+    started = False
+    if not conn.in_transaction:
+        conn.execute("BEGIN")
+        started = True
+    conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone()
+    return started
+
 # ---------------------------------------------------------------------------
 # Read endpoints
 # ---------------------------------------------------------------------------
 
 @utxo_bp.route('/balance/<address>')
 def utxo_balance(address):
-    """Get UTXO-derived balance and count for an address."""
-    balance_nrtc = _utxo_db.get_balance(address)
-    utxo_count = _utxo_db.count_unspent_for_address(address)
+    """Get UTXO-derived balance and count for an address from a single pinned snapshot (#17058)."""
+    conn = sqlite3.connect(_db_path)
+    try:
+        conn.row_factory = sqlite3.Row
+        _begin_pinned_read_snapshot(conn)
+        balance_nrtc = _utxo_db.get_balance(address, conn=conn)
+        utxo_count = _utxo_db.count_unspent_for_address(address, conn=conn)
+    finally:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        conn.close()
     return jsonify({
         'address': address,
         'balance_nrtc': balance_nrtc,
@@ -536,7 +564,7 @@ def utxo_state_root():
     # O(1) unless the UTXO set changed since the last computation.
     conn = sqlite3.connect(_db_path)
     try:
-        conn.execute("BEGIN")
+        _begin_pinned_read_snapshot(conn)
         summary = _utxo_db.state_summary(conn=conn)
     finally:
         try:
@@ -575,7 +603,7 @@ def utxo_integrity():
     try:
         conn = sqlite3.connect(_db_path)
         conn.row_factory = sqlite3.Row
-        conn.execute("BEGIN")
+        _begin_pinned_read_snapshot(conn)
         row = conn.execute(
             "SELECT COALESCE(SUM(amount_i64), 0) FROM balances"
         ).fetchone()
@@ -620,7 +648,7 @@ def utxo_stats():
     """UTXO set statistics."""
     conn = _utxo_db._conn()
     try:
-        conn.execute("BEGIN")
+        _begin_pinned_read_snapshot(conn)
         # Box aggregates + root from the version-keyed memo (same snapshot).
         summary = _utxo_db.state_summary(conn=conn)
         txs = conn.execute(
