@@ -87,10 +87,24 @@ After installation, you'll have the following structure at `~/.rustchain/`:
 │   │   ├── python          # Virtualenv Python interpreter
 │   │   └── pip             # Virtualenv pip
 │   └── lib/                # Installed packages (requests, etc.)
+├── config.json             # Miner configuration (written by setup.sh / install.sh / install-miner.sh)
 ├── rustchain_miner.py      # Main miner script
 ├── fingerprint_checks.py   # Hardware attestation module
 ├── start.sh                # Convenience start script
 └── miner.log               # Miner logs (if auto-start enabled)
+```
+
+### Where is my config?
+
+Depending on which installer you used, your miner config is written to one of two locations (see [`docs/WALLET_SETUP.md`](docs/WALLET_SETUP.md#where-is-my-config)):
+
+- `~/.rustchain/config.json` — written by the repository installers (`install-miner.sh`, `install.sh`, and `setup.sh`, which set `INSTALL_DIR="$HOME/.rustchain"`).
+- `/opt/rustchain-miner/config.json` — written by `curl -sL https://rustchain.org/install.sh | bash` and `scripts/install.sh` (`INSTALL_DIR="/opt/rustchain-miner"`).
+
+To inspect your config regardless of which installer you ran:
+
+```bash
+cat /opt/rustchain-miner/config.json 2>/dev/null || cat ~/.rustchain/config.json
 ```
 
 ## Auto-Start Configuration

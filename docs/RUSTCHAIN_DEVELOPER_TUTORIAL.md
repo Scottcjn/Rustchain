@@ -252,7 +252,7 @@ curl -sSL "https://raw.githubusercontent.com/Scottcjn/Rustchain/main/miners/linu
 
 #### Step 5: Configure Wallet
 
-Create `~/.rustchain/config.json`:
+Create `~/.rustchain/config.json` (or `/opt/rustchain-miner/config.json` if installed via `rustchain.org/install.sh` / `scripts/install.sh`; see [Where is my config?](WALLET_SETUP.md#where-is-my-config)):
 
 ```json
 {
