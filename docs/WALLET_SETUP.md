@@ -58,7 +58,7 @@ Example wallet IDs:
 On Linux, the installer saves the miner config here:
 
 ```bash
-cat /opt/rustchain-miner/config.json
+cat ~/.rustchain/config.json 2>/dev/null || cat /opt/rustchain-miner/config.json
 ```
 
 You should see a `wallet_id` field.
@@ -358,7 +358,7 @@ If someone knows only your public wallet name, they still cannot send your funds
 
 What to back up depends on how you created it:
 
-- Miner install: save the printed wallet ID and copy `/opt/rustchain-miner/config.json`
+- Miner install: save the printed wallet ID and copy `~/.rustchain/config.json` (repo `setup.sh` / `install-miner.sh`) or `/opt/rustchain-miner/config.json` (`rustchain.org/install.sh`)
 - Secure GUI: back up the 24-word seed phrase and `~/.rustchain/wallets/*.json`
 - Programmatic wallet: back up the seed phrase and any encrypted keystore you create
 
@@ -393,7 +393,7 @@ You must never post your seed phrase or private key.
 
 Usually here:
 
-- Miner install: `/opt/rustchain-miner/config.json`
+- Miner install: `~/.rustchain/config.json` (repo `setup.sh` / `install-miner.sh`) or `/opt/rustchain-miner/config.json` (`rustchain.org/install.sh`)
 - Running Linux miner: sometimes also `/tmp/local_miner_wallet.txt`
 - Secure GUI and CLI keystores: `~/.rustchain/wallets/`
 - Programmatic wallet: wherever you saved it
