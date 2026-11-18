@@ -18,7 +18,7 @@ const DIFFICULTY_COLORS = {
 };
 
 // Position bounties in orbiting rings around the central hub
-function getBountyPosition(bountyId, index, total) {
+function generateBountyPosition(bountyId, index, total) {
   const ringRadius = 180 + (Math.floor(index / 8) * 40);
   const angle = (index % 8) * (Math.PI * 2 / 8) + (Date.now() * 0.0001);
   const height = 60 + (Math.floor(index / 8) * 30);
@@ -133,7 +133,7 @@ export function buildBounties(bounties = []) {
     const colorHex = DIFFICULTY_COLORS[bounty.difficulty] || DIFFICULTY_COLORS.ANY;
     const color = new THREE.Color(colorHex);
     
-    const pos = getBountyPosition(bounty.id, index, bounties.length);
+    const pos = generateBountyPosition(bounty.id, index, bounties.length);
     bountyPositions.set(bounty.id, pos);
     
     const mesh = buildBountyMesh(bounty, color);

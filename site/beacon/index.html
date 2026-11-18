@@ -19,13 +19,6 @@
   <meta name="twitter:image" content="https://rustchain.org/wrtc/og.png">
 
   <script type="application/ld+json">
-function escapeHtml(value) {
-  const div = document.createElement('div');
-  div.textContent = value == null ? '' : String(value);
-  return div.innerHTML;
-}
-
-
   {
     "@context": "https://schema.org",
     "@type": "WebPage",
@@ -145,7 +138,14 @@ function escapeHtml(value) {
     import { buildBounties } from './bounties.js';
     import { initUI, openContractForm, openBountiesPanel } from './ui.js';
     import { initSoundControls } from './sound.js';
+    import { initMinimap } from './minimap.js';
     import { fetchAllAgents, replaceContracts, AGENTS, CITIES, CONTRACTS } from './data.js';
+
+    function escapeHtml(value) {
+      const div = document.createElement('div');
+      div.textContent = value == null ? '' : String(value);
+      return div.innerHTML;
+    }
 
     const fill = document.getElementById('loading-fill');
     const status = document.getElementById('loading-status');
@@ -241,6 +241,7 @@ function escapeHtml(value) {
       setupInteraction(canvas);
       initUI();
       initSoundControls(document.getElementById('hud-sound'));
+      initMinimap();
 
       // Force HUD update with current counts
       const hudEl = document.querySelector('.hud-stats');
