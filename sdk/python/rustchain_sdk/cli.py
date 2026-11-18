@@ -207,7 +207,30 @@ async def _wallet_send(
 # Node Commands
 # ─────────────────────────────────────────────────────────────────
 
-@main.command(name="node")
+@main.group(name="node", invoke_without_command=True)
+@click.option(
+    "--node",
+    default=DEFAULT_NODE_URL,
+    help="RustChain node URL.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output as JSON.",
+)
+@click.pass_context
+def node_group(ctx: click.Context, node: str, as_json: bool):
+    """Node commands.
+
+    Run with no subcommand (``rustchain node``) or with ``status``
+    (``rustchain node status``) to check node health.
+    """
+    if ctx.invoked_subcommand is None:
+        asyncio.run(_node_status(node, as_json))
+
+
+@node_group.command(name="status")
 @click.option(
     "--node",
     default=DEFAULT_NODE_URL,
@@ -245,7 +268,30 @@ async def _node_status(node: str, as_json: bool):
 # Epoch Commands
 # ─────────────────────────────────────────────────────────────────
 
-@main.command(name="epoch")
+@main.group(name="epoch", invoke_without_command=True)
+@click.option(
+    "--node",
+    default=DEFAULT_NODE_URL,
+    help="RustChain node URL.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output as JSON.",
+)
+@click.pass_context
+def epoch_group(ctx: click.Context, node: str, as_json: bool):
+    """Epoch commands.
+
+    Run with no subcommand (``rustchain epoch``) or with ``info``
+    (``rustchain epoch info``) to fetch current epoch information.
+    """
+    if ctx.invoked_subcommand is None:
+        asyncio.run(_epoch_info(node, as_json))
+
+
+@epoch_group.command(name="info")
 @click.option(
     "--node",
     default=DEFAULT_NODE_URL,
