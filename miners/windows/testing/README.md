@@ -315,7 +315,7 @@ When the miner changes:
 - [Main Miner README](../README.md)
 - [Build Instructions](../installer/README.md)
 - [Installation Guide](../../../INSTALL.md)
-- [Bounty Board](../../../README.md#-bounty-board)
+- [Bounty Board](../../../README.md#contribute--earn-rtc)
 
 ---
 

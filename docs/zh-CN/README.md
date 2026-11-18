@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml/badge.svg)](https://github.com/Scottcjn/Rustchain/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/Scottcjn/Rustchain/blob/main/LICENSE)
-[![GitHub Stars](https://img.shields.io/github.com/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain/stargazers)
+[![GitHub Stars](https://img.shields.io/github.com/stars/Scottcjn/Rustchain?style=flat&color=gold)](https://github.com/Scottcjn/Rustchain)
 [![Contributors](https://img.shields.io/github.com/contributors/Scottcjn/Rustchain?color=brightgreen)](https://github.com/Scottcjn/Rustchain/graphs/contributors)
 [![Last Commit](https://img.shields.io/github.com/last-commit/Scottcjn/Rustchain?color=blue)](https://github.com/Scottcjn/Rustchain/commits/main)
 [![Open Issues](https://img.shields.io/github/issues/Scottcjn/Rustchain?color=orange)](https://github.com/Scottcjn/Rustchain/issues)
@@ -54,7 +54,7 @@ Proof of Antiquity 可以被理解为一种"硬件年代证明"或"机器时间�
 |------|------|
 | [快速开始](#-快速开始) | 5分钟上手挖矿 |
 | [古董证明](#-古董证明如何工作) | 共识机制详解 |
-| [硬件列表](#-支持的硬件) | 15+架构支持 |
+| [硬件列表](#%EF%B8%8F-支持的硬件) | 15+架构支持 |
 | [白皮书](../RustChain_Whitepaper_Flameholder_v0.97.pdf) | 技术深度解析 |
 | [API 参考](./API.md) | REST API 文档 |
 | [贡献指南](../../CONTRIBUTING.md) | 参与开发 |

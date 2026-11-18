@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 # BCOS v2 GitHub Action
 
-> Reusable GitHub Action for [Beacon Certified Open Source](https://rustchain.org/bcos/) trust scans.
+> Reusable GitHub Action for [Beacon Certified Open Source](https://github.com/Scottcjn/Rustchain/blob/main/BCOS.md) trust scans.
 
 Run BCOS v2 scans on any repository. Get a trust score (0–100), certificate ID, and automatic PR comments with badge.
 
