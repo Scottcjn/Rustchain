@@ -383,6 +383,56 @@ class X86VintageRewardValidationTest(unittest.TestCase):
         self.assertEqual(self.mod._derive_enroll_weight_device(verified, fp)["device_arch"], "default")
         self.assertEqual(verified, {"device_family": "x86", "device_arch": "486"})
 
+    def test_celeron_m_banias_dothan_and_yonah_detection_and_reward(self):
+        # 2004 Celeron M 1.50GHz (Banias, i686, SSE+SSE2 only) -> pentium_m_banias
+        detected_banias = self.mod._detect_x86_vintage(
+            "Intel(R) Celeron(R) M processor 1.50GHz", "i686", {}
+        )
+        self.assertEqual(
+            detected_banias,
+            {"device_family": "x86", "device_arch": "pentium_m_banias"},
+        )
+        fp_banias = _fingerprint(
+            "Intel(R) Celeron(R) M processor 1.50GHz",
+            6,
+            simd_identity=_check(
+                arch="i686",
+                simd_flags_count=2,
+                has_sse=True,
+                has_avx=False,
+                has_altivec=False,
+                has_neon=False,
+                sample_flags=["sse", "sse2"],
+            ),
+        )
+        self.assertEqual(
+            self._reward("pentium_m_banias", fp_banias)["device_arch"],
+            "pentium_m_banias",
+        )
+
+        # Celeron M 1.80GHz (Dothan, >1.7GHz on i686) -> pentium_m_dothan
+        detected_dothan = self.mod._detect_x86_vintage(
+            "Intel(R) Celeron(R) M processor 1.80GHz", "i686", {}
+        )
+        self.assertEqual(
+            detected_dothan,
+            {"device_family": "x86", "device_arch": "pentium_m_dothan"},
+        )
+
+        # 64-bit Celeron M -> pentium_m_yonah
+        detected_yonah = self.mod._detect_x86_vintage(
+            "Intel(R) Celeron(R) M CPU 520 @ 1.60GHz", "x86_64", {}
+        )
+        self.assertEqual(
+            detected_yonah,
+            {"device_family": "x86", "device_arch": "pentium_m_yonah"},
+        )
+
+        # Modern Celeron N3050 is not matched as vintage Celeron M
+        self.assertIsNone(
+            self.mod._detect_x86_vintage("Intel(R) Celeron(R) CPU N3050 @ 1.60GHz", "x86_64", {})
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
