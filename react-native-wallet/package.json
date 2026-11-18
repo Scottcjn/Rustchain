@@ -16,7 +16,7 @@
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.11.0",
     "bs58": "^6.0.0",
-    "expo": "~57.0.20",
+    "expo": "~58.0.22",
     "expo-camera": "~15.0.5",
     "expo-crypto": "~13.0.2",
     "expo-linking": "~55.0.7",
