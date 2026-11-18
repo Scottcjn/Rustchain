@@ -15,7 +15,9 @@ Usage:
 import asyncio
 import sys
 import json
-from typing import Optional
+import math
+from decimal import Decimal, InvalidOperation
+from typing import Optional, Any
 
 import click
 
@@ -122,15 +124,59 @@ async def _wallet_balance(address: str, node: str, as_json: bool):
         sys.exit(1)
 
 
+EXIT_PENDING = 2
+
+
+def _parse_chain_amount(val: Any, field_name: str, allow_zero: bool = False) -> Decimal:
+    """Parse amount/fee as Decimal and ensure exactness at chain scale (micro-RTC / 6 dp)."""
+    if val is None or isinstance(val, bool):
+        raise ValueError(f"Invalid non-numeric value for {field_name}: {val!r}")
+    if isinstance(val, (int, Decimal)):
+        d = Decimal(val)
+    elif isinstance(val, float):
+        if math.isnan(val) or math.isinf(val):
+            raise ValueError(f"Non-finite value for {field_name}: {val!r}")
+        try:
+            d = Decimal(str(val))
+        except (InvalidOperation, ValueError):
+            raise ValueError(f"Invalid numeric value for {field_name}: {val!r}")
+    elif isinstance(val, str):
+        val_str = val.strip()
+        if not val_str:
+            raise ValueError(f"Empty string for {field_name}")
+        try:
+            d = Decimal(val_str)
+        except (InvalidOperation, ValueError):
+            raise ValueError(f"Non-numeric string for {field_name}: {val!r}")
+    else:
+        raise ValueError(f"Unsupported type for {field_name}: {type(val)}")
+
+    if not d.is_finite():
+        raise ValueError(f"Non-finite value for {field_name}: {val!r}")
+
+    if allow_zero:
+        if d < 0:
+            raise ValueError(f"{field_name} cannot be negative: {d}")
+    else:
+        if d <= 0:
+            raise ValueError(f"{field_name} must be greater than zero: {d}")
+
+    micro_units = d * Decimal(1_000_000)
+    if micro_units != micro_units.to_integral_value():
+        raise ValueError(
+            f"{field_name} '{val}' is not exact at chain scale (maximum 6 decimal places / micro-RTC precision)"
+        )
+    return d
+
+
 @wallet_group.command(name="send")
 @click.argument("from_address")
 @click.argument("to_address")
-@click.argument("amount", type=int)
+@click.argument("amount")
 @click.option(
     "--fee",
-    type=int,
-    default=0,
-    help="Transaction fee.",
+    default="0",
+    help="Transaction fee in RTC.",
 )
 @click.option(
     "--seed",
@@ -152,8 +198,8 @@ async def _wallet_balance(address: str, node: str, as_json: bool):
 def wallet_send(
     from_address: str,
     to_address: str,
-    amount: int,
-    fee: int,
+    amount: Any,
+    fee: Any,
     seed_phrase: str,
     node: str,
     as_json: bool,
@@ -166,12 +212,19 @@ def wallet_send(
 async def _wallet_send(
     from_address: str,
     to_address: str,
-    amount: int,
-    fee: int,
+    amount: Any,
+    fee: Any,
     seed_phrase: list,
     node: str,
     as_json: bool,
 ):
+    try:
+        amount_dec = _parse_chain_amount(amount, "amount", allow_zero=False)
+        fee_dec = _parse_chain_amount(fee, "fee", allow_zero=True)
+    except ValueError as e:
+        click.echo(f"❌  Error: {e}", err=True)
+        sys.exit(1)
+
     try:
         wallet = RustChainWallet.from_seed_phrase(seed_phrase)
         if wallet.address != from_address:
@@ -184,20 +237,40 @@ async def _wallet_send(
 
         async with RustChainClient(base_url=node) as client:
             result = await client.wallet_transfer_with_wallet(
-                wallet, to_address, amount, fee
+                wallet, to_address, amount_dec, fee_dec
             )
+            status = result.get("status", "unknown")
+            is_pending = (status == "pending")
+
             if as_json:
                 click.echo(json.dumps(result, indent=2))
+                if is_pending:
+                    sys.exit(EXIT_PENDING)
+                elif status not in ("confirmed", "success", "ok", "completed"):
+                    sys.exit(1)
             else:
                 tx_hash = result.get("tx_hash", "unknown")
-                status = result.get("status", "unknown")
-                click.echo(f"✅  Transfer submitted!")
-                click.echo(f"   From:     {from_address}")
-                click.echo(f"   To:       {to_address}")
-                click.echo(f"   Amount:   {amount} RTC")
-                click.echo(f"   Fee:      {fee} RTC")
-                click.echo(f"   Status:   {status}")
-                click.echo(f"   TX Hash:  {tx_hash}")
+                if is_pending:
+                    click.echo("⏳  Transfer submitted (pending confirmation)...")
+                    click.echo(f"   From:     {from_address}")
+                    click.echo(f"   To:       {to_address}")
+                    click.echo(f"   Amount:   {amount_dec} RTC")
+                    click.echo(f"   Fee:      {fee_dec} RTC")
+                    click.echo(f"   Status:   {status}")
+                    click.echo(f"   TX Hash:  {tx_hash}")
+                    sys.exit(EXIT_PENDING)
+                elif status in ("confirmed", "success", "ok", "completed"):
+                    click.echo(f"✅  Transfer submitted!")
+                    click.echo(f"   From:     {from_address}")
+                    click.echo(f"   To:       {to_address}")
+                    click.echo(f"   Amount:   {amount_dec} RTC")
+                    click.echo(f"   Fee:      {fee_dec} RTC")
+                    click.echo(f"   Status:   {status}")
+                    click.echo(f"   TX Hash:  {tx_hash}")
+                else:
+                    click.echo(f"❌  Transfer failed: status '{status}'", err=True)
+                    click.echo(f"   TX Hash:  {tx_hash}", err=True)
+                    sys.exit(1)
     except RustChainError as e:
         click.echo(f"❌  Error: {e}", err=True)
         sys.exit(1)

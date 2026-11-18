@@ -6,9 +6,11 @@ Wallet creation, Ed25519 signing, and address management.
 import hashlib
 import hmac
 import json
+import math
 import os
 import secrets
 import struct
+from decimal import Decimal, InvalidOperation
 from typing import List, Optional, Dict, Any, Tuple
 
 # BIP39 word list (first 512 words from standard BIP39 wordlist - sufficient for demo)
@@ -231,6 +233,48 @@ def _load_ed25519():
     return Ed25519PrivateKey, Encoding, PublicFormat
 
 
+def _parse_chain_amount(val: Any, field_name: str, allow_zero: bool = False) -> Decimal:
+    """Parse amount/fee as Decimal and ensure exactness at chain scale (micro-RTC / 6 dp)."""
+    if val is None or isinstance(val, bool):
+        raise ValueError(f"Invalid non-numeric value for {field_name}: {val!r}")
+    if isinstance(val, (int, Decimal)):
+        d = Decimal(val)
+    elif isinstance(val, float):
+        if math.isnan(val) or math.isinf(val):
+            raise ValueError(f"Non-finite value for {field_name}: {val!r}")
+        try:
+            d = Decimal(str(val))
+        except (InvalidOperation, ValueError):
+            raise ValueError(f"Invalid numeric value for {field_name}: {val!r}")
+    elif isinstance(val, str):
+        val_str = val.strip()
+        if not val_str:
+            raise ValueError(f"Empty string for {field_name}")
+        try:
+            d = Decimal(val_str)
+        except (InvalidOperation, ValueError):
+            raise ValueError(f"Non-numeric string for {field_name}: {val!r}")
+    else:
+        raise ValueError(f"Unsupported type for {field_name}: {type(val)}")
+
+    if not d.is_finite():
+        raise ValueError(f"Non-finite value for {field_name}: {val!r}")
+
+    if allow_zero:
+        if d < 0:
+            raise ValueError(f"{field_name} cannot be negative: {d}")
+    else:
+        if d <= 0:
+            raise ValueError(f"{field_name} must be greater than zero: {d}")
+
+    micro_units = d * Decimal(1_000_000)
+    if micro_units != micro_units.to_integral_value():
+        raise ValueError(
+            f"{field_name} '{val}' is not exact at chain scale (maximum 6 decimal places / micro-RTC precision)"
+        )
+    return d
+
+
 class RustChainWallet:
     """
     RustChain wallet with BIP39 seed phrase and Ed25519 signing.
@@ -379,8 +423,8 @@ class RustChainWallet:
     def sign_transfer(
         self,
         to_address: str,
-        amount: float,
-        fee: float = 0,
+        amount: Any,
+        fee: Any = 0,
         memo: str = "",
         chain_id: Optional[str] = None,
         nonce: Optional[int] = None,
@@ -390,8 +434,8 @@ class RustChainWallet:
 
         Args:
             to_address: Recipient wallet address.
-            amount: Amount to transfer in RTC.
-            fee: Transaction fee in RTC.
+            amount: Amount to transfer in RTC (positive, exact at chain scale).
+            fee: Transaction fee in RTC (non-negative, exact at chain scale).
             memo: Optional transfer memo.
             chain_id: Optional chain/network id.
             nonce: Optional caller-supplied nonce. Defaults to current unix ms.
@@ -402,14 +446,18 @@ class RustChainWallet:
         import time
         import json
 
+        amount_dec = _parse_chain_amount(amount, "amount", allow_zero=False)
+        fee_dec = _parse_chain_amount(fee, "fee", allow_zero=True)
+
+        amount_val = float(amount_dec)
+        fee_val = float(fee_dec)
+
         nonce_value = int(nonce if nonce is not None else time.time_ns() // 1_000_000)
-        amount_for_sig = float(amount)
-        fee_for_sig = float(fee)
         tx_data = {
             "from": self._address,
             "to": to_address,
-            "amount": amount_for_sig,
-            "fee": fee_for_sig,
+            "amount": amount_val,
+            "fee": fee_val,
             "memo": memo,
             "nonce": str(nonce_value),
         }
@@ -421,14 +469,14 @@ class RustChainWallet:
         return {
             "from": self._address,
             "to": to_address,
-            "amount": amount,
-            "fee": fee,
+            "amount": amount_val,
+            "fee": fee_val,
             "timestamp": nonce_value,
             "from_address": self._address,
             "to_address": to_address,
-            "amount_rtc": amount_for_sig,
-            "fee": fee_for_sig,
-            "fee_rtc": fee_for_sig,
+            "amount_rtc": amount_val,
+            "fee": fee_val,
+            "fee_rtc": fee_val,
             "nonce": nonce_value,
             "signature": signature.hex(),
             "public_key": self.public_key_hex,
