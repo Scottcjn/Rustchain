@@ -1537,15 +1537,30 @@ FAILED_FINGERPRINT_WEIGHT_UNITS = 0
 
 
 def epoch_weight_to_units(weight) -> int:
-    """Convert a display weight to fixed-point integer units."""
+    """Convert a display weight to fixed-point integer units.
+
+    FAIL CLOSED (#8619): this is the single converter every epoch_enroll
+    weight write goes through, so it must never raise and never emit a value
+    the INTEGER column cannot hold.
+      * non-numeric / NaN / +-inf / negative  -> 0 units
+      * anything above MAX_EPOCH_WEIGHT       -> MAX_EPOCH_WEIGHT_UNITS
+    Before this, Decimal("NaN") raised decimal.InvalidOperation and
+    Decimal("Infinity") raised OverflowError at int(), both unhandled on the
+    attestation auto-enroll path, and 1e308 produced a 317-digit integer that
+    sqlite3 refuses to bind.
+    """
     try:
         value = Decimal(str(weight))
     except Exception:
         return 0
+    if not value.is_finite():
+        return 0
     if value <= 0:
         return 0
+    if value >= Decimal(MAX_EPOCH_WEIGHT):
+        return MAX_EPOCH_WEIGHT_UNITS
     units = int((value * Decimal(EPOCH_WEIGHT_SCALE)).to_integral_value(rounding=ROUND_HALF_UP))
-    return max(0, units)
+    return max(0, min(units, MAX_EPOCH_WEIGHT_UNITS))
 
 
 def epoch_weight_units_to_display(weight_units: int) -> float:
@@ -4828,8 +4843,10 @@ def apply_temporal_consistency_to_weight(
         return sybil_guard.enrollment_weight(adjusted, probation_status)
     try:
         weight = float(hw_weight)
-    except (TypeError, ValueError):
-        return hw_weight
+    except (TypeError, ValueError, OverflowError):
+        return 0.0  # #8619: garbage weight fails closed, never passes through raw
+    if not math.isfinite(weight) or weight < 0.0:
+        return 0.0  # #8619: NaN / +-inf / negative are not weights
     if weight <= 1.0:
         return weight
 

@@ -100,7 +100,8 @@ class GateArithmeticTest(unittest.TestCase):
     def test_malformed_review_does_not_crash_or_inflate(self):
         for junk in (None, {}, {"score": "abc"}, {"score": None}, []):
             self.assertLessEqual(apply_gate(2.5, junk), 2.5)
-        self.assertEqual(apply_gate("not-a-number", {"score": 1.0}), "not-a-number")
+        # #8619: a non-numeric weight fails closed to 0.0; it is never passed through raw.
+        self.assertEqual(apply_gate("not-a-number", {"score": 1.0}), 0.0)
 
     def test_score_is_clamped_so_a_bad_value_cannot_inflate_weight(self):
         self.assertAlmostEqual(apply_gate(2.5, {"score": 9.0, "reason": "x"}), 2.5)
