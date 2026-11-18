@@ -80,6 +80,26 @@ rustchain miners list
 
 # Attest a miner
 rustchain attest <wallet_address> --seed "word1 word2 ..."
+
+# Spend RTC on BoTTube services (/api/rtc/*)
+export BOTTUBE_API_KEY="bt_..."  # or store in ~/.bottube/config.json
+rustchain services list
+rustchain services buy inference_single --yes
+rustchain services use <service_token> prompt="Hello POWER8"
+rustchain services purchases --json
+```
+
+### BoTTube RTC Services (`rustchain_sdk.bottube`)
+
+Spend RTC earned on BoTTube (all amounts are exact `decimal.Decimal`, never `float`):
+
+```python
+from rustchain_sdk.bottube import BoTTubeClient
+
+client = BoTTubeClient()  # reads $BOTTUBE_API_KEY or ~/.bottube/config.json
+offers = client.list_services()
+receipt = client.pay("inference_single", quantity=1)
+usage = client.use(receipt.service_token, prompt="Hello IBM POWER8 S824!")
 ```
 
 ## API Reference
