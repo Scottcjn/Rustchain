@@ -7,6 +7,7 @@
 | Document | Description |
 |----------|-------------|
 | **[Developer Tutorial](./RUSTCHAIN_DEVELOPER_TUTORIAL.md)** | 🆕 Comprehensive guide: setup, mining, transactions, examples |
+| [Protocol Documentation Index](./protocol/README.md) | Bounty #8 topic map: API, consensus, attestation, epochs, fingerprinting, tokenomics, diagrams, and glossary |
 | [Protocol Specification](./PROTOCOL.md) | Full RIP-200 consensus protocol |
 | [Mechanism Spec + Falsification Matrix](./MECHANISM_SPEC_AND_FALSIFICATION_MATRIX.md) | One-page claim-to-test map with break conditions |
 | [API Reference](./API.md) | All endpoints with curl examples |
@@ -14,6 +15,7 @@
 | [Local Devnet](./DEVNET.md) | Run a single-node development server |
 | [CLI Wallet Walkthrough](./CLI.md) | Create a wallet and simulate a transaction |
 | [Glossary](./GLOSSARY.md) | Terms and definitions |
+| [Protocol Diagrams](./protocol/diagrams.md) | Attestation, consensus, settlement, and architecture diagrams |
 | [Tokenomics](./tokenomics_v1.md) | RTC supply and distribution |
 | [FAQ & Troubleshooting](./FAQ_TROUBLESHOOTING.md) | Common setup/runtime issues and recovery steps |
 | [Wallet User Guide](./WALLET_USER_GUIDE.md) | Wallet basics, balance checks, and safe operations |
