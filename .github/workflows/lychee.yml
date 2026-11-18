@@ -17,13 +17,17 @@ jobs:
       - name: Check relative links
         uses: lycheeverse/lychee-action@v2
         with:
-          fail: false   # report broken links in the job summary but do not block CI (whole-repo doc check)
+          fail: true   # block CI on broken links to prevent regressions
           args: >
             --verbose
             --no-progress
             --include-fragments
             --exclude-all-private
             --exclude "https?://(twitter|x)\.com"
+            --exclude "\./evidence/.*"
+            --exclude "\.\.\."
+            --exclude "\{\{.*\}\}"
+            --exclude "^url$"
             --exclude "https://github.com/Scottcjn/Rustchain/actions"
             --exclude "https?://(www\.)?(linkedin|facebook|instagram|tiktok)"
             --exclude "https?://(127\.0\.0\.1|localhost)(:\d+)?"
