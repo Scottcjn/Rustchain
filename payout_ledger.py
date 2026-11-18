@@ -263,12 +263,22 @@ def _ledger_update_status_terminal_guarded(record_id, new_status, tx_hash=None, 
                 raise LedgerStateError(
                     f"cannot change terminal payout status from {current[0]} to {new_status}"
                 )
-            conn.execute("COMMIT")
-            logger.info("Ledger %s already terminal %s; status update skipped", record_id, new_status)
+            # Same terminal status: still allow attaching/filling non-empty tx_hash or notes
+            # if they were previously blank, without erasing existing values.
+            conn.execute(
+                "UPDATE payout_ledger SET"
+                " tx_hash=COALESCE(NULLIF(?, ''), NULLIF(tx_hash, ''), tx_hash),"
+                " notes=COALESCE(NULLIF(?, ''), NULLIF(notes, ''), notes),"
+                " updated_at=? WHERE id=?",
+                (tx_hash, notes, now, record_id),
+            )
+            conn.commit()
+            logger.info("Ledger %s already terminal %s; metadata preserved/updated", record_id, new_status)
             return True
         cursor = conn.execute(
             "UPDATE payout_ledger SET status=?,"
-            " tx_hash=COALESCE(?, tx_hash), notes=COALESCE(?, notes),"
+            " tx_hash=COALESCE(NULLIF(?, ''), tx_hash),"
+            " notes=COALESCE(NULLIF(?, ''), notes),"
             " updated_at=? WHERE id=?",
             (new_status, tx_hash, notes, now, record_id),
         )
