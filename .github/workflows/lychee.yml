@@ -5,6 +5,8 @@ on:
     paths:
       - '**.md'
       - 'docs/**'
+      - 'tools/check_relative_links.py'
+      - '.github/workflows/lychee.yml'
   schedule:
     - cron: '0 4 * * 1'
   workflow_dispatch:
@@ -12,12 +14,26 @@ on:
 jobs:
   linkcheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - name: Check relative links
-        uses: lycheeverse/lychee-action@v2
+        timeout-minutes: 2
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        timeout-minutes: 2
         with:
-          fail: false   # report broken links in the job summary but do not block CI (whole-repo doc check)
+          python-version: '3.11'
+
+      - name: Enforce relative links (blocking gate)
+        timeout-minutes: 3
+        run: python tools/check_relative_links.py
+
+      - name: Check external and fragment links (lychee)
+        uses: lycheeverse/lychee-action@v2
+        timeout-minutes: 5
+        with:
+          fail: false   # external URLs are informational; relative links are strictly enforced above
           args: >
             --verbose
             --no-progress
@@ -28,7 +44,6 @@ jobs:
             --exclude "https?://(www\.)?(linkedin|facebook|instagram|tiktok)"
             --exclude "https?://(127\.0\.0\.1|localhost)(:\d+)?"
             --exclude "https?://50\.28\.86\.131(:\d+)?"
-            --exclude "https://rustchain.org/faq"
             --exclude "https?://img\.shields\.io"
             --exclude "https?://openreview\.net"
             --max-retries 3
@@ -37,6 +52,3 @@ jobs:
             -- './**/*.md' './**/*.html'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Fail on broken relative links
-        if: failure()
-        run: exit 1
