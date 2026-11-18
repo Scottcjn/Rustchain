@@ -10,7 +10,194 @@ from typing import Optional, Dict, Any, List
 from urllib.error import URLError, HTTPError
 from urllib.request import Request
 
-from .exceptions import BoTTubeError, AuthenticationError, APIError, UploadError
+from .exceptions import (
+    BoTTubeError,
+    AuthenticationError,
+    APIError,
+    UploadError,
+    InsufficientRTCBalanceError,
+    ExpiredServiceTokenError,
+    UnknownServiceError,
+    QuantityCapExceededError,
+)
+
+
+# ========== RTC Services Data Models & Endpoints (#17183) ==========
+
+from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
+import os as _os
+
+
+def _to_decimal_rtc(val: Any, field_name: str = "amount_rtc") -> Decimal:
+    """Convert raw numeric/string RTC amount to exact Decimal without float precision loss."""
+    if isinstance(val, Decimal):
+        d = val
+    elif isinstance(val, int) and not isinstance(val, bool):
+        d = Decimal(val)
+    elif isinstance(val, str):
+        d = Decimal(val.strip())
+    elif val is not None:
+        # Convert via str() so JSON-decoded numbers become exact decimal strings
+        d = Decimal(str(val))
+    else:
+        raise ValueError(f"Missing required RTC amount field: {field_name}")
+    if not d.is_finite():
+        raise ValueError(f"Non-finite RTC amount for {field_name}: {val!r}")
+    return d
+
+
+@dataclass(frozen=True)
+class RTCService:
+    """Typed representation of a BoTTube RTC-payable service (`GET /api/rtc/services`)."""
+    service_key: str
+    name: str
+    description: str
+    price_rtc: Decimal
+    ttl_hours: Decimal
+    uses: int
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RTCService":
+        return cls(
+            service_key=str(data.get("service_key", "")),
+            name=str(data.get("name", "")),
+            description=str(data.get("description", "")),
+            price_rtc=_to_decimal_rtc(data.get("price_rtc", "0"), "price_rtc"),
+            ttl_hours=_to_decimal_rtc(data.get("ttl_hours", "0"), "ttl_hours"),
+            uses=int(data.get("uses", 1)),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "service_key": self.service_key,
+            "name": self.name,
+            "description": self.description,
+            "price_rtc": str(self.price_rtc),
+            "ttl_hours": str(self.ttl_hours),
+            "uses": self.uses,
+        }
+
+
+@dataclass(frozen=True)
+class RTCPaymentReceipt:
+    """Typed receipt returned by `POST /api/rtc/pay`."""
+    service_key: str
+    service_token: str
+    quantity: int
+    amount_rtc: Decimal
+    uses_remaining: int
+    expires_at: Optional[str] = None
+    purchase_id: Optional[str] = None
+    balance_remaining_rtc: Optional[Decimal] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RTCPaymentReceipt":
+        bal_raw = data.get("balance_remaining_rtc", data.get("new_balance_rtc"))
+        return cls(
+            service_key=str(data.get("service_key", "")),
+            service_token=str(data.get("service_token", data.get("token", ""))),
+            quantity=int(data.get("quantity", 1)),
+            amount_rtc=_to_decimal_rtc(
+                data.get("amount_rtc", data.get("charged_rtc", data.get("total_rtc", "0"))),
+                "amount_rtc",
+            ),
+            uses_remaining=int(data.get("uses_remaining", data.get("uses", 1))),
+            expires_at=str(data["expires_at"]) if data.get("expires_at") is not None else None,
+            purchase_id=str(data.get("purchase_id", data.get("id", ""))) or None,
+            balance_remaining_rtc=_to_decimal_rtc(bal_raw, "balance_remaining_rtc") if bal_raw is not None else None,
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {
+            "service_key": self.service_key,
+            "service_token": self.service_token,
+            "quantity": self.quantity,
+            "amount_rtc": str(self.amount_rtc),
+            "uses_remaining": self.uses_remaining,
+            "expires_at": self.expires_at,
+            "purchase_id": self.purchase_id,
+        }
+        if self.balance_remaining_rtc is not None:
+            out["balance_remaining_rtc"] = str(self.balance_remaining_rtc)
+        return out
+
+
+@dataclass(frozen=True)
+class RTCServiceUseResult:
+    """Typed response returned by `POST /api/rtc/use`."""
+    ok: bool
+    service_key: str
+    uses_remaining: int
+    result: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RTCServiceUseResult":
+        res_payload = data.get("result")
+        if not isinstance(res_payload, dict):
+            res_payload = {
+                k: v for k, v in data.items()
+                if k not in ("ok", "service_key", "uses_remaining")
+            }
+        return cls(
+            ok=bool(data.get("ok", True)),
+            service_key=str(data.get("service_key", "")),
+            uses_remaining=int(data.get("uses_remaining", 0)),
+            result=res_payload,
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "ok": self.ok,
+            "service_key": self.service_key,
+            "uses_remaining": self.uses_remaining,
+            "result": self.result,
+        }
+
+
+@dataclass(frozen=True)
+class RTCPurchaseRecord:
+    """Typed purchase history entry returned by `GET /api/rtc/purchases`."""
+    service_key: str
+    quantity: int
+    amount_rtc: Decimal
+    status: str
+    uses_total: int
+    uses_remaining: int
+    created_at: Optional[str] = None
+    expires_at: Optional[str] = None
+    purchase_id: Optional[str] = None
+    token_hash: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "RTCPurchaseRecord":
+        return cls(
+            service_key=str(data.get("service_key", "")),
+            quantity=int(data.get("quantity", 1)),
+            amount_rtc=_to_decimal_rtc(data.get("amount_rtc", data.get("price_rtc", "0")), "amount_rtc"),
+            status=str(data.get("status", "active")),
+            uses_total=int(data.get("uses_total", data.get("uses", 1))),
+            uses_remaining=int(data.get("uses_remaining", 0)),
+            created_at=str(data["created_at"]) if data.get("created_at") is not None else None,
+            expires_at=str(data["expires_at"]) if data.get("expires_at") is not None else None,
+            purchase_id=str(data.get("purchase_id", data.get("id", ""))) or None,
+            token_hash=str(data["token_hash"]) if data.get("token_hash") is not None else None,
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "purchase_id": self.purchase_id,
+            "service_key": self.service_key,
+            "quantity": self.quantity,
+            "amount_rtc": str(self.amount_rtc),
+            "status": self.status,
+            "uses_total": self.uses_total,
+            "uses_remaining": self.uses_remaining,
+            "created_at": self.created_at,
+            "expires_at": self.expires_at,
+            "token_hash": self.token_hash,
+        }
+
 
 
 class BoTTubeClient:
@@ -54,7 +241,7 @@ class BoTTubeClient:
             retry_count: Number of retries on failure
             retry_delay: Delay between retries (seconds)
         """
-        self.api_key = api_key
+        self.api_key = api_key or self._load_api_key_from_env_or_config()
         self.base_url = base_url.rstrip("/")
         self.verify_ssl = verify_ssl
         self.timeout = timeout
@@ -561,6 +748,163 @@ class BoTTubeClient:
             endpoint = f"{endpoint}?{query}"
         
         return self._request("GET", endpoint)
+
+
+    @staticmethod
+    def _load_api_key_from_env_or_config() -> Optional[str]:
+        """Read BoTTube API key from BOTTUBE_API_KEY / RUSTCHAIN_BOTTUBE_API_KEY env or ~/.config/rustchain/config.json."""
+        for env_name in ("BOTTUBE_API_KEY", "RUSTCHAIN_BOTTUBE_API_KEY"):
+            val = _os.environ.get(env_name, "").strip()
+            if val:
+                return val
+        cfg_path = _os.path.expanduser(
+            _os.environ.get("RUSTCHAIN_CONFIG_PATH", "~/.config/rustchain/config.json")
+        )
+        try:
+            if _os.path.isfile(cfg_path):
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    cfg = json.load(f)
+                key = (cfg.get("bottube_api_key") or (cfg.get("bottube") or {}).get("api_key") or "").strip()
+                if key:
+                    return key
+        except Exception:
+            pass
+        return None
+
+    def _rtc_request(
+        self,
+        method: str,
+        endpoint: str,
+        data: Optional[Dict[str, Any]] = None,
+        service_key: Optional[str] = None,
+        quantity: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Execute an `/api/rtc/*` HTTP request and map HTTP error codes to typed RTC exceptions."""
+        url = f"{self.base_url}{endpoint}"
+        headers = self._get_headers()
+        if self.api_key:
+            headers["X-API-Key"] = self.api_key
+
+        req_data = None
+        if data is not None and method in ("POST", "PUT", "PATCH"):
+            headers["Content-Type"] = "application/json"
+            req_data = json.dumps(data).encode("utf-8")
+
+        req = Request(url, data=req_data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, context=self._ctx, timeout=self.timeout) as response:
+                raw = response.read().decode("utf-8")
+                return json.loads(raw, parse_float=Decimal) if raw else {}
+        except HTTPError as e:
+            err_body = e.read().decode("utf-8", errors="replace") if e.fp else ""
+            parsed_err: Dict[str, Any] = {}
+            try:
+                parsed_err = json.loads(err_body, parse_float=Decimal) if err_body else {}
+            except Exception:
+                parsed_err = {}
+            msg = str(parsed_err.get("error") or parsed_err.get("message") or err_body or e.reason)
+            msg_lower = msg.lower()
+
+            if e.code == 401:
+                raise AuthenticationError(f"Authentication failed: {msg}")
+            if e.code == 402 or "insufficient" in msg_lower:
+                req_rtc = _to_decimal_rtc(parsed_err["required_rtc"], "required_rtc") if "required_rtc" in parsed_err else None
+                avail_rtc = _to_decimal_rtc(parsed_err["available_rtc"], "available_rtc") if "available_rtc" in parsed_err else None
+                raise InsufficientRTCBalanceError(
+                    msg,
+                    required_rtc=req_rtc,
+                    available_rtc=avail_rtc,
+                    endpoint=endpoint,
+                )
+            if e.code in (403, 410) or ("expired" in msg_lower or "exhausted" in msg_lower or "invalid service_token" in msg_lower or "remaining uses" in msg_lower):
+                if endpoint == "/api/rtc/use":
+                    raise ExpiredServiceTokenError(msg, status_code=e.code, endpoint=endpoint)
+            if e.code == 404 or "unknown service" in msg_lower or "unknown service_key" in msg_lower:
+                raise UnknownServiceError(
+                    service_key=service_key or str(parsed_err.get("service_key", "unknown")),
+                    message=msg,
+                    status_code=e.code,
+                    endpoint=endpoint,
+                )
+            if e.code in (400, 422) and ("quantity" in msg_lower or "cap" in msg_lower or "max" in msg_lower):
+                max_q = int(parsed_err["max_quantity"]) if "max_quantity" in parsed_err else None
+                raise QuantityCapExceededError(
+                    quantity=quantity if quantity is not None else 0,
+                    max_quantity=max_q,
+                    message=msg,
+                    status_code=e.code,
+                    endpoint=endpoint,
+                )
+            raise APIError(f"HTTP Error {e.code}: {msg}", status_code=e.code, endpoint=endpoint)
+        except URLError as e:
+            raise APIError(f"Connection Error: {e.reason}", endpoint=endpoint)
+
+    def list_services(self) -> List[RTCService]:
+        """
+        List RTC-payable services available on BoTTube (`GET /api/rtc/services`).
+
+        Returns:
+            List of typed `RTCService` objects with `Decimal` RTC prices.
+        """
+        payload = self._rtc_request("GET", "/api/rtc/services")
+        raw_list = payload.get("services", []) if isinstance(payload, dict) else []
+        return [RTCService.from_dict(item) for item in raw_list if isinstance(item, dict)]
+
+    def pay(self, service_key: str, quantity: int = 1) -> RTCPaymentReceipt:
+        """
+        Purchase a BoTTube service with RTC (`POST /api/rtc/pay`).
+
+        Args:
+            service_key: Identifier of the service (e.g. 'inference_single')
+            quantity: Number of units to purchase (1 <= quantity <= 100)
+
+        Returns:
+            Typed `RTCPaymentReceipt` containing `service_token` and `Decimal` `amount_rtc`.
+        """
+        if not service_key or not isinstance(service_key, str) or not service_key.strip():
+            raise UnknownServiceError(str(service_key), message="service_key must be a non-empty string")
+        if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity < 1:
+            raise QuantityCapExceededError(quantity=quantity, max_quantity=100, message="quantity must be a positive integer >= 1")
+        if quantity > 100:
+            raise QuantityCapExceededError(quantity=quantity, max_quantity=100)
+
+        payload = self._rtc_request(
+            "POST",
+            "/api/rtc/pay",
+            data={"service_key": service_key.strip(), "quantity": quantity},
+            service_key=service_key.strip(),
+            quantity=quantity,
+        )
+        return RTCPaymentReceipt.from_dict(payload)
+
+    def use(self, service_token: str, **payload: Any) -> RTCServiceUseResult:
+        """
+        Redeem a purchased `service_token` against `POST /api/rtc/use`.
+
+        Args:
+            service_token: Token returned by `pay()`
+            **payload: Service-specific parameters (e.g., `prompt="..."`)
+
+        Returns:
+            Typed `RTCServiceUseResult`.
+        """
+        if not service_token or not isinstance(service_token, str) or not service_token.strip():
+            raise ExpiredServiceTokenError("service_token must be a non-empty string", status_code=400)
+        body: Dict[str, Any] = {"service_token": service_token.strip()}
+        body.update(payload)
+        resp = self._rtc_request("POST", "/api/rtc/use", data=body)
+        return RTCServiceUseResult.from_dict(resp)
+
+    def purchases(self) -> List[RTCPurchaseRecord]:
+        """
+        List RTC service purchases for the authenticated account (`GET /api/rtc/purchases`).
+
+        Returns:
+            List of typed `RTCPurchaseRecord` objects with `Decimal` amounts.
+        """
+        payload = self._rtc_request("GET", "/api/rtc/purchases")
+        raw_list = payload.get("purchases", []) if isinstance(payload, dict) else (payload if isinstance(payload, list) else [])
+        return [RTCPurchaseRecord.from_dict(item) for item in raw_list if isinstance(item, dict)]
 
     # ========== Context Manager ==========
 
