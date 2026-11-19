@@ -3,11 +3,20 @@
 RustChain Prometheus Exporter
 Exposes RustChain node metrics in Prometheus format
 """
-import time
-import os
-import requests
-from prometheus_client import start_http_server, Gauge, Counter, Info
 import logging
+import os
+import sys
+import time
+from pathlib import Path
+
+import requests
+from prometheus_client import Counter, Gauge, Info, start_http_server
+
+try:
+    from monitoring.node_probe import ProbeState, probe_health, validate_response
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from monitoring.node_probe import ProbeState, validate_response
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('rustchain-exporter')
@@ -21,6 +30,10 @@ TLS_CA_BUNDLE = os.environ.get('TLS_CA_BUNDLE', None)  # Optional CA cert path
 
 # Prometheus metrics
 node_health = Gauge('rustchain_node_health', 'Node health status (1=healthy, 0=unhealthy)')
+last_successful_scrape = Gauge(
+    'rustchain_last_successful_scrape_timestamp',
+    'Timestamp of last successful node metrics scrape'
+)
 node_uptime_seconds = Gauge('rustchain_node_uptime_seconds', 'Node uptime in seconds')
 node_db_status = Gauge('rustchain_node_db_status', 'Database read/write status (1=ok, 0=error)')
 node_version = Info('rustchain_node_version', 'Node version information')
@@ -63,13 +76,31 @@ def collect_metrics():
     start_time = time.time()
     
     try:
-        # Health metrics
-        health = fetch_json('/health')
-        if health:
-            node_health.set(1 if health.get('ok') else 0)
-            node_uptime_seconds.set(health.get('uptime_s', 0))
-            node_db_status.set(1 if health.get('db_rw') else 0)
-            node_version.info({'version': health.get('version', 'unknown')})
+        # Health metrics using shared node_probe
+        url = f"{RUSTCHAIN_NODE}/health"
+        verify = TLS_CA_BUNDLE if TLS_CA_BUNDLE else TLS_VERIFY
+        try:
+            resp = requests.get(url, verify=verify, timeout=10)
+            probe = validate_response(resp, url=url)
+        except Exception as e:
+            logger.error(f"Error fetching /health: {e}")
+            probe = None
+
+        if probe and probe.state == ProbeState.UP.value and probe.data:
+            node_health.set(1)
+            node_uptime_seconds.set(probe.data.get('uptime_s', 0))
+            node_db_status.set(1 if probe.data.get('db_rw') else 0)
+            node_version.info({'version': probe.data.get('version', 'unknown')})
+            last_successful_scrape.set(time.time())
+        else:
+            # Set to 0 on ANY failed scrape (impostor, degraded, down, unreachable)
+            node_health.set(0)
+            node_uptime_seconds.set(0)
+            node_db_status.set(0)
+            scrape_errors.inc()
+            state_desc = probe.state if probe else 'error'
+            reason_desc = probe.reason if (probe and probe.reason) else 'Failed scrape'
+            logger.warning(f"Node health check failed with state={state_desc}: {reason_desc}")
         
         # Epoch metrics
         epoch = fetch_json('/epoch')

@@ -9,6 +9,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 import sqlite3
 import time
 from dataclasses import dataclass, asdict
@@ -20,6 +21,12 @@ from urllib.parse import urlparse
 import threading
 import requests
 from flask import Flask, jsonify, render_template_string, send_from_directory
+
+try:
+    from monitoring.node_probe import probe_health, validate_response, ProbeState
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from monitoring.node_probe import probe_health, validate_response, ProbeState
 
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name, str(default))
@@ -240,10 +247,12 @@ def check_node_health(node_config: dict) -> NodeStatus:
             timeout=10,
             verify=verify
         )
-        response_time_ms = (time.time() - start_time) * 1000
+        response_time_ms = max((time.time() - start_time) * 1000, 0.01)
         
-        if response.status_code == 200:
-            data = response.json()
+        probe = validate_response(response, response_time_ms=response_time_ms, url=node_config['endpoint'])
+        data = probe.data or {}
+
+        if probe.state == ProbeState.UP.value:
             return NodeStatus(
                 node_id=node_config['id'],
                 name=node_config['name'],
@@ -256,6 +265,36 @@ def check_node_health(node_config: dict) -> NodeStatus:
                 active_miners=data.get('active_miners', 0),
                 current_epoch=data.get('epoch', 0),
                 timestamp=timestamp
+            )
+        elif probe.state == ProbeState.IMPOSTOR.value:
+            return NodeStatus(
+                node_id=node_config['id'],
+                name=node_config['name'],
+                endpoint=node_config['endpoint'],
+                location=node_config['location'],
+                status='impostor',
+                response_time_ms=response_time_ms,
+                version='impostor',
+                uptime_s=0,
+                active_miners=0,
+                current_epoch=0,
+                timestamp=timestamp,
+                error=f"Impostor detected: {probe.reason}"
+            )
+        elif probe.state == ProbeState.DEGRADED.value:
+            return NodeStatus(
+                node_id=node_config['id'],
+                name=node_config['name'],
+                endpoint=node_config['endpoint'],
+                location=node_config['location'],
+                status='degraded',
+                response_time_ms=response_time_ms,
+                version=data.get('version', 'unknown'),
+                uptime_s=data.get('uptime_s', 0),
+                active_miners=data.get('active_miners', 0),
+                current_epoch=data.get('epoch', 0),
+                timestamp=timestamp,
+                error=f"Degraded: {probe.reason}"
             )
         else:
             return NodeStatus(
@@ -705,6 +744,17 @@ HTML_TEMPLATE = '''
         .status-badge.down {
             background: rgba(239, 68, 68, 0.2);
             color: var(--danger);
+        }
+
+        .status-badge.impostor {
+            background: rgba(234, 179, 8, 0.2);
+            color: #eab308;
+            border: 1px solid #eab308;
+        }
+
+        .status-badge.degraded {
+            background: rgba(249, 115, 22, 0.2);
+            color: #f97316;
         }
         
         .node-metrics {

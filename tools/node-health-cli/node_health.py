@@ -21,6 +21,13 @@ from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
+from pathlib import Path
+
+try:
+    from monitoring.node_probe import probe_health, validate_response, validate_health_payload, ProbeState
+except ImportError:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+    from monitoring.node_probe import probe_health, validate_response, validate_health_payload, ProbeState
 
 
 # Exit codes
@@ -47,6 +54,7 @@ class HealthStatus:
     backup_age_hours: Optional[float]
     tip_age_slots: Optional[int]
     error: Optional[str]
+    state: str = "up"
 
 
 @dataclass
@@ -116,20 +124,39 @@ def fetch_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
 
 
 def check_health(node_url: str, timeout: int) -> HealthStatus:
-    """Check node health status"""
+    """Check node health status using shared validate_health_payload validator."""
     try:
         url = f"{node_url.rstrip('/')}/health"
-        data = fetch_json(url, timeout)
-        
-        return HealthStatus(
-            ok=bool(data.get("ok", False)),
-            version=data.get("version"),
-            uptime_s=data.get("uptime_s"),
-            db_rw=data.get("db_rw"),
-            backup_age_hours=data.get("backup_age_hours"),
-            tip_age_slots=data.get("tip_age_slots"),
-            error=None
-        )
+        req = Request(url, headers={"Accept": "application/json"})
+        with urlopen(req, timeout=timeout) as response:
+            payload = response.read().decode("utf-8")
+            raw_ct = getattr(response, "headers", None)
+            ct = raw_ct.get("Content-Type", "") if (raw_ct and hasattr(raw_ct, "get") and not hasattr(raw_ct, "_mock_return_value")) else ""
+            status_code = getattr(response, "code", getattr(response, "status", 200))
+
+        state, data, reason = validate_health_payload(payload, content_type=ct, status_code=status_code)
+        if state == ProbeState.UP and data:
+            return HealthStatus(
+                ok=True,
+                version=data.get("version"),
+                uptime_s=data.get("uptime_s"),
+                db_rw=data.get("db_rw"),
+                backup_age_hours=data.get("backup_age_hours"),
+                tip_age_slots=data.get("tip_age_slots"),
+                error=None,
+                state="up",
+            )
+        else:
+            return HealthStatus(
+                ok=False,
+                version=data.get("version") if (data and state != ProbeState.IMPOSTOR) else "impostor",
+                uptime_s=data.get("uptime_s") if data else None,
+                db_rw=data.get("db_rw") if data else None,
+                backup_age_hours=data.get("backup_age_hours") if data else None,
+                tip_age_slots=data.get("tip_age_slots") if data else None,
+                error=reason or f"Node {state.value}",
+                state=state.value,
+            )
     except Exception as e:
         return HealthStatus(
             ok=False,
@@ -138,7 +165,8 @@ def check_health(node_url: str, timeout: int) -> HealthStatus:
             db_rw=None,
             backup_age_hours=None,
             tip_age_slots=None,
-            error=str(e)
+            error=str(e),
+            state="unreachable",
         )
 
 
