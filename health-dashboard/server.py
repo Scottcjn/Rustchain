@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import sqlite3
+import sys
 import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
@@ -20,6 +21,18 @@ from urllib.parse import urlparse
 import threading
 import requests
 from flask import Flask, jsonify, render_template_string, send_from_directory
+
+# One definition of "up" for every monitor in the fleet.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from monitoring.node_probe import (  # noqa: E402
+    STATE_IMPOSTOR,
+    STATE_UP,
+    classify_health,
+    content_type_of,
+)
 
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name, str(default))
@@ -243,19 +256,34 @@ def check_node_health(node_config: dict) -> NodeStatus:
         response_time_ms = (time.time() - start_time) * 1000
         
         if response.status_code == 200:
-            data = response.json()
+            try:
+                data = response.json()
+            except ValueError:
+                # 200 + HTML is what a reused host serves. It is not a node.
+                data = None
+            if not isinstance(data, dict):
+                data = None
+            probe = classify_health(
+                response.status_code,
+                data,
+                url=node_config['endpoint'],
+                content_type=content_type_of(getattr(response, 'headers', None)),
+                response_ms=response_time_ms,
+            )
+            body = probe.payload or {}
             return NodeStatus(
                 node_id=node_config['id'],
                 name=node_config['name'],
                 endpoint=node_config['endpoint'],
                 location=node_config['location'],
-                status='up',
+                status=probe.state,
                 response_time_ms=response_time_ms,
-                version=data.get('version', 'unknown'),
-                uptime_s=data.get('uptime_s', 0),
-                active_miners=data.get('active_miners', 0),
-                current_epoch=data.get('epoch', 0),
-                timestamp=timestamp
+                version=body.get('version', 'unknown'),
+                uptime_s=body.get('uptime_s', 0),
+                active_miners=body.get('active_miners', 0),
+                current_epoch=body.get('epoch', 0),
+                timestamp=timestamp,
+                error=None if probe.state == STATE_UP else probe.reason
             )
         else:
             return NodeStatus(
@@ -333,7 +361,13 @@ def detect_status_change(old_status: dict, new_status: NodeStatus):
             incident_type = 'node_down'
             details = f"Node {new_status.name} went DOWN. Error: {new_status.error or 'Unknown'}"
             logger.warning(f"INCIDENT: {details}")
-        elif old == 'down' and new == 'up':
+        elif new == STATE_IMPOSTOR:
+            # A 200 from a parking page or SPA is an outage, not health.
+            incident_type = 'node_down'
+            details = (f"Node {new_status.name} is an IMPOSTOR: "
+                       f"{new_status.error or 'answered 200 but is not a RustChain node'}")
+            logger.warning(f"INCIDENT: {details}")
+        elif old in ('down', STATE_IMPOSTOR) and new == 'up':
             incident_type = 'node_recovery'
             details = f"Node {new_status.name} recovered and is back UP"
             logger.info(f"INCIDENT: {details}")
@@ -703,6 +737,23 @@ HTML_TEMPLATE = '''
         }
         
         .status-badge.down {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+
+        /* A host answering 200 with something that is not a node. */
+        .status-badge.impostor {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+            border: 1px dashed var(--danger);
+        }
+
+        .status-badge.degraded {
+            background: rgba(245, 158, 11, 0.2);
+            color: #f59e0b;
+        }
+
+        .status-badge.unreachable {
             background: rgba(239, 68, 68, 0.2);
             color: var(--danger);
         }
