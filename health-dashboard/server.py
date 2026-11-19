@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import sqlite3
+import sys
 import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
@@ -20,6 +21,12 @@ from urllib.parse import urlparse
 import threading
 import requests
 from flask import Flask, jsonify, render_template_string, send_from_directory
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from monitoring.node_probe import validate_requests_response
 
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name, str(default))
@@ -241,9 +248,13 @@ def check_node_health(node_config: dict) -> NodeStatus:
             verify=verify
         )
         response_time_ms = (time.time() - start_time) * 1000
-        
-        if response.status_code == 200:
-            data = response.json()
+        probe = validate_requests_response(
+            response,
+            url=node_config['endpoint'],
+            response_ms=response_time_ms,
+        )
+        data = probe.payload
+        if probe.state == 'up':
             return NodeStatus(
                 node_id=node_config['id'],
                 name=node_config['name'],
@@ -251,27 +262,27 @@ def check_node_health(node_config: dict) -> NodeStatus:
                 location=node_config['location'],
                 status='up',
                 response_time_ms=response_time_ms,
-                version=data.get('version', 'unknown'),
-                uptime_s=data.get('uptime_s', 0),
+                version=probe.version or 'unknown',
+                uptime_s=probe.uptime_s or 0,
                 active_miners=data.get('active_miners', 0),
                 current_epoch=data.get('epoch', 0),
-                timestamp=timestamp
-            )
-        else:
-            return NodeStatus(
-                node_id=node_config['id'],
-                name=node_config['name'],
-                endpoint=node_config['endpoint'],
-                location=node_config['location'],
-                status='down',
-                response_time_ms=response_time_ms,
-                version='unknown',
-                uptime_s=0,
-                active_miners=0,
-                current_epoch=0,
                 timestamp=timestamp,
-                error=f"HTTP {response.status_code}"
+                error=None
             )
+        return NodeStatus(
+            node_id=node_config['id'],
+            name=node_config['name'],
+            endpoint=node_config['endpoint'],
+            location=node_config['location'],
+            status=probe.state,
+            response_time_ms=response_time_ms,
+            version=probe.version or 'unknown',
+            uptime_s=probe.uptime_s or 0,
+            active_miners=data.get('active_miners', 0),
+            current_epoch=data.get('epoch', 0),
+            timestamp=timestamp,
+            error=probe.error or f"HTTP {response.status_code}"
+        )
             
     except requests.exceptions.Timeout:
         return NodeStatus(
@@ -705,6 +716,16 @@ HTML_TEMPLATE = '''
         .status-badge.down {
             background: rgba(239, 68, 68, 0.2);
             color: var(--danger);
+        }
+
+        .status-badge.impostor {
+            background: rgba(245, 158, 11, 0.25);
+            color: var(--warning);
+        }
+
+        .status-badge.degraded {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
         }
         
         .node-metrics {

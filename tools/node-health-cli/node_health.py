@@ -15,12 +15,19 @@ Exit codes:
 
 import argparse
 import json
+from pathlib import Path
 import sys
 import time
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from monitoring.node_probe import probe_health
 
 
 # Exit codes
@@ -47,6 +54,11 @@ class HealthStatus:
     backup_age_hours: Optional[float]
     tip_age_slots: Optional[int]
     error: Optional[str]
+    state: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.state is None:
+            self.state = "up" if self.ok else "down"
 
 
 @dataclass
@@ -116,30 +128,19 @@ def fetch_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
 
 
 def check_health(node_url: str, timeout: int) -> HealthStatus:
-    """Check node health status"""
-    try:
-        url = f"{node_url.rstrip('/')}/health"
-        data = fetch_json(url, timeout)
-        
-        return HealthStatus(
-            ok=bool(data.get("ok", False)),
-            version=data.get("version"),
-            uptime_s=data.get("uptime_s"),
-            db_rw=data.get("db_rw"),
-            backup_age_hours=data.get("backup_age_hours"),
-            tip_age_slots=data.get("tip_age_slots"),
-            error=None
-        )
-    except Exception as e:
-        return HealthStatus(
-            ok=False,
-            version=None,
-            uptime_s=None,
-            db_rw=None,
-            backup_age_hours=None,
-            tip_age_slots=None,
-            error=str(e)
-        )
+    """Check node health status using shared monitoring.node_probe."""
+    url = f"{node_url.rstrip('/')}/health"
+    probe = probe_health(url, timeout=timeout, opener=urlopen)
+    return HealthStatus(
+        ok=probe.ok,
+        version=probe.version,
+        uptime_s=probe.uptime_s,
+        db_rw=probe.db_rw,
+        backup_age_hours=probe.backup_age_hours,
+        tip_age_slots=probe.tip_age_slots,
+        error=probe.error,
+        state=probe.state,
+    )
 
 
 def check_epoch(node_url: str, timeout: int) -> EpochStatus:
