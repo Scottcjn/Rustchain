@@ -15,12 +15,26 @@ Exit codes:
 
 import argparse
 import json
+import os
 import sys
 import time
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
+
+# Shared liveness probe: 200 + HTML is not a healthy node.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from monitoring.node_probe import (  # noqa: E402
+    STATE_DOWN,
+    STATE_IMPOSTOR,
+    STATE_UNREACHABLE,
+    STATE_UP,
+    classify_health,
+)
 
 
 # Exit codes
@@ -47,6 +61,10 @@ class HealthStatus:
     backup_age_hours: Optional[float]
     tip_age_slots: Optional[int]
     error: Optional[str]
+    # "up" | "degraded" | "impostor" | "down" | "unreachable" from the shared
+    # probe. `ok` stays as before; `state` says whether the thing answering was
+    # a node at all.
+    state: Optional[str] = None
 
 
 @dataclass
@@ -83,6 +101,14 @@ class CheckResult:
     exit_code: int
 
 
+class NonJSONResponse(ValueError):
+    """The host answered, but not with a JSON object.
+
+    Retrying is pointless: this is what a parking page or SPA does on every
+    path, and it is how a dead node stayed "healthy" for weeks.
+    """
+
+
 def fetch_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
     """Fetch JSON data from URL with retry logic"""
     last_error = None
@@ -94,7 +120,7 @@ def fetch_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
                 payload = response.read().decode("utf-8")
             data = json.loads(payload)
             if not isinstance(data, dict):
-                raise ValueError("JSON response must be an object")
+                raise NonJSONResponse("JSON response must be an object")
             return data
         except HTTPError as e:
             last_error = f"HTTP {e.code}: {e.reason}"
@@ -103,11 +129,10 @@ def fetch_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
             last_error = f"Connection error: {e.reason}"
             time.sleep(DEFAULT_RETRY_DELAY)
         except json.JSONDecodeError as e:
-            last_error = f"JSON parse error: {e}"
-            break
+            # An HTML/SPA body is not a transient failure.
+            raise NonJSONResponse(f"JSON parse error: {e}") from e
         except ValueError as e:
-            last_error = str(e)
-            break
+            raise NonJSONResponse(str(e)) from e
         except Exception as e:
             last_error = f"Unexpected error: {e}"
             time.sleep(DEFAULT_RETRY_DELAY)
@@ -116,19 +141,46 @@ def fetch_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
 
 
 def check_health(node_url: str, timeout: int) -> HealthStatus:
-    """Check node health status"""
+    """Check node health status.
+
+    A 200 is not health: the body must be JSON carrying node state. An SPA on
+    a reused address is reported as ``impostor`` rather than a healthy node.
+    """
     try:
         url = f"{node_url.rstrip('/')}/health"
         data = fetch_json(url, timeout)
-        
+        probe = classify_health(200, data, url=url)
+        if probe.state == STATE_UP:
+            return HealthStatus(
+                ok=True,
+                version=probe.version if probe.version is not None else data.get("version"),
+                uptime_s=probe.uptime_s if probe.uptime_s is not None else data.get("uptime_s"),
+                db_rw=data.get("db_rw"),
+                backup_age_hours=data.get("backup_age_hours"),
+                tip_age_slots=probe.tip_age_slots if probe.tip_age_slots is not None else data.get("tip_age_slots"),
+                error=None,
+                state=STATE_UP,
+            )
         return HealthStatus(
-            ok=bool(data.get("ok", False)),
+            ok=False,
             version=data.get("version"),
             uptime_s=data.get("uptime_s"),
             db_rw=data.get("db_rw"),
             backup_age_hours=data.get("backup_age_hours"),
             tip_age_slots=data.get("tip_age_slots"),
-            error=None
+            error=probe.reason,
+            state=probe.state,
+        )
+    except HTTPError as e:
+        return HealthStatus(
+            ok=False,
+            version=None,
+            uptime_s=None,
+            db_rw=None,
+            backup_age_hours=None,
+            tip_age_slots=None,
+            error=f"HTTP {e.code}: {e.reason}",
+            state=STATE_DOWN,
         )
     except Exception as e:
         return HealthStatus(
@@ -138,7 +190,8 @@ def check_health(node_url: str, timeout: int) -> HealthStatus:
             db_rw=None,
             backup_age_hours=None,
             tip_age_slots=None,
-            error=str(e)
+            error=str(e),
+            state=STATE_UNREACHABLE if not isinstance(e, ValueError) else STATE_IMPOSTOR,
         )
 
 
@@ -284,6 +337,8 @@ def format_text(result: CheckResult, verbose: bool = False) -> str:
     # Health status
     health_icon = "✓" if result.health.ok else "✗"
     lines.append(f"[{health_icon}] Health Status")
+    if result.health.state:
+        lines.append(f"    State: {result.health.state}")
     if result.health.error:
         lines.append(f"    Error: {result.health.error}")
     else:

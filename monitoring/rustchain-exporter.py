@@ -5,9 +5,17 @@ Exposes RustChain node metrics in Prometheus format
 """
 import time
 import os
+import sys
 import requests
 from prometheus_client import start_http_server, Gauge, Counter, Info
 import logging
+
+# One liveness definition for every monitor in the fleet.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from monitoring.node_probe import STATE_DEGRADED, STATE_UP, probe_health  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('rustchain-exporter')
@@ -38,6 +46,10 @@ avg_antiquity_multiplier = Gauge('rustchain_avg_antiquity_multiplier', 'Average 
 
 scrape_errors = Counter('rustchain_scrape_errors_total', 'Total number of scrape errors')
 scrape_duration_seconds = Gauge('rustchain_scrape_duration_seconds', 'Duration of last scrape')
+last_successful_scrape = Gauge(
+    'rustchain_last_successful_scrape_timestamp',
+    'Unix timestamp of the last scrape that found a healthy RustChain node',
+)
 
 
 def fetch_json(endpoint):
@@ -63,14 +75,31 @@ def collect_metrics():
     start_time = time.time()
     
     try:
-        # Health metrics
-        health = fetch_json('/health')
-        if health:
-            node_health.set(1 if health.get('ok') else 0)
-            node_uptime_seconds.set(health.get('uptime_s', 0))
-            node_db_status.set(1 if health.get('db_rw') else 0)
-            node_version.info({'version': health.get('version', 'unknown')})
-        
+        # Health metrics. A 200 is not enough: an SPA or parking page on the
+        # node's address answers 200 forever, so node_health must go to 0.
+        health = probe_health(
+            f'{RUSTCHAIN_NODE}/health',
+            timeout=10,
+            tls_verify=TLS_VERIFY,
+            ca_bundle=TLS_CA_BUNDLE,
+        )
+        if health.state == STATE_UP:
+            node_health.set(1)
+            node_uptime_seconds.set(health.uptime_s or 0)
+            node_db_status.set(1 if health.db_rw is not False else 0)
+            node_version.info({'version': health.version or 'unknown'})
+            last_successful_scrape.set(time.time())
+        elif health.state == STATE_DEGRADED:
+            node_health.set(0)
+            node_uptime_seconds.set(health.uptime_s or 0)
+            node_db_status.set(0 if health.db_rw is False else 1)
+            scrape_errors.inc()
+            logger.warning(f"Node degraded: {health.reason}")
+        else:
+            node_health.set(0)
+            scrape_errors.inc()
+            logger.error(f"Node {health.state}: {health.reason} ({health.url})")
+
         # Epoch metrics
         epoch = fetch_json('/epoch')
         if epoch:

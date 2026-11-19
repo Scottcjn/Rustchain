@@ -5,14 +5,15 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install dependencies
-COPY requirements.txt .
+COPY health-dashboard/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application files
-COPY server.py .
-COPY static/ ./static/
-COPY templates/ ./templates/
-COPY data/ ./data/ 2>/dev/null || true
+# Shared liveness probe (imported as monitoring.node_probe)
+COPY monitoring/__init__.py monitoring/node_probe.py ./monitoring/
+
+# Copy application files. The dashboard renders its page from render_template_string,
+# so it has no static/ or templates/ directory to ship.
+COPY health-dashboard/server.py .
 
 # Create data directory
 RUN mkdir -p /app/data

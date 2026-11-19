@@ -6,6 +6,9 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY rustchain-exporter.py ./
+# The liveness decision lives in one shared module; the monitor imports it
+# rather than keeping a private copy of "is this a node?".
+COPY node_probe.py __init__.py ./monitoring/
 
 EXPOSE 9100
 

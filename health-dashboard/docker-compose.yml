@@ -2,7 +2,11 @@ version: '3.8'
 
 services:
   health-dashboard:
-    build: .
+    # The image needs monitoring/node_probe.py, so the build context is the
+    # repository root rather than this directory.
+    build:
+      context: ..
+      dockerfile: health-dashboard/Dockerfile
     container_name: rustchain-health-dashboard
     restart: unless-stopped
     ports:
