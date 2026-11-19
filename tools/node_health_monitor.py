@@ -136,14 +136,38 @@ class NodeHealthMonitor:
                 #
                 # A node is online only if it answered with JSON that actually
                 # carries node state. Anything else is impersonating one.
+                from pathlib import Path as _Path
+                _root = str(_Path(__file__).resolve().parents[1])
+                if _root not in sys.path:
+                    sys.path.insert(0, _root)
+                from monitoring.node_probe import classify_health_response
+
+                if path == "/health":
+                    probe = classify_health_response(
+                        f"{url}{path}",
+                        getattr(resp, "status", 200),
+                        raw,
+                        content_type=resp.headers.get("Content-Type", "") if hasattr(resp, "headers") else "",
+                        response_ms=elapsed_ms,
+                    )
+                    if probe.state != "up":
+                        return NodeStatus(
+                            url=url,
+                            status="impostor" if probe.state == "impostor" else "offline",
+                            response_time_ms=round(elapsed_ms, 1),
+                            epoch=None,
+                            miners=None,
+                            error=probe.error,
+                        )
+
                 if data is None:
                     return NodeStatus(
                         url=url,
-                        status="offline",
+                        status="impostor",
                         response_time_ms=round(elapsed_ms, 1),
                         epoch=None,
                         miners=None,
-                        error=(f"/status returned {len(raw)} bytes of non-JSON "
+                        error=(f"impostor: {path} returned {len(raw)} bytes of non-JSON "
                                f"(is this still a node?): {raw[:60]!r}"),
                     )
 
