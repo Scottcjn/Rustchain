@@ -33,6 +33,8 @@ import time
 import unittest
 from pathlib import Path
 
+from _node_test_utils import release_node_modules
+
 try:
     import nacl.signing
     HAVE_NACL = True
@@ -88,9 +90,11 @@ class TestEnrollWeightDeviceSpoof(unittest.TestCase):
         os.environ["RUSTCHAIN_DISABLE_P2P_AUTO_START"] = "1"
         if NODE_DIR not in sys.path:
             sys.path.insert(0, NODE_DIR)
+        release_node_modules()
 
     @classmethod
     def tearDownClass(cls):
+        release_node_modules()
         for k, v in cls._prev.items():
             if v is None:
                 os.environ.pop(k, None)
@@ -102,8 +106,16 @@ class TestEnrollWeightDeviceSpoof(unittest.TestCase):
                 cls._tmp.cleanup()
                 break
             except PermissionError:
-                if attempt == 4:
+                if os.name != "nt":
                     raise
+                # Windows keeps a lingering SQLite WAL handle after close, so
+                # the scratch .db cannot be unlinked; the OS temp dir absorbs
+                # it. The module-unload release path (sys.modules removal) can
+                # outrun the handle close — a scratch-dir delete failure must
+                # not error a run whose tests themselves passed. Linux CI is
+                # unaffected (the raise above preserves the old semantics).
+                if attempt == 4:
+                    break
                 gc.collect()
                 time.sleep(0.2)
 
@@ -137,6 +149,7 @@ class TestEnrollWeightDeviceSpoof(unittest.TestCase):
         os.environ["RUSTCHAIN_DB_PATH"] = db_path
         spec = importlib.util.spec_from_file_location(module_name, MODULE_PATH)
         mod = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = mod
         spec.loader.exec_module(mod)
         self._loaded.append(mod)
         mod.HAVE_REPLAY_DEFENSE = False
