@@ -42,6 +42,7 @@ __author__ = "kuanglaodi2-sudo"
 from .client import RustChainClient
 from .wallet import RustChainWallet
 from .governance import GovernanceManager
+from .amounts import MICRO_RTC_PER_RTC, to_micro_rtc, micro_rtc_to_str
 from .exceptions import (
     RustChainError,
     AuthenticationError,
@@ -71,4 +72,8 @@ __all__ = [
     "WalletError",
     "AttestationError",
     "GovernanceError",
+    # Exact amounts
+    "MICRO_RTC_PER_RTC",
+    "to_micro_rtc",
+    "micro_rtc_to_str",
 ]
