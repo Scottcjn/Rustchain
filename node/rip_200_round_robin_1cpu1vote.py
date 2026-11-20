@@ -476,6 +476,40 @@ ANTIQUITY_MULTIPLIERS = {
 # Time decay parameters
 DECAY_RATE_PER_YEAR = 0.15  # 15% decay per year (vintage bonus → 0 after ~6.67 years)
 
+# x86 tiers whose antiquity premium the node only grants when the enrollment
+# path corroborates them from fingerprint measurements (bounty #16271). Mirrors
+# _X86_VINTAGE_REWARD_ARCHES in rustchain_v2_integrated_v2.2.1_rip200.py — kept
+# as a literal because this module is deployed to settlement workers without the
+# node, exactly like GENESIS_TIMESTAMP above is duplicated for the same reason.
+X86_VINTAGE_REWARD_ARCHES = frozenset((
+    "386", "486", "pentium", "pentium_mmx", "pentium_pro",
+    "pentium_ii", "pentium_iii", "pentium_m_banias",
+    "pentium_m_dothan", "pentium_m_yonah",
+))
+
+
+def sanitize_unvouched_x86_vintage_arch(device_arch: str) -> str:
+    """Clamp a self-reported x86-vintage label to the neutral modern rate.
+
+    Settlement paths weight a miner from ``miner_attest_recent.device_arch``
+    whenever no ``epoch_enroll`` snapshot exists for the epoch. That stored arch
+    is the general classifier identity (#16271 requirement 4), not a reward-
+    vouched tier: the corroboration clamp lives in the node's enroll-weight path
+    and its verdict is exactly what gets snapshotted into ``epoch_enroll``. A
+    miner with no snapshot therefore has no vouch, and an x86-vintage claim paid
+    on its own label is the 2.0x-3.0x spoof this bounty closes.
+
+    Down-only and scoped to x86 keys: honest vintage miners settle from their
+    corroborated ``epoch_enroll`` snapshot, non-x86 antiquity keys (g4/g5/68k/
+    MIPS/console/ARM) are untouched, and unknown/'modern'/'default' pass through
+    unchanged. Mirrors the RIP-201 rule in the node: failing to prove vintage
+    costs the bonus, never participation.
+    """
+    arch = str(device_arch or "").strip().lower()
+    if arch in X86_VINTAGE_REWARD_ARCHES:
+        return "modern"
+    return device_arch
+
 
 def get_chain_age_years(current_slot: int) -> float:
     """Calculate blockchain age in years from slot number"""
@@ -782,8 +816,13 @@ def calculate_epoch_rewards_time_aged(
         elif enrolled_weight is not None:
             weight = _normalize_epoch_weight_units(enrolled_weight)
         else:
+            # No epoch_enroll snapshot -> no corroboration vouch (#16271): an
+            # x86-vintage label settles at the neutral modern rate. The
+            # snapshot branch above keeps every honestly-vouched tier intact.
             weight = _weight_to_units(
-                get_time_aged_multiplier(device_arch, chain_age_years)
+                get_time_aged_multiplier(
+                    sanitize_unvouched_x86_vintage_arch(device_arch), chain_age_years
+                )
             )
 
         # Apply Warthog dual-mining bonus (1.0x/1.1x/1.15x)
