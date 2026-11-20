@@ -1660,24 +1660,10 @@ if HAVE_BRIDGE:
     except Exception as e:
         print(f"[RIP-0305 Track C] Failed to register bridge endpoints: {e}")
 
-# Canonical /api/v1/* read API — binds the explorer/client read paths that
-# previously fell through to nginx 404 (#7251/#7252/#7297-#7307).
-try:
-    from api_v1 import register_api_v1
-    register_api_v1(
-        app,
-        db_path=DB_PATH,
-        current_slot=current_slot,
-        slot_to_epoch=slot_to_epoch,
-        app_version=APP_VERSION,
-        app_start_ts=APP_START_TS,
-        per_epoch_rtc=PER_EPOCH_RTC,
-        epoch_slots=EPOCH_SLOTS,
-        total_supply_rtc=TOTAL_SUPPLY_RTC,
-    )
-    print("[api/v1] Canonical read API registered")
-except Exception as e:
-    print(f"[api/v1] Failed to register canonical read API: {e}")
+# NOTE: the canonical /api/v1/* read API is registered further down, directly
+# after current_slot()/slot_to_epoch() are defined. Registering it here raised
+# NameError (those helpers are defined ~3800 lines later), the except swallowed
+# it, and every /api/v1/* path 404'd in production.
 
 # RIP-302 Agent Economy endpoints used by the explorer dashboard
 try:
@@ -2838,6 +2824,18 @@ def resolve_enroll_weight_device(conn, miner_pk: str, data: dict) -> tuple:
     the request body only when no stored verified device exists (legacy /
     pre-migration rows), mirroring the resolve_enroll_fingerprint fallback so
     deployed miners are not regressed. Robust to a missing row/column.
+
+    SECURITY (#16271): ``miner_attest_recent`` carries the GENERAL classifier
+    identity (requirement 4 of the vintage anti-spoof bounty), not a reward-
+    vouched tier — the #8022 corroboration clamp in _derive_enroll_weight_device
+    only runs inside the attestation handler's auto-enroll. An x86-vintage tier
+    read back here therefore has no corroborated evidence in THIS call and must
+    fall to the neutral x86 rate. No honest miner loses a tier it already earns:
+    an attestation that passes validation auto-enrolls the current epoch first
+    (INSERT OR IGNORE, first enrollment wins) with the corroborated reward tier,
+    so this endpoint only ever decides epochs where the miner has not attested
+    since its last stored identity. The unsigned request-body fallback is clamped
+    for the same reason: a bare ``x86``/``486`` claim with no evidence at all.
     """
     try:
         row = conn.execute(
@@ -2845,13 +2843,33 @@ def resolve_enroll_weight_device(conn, miner_pk: str, data: dict) -> tuple:
             (miner_pk,),
         ).fetchone()
         if row and row[0]:
-            return str(row[0]), str(row[1] or "default")
+            fam, arc = str(row[0]), str(row[1] or "default")
+            if _enroll_x86_vintage_is_uncorroborated(fam, arc):
+                return "x86", "default"
+            return fam, arc
     except sqlite3.Error:
         pass
     device = data.get("device")
     if not isinstance(device, dict):
         device = {}
-    return str(device.get("family", "x86")), str(device.get("arch", "default"))
+    fam = str(device.get("family", "x86"))
+    arc = str(device.get("arch", "default"))
+    if _enroll_x86_vintage_is_uncorroborated(fam, arc):
+        return "x86", "default"
+    return fam, arc
+
+
+def _enroll_x86_vintage_is_uncorroborated(family: str, arch: str) -> bool:
+    """True when an x86-vintage reward tier reaches /epoch/enroll uncorroborated.
+
+    Single test shared by both resolve_enroll_weight_device branches (stored
+    verified device and unsigned body fallback) so neither can drift apart from
+    the _derive_enroll_weight_device gate that guards the attestation path.
+    """
+    return (
+        str(family or "").strip().lower() in ("x86", "x86_64")
+        and str(arch or "").strip().lower() in _X86_VINTAGE_REWARD_ARCHES
+    )
 
 
 def _claimed_family_and_arch(device: dict) -> tuple:
@@ -5597,6 +5615,44 @@ def slot_to_epoch(slot):
 def current_slot():
     """Get current slot number"""
     return (int(time.time()) - GENESIS_TIMESTAMP) // BLOCK_TIME
+
+# Canonical /api/v1/* read API — binds the explorer/client read paths that
+# previously fell through to nginx 404 (#7251/#7252/#7297-#7307).
+#
+# This MUST sit below current_slot()/slot_to_epoch(): the register call passes
+# them by value. It used to live near the other blueprint registrations
+# (~line 1600), where both names were still undefined at import time, so the
+# call raised NameError, the bare except printed one line to stdout, and the
+# node came up with no /api/v1 at all — under gunicorn (wsgi.py imports this
+# module; nothing below `if __name__ == "__main__"` ever runs there) as much as
+# under direct execution. Failure here is now logged with a traceback so it
+# cannot hide again.
+try:
+    from api_v1 import register_api_v1
+    register_api_v1(
+        app,
+        db_path=DB_PATH,
+        current_slot=current_slot,
+        slot_to_epoch=slot_to_epoch,
+        app_version=APP_VERSION,
+        app_start_ts=APP_START_TS,
+        per_epoch_rtc=PER_EPOCH_RTC,
+        epoch_slots=EPOCH_SLOTS,
+        total_supply_rtc=TOTAL_SUPPLY_RTC,
+    )
+    print("[api/v1] Canonical read API registered")
+except Exception as e:
+    import logging as _api_v1_logging
+    import traceback as _api_v1_traceback
+    _api_v1_logging.getLogger("rustchain.api_v1").exception(
+        "[api/v1] FAILED to register canonical read API; every /api/v1/* "
+        "path will 404 until this is fixed: %s", e)
+    print(f"[api/v1] FAILED to register canonical read API: {e!r}", file=sys.stderr)
+    _api_v1_traceback.print_exc()
+    # Fail closed: a swallowed registration error is how /api/v1 404'd
+    # silently in prod. The failure is deterministic, so it surfaces on the
+    # first restart after a deploy instead of hiding indefinitely.
+    raise
 
 def _record_unsettled_epoch(cursor, conn, epoch, reason):
     """Leave a trace when an epoch is processed but pays nobody.
@@ -11783,6 +11839,68 @@ def api_ready():
     except Exception:
         return jsonify({"ready": False, "version": APP_VERSION}), 503
 
+def _open_db_readonly(path, timeout=3):
+    """Open the node DB read-only for health probes.
+
+    A plain ``sqlite3.connect`` on a wrong or deleted ``DB_PATH`` silently
+    creates a fresh empty database, so a health check built on it reports an
+    "empty node" instead of a broken one.  ``mode=ro`` makes a missing file
+    raise ``sqlite3.OperationalError`` and never writes anything to disk.
+    """
+    from urllib.parse import quote
+    uri = "file:" + quote(os.path.abspath(path)) + "?mode=ro"
+    return sqlite3.connect(uri, uri=True, timeout=timeout)
+
+
+@app.route('/health/sync', methods=['GET'])
+@app.route('/api/sync-status', methods=['GET'])
+def api_sync_status():
+    """Sync status health check for monitoring systems (Prometheus, Datadog) (fixes #8507).
+
+    200 + ``ok: true`` means the node's chain DB was read successfully;
+    ``is_synced`` then says whether the local tip is within 2 slots of the
+    network slot.  Any failure to read the DB (missing/locked/corrupt file,
+    missing ``headers`` table) returns 503 + ``ok: false`` with a typed
+    ``error`` field, mirroring ``/ready`` (#8617).  A health check must never
+    report healthy while the storage behind it is broken.
+    """
+    def _unavailable(error):
+        return jsonify({
+            "ok": False,
+            "is_synced": False,
+            "error": error,
+        }), 503
+
+    try:
+        net_block = max(0, int(current_slot()))
+        db = _open_db_readonly(DB_PATH)
+        try:
+            tbl = db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='headers'"
+            ).fetchone()
+            if not tbl:
+                # init_db() always creates `headers`; its absence means the DB
+                # is not the node's (wrong path) or the schema never ran.
+                return _unavailable("headers_table_missing")
+            row = db.execute("SELECT MAX(slot) FROM headers").fetchone()
+        finally:
+            db.close()
+    except sqlite3.Error:
+        return _unavailable("db_unavailable")
+    except Exception:
+        return _unavailable("sync_status_unavailable")
+
+    curr_block = int(row[0]) if row and row[0] is not None else 0
+    lag = max(0, net_block - curr_block)
+    is_synced = curr_block > 0 and lag <= 2
+    return jsonify({
+        "ok": True,
+        "is_synced": bool(is_synced),
+        "current_block": curr_block,
+        "network_block": net_block,
+        "lag_slots": lag,
+    }), 200
+
 @app.route('/metrics', methods=['GET'])
 @app.route('/api/metrics', methods=['GET'])
 def metrics():
@@ -14151,6 +14269,35 @@ def wallet_transfer_signed():
             "expected_chain_id": CHAIN_ID,
             "got_chain_id": chain_id,
         }), 400
+
+    # SECURITY (cross-network replay): when chain_id is provided it is bound into
+    # the signed message (see _wallet_transfer_signed_messages) and matched above.
+    # But it was OPTIONAL: a client that OMITS chain_id signs a chain-less message
+    # with NO network binding, so the SAME signature is valid on every RustChain
+    # network (testnet <-> mainnet, forks). With cross-network key reuse (the norm),
+    # a low-value transfer signed on one network replays on another to move real
+    # funds. Require chain binding by default; the destination is in the signed
+    # message so this is the last gap. RC_ALLOW_CHAINLESS_SIGNED_TRANSFER=1 is an
+    # explicit, logged transition escape hatch for operators mid client-migration
+    # (clients that do not yet include chain_id) — flip it back off once clients
+    # sign with chain_id.
+    _allow_chainless = os.environ.get("RC_ALLOW_CHAINLESS_SIGNED_TRANSFER", "0") == "1"
+    if not chain_id:
+        if not _allow_chainless:
+            return jsonify({
+                "error": "chain_id required",
+                "code": "CHAIN_ID_REQUIRED",
+                "message": "Signed transfers must bind the active chain_id to prevent "
+                           "cross-network replay. Include chain_id in the signed "
+                           "transaction and request.",
+                "expected_chain_id": CHAIN_ID,
+            }), 400
+        logging.warning(
+            "signed transfer accepted WITHOUT chain_id binding (from=%s nonce=%s) — "
+            "RC_ALLOW_CHAINLESS_SIGNED_TRANSFER is set; this is cross-network "
+            "replayable. Migrate clients to include chain_id and disable the flag.",
+            from_address, nonce_int,
+        )
 
     # Verify public key matches from_address
     # Support bcn_ beacon addresses: resolve pubkey from Beacon Atlas
