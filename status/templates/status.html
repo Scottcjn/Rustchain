@@ -26,6 +26,9 @@
   .status-badge { padding: 2px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; }
   .status-badge.up { background: rgba(63,185,80,0.2); color: var(--green); }
   .status-badge.down { background: rgba(248,81,73,0.2); color: var(--red); }
+  .status-badge.impostor { background: rgba(163,113,247,0.2); color: #a371f7; }
+  .status-badge.degraded { background: rgba(210,153,34,0.2); color: var(--yellow); }
+  .status-badge.unreachable { background: rgba(248,81,73,0.2); color: var(--red); }
   .node-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 0.85em; }
   .stat-label { color: var(--muted); }
   .stat-value { font-weight: 500; }
@@ -85,7 +88,7 @@ function escapeHtml(value) {
 // Whitelist of CSS class fragments safe to interpolate from server-side data.
 // Any class not in this set is dropped so an attacker cannot break out of the
 // attribute via a crafted node name, status string, or event label.
-const ALLOWED_STATUS_CLASSES = new Set(['up', 'down', 'recovered', 'unknown']);
+const ALLOWED_STATUS_CLASSES = new Set(['up', 'down', 'recovered', 'unknown', 'impostor', 'degraded', 'unreachable']);
 function safeClass(value, fallback = '') {
   return ALLOWED_STATUS_CLASSES.has(String(value)) ? String(value) : fallback;
 }
@@ -113,7 +116,7 @@ async function refresh() {
       const nid = node.name.toLowerCase().replace(/\s+/g, '-').replace('node-','node-');
       const nodeId = Object.keys(uptime).find(k => uptime[k].name === node.name) || '';
       const u = uptime[nodeId] || {};
-      const statusClass = safeClass(node.up ? 'up' : 'down');
+      const statusClass = safeClass(node.state || (node.up ? 'up' : 'down'));
       const card = document.createElement('div');
       card.className = 'node-card';
       // Build the static skeleton with safe DOM methods, then escape dynamic text.
@@ -125,6 +128,10 @@ async function refresh() {
       const badge = document.createElement('span');
       badge.className = `status-badge ${statusClass}`;
       badge.textContent = node.up ? 'Operational' : 'Down';
+      // A host answering 200 with a non-node body is an impostor, not "Down".
+      if (node.state && node.state !== 'up') {
+        badge.textContent = node.state.charAt(0).toUpperCase() + node.state.slice(1);
+      }
       header.append(nameSpan, badge);
 
       const stats = document.createElement('div');

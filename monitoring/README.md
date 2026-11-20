@@ -49,6 +49,16 @@ Pre-configured alerts for:
 - Unusual miner drop (>20% decrease in 5min)
 - Slow scrape performance (>5s duration)
 
+## Shared liveness probe (`node_probe.py`)
+
+All five monitors (status server, health dashboard, Prometheus exporter,
+`tools/node_health_monitor.py`, `tools/node-health-cli`) decide "up" through
+one shared validator: an HTTP 200 only counts when the JSON body actually
+carries RustChain node state. A 200 from an SPA/parking page or unrelated
+JSON API is reported as `impostor`, never `up`. The exporter sets
+`rustchain_node_health` to 0 on any failed scrape and exports
+`rustchain_last_successful_scrape_timestamp`.
+
 ## Configuration
 
 ### Change Grafana Password
