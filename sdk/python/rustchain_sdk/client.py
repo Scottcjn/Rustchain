@@ -162,14 +162,16 @@ class RustChainClient:
         except httpx.ConnectError as e:
             raise RCConnectionError(f"Failed to connect to {self._base_url}: {e}")
         except httpx.HTTPStatusError as e:
+            error_body = None
             try:
                 error_body = e.response.json()
-                message = error_body.get("message", str(e))
+                message = error_body.get("message") or error_body.get("error") or str(e)
             except Exception:
                 message = str(e)
             raise APIError(
                 f"API error {e.response.status_code}: {message}",
                 status_code=e.response.status_code,
+                response_body=error_body if isinstance(error_body, dict) else None,
             )
         except Exception as e:
             raise RustChainError(f"Unexpected error: {e}")
