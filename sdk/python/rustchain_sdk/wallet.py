@@ -11,6 +11,8 @@ import secrets
 import struct
 from typing import List, Optional, Dict, Any, Tuple
 
+from .amounts import AmountInput, micro_rtc_to_float, to_micro_rtc
+
 # BIP39 word list (first 512 words from standard BIP39 wordlist - sufficient for demo)
 _BIP39_WORDLIST: List[str] = [
     "abandon", "ability", "able", "about", "above", "absent", "absorb", "abstract",
@@ -379,8 +381,8 @@ class RustChainWallet:
     def sign_transfer(
         self,
         to_address: str,
-        amount: float,
-        fee: float = 0,
+        amount: "AmountInput",
+        fee: "AmountInput" = 0,
         memo: str = "",
         chain_id: Optional[str] = None,
         nonce: Optional[int] = None,
@@ -390,21 +392,32 @@ class RustChainWallet:
 
         Args:
             to_address: Recipient wallet address.
-            amount: Amount to transfer in RTC.
-            fee: Transaction fee in RTC.
+            amount: Amount to transfer in RTC. Pass a ``str`` or ``Decimal``
+                for user input; at most 6 decimal places (1 micro-RTC).
+            fee: Transaction fee in RTC, same rules, may be zero.
             memo: Optional transfer memo.
             chain_id: Optional chain/network id.
             nonce: Optional caller-supplied nonce. Defaults to current unix ms.
 
         Returns:
-            A dict containing the transfer payload with signature.
+            A dict containing the transfer payload with signature, plus the
+            exact ``amount_i64`` / ``fee_i64`` micro-RTC values signed for.
+
+        Raises:
+            ValidationError: amount/fee not finite, out of range, or more
+                precise than the ledger's 6 decimal places (#8618). The node
+                would otherwise silently round the excess down after signing.
         """
         import time
         import json
 
+        amount_i64 = to_micro_rtc(amount, "amount")
+        fee_i64 = to_micro_rtc(fee, "fee", allow_zero=True)
         nonce_value = int(nonce if nonce is not None else time.time_ns() // 1_000_000)
-        amount_for_sig = float(amount)
-        fee_for_sig = float(fee)
+        # The wire/signature format is a JSON float; derive it from the exact
+        # micro-RTC integer so it always round-trips to the same 6-dp value.
+        amount_for_sig = micro_rtc_to_float(amount_i64)
+        fee_for_sig = micro_rtc_to_float(fee_i64)
         tx_data = {
             "from": self._address,
             "to": to_address,
@@ -421,13 +434,14 @@ class RustChainWallet:
         return {
             "from": self._address,
             "to": to_address,
-            "amount": amount,
-            "fee": fee,
+            "amount": amount_for_sig,
+            "fee": fee_for_sig,
+            "amount_i64": amount_i64,
+            "fee_i64": fee_i64,
             "timestamp": nonce_value,
             "from_address": self._address,
             "to_address": to_address,
             "amount_rtc": amount_for_sig,
-            "fee": fee_for_sig,
             "fee_rtc": fee_for_sig,
             "nonce": nonce_value,
             "signature": signature.hex(),
