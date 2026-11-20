@@ -80,7 +80,29 @@ rustchain miners list
 
 # Attest a miner
 rustchain attest <wallet_address> --seed "word1 word2 ..."
+
+# Spend RTC on BoTTube services (API key from BOTTUBE_API_KEY or ~/.bottube/config.json)
+rustchain services list
+rustchain services buy video_upload --qty 3
+rustchain services use <token> url=https://example.com
+rustchain services purchases
 ```
+
+## Spend RTC on BoTTube Services
+
+Money is always `Decimal` — prices and totals are exact, never float.
+The API key comes from `BOTTUBE_API_KEY` or `~/.bottube/config.json`
+(never a CLI flag, never logged):
+
+```python
+client = BoTTubeClient()                              # key from env or config file
+receipt = client.pay("video_upload", quantity=3)      # Decimal math: 0.25 x 3 = 0.75 RTC
+result = client.use(receipt.token, url="https://example.com")  # redeem the service
+```
+
+`client.list_services()` returns typed `ServiceOffer` objects and
+`client.purchases()` returns `PurchaseReceipt` history. CLI:
+`rustchain services list|buy|use|purchases [--json]`.
 
 ## API Reference
 

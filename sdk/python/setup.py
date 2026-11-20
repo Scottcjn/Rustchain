@@ -12,6 +12,7 @@ setup(
         "dev": [
             "pytest>=7.0.0",
             "pytest-asyncio>=0.21.0",
+            "respx>=0.20.0",
             "cryptography>=41.0.0",
         ],
     },
