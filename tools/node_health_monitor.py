@@ -12,12 +12,20 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.request
 import urllib.error
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional, Any
+
+# Shared body-validating probe (issue #17180). monitoring/node_probe.py lives
+# one directory up, so it is not on the default import path.
+_MONITORING = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "monitoring")
+if _MONITORING not in sys.path:
+    sys.path.insert(0, os.path.abspath(_MONITORING))
+from node_probe import classify_response
 
 # ── ANSI color codes ─────────────────────────────────────────────────────────
 GREEN  = "\033[92m"
@@ -67,6 +75,10 @@ class NodeStatus:
     # perfectly healthy through the 84-epoch settlement outage of 2026-03-03 to
     # 2026-05-27. None means the node does not report it (older build).
     settlement_lag_epochs: Optional[int] = None
+    # Body-validated probe state from monitoring/node_probe.py: up | degraded |
+    # impostor | down | unreachable (issue #17180). "impostor" is a host that
+    # answers 200 but is not a RustChain node (e.g. an SPA on a reused IP).
+    state: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -125,6 +137,14 @@ class NodeHealthMonitor:
                 if not isinstance(data, dict):
                     data = None
 
+                # The shared validator decides the state from status + body,
+                # never the status code alone (issue #17180). /epoch names a
+                # node by its epoch field, hence the identity_keys override.
+                _hdrs = getattr(resp, "headers", None)
+                _ct = str(_hdrs.get("Content-Type", "") or "") if _hdrs is not None else ""
+                verdict = classify_response(200, _ct, data=data,
+                                            identity_keys=("epoch", "current_epoch"))
+
                 # A 200 is not evidence of a node.
                 #
                 # RustChain node 4 stopped being a node and the host was reused
@@ -145,6 +165,7 @@ class NodeHealthMonitor:
                         miners=None,
                         error=(f"/status returned {len(raw)} bytes of non-JSON "
                                f"(is this still a node?): {raw[:60]!r}"),
+                        state=verdict.state,
                     )
 
                 epoch  = data.get("epoch") or data.get("current_epoch")
@@ -172,6 +193,9 @@ class NodeHealthMonitor:
                         epoch=None,
                         miners=miners,
                         error="/status carried no epoch (not a RustChain node?)",
+                        # verdict may still say "up" for {"epoch": "soon"} —
+                        # an unparseable epoch is just as little node state.
+                        state="impostor",
                     )
 
                 lag = data.get("settlement_lag_epochs")
@@ -189,6 +213,10 @@ class NodeHealthMonitor:
                 if lag is not None and lag >= SETTLEMENT_LAG_THRESHOLD:
                     err = (f"settlement stalled: {lag} epochs since last settled "
                            f"(miners are enrolling and being paid nothing)")
+                if verdict.state == "degraded":
+                    # A real node that reports ok:false / db_rw:false / a stale
+                    # tip is not healthy even though it answers (issue #17180).
+                    err = f"{err}; {verdict.error}" if err else verdict.error
                 return NodeStatus(
                     url=url,
                     status=status,
@@ -197,6 +225,7 @@ class NodeHealthMonitor:
                     miners=miners,
                     error=err,
                     settlement_lag_epochs=lag,
+                    state=verdict.state,
                 )
 
         except urllib.error.HTTPError as exc:
@@ -224,6 +253,7 @@ class NodeHealthMonitor:
                 epoch=None,
                 miners=None,
                 error=f"HTTP {exc.code}: {exc.reason}",
+                state="down",
             )
         except Exception as exc:  # noqa: BLE001  (timeout, connection refused, etc.)
             return NodeStatus(
@@ -233,6 +263,7 @@ class NodeHealthMonitor:
                 epoch=None,
                 miners=None,
                 error=str(exc),
+                state="unreachable",
             )
 
     # ── Multi-node checks ─────────────────────────────────────────────────────
@@ -276,6 +307,11 @@ class NodeHealthMonitor:
         if slow_nodes:
             urls = ", ".join(f"{s.url} ({s.response_time_ms:.0f}ms)" for s in slow_nodes)
             alerts.append(f"Slow response from: {urls}")
+        impostors = [s for s in statuses if getattr(s, "state", None) == "impostor"]
+        if impostors:
+            urls = ", ".join(s.url for s in impostors)
+            alerts.append("IMPOSTOR — host answers 200 but is not a RustChain node: "
+                          f"{urls}")
         if split_brain:
             alerts.append(f"SPLIT BRAIN detected — divergent epochs: {sorted(epochs)}")
         if nodes_online == 0:
@@ -315,11 +351,14 @@ class NodeHealthMonitor:
 
 # ── Rendering helpers ─────────────────────────────────────────────────────────
 
-def _color_status(status: str) -> str:
+def _color_status(status: str, state: Optional[str] = None) -> str:
     if status == "online":
         return f"{GREEN}{BOLD}●  online{RESET}"
     if status == "slow":
         return f"{YELLOW}{BOLD}◐   slow{RESET}"
+    if state == "impostor":
+        # A host answering 200 with HTML is not down — it is pretending (issue #17180).
+        return f"{RED}{BOLD}⚠ impostor{RESET}"
     return f"{RED}{BOLD}○ offline{RESET}"
 
 
@@ -352,7 +391,7 @@ def print_table(statuses: List[NodeStatus], health: NetworkHealth) -> None:
 
     for s in statuses:
         node_label = s.url.replace("http://", "")
-        status_str = _color_status(s.status)
+        status_str = _color_status(s.status, getattr(s, "state", None))
         rt_str     = _color_ms(s.response_time_ms)
         epoch_str  = _color_val(s.epoch)
         miners_str = _color_val(s.miners)

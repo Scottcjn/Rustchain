@@ -15,12 +15,20 @@ Exit codes:
 
 import argparse
 import json
+import os
 import sys
 import time
 from dataclasses import asdict, dataclass
 from typing import Any, Dict, List, Optional
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
+
+# Shared body-validating probe (issue #17180). monitoring/node_probe.py lives
+# two directories up, so it is not on the default import path.
+_MONITORING = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, os.pardir, "monitoring")
+if _MONITORING not in sys.path:
+    sys.path.insert(0, os.path.abspath(_MONITORING))
+from node_probe import classify_response
 
 
 # Exit codes
@@ -47,6 +55,10 @@ class HealthStatus:
     backup_age_hours: Optional[float]
     tip_age_slots: Optional[int]
     error: Optional[str]
+    # Body-validated probe state from monitoring/node_probe.py (issue #17180):
+    # up | degraded | impostor | down | unreachable. A missing "ok" key is no
+    # longer silently False — an unrelated host answering 200 is "impostor".
+    state: Optional[str] = None
 
 
 @dataclass
@@ -83,6 +95,10 @@ class CheckResult:
     exit_code: int
 
 
+class NonJsonBodyError(Exception):
+    """200 with a body that is not node JSON — an unrelated host answered (issue #17180)."""
+
+
 def fetch_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
     """Fetch JSON data from URL with retry logic"""
     last_error = None
@@ -103,11 +119,11 @@ def fetch_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
             last_error = f"Connection error: {e.reason}"
             time.sleep(DEFAULT_RETRY_DELAY)
         except json.JSONDecodeError as e:
-            last_error = f"JSON parse error: {e}"
-            break
+            # A 200 whose body is not JSON (an SPA, a parking page, a captive
+            # portal) never becomes node state on retry either — say so plainly.
+            raise NonJsonBodyError(f"JSON parse error: {e}") from None
         except ValueError as e:
-            last_error = str(e)
-            break
+            raise NonJsonBodyError(str(e)) from None
         except Exception as e:
             last_error = f"Unexpected error: {e}"
             time.sleep(DEFAULT_RETRY_DELAY)
@@ -116,21 +132,30 @@ def fetch_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
 
 
 def check_health(node_url: str, timeout: int) -> HealthStatus:
-    """Check node health status"""
+    """Check node health status.
+
+    The state is decided by the shared body validator (issue #17180): a 200
+    whose body is HTML, or JSON without ok/version/uptime_s, is an impostor —
+    never "up" — and gets its own distinct state instead of a silent False.
+    """
     try:
         url = f"{node_url.rstrip('/')}/health"
         data = fetch_json(url, timeout)
-        
+
+        verdict = classify_response(200, "", data=data)
         return HealthStatus(
-            ok=bool(data.get("ok", False)),
+            ok=verdict.state == "up",
             version=data.get("version"),
             uptime_s=data.get("uptime_s"),
             db_rw=data.get("db_rw"),
             backup_age_hours=data.get("backup_age_hours"),
             tip_age_slots=data.get("tip_age_slots"),
-            error=None
+            error=verdict.error,
+            state=verdict.state
         )
-    except Exception as e:
+    except NonJsonBodyError as e:
+        # 200 OK, but the body is HTML / a bare array / JSON without node
+        # keys — some other service owns this address (issue #17180).
         return HealthStatus(
             ok=False,
             version=None,
@@ -138,7 +163,20 @@ def check_health(node_url: str, timeout: int) -> HealthStatus:
             db_rw=None,
             backup_age_hours=None,
             tip_age_slots=None,
-            error=str(e)
+            error=(f"{e} — 200 but not a RustChain node body (impostor?)"),
+            state="impostor"
+        )
+    except Exception as e:
+        msg = str(e)
+        return HealthStatus(
+            ok=False,
+            version=None,
+            uptime_s=None,
+            db_rw=None,
+            backup_age_hours=None,
+            tip_age_slots=None,
+            error=msg,
+            state="down" if msg.startswith("HTTP ") else "unreachable"
         )
 
 
@@ -284,6 +322,8 @@ def format_text(result: CheckResult, verbose: bool = False) -> str:
     # Health status
     health_icon = "✓" if result.health.ok else "✗"
     lines.append(f"[{health_icon}] Health Status")
+    if result.health.state:
+        lines.append(f"    State: {result.health.state}")
     if result.health.error:
         lines.append(f"    Error: {result.health.error}")
     else:
@@ -330,7 +370,8 @@ def format_text(result: CheckResult, verbose: bool = False) -> str:
     else:
         lines.append("STATUS: CHECKS FAILED")
         if not result.health.ok:
-            lines.append("  - Health check failed")
+            reason = f" — node state: {result.health.state}" if result.health.state else ""
+            lines.append(f"  - Health check failed{reason}")
         if result.epoch.epoch is None:
             lines.append("  - Epoch check failed")
         if not all(r.reachable for r in result.reachability):

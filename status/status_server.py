@@ -8,6 +8,7 @@ Polls every 60 seconds, tracks 24h uptime history, logs incidents.
 """
 
 import json
+import sys
 import time
 import threading
 import os
@@ -17,6 +18,14 @@ from xml.sax.saxutils import escape as xml_escape
 
 import requests
 from flask import Flask, render_template, jsonify, Response
+
+# Shared body-validating probe (issue #17180): a 200 alone is not evidence of
+# a node — the /health body must carry RustChain state. monitoring/node_probe.py
+# lives one directory up, so it is not on the default import path.
+_MONITORING = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "monitoring")
+if _MONITORING not in sys.path:
+    sys.path.insert(0, os.path.abspath(_MONITORING))
+from node_probe import classify_response
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -66,39 +75,58 @@ def save_state():
     }, default=str, indent=2))
 
 
+def _content_type(resp):
+    """Content-Type header as a plain string (tolerates test doubles)."""
+    try:
+        return str(resp.headers.get("Content-Type", "") or "")
+    except AttributeError:
+        return ""
+
+
 def check_node(node):
-    """Poll a single node and return status dict."""
+    """Poll a single node and return status dict.
+
+    The state comes from the shared body validator, not the status code: an
+    unrelated host that answers 200 with HTML is an "impostor", not up.
+    """
     start = time.time()
     try:
         _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
         _verify = _cert if os.path.exists(_cert) else True
         resp = requests.get(node["endpoint"], timeout=10, verify=_verify)
         elapsed_ms = round((time.time() - start) * 1000)
+        data = None
         if resp.status_code == 200:
             try:
                 data = resp.json()
             except ValueError:
-                data = {}
-            return {
-                "up": True,
-                "status_code": resp.status_code,
-                "response_ms": elapsed_ms,
-                "version": data.get("version", "unknown"),
-                "uptime": data.get("uptime", data.get("uptime_seconds", 0)),
-                "active_miners": data.get("active_miners", data.get("miners", 0)),
-                "current_epoch": data.get("epoch", data.get("current_epoch", 0)),
-                "checked_at": datetime.utcnow().isoformat() + "Z",
-            }
+                data = None
+            verdict = classify_response(200, _content_type(resp), data=data)
         else:
-            return {
-                "up": False,
-                "status_code": resp.status_code,
-                "response_ms": elapsed_ms,
-                "checked_at": datetime.utcnow().isoformat() + "Z",
-            }
+            verdict = classify_response(resp.status_code)
+        result = {
+            "state": verdict.state,
+            # degraded still means a real node answered — liveness-wise up.
+            "up": verdict.is_node,
+            "status_code": resp.status_code,
+            "response_ms": elapsed_ms,
+            "checked_at": datetime.utcnow().isoformat() + "Z",
+        }
+        if verdict.is_node:
+            d = data if isinstance(data, dict) else {}
+            result.update({
+                "version": d.get("version", "unknown"),
+                "uptime": d.get("uptime", d.get("uptime_seconds", 0)),
+                "active_miners": d.get("active_miners", d.get("miners", 0)),
+                "current_epoch": d.get("epoch", d.get("current_epoch", 0)),
+            })
+        if verdict.error:
+            result["error"] = verdict.error
+        return result
     except Exception as e:
         elapsed_ms = round((time.time() - start) * 1000)
         return {
+            "state": "unreachable",
             "up": False,
             "error": str(e)[:200],
             "response_ms": elapsed_ms,
