@@ -351,7 +351,6 @@ class TestBeaconAtlasAgentSearch(unittest.TestCase):
         completed = subprocess.run(
             [
                 "node",
-                "--experimental-default-type=module",
                 "--input-type=module",
                 "-e",
                 script,
