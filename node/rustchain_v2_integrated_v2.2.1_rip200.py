@@ -2643,7 +2643,25 @@ def _fingerprint_check_passed(check_entry) -> bool:
     return False
 
 
-def _rip309_settlement_active_passed(checks_map, device_arch, active_checks) -> bool:
+RIP309_SIMD_CHECK_ALIASES = {
+    # One measurement, two spellings: the canonical tuple says `simd_bias`,
+    # finalize_epoch's rotating list says `simd_identity`.
+    "simd_identity": "simd_bias",
+}
+
+
+def _rip309_canonical_check_name(name: str) -> str:
+    """Map a rotating-check name onto the spelling used by the canonical tuple.
+
+    Aliasing the NAME is what keeps the exemption set honest: the set stays
+    exactly `_structurally_unmeasurable_checks`' output (keyed by the canonical
+    tuple) and is never widened by hand.
+    """
+    return RIP309_SIMD_CHECK_ALIASES.get(str(name or ""), str(name or ""))
+
+
+def _rip309_settlement_active_passed(checks_map, device_arch, active_checks,
+                                     capability_pinned: bool = False) -> bool:
     """RIP-309 gate for epoch settlement: True keeps the miner's epoch weight.
 
     Mirrors the enrollment path's fail-closed rule (see
@@ -2653,36 +2671,133 @@ def _rip309_settlement_active_passed(checks_map, device_arch, active_checks) -> 
     a PASS, so a miner retained epoch weight by simply omitting the rotating
     checks it would have failed -- "nothing" is not "passed everything".
 
-    A check the device class is STRUCTURALLY UNABLE to perform stays neutral
-    (neither pass nor fail), so legitimate capability-limited classes (micro,
-    console-bridge) keep the treatment they already receive at enrollment.
+    Three rules keep this from becoming a hole of its own:
 
-    ``checks_map`` is None when the stored column is NULL or unparseable; that
-    is no evidence at all and therefore fails.
+    1. The structurally-unmeasurable exemption is granted ONLY when
+       ``capability_pinned`` is set, and that pin is computed at attestation
+       (``record_attestation_success``) from the full fingerprint payload by
+       ``_micro_accepted_for_rotation``. Settlement itself only sees the bare
+       checks map, and ``miner_attest_recent.device_arch`` is derived from the
+       same submitted payload, so an arch read back here cannot authorize an
+       exemption on its own: a miner claiming a micro arch with an empty check
+       map is scored like any other device and fails.
+    2. A submitted result is authoritative. ``{"passed": false}`` fails even
+       for a check the device class cannot perform -- the exemption excuses
+       silence, never a contradiction.
+    3. The exemption set is exactly ``_structurally_unmeasurable_checks``';
+       only the check NAME is aliased (``simd_identity`` -> ``simd_bias``), so
+       nothing outside the canonical tuple is ever excused.
+
+    ``checks_map`` is None when the stored column is NULL, and must otherwise be
+    the stored bare checks dict; anything else is no evidence at all and fails.
     """
-    if checks_map is None:
+    if not isinstance(checks_map, dict):
         return False
     # Normalise the stored bare checks map the same way the enrollment path
-    # does. `simd_identity` and `simd_bias` are aliases of one measurement, but
-    # the stored map (built in record_attestation_success) carries whichever
-    # name the client sent, while finalize_epoch's check list uses
-    # `simd_identity`. Without this a client that submits the canonical
-    # `simd_bias` would be scored as having no `simd_identity` result.
+    # does (this also mirrors simd_bias <-> simd_identity on the RESULT names).
     checks = _fingerprint_checks_map({"checks": checks_map})
-    unmeasurable = set(_structurally_unmeasurable_checks(device_arch, {"checks": checks}))
-    # The canonical RIP-309 tuple spells the measurement `simd_bias`, while
-    # finalize_epoch's check list spells it `simd_identity`. Expand the
-    # exemption across both spellings, otherwise a capability-limited device
-    # could never be excused from that one check and would be zeroed here even
-    # though the enrollment path excuses it.
-    if "simd_bias" in unmeasurable:
-        unmeasurable.add("simd_identity")
-    if "simd_identity" in unmeasurable:
-        unmeasurable.add("simd_bias")
-    return all(
-        (chk in unmeasurable) or _fingerprint_check_passed(checks.get(chk))
-        for chk in active_checks
+    unmeasurable = (
+        frozenset(_structurally_unmeasurable_checks(device_arch, {"checks": checks}))
+        if capability_pinned else frozenset()
     )
+    for chk in active_checks:
+        entry = checks.get(chk)
+        if entry is None:
+            if _rip309_canonical_check_name(chk) in unmeasurable:
+                continue  # structurally unmeasurable -> neutral, not a pass
+            return False
+        if not _fingerprint_check_passed(entry):
+            return False
+    return True
+
+
+class _Rip309GateError(RuntimeError):
+    """The settlement gate could not certify a miner, so the weight must be 0.
+
+    Raised rather than returning a falsy weight: an except-block that returns a
+    success literal is indistinguishable from a pass, which is the bug class
+    `tools/falsegreen` gates on (and it is right to). The single place that
+    zeroes a weight is `finalize_epoch`, where the assignment cannot be mistaken
+    for a verdict.
+    """
+
+
+def _rip309_attestation_row(c, pk: str):
+    """``(row, pinned)`` from ``miner_attest_recent``; tolerates a pre-pin schema."""
+    try:
+        row = c.execute(
+            "SELECT fingerprint_checks_json, device_arch, rip309_capability_pin "
+            "FROM miner_attest_recent WHERE miner = ?",
+            (pk,)
+        ).fetchone()
+        return row, bool(row[2]) if row else False
+    except sqlite3.Error:
+        # A database that predates the pin column. Read the two columns we
+        # cannot do without, and grant no exemption.
+        row = c.execute(
+            "SELECT fingerprint_checks_json, device_arch FROM miner_attest_recent WHERE miner = ?",
+            (pk,)
+        ).fetchone()
+        return row, False
+
+
+def _rip309_stored_checks(raw):
+    """The stored bare checks map, or raise: a map that is not one is no evidence.
+
+    A JSON list, string or number parses fine and used to be *scored* as if it
+    were check results; a map that will not parse was once read as "everything
+    passed". Both are ``_Rip309GateError`` now.
+    """
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError) as exc:
+        raise _Rip309GateError(
+            f"unparseable fingerprint_checks_json ({type(exc).__name__}: {exc})"
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise _Rip309GateError(
+            f"non-dict fingerprint_checks_json ({type(parsed).__name__})"
+        )
+    return parsed
+
+
+def _rip309_settlement_weight(c, pk: str, weight, active_checks):
+    """The miner's settlement weight once the RIP-309 rotating gate has spoken.
+
+    Returns ``weight`` only when the miner answered the epoch's rotating checks
+    (or answered none of them *and* was pinned as a capability-limited class).
+    Every other outcome raises ``_Rip309GateError``: no attestation row,
+    unreadable row, unparseable or non-dict stored JSON, a failed active check,
+    or an error while reading any of it. The caller zeroes the weight and logs
+    the reason, so a gate that raised can never look like a gate that passed --
+    the old inline ``except Exception: pass`` did exactly that, and left the
+    miner a full epoch.
+    """
+    if weight <= 0:
+        return weight
+    try:
+        fp_row, pinned = _rip309_attestation_row(c, pk)
+    except Exception as exc:
+        raise _Rip309GateError(
+            f"attestation row unreadable ({type(exc).__name__}: {exc})"
+        ) from exc
+    if not fp_row:
+        raise _Rip309GateError("no attestation row")
+    # SECURITY (RIP-309 fail-closed): a measurement that was NOT submitted must
+    # fail, exactly as _fingerprint_check_passed() already requires on the
+    # enrollment path. The previous `all(checks_map.get(chk, True) ...)` form let
+    # a miner retain epoch weight by simply omitting the checks it would fail,
+    # defeating the per-epoch rotating measurement.
+    if not _rip309_settlement_active_passed(
+        _rip309_stored_checks(fp_row[0]),
+        fp_row[1] or "",
+        active_checks,
+        capability_pinned=pinned,
+    ):
+        raise _Rip309GateError("failed active check(s)")
+    return weight
 
 
 def get_previous_epoch_block_hash(conn, epoch: int) -> str:
@@ -4406,6 +4521,7 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
         for col_stmt in [
             "ALTER TABLE miner_attest_recent ADD COLUMN signing_pubkey TEXT",
             "ALTER TABLE miner_attest_recent ADD COLUMN fingerprint_checks_json TEXT",
+            "ALTER TABLE miner_attest_recent ADD COLUMN rip309_capability_pin INTEGER DEFAULT 0",
             "ALTER TABLE miner_attest_history ADD COLUMN fingerprint_checks_json TEXT",
         ]:
             try:
@@ -4424,13 +4540,27 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
                 fp_checks_map[k] = bool(fingerprint[k])
         fingerprint_checks_json = json.dumps(fp_checks_map) if fp_checks_map else '{}'
 
+        # RIP-309 (settlement fail-closed): pin the capability-limited verdict
+        # HERE, while the full fingerprint payload is still in hand.
+        # finalize_epoch only ever sees the bare checks map, so it cannot re-run
+        # _micro_accepted_for_rotation; and miner_attest_recent.device_arch is
+        # derived from this same submitted payload, so it must not authorize an
+        # exemption by itself (a miner could simply claim a micro arch). The pin
+        # is re-earned on every attestation, never inherited from an older one:
+        # a payload that stops carrying native evidence loses the exemption.
+        rip309_capability_pin = 1 if _micro_accepted_for_rotation(
+            verified_device["device_arch"],
+            fingerprint if isinstance(fingerprint, dict) else {},
+            _device,
+        ) else 0
+
         # FIX: Prevent attestation overwrite from degrading prior fingerprint status.
         # If the miner already has fingerprint_passed=1, a later failed attestation
         # should not downgrade it. We still update ts_ok to keep the attestation fresh.
         new_fp = 1 if fingerprint_passed else 0
         conn.execute("""
-            INSERT INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip, signing_pubkey, fingerprint_checks_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO miner_attest_recent (miner, ts_ok, device_family, device_arch, entropy_score, fingerprint_passed, source_ip, signing_pubkey, fingerprint_checks_json, rip309_capability_pin)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(miner) DO UPDATE SET
                 ts_ok = excluded.ts_ok,
                 device_family = excluded.device_family,
@@ -4438,8 +4568,9 @@ def record_attestation_success(miner: str, device: dict, fingerprint_passed: boo
                 source_ip = excluded.source_ip,
                 fingerprint_passed = MAX(miner_attest_recent.fingerprint_passed, excluded.fingerprint_passed),
                 signing_pubkey = COALESCE(excluded.signing_pubkey, miner_attest_recent.signing_pubkey),
-                fingerprint_checks_json = excluded.fingerprint_checks_json
-        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], entropy_score, new_fp, source_ip, signing_pubkey, fingerprint_checks_json))
+                fingerprint_checks_json = excluded.fingerprint_checks_json,
+                rip309_capability_pin = excluded.rip309_capability_pin
+        """, (miner, now, verified_device["device_family"], verified_device["device_arch"], entropy_score, new_fp, source_ip, signing_pubkey, fingerprint_checks_json, rip309_capability_pin))
         _ = append_fingerprint_snapshot(conn, miner, fingerprint if isinstance(fingerprint, dict) else {}, now)
         # C3 fix: Record attestation history for first_attest tracking
         conn.execute("""
@@ -5809,44 +5940,15 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
                 )
                 weight = MAX_EPOCH_WEIGHT_UNITS
 
-            # RIP-309: zero out weight if any active check failed
+            # RIP-309: zero out weight if any active check failed. The gate
+            # raises for every path it cannot certify, so this is the only place
+            # a weight becomes 0 -- and it cannot be mistaken for a verdict.
             if weight > 0:
                 try:
-                    fp_row = c.execute(
-                        "SELECT fingerprint_checks_json, device_arch FROM miner_attest_recent WHERE miner = ?",
-                        (pk,)
-                    ).fetchone()
-                    checks_map = None
-                    arch_for_rotation = ""
-                    if fp_row:
-                        if fp_row[0]:
-                            try:
-                                checks_map = json.loads(fp_row[0])
-                            except Exception:
-                                # SECURITY (RIP-309 fail-closed): an unparseable stored
-                                # measurement map is not evidence of anything. The old
-                                # code left checks_map = {} here, which silently read as
-                                # "every active check passed".
-                                print(
-                                    f"[RIP-309] {pk[:20]}... unparseable "
-                                    f"fingerprint_checks_json in finalize_epoch -> weight=0"
-                                )
-                                checks_map = None
-                        arch_for_rotation = fp_row[1] or ""
-                    # SECURITY (RIP-309 fail-closed): a measurement that was NOT
-                    # submitted must fail, exactly as _fingerprint_check_passed()
-                    # already requires on the enrollment path. The previous
-                    # `all(checks_map.get(chk, True) ...)` form let a miner retain
-                    # epoch weight by simply omitting the checks it would fail,
-                    # defeating the per-epoch rotating measurement.
-                    active_passed = _rip309_settlement_active_passed(
-                        checks_map, arch_for_rotation, active_checks
-                    )
-                    if not active_passed:
-                        print(f"[RIP-309] {pk[:20]}... failed active check(s) in finalize_epoch -> weight=0")
-                        weight = 0
-                except Exception:
-                    pass
+                    weight = _rip309_settlement_weight(c, pk, weight, active_checks)
+                except _Rip309GateError as exc:
+                    print(f"[RIP-309] {pk[:20]}... {exc} in finalize_epoch -> weight=0")
+                    weight = 0
             adjusted_miners.append((pk, weight))
 
         # Recompute valid miners after RIP-309 zeroing
