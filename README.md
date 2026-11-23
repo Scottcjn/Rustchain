@@ -609,6 +609,8 @@ For deeper debugging, see the [CLI Wallet Walkthrough](docs/CLI.md) and [Local D
 
 *"Mais, it still works, so why you gonna throw it away?"*
 
+If this project is useful to you, a ⭐ helps other people find it. More about our work: [elyanlabs.ai](https://elyanlabs.ai)
+
 [Boudreaux Principles](https://rustchain.org/principles.html) · [Green Tracker](https://rustchain.org/preserved.html) · [Bounties](https://github.com/Scottcjn/rustchain-bounties/issues)
 
 </div>
