@@ -13,6 +13,21 @@ jobs:
   stale:
     runs-on: ubuntu-latest
     steps:
+      # actions/stale has no title-based exemption (only label/milestone/
+      # assignee/draft inputs), so label security-titled PRs first; the
+      # `security` label below then keeps stale off them.
+      - name: Label PRs with "security" in the title
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh label create security --color B60205 \
+            --description "Security-relevant; exempt from stale" 2>/dev/null || true
+          gh pr list --state open --search "security in:title" --limit 300 \
+            --json number --jq '.[].number' \
+          | while read -r n; do
+              gh pr edit "$n" --add-label security || echo "could not label #$n"
+            done
       - uses: actions/stale@v11
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
@@ -29,6 +44,7 @@ jobs:
           days-before-pr-close: 14
           stale-issue-label: 'stale'
           stale-pr-label: 'stale'
-          exempt-issue-labels: 'bounty,security,pinned,critical,consensus,tracking,operations'
-          exempt-pr-labels: 'security,critical,WIP'
+          exempt-issue-labels: 'bounty,security,needs-review,pinned,critical,consensus,tracking,operations'
+          exempt-pr-labels: 'security,needs-review,critical,WIP'
+          exempt-draft-pr: true
           operations-per-run: 300
