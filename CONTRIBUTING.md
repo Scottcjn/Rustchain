@@ -4,8 +4,7 @@ Thanks for your interest in contributing to RustChain! We pay bounties in RTC to
 
 ## First-Time Contributor Quick Guide (10 RTC Bonus)
 
-> **Pro-tip:** Star the repo first! Starring repos is free and helps the community grow.
-> After your first PR is merged, you'll earn 10 RTC (≈ $1.00)!
+> **First-time contributor bonus:** After your first PR is reviewed and merged, you may qualify for 10 RTC under the project's contributor program. GitHub stars, follows, and reactions are not paid activities.
 
 New to RustChain? Get 10 RTC for your **first merged PR** — even for small improvements:
 
@@ -49,7 +48,7 @@ New to RustChain? Get 10 RTC for your **first merged PR** — even for small imp
 
 | Tier | RTC Range | Example |
 |------|-----------|---------|
-| Micro | 1-10 RTC | Star + share, small docs fixes |
+| Micro | 1-10 RTC | Small documentation fixes, verified bug reports |
 | Standard | 20-50 RTC | Docker setup, monitoring tools, calculators |
 | Major | 75-100 RTC | SDK, CLI tools, CI pipeline, Windows installer |
 | Critical | 100-150 RTC | Security audits, protocol work, bridges |
