@@ -207,7 +207,12 @@ async def _wallet_send(
 # Node Commands
 # ─────────────────────────────────────────────────────────────────
 
-@main.command(name="node")
+@main.group(name="node")
+def node_group():
+    """Node information commands."""
+    pass
+
+@node_group.command(name="status")
 @click.option(
     "--node",
     default=DEFAULT_NODE_URL,
@@ -245,7 +250,12 @@ async def _node_status(node: str, as_json: bool):
 # Epoch Commands
 # ─────────────────────────────────────────────────────────────────
 
-@main.command(name="epoch")
+@main.group(name="epoch")
+def epoch_group():
+    """Epoch information commands."""
+    pass
+
+@epoch_group.command(name="info")
 @click.option(
     "--node",
     default=DEFAULT_NODE_URL,
