@@ -122,19 +122,21 @@ def check_health(node_url: str, timeout: int) -> HealthStatus:
     _root = str(_Path(__file__).resolve().parents[2])
     if _root not in sys.path:
         sys.path.insert(0, _root)
-    from monitoring.node_probe import classify_health_response, probe_health
+    from monitoring.node_probe import probe_health
 
-    url = f"{node_url.rstrip('/')}/health"
-    try:
-        req = Request(url, headers={"Accept": "application/json"})
-        with urlopen(req, timeout=timeout) as response:
-            status_code = getattr(response, "status", 200)
+    def _http_get(target_url: str, req_timeout: float):
+        req = Request(target_url, headers={"Accept": "application/json"})
+        with urlopen(req, timeout=req_timeout) as response:
+            raw_status = getattr(response, "status", 200)
+            status_code = raw_status if isinstance(raw_status, int) else 200
             headers = getattr(response, "headers", {}) or {}
             content_type = headers.get("Content-Type", "") if hasattr(headers, "get") else ""
+            if not isinstance(content_type, str):
+                content_type = ""
             payload = response.read().decode("utf-8", errors="replace")
-        probe = classify_health_response(url, status_code, payload, content_type=content_type)
-    except Exception:
-        probe = probe_health(node_url, timeout=timeout)
+            return status_code, payload, content_type
+
+    probe = probe_health(node_url, timeout=timeout, http_getter=_http_get)
 
     return HealthStatus(
         ok=(probe.state == "up"),
@@ -289,8 +291,10 @@ def format_text(result: CheckResult, verbose: bool = False) -> str:
     
     # Health status
     health_icon = "✓" if result.health.ok else "✗"
-    lines.append(f"[{health_icon}] Health Status")
+    state_tag = f" ({result.health.state})" if result.health.state not in ("up", "unknown") else ""
+    lines.append(f"[{health_icon}] Health Status{state_tag}")
     if result.health.error:
+        lines.append(f"    State: {result.health.state}")
         lines.append(f"    Error: {result.health.error}")
     else:
         lines.append(f"    OK: {result.health.ok}")

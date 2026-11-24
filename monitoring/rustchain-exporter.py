@@ -51,22 +51,27 @@ def probe_node_health():
     _root = str(_Path(__file__).resolve().parents[1])
     if _root not in _sys.path:
         _sys.path.insert(0, _root)
-    from monitoring.node_probe import classify_health_response
+    from monitoring.node_probe import ProbeResult, classify_health_response
 
+    url = f"{RUSTCHAIN_NODE}/health"
     try:
-        url = f"{RUSTCHAIN_NODE}/health"
         verify = TLS_CA_BUNDLE if TLS_CA_BUNDLE else TLS_VERIFY
         response = requests.get(url, verify=verify, timeout=10)
+        raw_text = response.text if isinstance(getattr(response, "text", None), str) else ""
+        headers = getattr(response, "headers", None)
+        ct = headers.get("Content-Type", "") if hasattr(headers, "get") else ""
+        if not isinstance(ct, str):
+            ct = ""
         return classify_health_response(
             url,
             response.status_code,
-            response.text,
-            content_type=response.headers.get("Content-Type", ""),
+            raw_text,
+            content_type=ct,
         )
     except Exception as e:
         logger.error(f"Error probing /health: {e}")
         scrape_errors.inc()
-        return None
+        return ProbeResult(url=url, state="unreachable", error=str(e)[:200])
 
 
 def fetch_json(endpoint):
@@ -90,7 +95,7 @@ def collect_metrics():
     try:
         # Health metrics validated via shared probe
         probe = probe_node_health()
-        if probe is not None and probe.state == 'up':
+        if probe.state == 'up':
             health = probe.raw_data
             node_health.set(1)
             node_uptime_seconds.set(probe.uptime_s or 0)
@@ -100,7 +105,8 @@ def collect_metrics():
         else:
             node_health.set(0)
             node_db_status.set(0)
-            if probe is not None and probe.state != 'up':
+            node_version.info({'version': probe.version or 'unknown', 'state': probe.state})
+            if probe.state != 'unreachable':
                 scrape_errors.inc()
         
         # Epoch metrics

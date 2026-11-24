@@ -80,11 +80,19 @@ def check_node(node):
         _verify = _cert if os.path.exists(_cert) else True
         resp = requests.get(node["endpoint"], timeout=10, verify=_verify)
         elapsed_ms = round((time.time() - start) * 1000)
+        raw_text = getattr(resp, "text", None)
+        if not isinstance(raw_text, str):
+            parsed = resp.json() if callable(getattr(resp, "json", None)) else None
+            raw_text = json.dumps(parsed) if isinstance(parsed, (dict, list)) else ""
+        headers = getattr(resp, "headers", None)
+        ct = headers.get("Content-Type", "") if hasattr(headers, "get") else ""
+        if not isinstance(ct, str):
+            ct = ""
         probe = classify_health_response(
             node["endpoint"],
             resp.status_code,
-            resp.text,
-            content_type=resp.headers.get("Content-Type", ""),
+            raw_text,
+            content_type=ct,
             response_ms=elapsed_ms,
         )
         if probe.state in ("up", "degraded", "impostor"):
@@ -104,6 +112,8 @@ def check_node(node):
         else:
             return {
                 "up": False,
+                "state": probe.state,
+                "error": probe.error,
                 "status_code": resp.status_code,
                 "response_ms": elapsed_ms,
                 "checked_at": datetime.utcnow().isoformat() + "Z",
@@ -112,6 +122,7 @@ def check_node(node):
         elapsed_ms = round((time.time() - start) * 1000)
         return {
             "up": False,
+            "state": "unreachable",
             "error": str(e)[:200],
             "response_ms": elapsed_ms,
             "checked_at": datetime.utcnow().isoformat() + "Z",

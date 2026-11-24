@@ -116,7 +116,10 @@ def classify_health_response(
     # A genuine RustChain node /health payload carries 'ok', 'version', and 'uptime_s' (or 'uptime')
     has_ok = "ok" in data and isinstance(data.get("ok"), bool)
     has_version = isinstance(data.get("version"), str) and bool(data.get("version", "").strip())
-    uptime_raw = data.get("uptime_s", data.get("uptime", data.get("uptime_seconds")))
+    uptime_raw = next(
+        (data[k] for k in ("uptime_s", "uptime", "uptime_seconds") if k in data and data[k] is not None),
+        None,
+    )
     has_uptime = isinstance(uptime_raw, (int, float)) and not isinstance(uptime_raw, bool)
 
     if not (has_ok and has_version and has_uptime):
@@ -138,10 +141,12 @@ def classify_health_response(
     version = str(data["version"])
     uptime_s = float(uptime_raw)
     db_rw = data.get("db_rw") if isinstance(data.get("db_rw"), bool) else None
-    tip_age = data.get("tip_age_slots") if isinstance(data.get("tip_age_slots"), int) else None
+    raw_tip_age = data.get("tip_age_slots")
+    tip_age = raw_tip_age if isinstance(raw_tip_age, int) and not isinstance(raw_tip_age, bool) else None
+    raw_backup_age = data.get("backup_age_hours")
     backup_age = (
-        float(data["backup_age_hours"])
-        if isinstance(data.get("backup_age_hours"), (int, float))
+        float(raw_backup_age)
+        if isinstance(raw_backup_age, (int, float)) and not isinstance(raw_backup_age, bool)
         else None
     )
     active_miners = data.get("active_miners", data.get("miners"))
@@ -192,17 +197,17 @@ def classify_health_response(
 def probe_health(
     url: str,
     timeout: float = 10.0,
-    verify_tls: Any = True,
+    ca_bundle: Optional[str] = None,
     tip_age_threshold_slots: int = DEFAULT_TIP_AGE_THRESHOLD_SLOTS,
-    http_SimpleGetter: Optional[Callable[[str, float], tuple]] = None,
+    http_getter: Optional[Callable[[str, float], tuple]] = None,
 ) -> ProbeResult:
     """Probe a node's ``/health`` URL and validate its body."""
     target_url = url if url.rstrip("/").endswith("/health") else f"{url.rstrip('/')}/health"
     start = time.monotonic()
 
     try:
-        if http_SimpleGetter is not None:
-            status_code, body_text, content_type = http_SimpleGetter(target_url, timeout)
+        if http_getter is not None:
+            status_code, body_text, content_type = http_getter(target_url, timeout)
             elapsed_ms = (time.monotonic() - start) * 1000.0
             return classify_health_response(
                 target_url,
@@ -214,13 +219,8 @@ def probe_health(
             )
 
         context = None
-        if target_url.startswith("https://"):
-            if verify_tls is False:
-                context = ssl.create_default_context()
-                context.check_hostname = False
-                context.verify_mode = ssl.CERT_NONE
-            elif isinstance(verify_tls, str) and verify_tls:
-                context = ssl.create_default_context(cafile=verify_tls)
+        if target_url.startswith("https://") and isinstance(ca_bundle, str) and ca_bundle:
+            context = ssl.create_default_context(cafile=ca_bundle)
 
         req = urllib.request.Request(
             target_url,

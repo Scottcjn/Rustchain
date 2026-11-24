@@ -30,6 +30,7 @@ class TestCheckNode:
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.json.return_value = {
+            "ok": True,
             "version": "1.2.3",
             "uptime_seconds": 86400,
             "active_miners": 5,
@@ -43,6 +44,17 @@ class TestCheckNode:
         assert result["current_epoch"] == 42
         assert "response_ms" in result
         assert "checked_at" in result
+
+    def test_impostor_html_200(self):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = "<!DOCTYPE html><html><body>SPA</body></html>"
+        mock_resp.headers = {"Content-Type": "text/html"}
+        with patch("status_server.requests.get", return_value=mock_resp):
+            result = check_node(NODES[0])
+        assert result["up"] is False
+        assert result["state"] == "impostor"
+        assert "impostor" in (result.get("error") or "").lower()
 
     def test_down_node_http_error(self):
         mock_resp = MagicMock()
@@ -71,7 +83,7 @@ class TestPollAll:
     def test_poll_all_healthy(self):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {"version": "1.0", "miners": 3, "epoch": 10}
+        mock_resp.json.return_value = {"ok": True, "version": "1.0", "uptime_s": 3600, "miners": 3, "epoch": 10}
         with patch("status_server.requests.get", return_value=mock_resp):
             with patch("status_server.save_state"):
                 poll_all()
@@ -83,7 +95,7 @@ class TestPollAll:
         # First poll: all up
         mock_up = MagicMock()
         mock_up.status_code = 200
-        mock_up.json.return_value = {"version": "1.0"}
+        mock_up.json.return_value = {"ok": True, "version": "1.0", "uptime_s": 3600}
         with patch("status_server.requests.get", return_value=mock_up):
             with patch("status_server.save_state"):
                 poll_all()
@@ -95,7 +107,7 @@ class TestPollAll:
                 raise Exception("Connection refused")
             resp = MagicMock()
             resp.status_code = 200
-            resp.json.return_value = {"version": "1.0"}
+            resp.json.return_value = {"ok": True, "version": "1.0", "uptime_s": 3600}
             return resp
 
         with patch("status_server.requests.get", side_effect=side_effect):
@@ -110,7 +122,7 @@ class TestPollAll:
         node_status["node-1"] = {"up": False, "name": "Node 1"}
         mock_up = MagicMock()
         mock_up.status_code = 200
-        mock_up.json.return_value = {"version": "1.0"}
+        mock_up.json.return_value = {"ok": True, "version": "1.0", "uptime_s": 3600}
         with patch("status_server.requests.get", return_value=mock_up):
             with patch("status_server.save_state"):
                 poll_all()
@@ -124,7 +136,7 @@ class TestAPI:
     def test_status_endpoint(self, client):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {"version": "1.0", "miners": 2, "epoch": 5}
+        mock_resp.json.return_value = {"ok": True, "version": "1.0", "uptime_s": 3600, "miners": 2, "epoch": 5}
         with patch("status_server.requests.get", return_value=mock_resp):
             with patch("status_server.save_state"):
                 poll_all()
@@ -278,7 +290,7 @@ class TestHistoryTrimming:
         ]
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {"version": "1.0"}
+        mock_resp.json.return_value = {"ok": True, "version": "1.0", "uptime_s": 3600}
         with patch("status_server.requests.get", return_value=mock_resp):
             with patch("status_server.save_state"):
                 poll_all()

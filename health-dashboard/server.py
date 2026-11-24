@@ -250,11 +250,20 @@ def check_node_health(node_config: dict) -> NodeStatus:
                 _sys.path.insert(0, _root)
             from monitoring.node_probe import classify_health_response
 
+            raw_text = getattr(response, 'text', None)
+            if not isinstance(raw_text, str):
+                parsed = response.json() if callable(getattr(response, 'json', None)) else None
+                raw_text = json.dumps(parsed) if isinstance(parsed, (dict, list)) else ''
+            headers = getattr(response, 'headers', None)
+            ct = headers.get('Content-Type', '') if hasattr(headers, 'get') else ''
+            if not isinstance(ct, str):
+                ct = ''
+
             probe = classify_health_response(
                 node_config['endpoint'],
                 response.status_code,
-                response.text,
-                content_type=response.headers.get('Content-Type', ''),
+                raw_text,
+                content_type=ct,
                 response_ms=response_time_ms,
             )
             data = probe.raw_data
@@ -344,11 +353,11 @@ def detect_status_change(old_status: dict, new_status: NodeStatus):
     new = new_status.status
     
     if old != new:
-        if new == 'down':
+        if new in ('down', 'impostor', 'degraded'):
             incident_type = 'node_down'
-            details = f"Node {new_status.name} went DOWN. Error: {new_status.error or 'Unknown'}"
+            details = f"Node {new_status.name} is {new.upper()}. Error: {new_status.error or 'Unknown'}"
             logger.warning(f"INCIDENT: {details}")
-        elif old == 'down' and new == 'up':
+        elif old in ('down', 'impostor', 'degraded') and new == 'up':
             incident_type = 'node_recovery'
             details = f"Node {new_status.name} recovered and is back UP"
             logger.info(f"INCIDENT: {details}")
@@ -471,7 +480,7 @@ def api_status():
         'last_updated': datetime.now().isoformat(),
         'total_nodes': len(NODES),
         'nodes_up': sum(1 for s in current_status.values() if s['status'] == 'up'),
-        'nodes_down': sum(1 for s in current_status.values() if s['status'] == 'down')
+        'nodes_down': sum(1 for s in current_status.values() if s['status'] != 'up')
     })
 
 
@@ -720,6 +729,17 @@ HTML_TEMPLATE = '''
         .status-badge.down {
             background: rgba(239, 68, 68, 0.2);
             color: var(--danger);
+        }
+
+        .status-badge.impostor {
+            background: rgba(245, 158, 11, 0.22);
+            color: var(--warning);
+            border: 1px solid var(--warning);
+        }
+
+        .status-badge.degraded {
+            background: rgba(245, 158, 11, 0.15);
+            color: var(--warning);
         }
         
         .node-metrics {
