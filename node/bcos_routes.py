@@ -54,6 +54,21 @@ def _get_admin_key():
     return os.environ.get("RC_ADMIN_KEY", "")
 
 
+def _is_admin_request() -> bool:
+    """Constant-time admin check that fails closed on empty or non-ASCII headers."""
+    provided = request.headers.get("X-Admin-Key", "")
+    expected = _get_admin_key() or ""
+    if not provided or not expected:
+        return False
+    try:
+        return hmac.compare_digest(
+            provided.encode("utf-8"),
+            expected.encode("utf-8"),
+        )
+    except UnicodeEncodeError:
+        return False
+
+
 def _node_epoch_slot():
     """Current (epoch, slot) from the node's own /epoch endpoint; (0, 0) on
     error. The main module is not importable (its filename contains dots) and
@@ -270,8 +285,7 @@ def bcos_attest():
     - X-Admin-Key header matching RC_ADMIN_KEY, OR
     - Valid Ed25519 signature in the report
     """
-    admin_key = request.headers.get("X-Admin-Key", "")
-    is_admin = admin_key and hmac.compare_digest(admin_key, _get_admin_key() or "")
+    is_admin = _is_admin_request()
 
     data = request.get_json(silent=True)
     if not data:
@@ -559,24 +573,34 @@ def bcos_directory():
         with sqlite3.connect(_DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
 
-            query = """
-                SELECT cert_id, repo, commit_sha, tier, trust_score,
-                       reviewer, anchored_epoch, created_at
-                FROM bcos_attestations
-            """
-            params = []
-
             if tier_filter in ("L0", "L1", "L2"):
-                query += " WHERE tier = ?"
-                params.append(tier_filter)
-
-            query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-            params.extend([limit, offset])
-
-            rows = conn.execute(query, params).fetchall()
-            total = conn.execute(
-                "SELECT COUNT(*) FROM bcos_attestations"
-            ).fetchone()[0]
+                rows = conn.execute(
+                    """
+                    SELECT cert_id, repo, commit_sha, tier, trust_score,
+                           reviewer, anchored_epoch, created_at
+                    FROM bcos_attestations
+                    WHERE tier = ?
+                    ORDER BY created_at DESC LIMIT ? OFFSET ?
+                    """,
+                    (tier_filter, limit, offset),
+                ).fetchall()
+                total = conn.execute(
+                    "SELECT COUNT(*) FROM bcos_attestations WHERE tier = ?",
+                    (tier_filter,),
+                ).fetchone()[0]
+            else:
+                rows = conn.execute(
+                    """
+                    SELECT cert_id, repo, commit_sha, tier, trust_score,
+                           reviewer, anchored_epoch, created_at
+                    FROM bcos_attestations
+                    ORDER BY created_at DESC LIMIT ? OFFSET ?
+                    """,
+                    (limit, offset),
+                ).fetchall()
+                total = conn.execute(
+                    "SELECT COUNT(*) FROM bcos_attestations"
+                ).fetchone()[0]
 
         certs = []
         for row in rows:
@@ -616,14 +640,17 @@ def bcos_anchor():
     delta is zero. Admin-gated, and idempotent: a cert that is already anchored
     returns its existing tx hash rather than writing a second ledger row.
     """
-    admin_key = request.headers.get("X-Admin-Key", "")
-    if not (admin_key and hmac.compare_digest(admin_key, _get_admin_key() or "")):
+    if not _is_admin_request():
         return jsonify({
             "error": "unauthorized",
             "hint": "X-Admin-Key header matching RC_ADMIN_KEY required",
         }), 401
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON object required"}), 400
     cert_id = data.get("cert_id", "")
     if not cert_id or not isinstance(cert_id, str) or len(cert_id) > MAX_CERT_ID_LENGTH:
         return jsonify({"error": "cert_id required"}), 400
