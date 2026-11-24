@@ -8,9 +8,14 @@ Includes vintage computer aesthetic styling.
 Issue: #2309
 """
 
-from flask import Blueprint, render_template_string, abort, request
-from machine_passport import MachinePassportLedger
 import os
+import time
+from html import escape as html_escape
+from urllib.parse import quote, urlsplit
+
+from flask import Blueprint, abort, request
+from jinja2 import Environment
+from machine_passport import MachinePassportLedger
 
 # Create blueprint
 passport_viewer_bp = Blueprint('passport_viewer', __name__, url_prefix='/passport')
@@ -368,9 +373,9 @@ PASSPORT_TEMPLATE = """
                 </div>
             </div>
             
-            {% if passport.photo_url %}
+            {% if safe_photo_url %}
             <div style="text-align: center; margin: 30px 0;">
-                <img src="{{ passport.photo_url }}" alt="{{ passport.name }}" 
+                <img src="{{ safe_photo_url }}" alt="{{ passport.name }}"
                      style="max-width: 100%; max-height: 400px; border-radius: 10px; border: 2px solid var(--border);">
             </div>
             {% endif %}
@@ -540,7 +545,7 @@ PASSPORT_TEMPLATE = """
             }
             
             try {
-                const response = await fetch('/api/machine-passport/{{ passport.machine_id }}/qr');
+                const response = await fetch('/api/machine-passport/' + encodeURIComponent({{ passport.machine_id | tojson }}) + '/qr');
                 const data = await response.json();
                 
                 if (data.ok && data.qr_code) {
@@ -565,6 +570,29 @@ def timestamp_to_date(ts):
     return datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
 
 
+def _sanitize_photo_url(url) -> str:
+    """Allow only http(s) or single-leading-slash relative URLs in img src."""
+    if not isinstance(url, str):
+        return ''
+    cleaned = url.strip()
+    if not cleaned or any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in cleaned):
+        return ''
+    parsed = urlsplit(cleaned)
+    if parsed.scheme:
+        if parsed.scheme.lower() in ('http', 'https') and parsed.netloc:
+            return cleaned
+        return ''
+    if parsed.netloc:
+        return ''
+    if cleaned.startswith('/') and not cleaned.startswith(('//', '/\\')):
+        return cleaned
+    return ''
+
+
+_PASSPORT_ENV = Environment(autoescape=True)
+_PASSPORT_ENV.filters['timestamp_to_date'] = timestamp_to_date
+
+
 @passport_viewer_bp.route('/<machine_id>')
 def view_passport(machine_id: str):
     """View a machine passport."""
@@ -585,23 +613,20 @@ def view_passport(machine_id: str):
     total_rtc = max((a.get('total_rtc_earned', 0) for a in attestations), default=0)
     total_rtc_formatted = f"{total_rtc / 1_000_000:.2f}" if total_rtc else "0"
     
-    # Render template
-    from jinja2 import Template
-    template = Template(PASSPORT_TEMPLATE)
-    
-    # Add custom filters
-    template.environment.filters['timestamp_to_date'] = timestamp_to_date
+    # Render template with autoescaping enabled
+    template = _PASSPORT_ENV.from_string(PASSPORT_TEMPLATE)
     
     html = template.render(
         passport=passport,
+        safe_photo_url=_sanitize_photo_url(getattr(passport, 'photo_url', '')),
         repair_log=repair_log,
         attestations=attestations,
         benchmarks=benchmarks,
         lineage=lineage,
         total_epochs=total_epochs,
         total_rtc=total_rtc_formatted,
-        passport_url=f"/passport/{machine_id}",
-        generated_at=int(__import__('time').time()),
+        passport_url=f"/passport/{quote(machine_id, safe='')}",
+        generated_at=int(time.time()),
     )
     
     return html
@@ -625,6 +650,21 @@ def list_passports():
         limit=limit,
     )
     
+    items_html = ''.join(
+        f'''
+                <li class="passport-item">
+                    <a href="/passport/{html_escape(quote(str(p.machine_id or ''), safe=''), quote=True)}">{html_escape(str(p.name or ''), quote=True)}</a>
+                    <div class="meta">
+                        ID: {html_escape(str(p.machine_id or '')[:16], quote=True)}... |
+                        Owner: {html_escape(str(p.owner_miner_id or '')[:15], quote=True)}... |
+                        Architecture: {html_escape(str(p.architecture or 'Unknown'), quote=True)} |
+                        Created: {html_escape(str(timestamp_to_date(p.created_at)), quote=True)}
+                    </div>
+                </li>
+                '''
+        for p in passports
+    )
+
     # Simple HTML list view
     html = f"""
     <!DOCTYPE html>
@@ -663,17 +703,7 @@ def list_passports():
             <p style="color: #a0a0a0;">{len(passports)} passport(s) found</p>
             
             <ul class="passport-list">
-                {''.join(f'''
-                <li class="passport-item">
-                    <a href="/passport/{p.machine_id}">{p.name}</a>
-                    <div class="meta">
-                        ID: {p.machine_id[:16]}... | 
-                        Owner: {p.owner_miner_id[:15]}... | 
-                        Architecture: {p.architecture or 'Unknown'} |
-                        Created: {timestamp_to_date(p.created_at)}
-                    </div>
-                </li>
-                ''' for p in passports)}
+                {items_html}
             </ul>
             
             <p style="margin-top: 30px; color: #a0a0a0;">

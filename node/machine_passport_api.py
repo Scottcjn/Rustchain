@@ -12,6 +12,7 @@ import os
 import time
 import hmac
 from typing import Optional
+from urllib.parse import quote
 from flask import Blueprint, request, jsonify
 
 from machine_passport import (
@@ -706,7 +707,7 @@ def generate_qr(machine_id: str):
         return jsonify({'ok': False, 'error': 'passport_not_found'}), 404
     
     # Generate QR code
-    passport_url = f"{request.host_url.rstrip('/')}passport/{machine_id}"
+    passport_url = f"{request.host_url.rstrip('/')}/passport/{quote(machine_id, safe='')}"
     
     with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
         tmp_path = tmp.name
