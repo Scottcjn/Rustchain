@@ -289,13 +289,24 @@ class AsyncRustChainClient:
             limit: Maximum number of records to return (default: 50)
 
         Returns:
-            List of transfer dicts with:
-                - tx_id (str): Transaction ID
-                - from_addr (str): Source address
-                - to_addr (str): Destination address
-                - amount (float): Amount transferred
-                - timestamp (int): Unix timestamp
-                - status (str): Transaction status
+            List of history dicts from the current node with:
+                - type (str): transfer_in, transfer_out, ledger, or reward
+                - amount (float): Amount in RTC
+                - epoch (int or None): Related epoch, when known
+                - timestamp (int): Unix timestamp, or 0 when unavailable
+                - tx_hash (str or None): Transaction hash, when available
+                - from (str or None, optional): Incoming transfer's source wallet
+                - to (str or None, optional): Outgoing transfer's destination wallet
+                - status (str, optional): Pending transfer status
+                - reason (str or None, optional): Ledger entry description
+
+            Envelopes require ok: true and a transactions list. Legacy bare-list
+            responses are returned unchanged.
+
+        Raises:
+            ConnectionError: If connection fails
+            APIError: If the response is unsuccessful or malformed
+            ValidationError: If miner_id is invalid
         """
         if not miner_id or not isinstance(miner_id, str):
             raise ValidationError("miner_id must be a non-empty string")
@@ -307,7 +318,11 @@ class AsyncRustChainClient:
         )
         if isinstance(result, list):
             return result
-        if isinstance(result, dict) and isinstance(result.get("transactions"), list):
+        if (
+            isinstance(result, dict)
+            and result.get("ok") is True
+            and isinstance(result.get("transactions"), list)
+        ):
             return result["transactions"]
         raise APIError("Expected transaction history list or transactions envelope")
 

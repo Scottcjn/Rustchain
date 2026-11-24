@@ -244,23 +244,34 @@ result = client.transfer(
 
 ##### transfer_history(miner_id, limit=50)
 
-Get transfer history for a wallet.
+Get a wallet's transfers, ledger entries, and mining rewards.
 
 ```python
 history = client.transfer_history("wallet_address", limit=10)
+for entry in history:
+    amount = entry.get("amount")
+    if amount is not None:
+        print(f"{entry.get('type', 'unknown')}: {amount} RTC")
 ```
 
 **Parameters:**
 - `miner_id`: Wallet address
 - `limit`: Maximum number of records (default: 50)
 
-**Returns:** List of transfer dicts with:
-- `tx_id` (str): Transaction ID
-- `from_addr` (str): Source address
-- `to_addr` (str): Destination address
-- `amount` (float): Amount transferred
-- `timestamp` (int): Unix timestamp
-- `status` (str): Transaction status
+**Returns**
+
+The SDK accepts the current response envelope when `ok` is the literal JSON boolean `true` and `transactions` is a list. It returns that list. A legacy bare list is returned unchanged. Unsuccessful or malformed history responses raise `APIError`.
+
+Entries from the current node use these fields.
+
+- `type` (`str`) identifies a `transfer_in`, `transfer_out`, `ledger`, or `reward` entry.
+- `amount` (`float`) is the amount in RTC.
+- `epoch` (`int` or `None`) is the epoch, when known.
+- `timestamp` (`int`) is the Unix timestamp in seconds, or `0` when unknown.
+- `tx_hash` (`str` or `None`) is the transaction hash, when available.
+- `from` and `to` give the source address for incoming transfers and the destination address for outgoing transfers, respectively. Each field can be absent or `None`.
+- `status` is present on non-confirmed transfers from the pending ledger, such as `pending`.
+- `reason` contains the ledger reason when the node includes it.
 
 ##### submit_attestation(payload)
 

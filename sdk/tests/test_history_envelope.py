@@ -10,7 +10,6 @@ from rustchain import RustChainClient
 from rustchain.async_client import AsyncRustChainClient
 from rustchain.exceptions import APIError
 
-
 # Contract: node/tests/test_wallet_history.py and GET /wallet/history.
 TRANSACTIONS = [
     {"type": "transfer_in", "amount": 5.0, "epoch": 200,
@@ -22,9 +21,9 @@ TRANSACTIONS = [
 
 def history(client_kind, payload):
     if client_kind == "sync":
-        with RustChainClient("https://example.invalid") as client:
-            with patch.object(client, "_request", return_value=payload) as request:
-                result = client.transfer_history("alice", limit=2)
+        client = RustChainClient("https://example.invalid")
+        with client, patch.object(client, "_request", return_value=payload) as request:
+            result = client.transfer_history("alice", limit=2)
     else:
         async def run():
             async with AsyncRustChainClient("https://example.invalid") as client:
@@ -51,6 +50,11 @@ def test_history_preserves_current_and_legacy_responses(client_kind, transaction
 @pytest.mark.parametrize("payload", [
     None, "unavailable", {}, {"raw_response": "<html>Proxy error</html>"},
     {"ok": True, "transactions": None}, {"ok": True, "transactions": {}},
+    {"ok": False, "error": "History unavailable", "transactions": []},
+    {"ok": False, "error": "History unavailable", "transactions": TRANSACTIONS},
+    {"transactions": []},
+    {"ok": 1, "transactions": []},
+    {"ok": "true", "transactions": []},
 ])
 def test_malformed_history_is_not_reported_as_empty(client_kind, payload):
     with pytest.raises(APIError, match="Expected transaction history"):
