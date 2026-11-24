@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: MIT
+pytest>=7.0.0
+click>=8.0.0
+cryptography>=40.0.0

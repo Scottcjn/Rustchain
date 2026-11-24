@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """
 RustChain Python SDK CLI Test Suite (Click CliRunner)
 Tests all commands in rustchain_sdk/cli.py:
@@ -11,7 +12,13 @@ Tests all commands in rustchain_sdk/cli.py:
 """
 
 import json
+import os
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
+
+# Ensure sdk/python is on sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../python")))
+
 import pytest
 from click.testing import CliRunner
 
