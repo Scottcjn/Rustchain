@@ -112,10 +112,14 @@ async def _wallet_balance(address: str, node: str, as_json: bool):
             if as_json:
                 click.echo(json.dumps(result, indent=2))
             else:
-                balance = result.get("balance", 0)
+                amount_rtc = result.get("amount_rtc")
+                balance = amount_rtc if amount_rtc is not None else result.get("balance")
                 nonce = result.get("nonce", 0)
                 click.echo(f"Address:  {address}")
-                click.echo(f"Balance:  {balance} RTC")
+                if balance is not None:
+                    click.echo(f"Balance:  {balance} RTC")
+                else:
+                    click.echo(f"Balance:  Unavailable")
                 click.echo(f"Nonce:    {nonce}")
     except RustChainError as e:
         click.echo(f"❌  Error: {e}", err=True)
@@ -377,32 +381,38 @@ async def _attest(wallet_address: str, seed_phrase: list, node: str, as_json: bo
             # Step 1: Get attestation status
             status = await client.get_attestation_status(wallet.public_key_hex)
 
-            if as_json:
-                click.echo(json.dumps(status, indent=2))
-                return
-
             # Step 2: Request challenge
-            click.echo("📋  Requesting attestation challenge...")
+            if not as_json: click.echo("📋  Requesting attestation challenge...")
             challenge_result = await client.attest_challenge(wallet.public_key_hex)
             challenge = challenge_result.get("challenge", "")
 
             if not challenge:
-                click.echo(f"⚠️  No challenge received. Status: {status}")
+                if as_json:
+                    click.echo(json.dumps({"error": "No challenge received", "status": status}, indent=2))
+                else:
+                    click.echo(f"⚠️  No challenge received. Status: {status}")
                 return
 
             # Step 3: Sign the challenge
             signature = wallet.sign(challenge.encode()).hex()
 
             # Step 4: Submit attestation
-            click.echo("📤  Submitting attestation...")
+            if not as_json: click.echo("📤  Submitting attestation...")
             submit_result = await client.attest_submit(
                 wallet.public_key_hex,
                 challenge,
                 signature,
             )
 
-            click.echo(f"✅  Attestation submitted!")
-            click.echo(f"   Result: {json.dumps(submit_result)}")
+            if as_json:
+                click.echo(json.dumps({
+                    "status": status,
+                    "challenge": challenge_result,
+                    "submit": submit_result
+                }, indent=2))
+            else:
+                click.echo(f"✅  Attestation submitted!")
+                click.echo(f"   Result: {json.dumps(submit_result)}")
 
     except RustChainError as e:
         click.echo(f"❌  Error: {e}", err=True)
