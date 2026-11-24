@@ -20,11 +20,56 @@ Usage:
 """
 
 import hashlib
-import html
+import json
+import re
 import time
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from xml.sax.saxutils import escape as xml_escape
+
+_INVALID_XML_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_XML_ATTR_ENTITIES = {'"': "&quot;", "'": "&apos;"}
+
+
+def _clean_xml_str(value: Any) -> str:
+    """Convert value to string and strip characters illegal in XML 1.0."""
+    if value is None:
+        return ""
+    return _INVALID_XML_CONTROL_RE.sub("", str(value))
+
+
+def _xml_text(value: Any) -> str:
+    """Escape text for XML element bodies safely, treating None as empty."""
+    return xml_escape(_clean_xml_str(value))
+
+
+def _xml_attr(value: Any) -> str:
+    """Escape text for XML attribute values, including single and double quotes."""
+    return xml_escape(_clean_xml_str(value), _XML_ATTR_ENTITIES)
+
+
+def _first_tag(tags: Any) -> Optional[str]:
+    """Extract first non-empty tag from list, JSON array string, or scalar."""
+    if isinstance(tags, str):
+        stripped = tags.strip()
+        if not stripped:
+            return None
+        if stripped.startswith("["):
+            try:
+                parsed = json.loads(stripped)
+            except (TypeError, ValueError):
+                return stripped
+            if isinstance(parsed, list):
+                tags = parsed
+            else:
+                return stripped
+        else:
+            return stripped
+    if isinstance(tags, (list, tuple)):
+        for tag in tags:
+            if tag is not None and str(tag).strip():
+                return str(tag).strip()
+    return None
 
 
 def _format_rfc822_dt(dt: datetime) -> str:
@@ -43,24 +88,27 @@ def _format_atom_dt(dt: datetime) -> str:
 
 def _generate_tag_uri(base_url: str, local_id: str) -> str:
     """Generate a TAG URI for Atom feed item ID."""
-    domain = base_url.replace("https://", "").replace("http://", "").split("/")[0]
+    clean_base = _clean_xml_str(base_url)
+    domain = clean_base.replace("https://", "").replace("http://", "").split("/")[0]
     date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    return f"tag:{domain},{date}:{local_id}"
+    return f"tag:{domain},{date}:{_clean_xml_str(local_id)}"
 
 
 def _compute_guid(video_data: Dict[str, Any], base_url: str) -> str:
     """Compute a unique GUID for RSS item from video data."""
-    video_id = video_data.get("id", "")
+    video_id = _clean_xml_str(video_data.get("id"))
+    clean_base = _clean_xml_str(base_url).rstrip("/")
     if video_id:
-        return f"{base_url}/video/{video_id}"
+        return f"{clean_base}/video/{video_id}"
     
-    title = video_data.get("title", "")
-    agent = video_data.get("agent", "")
-    timestamp = video_data.get("created_at", str(time.time()))
+    title = _clean_xml_str(video_data.get("title"))
+    agent = _clean_xml_str(video_data.get("agent"))
+    raw_created_at = video_data.get("created_at")
+    timestamp = str(time.time()) if raw_created_at is None else _clean_xml_str(raw_created_at)
     
     content = f"{title}:{agent}:{timestamp}"
     hash_digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
-    return f"{base_url}/video/{hash_digest}"
+    return f"{clean_base}/video/{hash_digest}"
 
 
 class RSSFeedBuilder:
@@ -99,7 +147,7 @@ class RSSFeedBuilder:
             generator: Generator string
         """
         self.title = title
-        self.link = link.rstrip("/")
+        self.link = _clean_xml_str(link).rstrip("/")
         self.description = description
         self.language = language
         self.copyright_text = copyright_text
@@ -170,14 +218,17 @@ class RSSFeedBuilder:
         Returns:
             Self for method chaining
         """
-        video_id = video_data.get("id", "")
-        title = video_data.get("title", "Untitled Video")
-        description = video_data.get("description", "")
-        agent = video_data.get("agent", "")
+        raw_id = video_data.get("id")
+        video_id = "" if raw_id is None else _clean_xml_str(raw_id)
+        raw_title = video_data.get("title")
+        title = "Untitled Video" if raw_title is None else str(raw_title)
+        raw_desc = video_data.get("description")
+        description = "" if raw_desc is None else str(raw_desc)
+        raw_agent = video_data.get("agent")
+        agent = "" if raw_agent is None else str(raw_agent)
         created_at = video_data.get("created_at")
         thumbnail_url = video_data.get("thumbnail_url")
         video_url = video_data.get("video_url")
-        duration = video_data.get("duration", 0)
         tags = video_data.get("tags", [])
         
         # Parse created_at timestamp
@@ -205,7 +256,7 @@ class RSSFeedBuilder:
             link=item_link,
             description=description,
             author=agent,
-            category=tags[0] if tags else None,
+            category=_first_tag(tags),
             guid=guid,
             pub_date=pub_date,
             enclosure_url=video_url,
@@ -224,26 +275,26 @@ class RSSFeedBuilder:
         """Build RSS channel element."""
         lines = [
             "<channel>",
-            f"  <title>{xml_escape(self.title)}</title>",
-            f"  <link>{xml_escape(self.link)}</link>",
-            f"  <description>{xml_escape(self.description)}</description>",
-            f"  <language>{self.language}</language>",
+            f"  <title>{_xml_text(self.title)}</title>",
+            f"  <link>{_xml_text(self.link)}</link>",
+            f"  <description>{_xml_text(self.description)}</description>",
+            f"  <language>{_xml_text(self.language)}</language>",
             f"  <lastBuildDate>{_format_rfc822_dt(self.build_date)}</lastBuildDate>",
-            f"  <generator>{xml_escape(self.generator)}</generator>",
-            f"  <ttl>{self.ttl}</ttl>",
+            f"  <generator>{_xml_text(self.generator)}</generator>",
+            f"  <ttl>{_xml_text(self.ttl)}</ttl>",
         ]
         
         if self.copyright_text:
-            lines.append(f"  <copyright>{xml_escape(self.copyright_text)}</copyright>")
+            lines.append(f"  <copyright>{_xml_text(self.copyright_text)}</copyright>")
         
         if self.managing_editor:
-            lines.append(f"  <managingEditor>{xml_escape(self.managing_editor)}</managingEditor>")
+            lines.append(f"  <managingEditor>{_xml_text(self.managing_editor)}</managingEditor>")
         
         if self.web_master:
-            lines.append(f"  <webMaster>{xml_escape(self.web_master)}</webMaster>")
+            lines.append(f"  <webMaster>{_xml_text(self.web_master)}</webMaster>")
         
         # Add Atom self link for compatibility
-        lines.append(f'  <atom:link href="{xml_escape(self.link)}/api/feed/rss" rel="self" type="application/rss+xml"/>')
+        lines.append(f'  <atom:link href="{_xml_attr(self.link)}/api/feed/rss" rel="self" type="application/rss+xml"/>')
         
         return "\n".join(lines)
     
@@ -251,36 +302,41 @@ class RSSFeedBuilder:
         """Build RSS item element."""
         lines = [
             "<item>",
-            f"  <title>{xml_escape(item['title'])}</title>",
-            f"  <link>{xml_escape(item['link'])}</link>",
-            f"  <description>{xml_escape(item['description'])}</description>",
+            f"  <title>{_xml_text(item.get('title'))}</title>",
+            f"  <link>{_xml_text(item.get('link'))}</link>",
+            f"  <description>{_xml_text(item.get('description'))}</description>",
             f"  <pubDate>{_format_rfc822_dt(item['pub_date'])}</pubDate>",
         ]
         
         # GUID
-        guid = item.get("guid") or item["link"]
+        guid = item.get("guid") or item.get("link") or ""
         is_permalink = bool(item.get("guid"))
-        lines.append(f'  <guid isPermaLink="{str(is_permalink).lower()}">{xml_escape(guid)}</guid>')
+        lines.append(f'  <guid isPermaLink="{str(is_permalink).lower()}">{_xml_text(guid)}</guid>')
         
         # Author
         if item.get("author"):
-            lines.append(f"  <author>{xml_escape(item['author'])}</author>")
+            lines.append(f"  <author>{_xml_text(item['author'])}</author>")
         
         # Category
         if item.get("category"):
-            lines.append(f"  <category>{xml_escape(item['category'])}</category>")
+            lines.append(f"  <category>{_xml_text(item['category'])}</category>")
         
         # Enclosure (media file)
         if item.get("enclosure_url"):
-            enc_attrs = f'url="{xml_escape(item["enclosure_url"])}"'
-            enc_attrs += f' type="{item["enclosure_type"]}"'
-            if item.get("enclosure_length", 0) > 0:
-                enc_attrs += f' length="{item["enclosure_length"]}"'
+            enc_type = item.get("enclosure_type") or "video/mp4"
+            enc_attrs = f'url="{_xml_attr(item["enclosure_url"])}"'
+            enc_attrs += f' type="{_xml_attr(enc_type)}"'
+            try:
+                enc_len = int(item.get("enclosure_length") or 0)
+            except (TypeError, ValueError):
+                enc_len = 0
+            if enc_len > 0:
+                enc_attrs += f' length="{enc_len}"'
             lines.append(f"  <enclosure {enc_attrs}/>")
         
         # Thumbnail (media:content extension)
         if item.get("thumbnail_url"):
-            lines.append(f'  <media:thumbnail url="{xml_escape(item["thumbnail_url"])}"/>')
+            lines.append(f'  <media:thumbnail url="{_xml_attr(item["thumbnail_url"])}"/>')
         
         lines.append("</item>")
         return "\n".join(lines)
@@ -304,7 +360,7 @@ class RSSFeedBuilder:
             'xmlns:atom="http://www.w3.org/2005/Atom" '
             'xmlns:media="http://search.yahoo.com/mrss/"'
         )
-        lines.append(f'<rss version="{self.RSS_VERSION}" {ns}>')
+        lines.append(f'<rss version="{_xml_attr(self.RSS_VERSION)}" {ns}>')
         
         # Channel
         lines.append(self._build_channel())
@@ -366,7 +422,7 @@ class AtomFeedBuilder:
             logo_url: Feed logo URL
         """
         self.title = title
-        self.link = link.rstrip("/")
+        self.link = _clean_xml_str(link).rstrip("/")
         self.subtitle = subtitle
         self.feed_id = feed_id or _generate_tag_uri(self.link, "feed")
         self.author_name = author_name
@@ -450,10 +506,14 @@ class AtomFeedBuilder:
         Returns:
             Self for method chaining
         """
-        video_id = video_data.get("id", "")
-        title = video_data.get("title", "Untitled Video")
-        description = video_data.get("description", "")
-        agent = video_data.get("agent", "")
+        raw_id = video_data.get("id")
+        video_id = "" if raw_id is None else _clean_xml_str(raw_id)
+        raw_title = video_data.get("title")
+        title = "Untitled Video" if raw_title is None else str(raw_title)
+        raw_desc = video_data.get("description")
+        description = "" if raw_desc is None else str(raw_desc)
+        raw_agent = video_data.get("agent")
+        agent = "" if raw_agent is None else str(raw_agent)
         created_at = video_data.get("created_at")
         updated_at = video_data.get("updated_at")
         thumbnail_url = video_data.get("thumbnail_url")
@@ -504,7 +564,7 @@ class AtomFeedBuilder:
             author_name=agent,
             published=published,
             updated=updated,
-            category=tags[0] if tags else None,
+            category=_first_tag(tags),
             media_url=video_url,
             media_type="video/mp4",
             thumbnail_url=thumbnail_url
@@ -515,28 +575,28 @@ class AtomFeedBuilder:
     def _build_author(self, name: str, email: str = "", uri: str = "") -> str:
         """Build Atom author element."""
         lines = ["<author>"]
-        lines.append(f"  <name>{xml_escape(name)}</name>")
+        lines.append(f"  <name>{_xml_text(name)}</name>")
         if email:
-            lines.append(f"  <email>{xml_escape(email)}</email>")
+            lines.append(f"  <email>{_xml_text(email)}</email>")
         if uri:
-            lines.append(f"  <uri>{xml_escape(uri)}</uri>")
+            lines.append(f"  <uri>{_xml_text(uri)}</uri>")
         lines.append("</author>")
         return "\n".join(lines)
     
     def _build_link(self, href: str, rel: str = "alternate", media_type: str = "text/html") -> str:
         """Build Atom link element."""
-        return f'<link href="{xml_escape(href)}" rel="{rel}" type="{media_type}"/>'
+        return f'<link href="{_xml_attr(href)}" rel="{_xml_attr(rel)}" type="{_xml_attr(media_type)}"/>'
     
     def _build_feed_header(self) -> str:
         """Build Atom feed header elements."""
         lines = [
-            f"<title>{xml_escape(self.title)}</title>",
+            f"<title>{_xml_text(self.title)}</title>",
             self._build_link(self.link, "alternate", "text/html"),
             self._build_link(f"{self.link}/api/feed/atom", "self", "application/atom+xml"),
-            f"<subtitle>{xml_escape(self.subtitle)}</subtitle>",
-            f"<id>{xml_escape(self.feed_id)}</id>",
+            f"<subtitle>{_xml_text(self.subtitle)}</subtitle>",
+            f"<id>{_xml_text(self.feed_id)}</id>",
             f"<updated>{_format_atom_dt(self.updated)}</updated>",
-            f"<generator>{xml_escape(self.generator)}</generator>",
+            f"<generator>{_xml_text(self.generator)}</generator>",
         ]
         
         # Author
@@ -550,9 +610,9 @@ class AtomFeedBuilder:
         
         # Icon/Logo
         if self.icon_url:
-            lines.append(f"<icon>{xml_escape(self.icon_url)}</icon>")
+            lines.append(f"<icon>{_xml_text(self.icon_url)}</icon>")
         if self.logo_url:
-            lines.append(f"<logo>{xml_escape(self.logo_url)}</logo>")
+            lines.append(f"<logo>{_xml_text(self.logo_url)}</logo>")
         
         return "\n".join(lines)
     
@@ -560,18 +620,18 @@ class AtomFeedBuilder:
         """Build Atom entry element."""
         lines = [
             "<entry>",
-            f"  <title>{xml_escape(entry['title'])}</title>",
-            self._build_link(entry["link"], "alternate", "text/html"),
-            f"  <id>{xml_escape(entry['id'])}</id>",
+            f"  <title>{_xml_text(entry.get('title'))}</title>",
+            self._build_link(entry.get("link") or "", "alternate", "text/html"),
+            f"  <id>{_xml_text(entry.get('id'))}</id>",
             f"  <updated>{_format_atom_dt(entry['updated'])}</updated>",
             f"  <published>{_format_atom_dt(entry['published'])}</published>",
-            f"  <summary>{xml_escape(entry['summary'])}</summary>",
+            f"  <summary>{_xml_text(entry.get('summary'))}</summary>",
         ]
         
         # Content
         if entry.get("content"):
-            content_type = entry.get("content_type", "text")
-            lines.append(f'  <content type="{content_type}">{xml_escape(entry["content"])}</content>')
+            content_type = entry.get("content_type") or "text"
+            lines.append(f'  <content type="{_xml_attr(content_type)}">{_xml_text(entry["content"])}</content>')
         
         # Author
         author_name = entry.get("author_name")
@@ -584,18 +644,19 @@ class AtomFeedBuilder:
         
         # Category
         if entry.get("category"):
-            lines.append(f'  <category term="{xml_escape(entry["category"])}"/>')
+            lines.append(f'  <category term="{_xml_attr(entry["category"])}"/>')
         
         # Media content
         if entry.get("media_url"):
+            media_type = entry.get("media_type") or "video/mp4"
             lines.append(
-                f'  <media:content url="{xml_escape(entry["media_url"])}" type="{entry["media_type"]}"/>'
+                f'  <media:content url="{_xml_attr(entry["media_url"])}" type="{_xml_attr(media_type)}"/>'
             )
         
         # Thumbnail
         if entry.get("thumbnail_url"):
             lines.append(
-                f'  <media:thumbnail url="{xml_escape(entry["thumbnail_url"])}"/>'
+                f'  <media:thumbnail url="{_xml_attr(entry["thumbnail_url"])}"/>'
             )
         
         lines.append("</entry>")
