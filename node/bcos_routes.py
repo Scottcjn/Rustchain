@@ -573,31 +573,27 @@ def bcos_directory():
         with sqlite3.connect(_DB_PATH) as conn:
             conn.row_factory = sqlite3.Row
 
+            query = """
+                SELECT cert_id, repo, commit_sha, tier, trust_score,
+                       reviewer, anchored_epoch, created_at
+                FROM bcos_attestations
+            """
+            params = []
+
             if tier_filter in ("L0", "L1", "L2"):
-                rows = conn.execute(
-                    """
-                    SELECT cert_id, repo, commit_sha, tier, trust_score,
-                           reviewer, anchored_epoch, created_at
-                    FROM bcos_attestations
-                    WHERE tier = ?
-                    ORDER BY created_at DESC LIMIT ? OFFSET ?
-                    """,
-                    (tier_filter, limit, offset),
-                ).fetchall()
+                query += " WHERE tier = ?"
+                params.append(tier_filter)
+
+            query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
+
+            rows = conn.execute(query, params).fetchall()
+            if tier_filter in ("L0", "L1", "L2"):
                 total = conn.execute(
                     "SELECT COUNT(*) FROM bcos_attestations WHERE tier = ?",
                     (tier_filter,),
                 ).fetchone()[0]
             else:
-                rows = conn.execute(
-                    """
-                    SELECT cert_id, repo, commit_sha, tier, trust_score,
-                           reviewer, anchored_epoch, created_at
-                    FROM bcos_attestations
-                    ORDER BY created_at DESC LIMIT ? OFFSET ?
-                    """,
-                    (limit, offset),
-                ).fetchall()
                 total = conn.execute(
                     "SELECT COUNT(*) FROM bcos_attestations"
                 ).fetchone()[0]
