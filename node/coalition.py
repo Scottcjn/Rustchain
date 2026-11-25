@@ -454,6 +454,8 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
             return jsonify({"error": "invalid or missing signature — prove you control this miner_id"}), 401
         if not name or len(name) > MAX_NAME_LEN:
             return jsonify({"error": f"name required (max {MAX_NAME_LEN} chars)"}), 400
+        if len(description) > MAX_DESCRIPTION_LEN:
+            return jsonify({"error": f"description too long (max {MAX_DESCRIPTION_LEN} chars)"}), 400
 
         now = int(time.time())
         try:
@@ -519,15 +521,26 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
                 )
                 conn.commit()
         except sqlite3.IntegrityError:
-            # Re-join after having left
+            # Re-join only if the existing membership row is 'left'; never unban a banned member.
             try:
                 with sqlite3.connect(db_path) as conn:
-                    conn.execute(
-                        "UPDATE coalition_members SET status = ?, joined_at = ? "
+                    existing = conn.execute(
+                        "SELECT status FROM coalition_members "
                         "WHERE coalition_id = ? AND miner_id = ?",
-                        (MEMBER_STATUS_ACTIVE, now, coalition_id, miner_id)
+                        (coalition_id, miner_id)
+                    ).fetchone()
+                    if existing and existing[0] == MEMBER_STATUS_BANNED:
+                        return jsonify({"error": "miner is banned from this coalition"}), 403
+                    if existing and existing[0] == MEMBER_STATUS_ACTIVE:
+                        return jsonify({"error": "already a member of this coalition"}), 409
+                    cursor = conn.execute(
+                        "UPDATE coalition_members SET status = ?, joined_at = ? "
+                        "WHERE coalition_id = ? AND miner_id = ? AND status = ?",
+                        (MEMBER_STATUS_ACTIVE, now, coalition_id, miner_id, MEMBER_STATUS_LEFT)
                     )
                     conn.commit()
+                    if cursor.rowcount == 0:
+                        return jsonify({"error": "unable to join coalition"}), 409
             except Exception as e:
                 log.error("Re-join error: %s", e)
                 return jsonify({"error": "internal error"}), 500
@@ -616,10 +629,14 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
             return jsonify({"error": "invalid or missing signature — prove you control this miner_id"}), 401
         if coalition_id is None:
             return jsonify({"error": "coalition_id required"}), 400
+        if not _coalition_exists(coalition_id, db_path):
+            return jsonify({"error": "coalition not found or inactive"}), 404
         if not _is_coalition_member(coalition_id, miner_id, db_path):
             return jsonify({"error": "must be an active member to propose"}), 403
         if not title or len(title) > MAX_TITLE_LEN:
             return jsonify({"error": f"title required (max {MAX_TITLE_LEN} chars)"}), 400
+        if len(description) > MAX_DESCRIPTION_LEN:
+            return jsonify({"error": f"description too long (max {MAX_DESCRIPTION_LEN} chars)"}), 400
 
         now = int(time.time())
         expires_at = now + PROPOSAL_WINDOW_SECONDS
@@ -686,17 +703,23 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
                 conn.execute("BEGIN IMMEDIATE")
 
                 proposal = conn.execute(
-                    "SELECT id, status, expires_at, coalition_id FROM coalition_proposals WHERE id = ?",
+                    "SELECT p.id, p.status, p.expires_at, p.coalition_id, c.status "
+                    "FROM coalition_proposals p "
+                    "JOIN coalitions c ON p.coalition_id = c.id "
+                    "WHERE p.id = ?",
                     (proposal_id,)
                 ).fetchone()
 
                 if not proposal:
                     conn.execute("ROLLBACK")
                     return jsonify({"error": "proposal not found"}), 404
+                if proposal[4] != COALITION_STATUS_ACTIVE:
+                    conn.execute("ROLLBACK")
+                    return jsonify({"error": "coalition is not active"}), 409
                 if proposal[1] != PROPOSAL_STATUS_ACTIVE:
                     conn.execute("ROLLBACK")
                     return jsonify({"error": f"proposal is {proposal[1]}, not active"}), 409
-                if proposal[2] < now:
+                if proposal[2] <= now:
                     conn.execute("ROLLBACK")
                     return jsonify({"error": "voting window has closed"}), 409
 
@@ -782,6 +805,8 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
             body, status = error
             return jsonify(body), status
 
+        _settle_expired_proposals(db_path)
+
         data, error_response = _json_object_body()
         if error_response:
             return error_response
@@ -804,18 +829,22 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
             return jsonify({"error": "proposal_id required"}), 400
         if decision not in REVIEW_CHOICES:
             return jsonify({"error": f"decision must be one of {REVIEW_CHOICES}"}), 400
+        if len(reason) > MAX_DESCRIPTION_LEN:
+            return jsonify({"error": f"reason too long (max {MAX_DESCRIPTION_LEN} chars)"}), 400
 
         now = int(time.time())
         try:
             with sqlite3.connect(db_path) as conn:
                 proposal = conn.execute(
-                    "SELECT id, status FROM coalition_proposals WHERE id = ?",
+                    "SELECT id, status, expires_at FROM coalition_proposals WHERE id = ?",
                     (proposal_id,)
                 ).fetchone()
                 if not proposal:
                     return jsonify({"error": "proposal not found"}), 404
                 if proposal[1] != PROPOSAL_STATUS_ACTIVE:
                     return jsonify({"error": f"proposal is {proposal[1]}, not active"}), 409
+                if proposal[2] <= now:
+                    return jsonify({"error": "voting window has closed"}), 409
 
                 # Record the review
                 conn.execute(
@@ -925,7 +954,7 @@ def create_coalition_blueprint(db_path: str) -> Blueprint:
 
         c = dict(coalition)
         c["members"] = [dict(m) for m in members]
-        c["member_count"] = len(c["members"])
+        c["member_count"] = sum(1 for m in c["members"] if m.get("status") == MEMBER_STATUS_ACTIVE)
         c["active_proposals"] = active_proposals[0] if active_proposals else 0
         return jsonify(c), 200
 
