@@ -18,9 +18,19 @@ import json
 import sys
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.request import urlopen, Request
 from urllib.error import URLError, HTTPError
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "monitoring"))
+from node_probe import (  # noqa: E402
+    STATE_DEGRADED,
+    STATE_DOWN,
+    STATE_UNREACHABLE,
+    STATE_UP,
+    probe_health,
+)
 
 
 # Exit codes
@@ -47,6 +57,10 @@ class HealthStatus:
     backup_age_hours: Optional[float]
     tip_age_slots: Optional[int]
     error: Optional[str]
+    # Shared probe state (monitoring/node_probe.py): up | degraded | impostor |
+    # down | unreachable. "ok: false because a key was missing" and "impostor"
+    # are different failures; keep them distinct instead of flattening to False.
+    state: Optional[str] = None
 
 
 @dataclass
@@ -116,30 +130,45 @@ def fetch_json(url: str, timeout: int = DEFAULT_TIMEOUT) -> Dict[str, Any]:
 
 
 def check_health(node_url: str, timeout: int) -> HealthStatus:
-    """Check node health status"""
-    try:
-        url = f"{node_url.rstrip('/')}/health"
-        data = fetch_json(url, timeout)
-        
-        return HealthStatus(
-            ok=bool(data.get("ok", False)),
-            version=data.get("version"),
-            uptime_s=data.get("uptime_s"),
-            db_rw=data.get("db_rw"),
-            backup_age_hours=data.get("backup_age_hours"),
-            tip_age_slots=data.get("tip_age_slots"),
-            error=None
-        )
-    except Exception as e:
-        return HealthStatus(
-            ok=False,
-            version=None,
-            uptime_s=None,
-            db_rw=None,
-            backup_age_hours=None,
-            tip_age_slots=None,
-            error=str(e)
-        )
+    """Check node health through the shared body-validating probe (#17180).
+
+    probe_health is the single place that decides up/down/impostor/degraded —
+    a 200 with an HTML or keyless body is "impostor", not ok=False-by-accident.
+    opener=urlopen keeps this module's urlopen seam monkeypatchable.
+    """
+    url = f"{node_url.rstrip('/')}/health"
+    result = None
+    for attempt in range(DEFAULT_RETRIES):
+        result = probe_health(url, timeout, opener=urlopen)
+        if result.state not in (STATE_UNREACHABLE, STATE_DOWN):
+            break  # a body verdict will not change between retries
+        if attempt < DEFAULT_RETRIES - 1:
+            time.sleep(DEFAULT_RETRY_DELAY)
+
+    data = result.data or {}
+    fields = dict(
+        version=data.get("version"),
+        uptime_s=data.get("uptime_s"),
+        db_rw=data.get("db_rw"),
+        backup_age_hours=data.get("backup_age_hours"),
+        tip_age_slots=data.get("tip_age_slots"),
+    )
+    if result.state == STATE_UP:
+        return HealthStatus(ok=True, error=None, state=result.state, **fields)
+    if result.state == STATE_DEGRADED:
+        # Genuine node reporting its own problems: ok stays False so the exit
+        # code still signals failure, while state says "degraded".
+        return HealthStatus(ok=False, error=result.reason, state=result.state, **fields)
+    return HealthStatus(
+        ok=False,
+        version=None,
+        uptime_s=None,
+        db_rw=None,
+        backup_age_hours=None,
+        tip_age_slots=None,
+        error=f"{result.state}: {result.reason}",
+        state=result.state,
+    )
 
 
 def check_epoch(node_url: str, timeout: int) -> EpochStatus:
@@ -284,6 +313,10 @@ def format_text(result: CheckResult, verbose: bool = False) -> str:
     # Health status
     health_icon = "✓" if result.health.ok else "✗"
     lines.append(f"[{health_icon}] Health Status")
+    if result.health.state and result.health.state != "up":
+        # Name the failure mode: "impostor" (200 but not a node) reads very
+        # differently to an operator than plain ok=False.
+        lines.append(f"    Probe state: {result.health.state}")
     if result.health.error:
         lines.append(f"    Error: {result.health.error}")
     else:

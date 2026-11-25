@@ -5,9 +5,20 @@ Exposes RustChain node metrics in Prometheus format
 """
 import time
 import os
+import sys
+from pathlib import Path
 import requests
 from prometheus_client import start_http_server, Gauge, Counter, Info
 import logging
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from node_probe import (  # noqa: E402
+    STATE_DEGRADED,
+    STATE_UNREACHABLE,
+    STATE_UP,
+    ProbeResult,
+    classify_health_data,
+)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('rustchain-exporter')
@@ -21,6 +32,10 @@ TLS_CA_BUNDLE = os.environ.get('TLS_CA_BUNDLE', None)  # Optional CA cert path
 
 # Prometheus metrics
 node_health = Gauge('rustchain_node_health', 'Node health status (1=healthy, 0=unhealthy)')
+last_successful_scrape_timestamp = Gauge(
+    'rustchain_last_successful_scrape_timestamp',
+    'Unix time of the last scrape where /health validated as a genuine RustChain node'
+)
 node_uptime_seconds = Gauge('rustchain_node_uptime_seconds', 'Node uptime in seconds')
 node_db_status = Gauge('rustchain_node_db_status', 'Database read/write status (1=ok, 0=error)')
 node_version = Info('rustchain_node_version', 'Node version information')
@@ -58,18 +73,53 @@ def fetch_json(endpoint):
         return None
 
 
+def fetch_health():
+    """Fetch /health and validate the BODY, not just the status code.
+
+    A 200 whose body is HTML or JSON without node keys (SPA on a repurposed
+    IP) is an impostor; only the shared classify_health_data decides (#17180).
+    """
+    try:
+        url = f"{RUSTCHAIN_NODE}/health"
+        verify = TLS_CA_BUNDLE if TLS_CA_BUNDLE else TLS_VERIFY
+        response = requests.get(url, verify=verify, timeout=10)
+        try:
+            data = response.json()
+        except ValueError:
+            data = None
+        state, reason = classify_health_data(
+            response.status_code, response.headers.get('Content-Type', ''), data
+        )
+        return ProbeResult(
+            state=state,
+            status_code=response.status_code,
+            data=data if isinstance(data, dict) else None,
+            reason=reason,
+        )
+    except Exception as e:
+        logger.error(f"Error fetching /health: {e}")
+        scrape_errors.inc()
+        return ProbeResult(state=STATE_UNREACHABLE, reason=str(e)[:200])
+
+
 def collect_metrics():
     """Collect all metrics from RustChain node"""
     start_time = time.time()
     
     try:
-        # Health metrics
-        health = fetch_json('/health')
-        if health:
-            node_health.set(1 if health.get('ok') else 0)
-            node_uptime_seconds.set(health.get('uptime_s', 0))
-            node_db_status.set(1 if health.get('db_rw') else 0)
-            node_version.info({'version': health.get('version', 'unknown')})
+        # Health metrics — the validated BODY decides, never a bare 200.
+        health = fetch_health()
+        if health.state == STATE_UP:
+            node_health.set(1)
+        else:
+            # impostor / down / unreachable / degraded all zero the gauge:
+            # keeping the last value (1) on a failed scrape was the false green.
+            node_health.set(0)
+            logger.warning(f"/health state={health.state}: {health.reason}")
+        if health.data:
+            node_uptime_seconds.set(health.data.get('uptime_s', 0))
+            node_db_status.set(1 if health.data.get('db_rw') else 0)
+            node_version.info({'version': health.data.get('version', 'unknown')})
         
         # Epoch metrics
         epoch = fetch_json('/epoch')
@@ -109,14 +159,22 @@ def collect_metrics():
             if multipliers:
                 avg_antiquity_multiplier.set(sum(multipliers) / len(multipliers))
         
-        # Record scrape duration
+        # Record scrape duration; stamp success only when a genuine node
+        # answered /health (up or degraded) and every endpoint responded.
         duration = time.time() - start_time
         scrape_duration_seconds.set(duration)
+        if (
+            health.state in (STATE_UP, STATE_DEGRADED)
+            and epoch is not None
+            and miners is not None
+        ):
+            last_successful_scrape_timestamp.set(time.time())
         logger.info(f"Metrics collected in {duration:.2f}s")
         
     except Exception as e:
         logger.error(f"Error collecting metrics: {e}")
         scrape_errors.inc()
+        node_health.set(0)  # never leave a stale green after a crashed cycle
 
 
 def main():
