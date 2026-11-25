@@ -356,46 +356,86 @@ async def _attest(wallet_address: str, seed_phrase: list, node: str, as_json: bo
     try:
         wallet = RustChainWallet.from_seed_phrase(seed_phrase)
         if wallet.address != wallet_address:
-            click.echo(
-                f"❌  Address mismatch: seed phrase produces {wallet.address}, "
-                f"but expected {wallet_address}",
-                err=True,
+            err_msg = (
+                f"Address mismatch: seed phrase produces {wallet.address}, "
+                f"but expected {wallet_address}"
             )
+            if as_json:
+                click.echo(json.dumps({"error": err_msg}, indent=2))
+            else:
+                click.echo(f"❌  {err_msg}", err=True)
             sys.exit(1)
 
         async with RustChainClient(base_url=node) as client:
             # Step 1: Get attestation status
             status = await client.get_attestation_status(wallet.public_key_hex)
 
-            if as_json:
-                click.echo(json.dumps(status, indent=2))
-                return
-
             # Step 2: Request challenge
-            click.echo("📋  Requesting attestation challenge...")
+            if not as_json:
+                click.echo("📋  Requesting attestation challenge...")
             challenge_result = await client.attest_challenge(wallet.public_key_hex)
             challenge = challenge_result.get("challenge", "")
 
             if not challenge:
-                click.echo(f"⚠️  No challenge received. Status: {status}")
-                return
+                if as_json:
+                    click.echo(
+                        json.dumps(
+                            {"error": "No challenge received", "status": status},
+                            indent=2,
+                        )
+                    )
+                else:
+                    click.echo(f"⚠️  No challenge received. Status: {status}", err=True)
+                sys.exit(1)
 
             # Step 3: Sign the challenge
             signature = wallet.sign(challenge.encode()).hex()
 
             # Step 4: Submit attestation
-            click.echo("📤  Submitting attestation...")
+            if not as_json:
+                click.echo("📤  Submitting attestation...")
             submit_result = await client.attest_submit(
                 wallet.public_key_hex,
                 challenge,
                 signature,
             )
 
-            click.echo(f"✅  Attestation submitted!")
-            click.echo(f"   Result: {json.dumps(submit_result)}")
+            # Verify the node actually accepted the attestation
+            def _is_accepted(res: dict) -> bool:
+                if not isinstance(res, dict):
+                    return False
+                if res.get("error"):
+                    return False
+                if res.get("ok") is False:
+                    return False
+                st = str(res.get("status", "")).lower()
+                if st in ("rejected", "failed", "error", "invalid"):
+                    return False
+                if st in ("attested", "accepted", "confirmed", "success", "ok"):
+                    return True
+                if res.get("ok") is True:
+                    return True
+                return False
 
-    except RustChainError as e:
-        click.echo(f"❌  Error: {e}", err=True)
+            accepted = _is_accepted(submit_result)
+
+            if as_json:
+                click.echo(json.dumps(submit_result, indent=2))
+                if not accepted:
+                    sys.exit(1)
+            else:
+                if accepted:
+                    click.echo("✅  Attestation submitted!")
+                    click.echo(f"   Result: {json.dumps(submit_result)}")
+                else:
+                    click.echo(f"❌  Attestation rejected: {json.dumps(submit_result)}", err=True)
+                    sys.exit(1)
+
+    except (RustChainError, ValueError) as e:
+        if as_json:
+            click.echo(json.dumps({"error": str(e)}, indent=2))
+        else:
+            click.echo(f"❌  Error: {e}", err=True)
         sys.exit(1)
 
 
