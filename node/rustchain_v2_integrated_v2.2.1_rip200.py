@@ -3173,8 +3173,11 @@ def _detect_x86_vintage(cpu_brand: str, machine: str, simd_data: dict):
     cpu_lower = cpu_brand.lower()
     machine_lower = (machine or "").lower()
 
-    # Pentium M family — \b boundary + (?!\d) avoids false-matching "Pentium M4".
-    if re.search(r"\bpentium(?:\(r\))?\s+m\b(?!\d)", cpu_lower):
+    # Pentium M and Celeron M family
+    is_pentium_m = re.search(r"\bpentium(?:\(r\))?\s+m\b(?!\d)", cpu_lower)
+    is_celeron_m = re.search(r"\bceleron(?:\(r\))?\s+m\b(?!\d)", cpu_lower)
+    
+    if is_pentium_m or is_celeron_m:
         # Parse clock speed from brand string ("1500MHz" or "1.5GHz" form).
         speed_mhz = None
         mhz = re.search(r"(\d+)\s*mhz", cpu_lower)
@@ -3192,7 +3195,8 @@ def _detect_x86_vintage(cpu_brand: str, machine: str, simd_data: dict):
             # 64-bit-capable Pentium M brand = Yonah (first Core/Core Duo).
             pm_arch = "pentium_m_yonah"
 
-        print(f"[X86_VINTAGE] Pentium M: brand={cpu_brand[:50]!r} "
+        brand_name = "Pentium M" if is_pentium_m else "Celeron M"
+        print(f"[X86_VINTAGE] {brand_name}: brand={cpu_brand[:50]!r} "
               f"machine={machine_lower} speed={speed_mhz}MHz -> x86/{pm_arch}")
         return {"device_family": "x86", "device_arch": pm_arch}
 
