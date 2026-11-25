@@ -37,7 +37,7 @@
     "tweetnacl-util": "^0.15.1"
   },
   "devDependencies": {
-    "@babel/core": "^7.24.0",
+    "@babel/core": "^7.29.13",
     "@testing-library/jest-native": "^5.4.3",
     "@testing-library/react-native": "^12.5.2",
     "@types/jest": "^30.0.0",
