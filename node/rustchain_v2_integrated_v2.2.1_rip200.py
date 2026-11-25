@@ -1538,7 +1538,10 @@ FAILED_FINGERPRINT_WEIGHT_UNITS = 0
 
 def epoch_weight_to_units(weight) -> int:
     """Convert a display weight to fixed-point integer units."""
+    import math
     try:
+        if not math.isfinite(float(weight)):
+            return 0
         value = Decimal(str(weight))
     except Exception:
         return 0
@@ -5760,7 +5763,8 @@ def finalize_epoch(epoch, per_block_rtc, prev_block_hash: bytes = b""):
         # Adjust weights based on active fingerprint checks
         adjusted_miners = []
         for pk, weight in miners:
-            if weight > MAX_EPOCH_WEIGHT_UNITS:
+            import math
+            if math.isnan(weight) or weight > MAX_EPOCH_WEIGHT_UNITS:
                 print(
                     f"[SECURITY] Capping weight {epoch_weight_units_to_display(weight)} "
                     f"for miner {pk} to {MAX_EPOCH_WEIGHT}"

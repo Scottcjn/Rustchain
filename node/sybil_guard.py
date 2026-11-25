@@ -395,10 +395,13 @@ def enrollment_weight(hw_weight, status):
                                  REQUIRE_MEASUREMENT_BINDING_FOR_NEW_PREMIUM
     Never raises a weight.
     """
+    import math
     try:
         weight = float(hw_weight)
+        if not math.isfinite(weight):
+            return 0.0
     except (TypeError, ValueError):
-        return hw_weight
+        return 0.0
     if needs_review(status):
         return 0.0
     if not isinstance(status, dict):
