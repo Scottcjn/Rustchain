@@ -16,6 +16,7 @@ import statistics
 import uuid
 import subprocess
 import re
+import random
 import argparse
 try:
     import tkinter as tk
@@ -51,6 +52,11 @@ CONFIG_FILE = WALLET_DIR / "config.json"
 _CERT_PATH = str(WALLET_DIR / "node_cert.pem")
 TLS_VERIFY = _CERT_PATH if os.path.exists(_CERT_PATH) else True
 WALLET_FILE = WALLET_DIR / "wallet.json"
+
+# Header retry policy (issue #7368) — mirrors miners/windows/rustchain_windows_miner.py
+HEADER_RETRY_BASE_SECONDS = 10
+HEADER_RETRY_CAP_SECONDS = 300
+HEADER_RETRYABLE_STATUS_CODES = frozenset((408, 425, 429))
 
 class RustChainWallet:
     """Windows wallet for RustChain"""
@@ -324,6 +330,10 @@ class RustChainMiner:
         self.mining = False
         self.shares_submitted = 0
         self.shares_accepted = 0
+        self._last_submitted_slot = None
+        self._header_retry_slot = None
+        self._header_retry_attempts = 0
+        self._next_header_retry_at = 0.0
         self.miner_id = f"windows_{hashlib.md5(wallet_address.encode()).hexdigest()[:8]}"
         self.node_url = RUSTCHAIN_API
         self.attestation_valid_until = 0
@@ -332,6 +342,10 @@ class RustChainMiner:
         self.hw_info = self._get_hw_info()
         self.last_entropy = {}
         self.last_attestation_error = ""
+        self.last_header_error = ""
+        self.last_header_retryable = False
+        self.header_retry_in_seconds = 0
+        self.last_eligibility_slot = None
         self.fingerprint_data = None
         self._run_fingerprint_checks()
 
@@ -375,19 +389,32 @@ class RustChainMiner:
 
                 # Check eligibility
                 eligible = self.check_eligibility()
-                if eligible:
+                slot = self.last_eligibility_slot
+                if eligible and self._header_submission_due(slot):
                     header = self.generate_header()
-                    success = self.submit_header(header)
+                    success = self.submit_header(header, slot)
                     self.shares_submitted += 1
                     if success:
                         self.shares_accepted += 1
                     if callback:
-                        callback({
+                        event = {
                             "type": "share",
+                            "slot": slot,
                             "submitted": self.shares_submitted,
                             "accepted": self.shares_accepted,
                             "success": success
-                        })
+                        }
+                        # Issue #7368: carry the node's rejection reason and its
+                        # retry class into headless/GUI events, otherwise the
+                        # operator only ever sees a bare FAIL line.
+                        if not success and self.last_header_error:
+                            event["error"] = self.last_header_error
+                            event["retryable"] = self.last_header_retryable
+                            if self.last_header_retryable:
+                                event["retry_in_seconds"] = round(
+                                    self.header_retry_in_seconds, 1
+                                )
+                        callback(event)
                 time.sleep(10)
             except Exception as e:
                 if callback:
@@ -585,6 +612,7 @@ class RustChainMiner:
 
     def check_eligibility(self):
         """Check if eligible to mine"""
+        self.last_eligibility_slot = None
         try:
             response = requests.get(
                 f"{self.node_url}/lottery/eligibility",
@@ -594,7 +622,11 @@ class RustChainMiner:
             )
             if response.ok:
                 data = response.json()
-                return data.get("eligible", False)
+                if isinstance(data, dict):
+                    # The lottery slot is the identity of "this round's header";
+                    # issue #7368 needs it to tell a fresh round from a retry.
+                    self.last_eligibility_slot = data.get("slot")
+                    return data.get("eligible", False)
         except:
             pass
         return False
@@ -613,8 +645,18 @@ class RustChainMiner:
         header["hash"] = hashlib.sha256(header_str.encode()).hexdigest()
         return header
 
-    def submit_header(self, header):
-        """Submit mining header"""
+    def submit_header(self, header, slot=None):
+        """Submit one mining header and classify the failure for retry policy.
+
+        Issue #7368: this used to return a bare ``False`` for every failure, so
+        the node's reason was discarded and ``_mine_loop`` resubmitted the same
+        rejected header on every poll for the whole eligibility window. A
+        terminal rejection (400/403 — e.g. "missing fields", bad signature) now
+        marks the slot handled; only temporary failures (connection blip, 5xx,
+        429/408/425) are retried, with bounded exponential backoff.
+        """
+        self.last_header_retryable = False
+        self.header_retry_in_seconds = 0
         try:
             response = requests.post(
                 f"{self.node_url}/headers/ingest_signed",
@@ -622,9 +664,74 @@ class RustChainMiner:
                 timeout=5,
                 verify=TLS_VERIFY,
             )
-            return response.status_code == 200
-        except:
+            if response.status_code == 200:
+                self.last_header_error = ""
+                if slot is not None:
+                    self._last_submitted_slot = slot
+                self._reset_header_retry()
+                return True
+            self.last_header_error = self._response_diagnostic(response)
+            self.last_header_retryable = self._is_retryable_header_status(
+                response.status_code
+            )
+        except Exception as e:
+            self.last_header_error = f"header request failed: {e}"
+            self.last_header_retryable = True
+
+        if self.last_header_retryable and slot is not None:
+            self.header_retry_in_seconds = self._schedule_header_retry(slot)
+        else:
+            # Sending the same signed work again cannot fix a malformed
+            # header, so the slot counts as handled.
+            if slot is not None:
+                self._last_submitted_slot = slot
+            self._reset_header_retry()
+        return False
+
+    @staticmethod
+    def _is_retryable_header_status(status_code):
+        """Return whether an HTTP response represents a temporary failure."""
+        if status_code in HEADER_RETRYABLE_STATUS_CODES:
+            return True
+        return 500 <= status_code <= 599
+
+    def _header_submission_due(self, slot, now=None):
+        """Return whether *slot* can be submitted under the retry policy."""
+        if slot == self._last_submitted_slot:
             return False
+        if slot != self._header_retry_slot:
+            return True
+        if now is None:
+            now = time.monotonic()
+        return now >= self._next_header_retry_at
+
+    def _schedule_header_retry(self, slot, now=None):
+        """Schedule and return the bounded exponential delay for *slot*."""
+        if slot != self._header_retry_slot:
+            self._header_retry_slot = slot
+            self._header_retry_attempts = 0
+        self._header_retry_attempts += 1
+        exponent = min(self._header_retry_attempts - 1, 10)
+        base_delay = min(
+            HEADER_RETRY_BASE_SECONDS * (2 ** exponent),
+            HEADER_RETRY_CAP_SECONDS,
+        )
+        # Jitter keeps miners in sync after a shared node outage; the cap is
+        # still a hard upper bound once backoff reaches it.
+        delay = min(
+            base_delay * random.uniform(0.75, 1.25),
+            HEADER_RETRY_CAP_SECONDS,
+        )
+        if now is None:
+            now = time.monotonic()
+        self._next_header_retry_at = now + delay
+        return delay
+
+    def _reset_header_retry(self):
+        """Clear retry state after success or a terminal rejection."""
+        self._header_retry_slot = None
+        self._header_retry_attempts = 0
+        self._next_header_retry_at = 0.0
 
 class RustChainGUI:
     """Windows GUI for RustChain"""
@@ -731,6 +838,28 @@ class RustChainGUI:
         """Run the GUI"""
         self.root.mainloop()
 
+def _format_headless_event(evt):
+    """Render a mining event for ``--headless`` output (issue #7368)."""
+    t = evt.get("type")
+    if t == "share":
+        ok = "OK" if evt.get("success") else "FAIL"
+        line = (
+            f"[share] slot={evt.get('slot')} "
+            f"submitted={evt.get('submitted')} "
+            f"accepted={evt.get('accepted')} {ok}"
+        )
+        if not evt.get("success") and evt.get("error"):
+            line += f" error={evt['error']}"
+            if evt.get("retryable"):
+                line += f" class=retryable retry_in={evt.get('retry_in_seconds')}s"
+            else:
+                line += " class=terminal no_retry"
+        return line
+    if t == "error":
+        return f"[error] {evt.get('message')}"
+    return None
+
+
 def run_headless(wallet_address: str, node_url: str) -> int:
     wallet = RustChainWallet()
     active_wallet = wallet_address or wallet.wallet_data["address"]
@@ -738,15 +867,13 @@ def run_headless(wallet_address: str, node_url: str) -> int:
     miner.node_url = node_url
 
     def cb(evt):
-        if evt.get("type") == "share":
-            ok = "OK" if evt.get("success") else "FAIL"
-            print(
-                f"[share] submitted={evt.get('submitted')} "
-                f"accepted={evt.get('accepted')} {ok}",
-                flush=True,
-            )
-        elif evt.get("type") == "error":
-            print(f"[error] {evt.get('message')}", file=sys.stderr, flush=True)
+        line = _format_headless_event(evt)
+        if not line:
+            return
+        if evt.get("type") == "error":
+            print(line, file=sys.stderr, flush=True)
+        else:
+            print(line, flush=True)
 
     print("RustChain Windows miner: headless mode", flush=True)
     print(f"node={miner.node_url} miner_id={miner.miner_id}", flush=True)
