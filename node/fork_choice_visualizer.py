@@ -80,6 +80,8 @@ def normalize_blocks(blocks: Iterable[Dict]) -> List[ForkChoiceBlock]:
     """Normalize block rows from API/database shapes into visualizer blocks."""
     normalized = []
     for raw in blocks:
+        if not isinstance(raw, dict):
+            continue
         block_hash = raw.get("block_hash") or raw.get("hash") or raw.get("id")
         if not block_hash:
             continue
@@ -102,14 +104,15 @@ def build_fork_choice_graph(blocks: Iterable[Dict]) -> Dict:
     """Build graph, metrics, and canonical path data for fork-choice views."""
     normalized = normalize_blocks(blocks)
     by_hash = {block.block_hash: block for block in normalized}
-    children: Dict[str, List[str]] = {block.block_hash: [] for block in normalized}
+    unique_blocks = list(by_hash.values())
+    children: Dict[str, List[str]] = {block.block_hash: [] for block in unique_blocks}
 
-    for block in normalized:
-        if block.parent_hash in children:
+    for block in unique_blocks:
+        if block.parent_hash in children and block.parent_hash != block.block_hash:
             children[block.parent_hash].append(block.block_hash)
 
     heads = [
-        block for block in normalized
+        block for block in unique_blocks
         if not children.get(block.block_hash)
     ]
     canonical_head = _select_canonical_head(heads)
@@ -118,7 +121,7 @@ def build_fork_choice_graph(blocks: Iterable[Dict]) -> Dict:
 
     nodes = []
     edges = []
-    for block in sorted(normalized, key=lambda item: (item.height, item.block_hash)):
+    for block in sorted(unique_blocks, key=lambda item: (item.height, item.block_hash)):
         child_hashes = sorted(children.get(block.block_hash, []))
         nodes.append({
             "id": block.block_hash,
@@ -131,13 +134,13 @@ def build_fork_choice_graph(blocks: Iterable[Dict]) -> Dict:
             "is_head": block in heads,
             "is_canonical": block.block_hash in canonical_hashes,
         })
-        if block.parent_hash in by_hash:
+        if block.parent_hash in by_hash and block.parent_hash != block.block_hash:
             edges.append({"source": block.parent_hash, "target": block.block_hash})
 
     fork_points = [block_hash for block_hash, child_hashes in children.items() if len(child_hashes) > 1]
     canonical_height = canonical_head.height if canonical_head else 0
     reorg_metrics = _reorg_resistance_metrics(
-        normalized,
+        unique_blocks,
         children,
         canonical_hashes,
         fork_points,
@@ -150,12 +153,12 @@ def build_fork_choice_graph(blocks: Iterable[Dict]) -> Dict:
         "canonical_head": canonical_head.block_hash if canonical_head else None,
         "canonical_path": canonical_path,
         "fork_points": sorted(fork_points),
-        "history": _fork_history(normalized, fork_points),
+        "history": _fork_history(unique_blocks, fork_points),
         "metrics": {
-            "blocks": len(normalized),
+            "blocks": len(unique_blocks),
             "forks": len(fork_points),
             "heads": len(heads),
-            "max_depth": max((block.height for block in normalized), default=0),
+            "max_depth": max((block.height for block in unique_blocks), default=0),
             "canonical_height": canonical_height,
             **reorg_metrics,
         },
@@ -189,8 +192,10 @@ def _select_canonical_head(heads: List[ForkChoiceBlock]) -> Optional[ForkChoiceB
 
 def _canonical_path(head: Optional[ForkChoiceBlock], by_hash: Dict[str, ForkChoiceBlock]) -> List[str]:
     path = []
+    visited = set()
     current = head
-    while current:
+    while current and current.block_hash not in visited:
+        visited.add(current.block_hash)
         path.append(current.block_hash)
         current = by_hash.get(current.parent_hash) if current.parent_hash else None
     return list(reversed(path))
