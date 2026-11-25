@@ -18,14 +18,23 @@ Features:
     - Embed code generator with size presets (560x315, 640x360, 854x480)
 """
 
-import hashlib
+from __future__ import annotations
+
 import html as html_lib
-import json
+import re
 import time
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
-from flask import Blueprint, request, Response, jsonify, render_template_string, current_app
+from typing import Any
+from urllib.parse import quote, urlsplit
 
+from flask import (
+    Blueprint,
+    Response,
+    current_app,
+    jsonify,
+    render_template_string,
+    request,
+)
 
 # Create blueprint for embed routes
 embed_bp = Blueprint("bottube_embed", __name__, url_prefix="/")
@@ -615,8 +624,8 @@ WATCH_PAGE_TEMPLATE = """
     <div class="toast" id="toast"></div>
 
     <script>
-        const videoId = "{{ video_id }}";
-        const baseUrl = "{{ base_url }}";
+        const videoId = {{ video_id | tojson }};
+        const baseUrl = {{ base_url | tojson }};
         let selectedWidth = 854;
         let selectedHeight = 480;
 
@@ -632,7 +641,7 @@ WATCH_PAGE_TEMPLATE = """
         function switchTab(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            
+
             event.target.classList.add('active');
             document.getElementById(tab + '-tab').classList.add('active');
         }
@@ -646,13 +655,13 @@ WATCH_PAGE_TEMPLATE = """
         }
 
         function updateEmbedCode() {
-            const embedUrl = baseUrl + '/embed/' + videoId;
+            const embedUrl = baseUrl + '/embed/' + encodeURIComponent(videoId);
             const iframeCode = '<iframe width="' + selectedWidth + '" height="' + selectedHeight + '" src="' + embedUrl + '" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>';
             document.getElementById('embedCode').value = iframeCode;
         }
 
         function copyLink() {
-            const url = baseUrl + '/watch/' + videoId;
+            const url = baseUrl + '/watch/' + encodeURIComponent(videoId);
             navigator.clipboard.writeText(url).then(() => {
                 showToast('Link copied to clipboard!');
                 closeShareModal();
@@ -667,14 +676,14 @@ WATCH_PAGE_TEMPLATE = """
         }
 
         function shareToTwitter() {
-            const url = encodeURIComponent(baseUrl + '/watch/' + videoId);
+            const url = encodeURIComponent(baseUrl + '/watch/' + encodeURIComponent(videoId));
             const text = encodeURIComponent('Check out this video on BoTTube!');
             window.open('https://twitter.com/intent/tweet?url=' + url + '&text=' + text, '_blank');
             closeShareModal();
         }
 
         function shareToFacebook() {
-            const url = encodeURIComponent(baseUrl + '/watch/' + videoId);
+            const url = encodeURIComponent(baseUrl + '/watch/' + encodeURIComponent(videoId));
             window.open('https://www.facebook.com/sharer/sharer.php?u=' + url, '_blank');
             closeShareModal();
         }
@@ -705,7 +714,7 @@ WATCH_PAGE_TEMPLATE = """
 # Helper Functions
 # ============================================================================
 
-def _get_mock_video(video_id: str) -> Optional[Dict[str, Any]]:
+def _get_mock_video(video_id: str) -> dict[str, Any] | None:
     """Get mock video data for demonstration."""
     base_time = time.time()
     
@@ -754,7 +763,7 @@ def _get_mock_video(video_id: str) -> Optional[Dict[str, Any]]:
     return mock_videos.get(video_id)
 
 
-def _get_related_videos(video_id: str, limit: int = 5) -> List[Dict[str, Any]]:
+def _get_related_videos(video_id: str, limit: int = 5) -> list[dict[str, Any]]:
     """Get related videos (excluding current video)."""
     all_videos = [
         {
@@ -788,14 +797,42 @@ def _get_related_videos(video_id: str, limit: int = 5) -> List[Dict[str, Any]]:
     return related[:limit]
 
 
+_SAFE_HOST_RE = re.compile(r"^[A-Za-z0-9.\-:[\]]+$")
+
+
+def _is_safe_host(host: str) -> bool:
+    """Validate that a host[:port] contains no HTML/URL control or quote characters."""
+    return bool(host) and len(host) <= 255 and bool(_SAFE_HOST_RE.match(host))
+
+
+def _sanitize_media_url(url: Any) -> str:
+    """Allow only http(s) URLs or safe single-slash relative paths for media sources."""
+    if not isinstance(url, str):
+        return ""
+    cleaned = url.strip()
+    if not cleaned or any(ord(ch) < 32 or ord(ch) == 127 for ch in cleaned):
+        return ""
+    if cleaned.startswith("/"):
+        if cleaned.startswith(("//", "/\\")):
+            return ""
+        return cleaned
+    parsed = urlsplit(cleaned)
+    if parsed.scheme.lower() in ("http", "https") and parsed.netloc:
+        return cleaned
+    return ""
+
+
 def _get_base_url() -> str:
     """Get the base URL from request, trusting only configured proxy hosts."""
-    base_url = request.host_url.rstrip("/")
     forwarded_host = request.headers.get("X-Forwarded-Host", "").strip()
     trusted_hosts = current_app.config.get("TRUSTED_FORWARD_HOSTS") or []
-    if forwarded_host and forwarded_host in trusted_hosts:
-        base_url = f"https://{forwarded_host}"
-    return base_url
+    if forwarded_host and forwarded_host in trusted_hosts and _is_safe_host(forwarded_host):
+        return f"https://{forwarded_host}"
+    parsed = urlsplit(request.host_url.rstrip("/"))
+    scheme = parsed.scheme.lower() if parsed.scheme.lower() in ("http", "https") else "https"
+    if not _is_safe_host(parsed.netloc):
+        return "https://bottube.ai"
+    return f"{scheme}://{parsed.netloc}"
 
 
 # ============================================================================
@@ -833,13 +870,13 @@ def embed_player(video_id: str):
         return Response(error_html, status=404, mimetype="text/html")
 
     base_url = _get_base_url()
-    full_page_url = f"{base_url}/watch/{video_id}"
+    full_page_url = f"{base_url}/watch/{quote(video_id, safe='')}"
 
     return render_template_string(
         EMBED_PLAYER_TEMPLATE,
         video_title=video.get("title", "Video"),
-        video_url=video.get("video_url", ""),
-        thumbnail_url=video.get("thumbnail_url", ""),
+        video_url=_sanitize_media_url(video.get("video_url", "")),
+        thumbnail_url=_sanitize_media_url(video.get("thumbnail_url", "")),
         full_page_url=full_page_url,
         auto_play=True,
     )
@@ -849,16 +886,16 @@ def embed_player(video_id: str):
 def oembed():
     """
     oEmbed endpoint for auto-discovery.
-    
+
     Enables platforms like Discord, Slack, and WordPress to automatically
     embed BoTTube videos when a URL is shared.
-    
+
     Query Parameters:
         url     - The BoTTube video URL (required)
         format  - Response format (json only)
         maxwidth - Maximum width (optional)
         maxheight - Maximum height (optional)
-        
+
     Returns:
         JSON oEmbed response
     """
@@ -868,36 +905,37 @@ def oembed():
     format_param = request.args.get("format", "json")
     maxwidth = request.args.get("maxwidth", 854)
     maxheight = request.args.get("maxheight", 480)
-    
+
     # Validate format
     if format_param != "json":
         return jsonify({
             "error": "Unsupported format. Only JSON is supported."
         }), 400
-    
-    # Extract video ID from URL
+
+    # Extract video ID from URL (strip fragments, query params, and trailing path)
     video_id = None
     if "/watch/" in url:
-        video_id = url.split("/watch/")[-1].split("?")[0].split("/")[0]
+        video_id = url.split("/watch/")[-1].split("#")[0].split("?")[0].split("/")[0]
     elif "/embed/" in url:
-        video_id = url.split("/embed/")[-1].split("?")[0].split("/")[0]
-    
-    if not video_id:
+        video_id = url.split("/embed/")[-1].split("#")[0].split("?")[0].split("/")[0]
+
+    if not video_id or len(video_id) > 256:
         return jsonify({
             "error": "Invalid URL. Must be a BoTTube video URL."
         }), 400
-    
+
     # Get video data
     video = _get_mock_video(video_id)
-    
+
     if not video:
         return jsonify({
             "error": "Video not found"
         }), 404
-    
+
     base_url = _get_base_url()
-    embed_url = f"{base_url}/embed/{video_id}"
-    
+    embed_url = f"{base_url}/embed/{quote(video_id, safe='')}"
+    escaped_embed_url = html_lib.escape(embed_url, quote=True)
+
     # Calculate dimensions
     try:
         maxwidth = int(maxwidth)
@@ -909,23 +947,26 @@ def oembed():
         maxwidth = 854
     if maxheight < 1:
         maxheight = 480
-    
-    # Maintain 16:9 aspect ratio
-    width = min(maxwidth, 854)
-    height = int(width * 9 / 16)
+
+    # Maintain 16:9 aspect ratio with positive integer bounds
+    width = max(1, min(maxwidth, 854))
+    height = max(1, int(width * 9 / 16))
     if height > maxheight:
-        height = maxheight
-        width = int(height * 16 / 9)
-    
+        height = max(1, maxheight)
+        width = max(1, min(maxwidth, int(height * 16 / 9)))
+
     # Generate embed HTML
     embed_html = (
         f'<iframe width="{width}" height="{height}" '
-        f'src="{embed_url}" '
+        f'src="{escaped_embed_url}" '
         f'frameborder="0" '
         f'allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" '
         f'allowfullscreen></iframe>'
     )
-    
+
+    author_raw = video.get("agent")
+    author_slug = quote(str(author_raw), safe="") if author_raw else ""
+
     response = {
         "version": "1.0",
         "type": "video",
@@ -933,15 +974,15 @@ def oembed():
         "provider_url": base_url,
         "title": video.get("title", "Video"),
         "author_name": video.get("agent", "Unknown"),
-        "author_url": f"{base_url}/agent/{video.get('agent', '')}",
+        "author_url": f"{base_url}/agent/{author_slug}",
         "width": width,
         "height": height,
         "html": embed_html,
-        "thumbnail_url": video.get("thumbnail_url", ""),
+        "thumbnail_url": _sanitize_media_url(video.get("thumbnail_url", "")),
         "thumbnail_width": 480,
         "thumbnail_height": 360,
     }
-    
+
     return jsonify(response)
 
 
@@ -980,24 +1021,25 @@ def watch_page(video_id: str):
         return Response(error_html, status=404, mimetype="text/html")
 
     base_url = _get_base_url()
-    oembed_url = f"{base_url}/oembed?url={base_url}/watch/{video_id}"
+    watch_url = f"{base_url}/watch/{quote(video_id, safe='')}"
+    oembed_url = f"{base_url}/oembed?url={quote(watch_url, safe='')}"
 
     # Format publish date
     created_at = video.get("created_at", time.time())
     try:
-        publish_date = datetime.fromtimestamp(created_at).strftime("%b %d, %Y")
+        publish_date = datetime.fromtimestamp(created_at, tz=timezone.utc).strftime("%b %d, %Y")
     except (ValueError, TypeError, OSError):
         publish_date = "Unknown"
-    
+
     related_videos = _get_related_videos(video_id)
-    
+
     return render_template_string(
         WATCH_PAGE_TEMPLATE,
         video_id=video_id,
         video_title=video.get("title", "Video"),
         video_description=video.get("description", ""),
-        video_url=video.get("video_url", ""),
-        thumbnail_url=video.get("thumbnail_url", ""),
+        video_url=_sanitize_media_url(video.get("video_url", "")),
+        thumbnail_url=_sanitize_media_url(video.get("thumbnail_url", "")),
         views=video.get("views", 0),
         publish_date=publish_date,
         base_url=base_url,
