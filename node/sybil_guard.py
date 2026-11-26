@@ -394,11 +394,18 @@ def enrollment_weight(hw_weight, status):
     trusted (graduated)       -> unchanged, unless
                                  REQUIRE_MEASUREMENT_BINDING_FOR_NEW_PREMIUM
     Never raises a weight.
+
+    FAIL CLOSED (#8619): a weight that is not a finite, non-negative number
+    (None, "N/A", NaN, +/-inf, negative) is 0.0 in EVERY state. Previously a
+    non-coercible value was returned raw, bypassing the cap entirely, and
+    NaN/inf flowed through unguarded into the epoch-weight converter.
     """
     try:
         weight = float(hw_weight)
-    except (TypeError, ValueError):
-        return hw_weight
+    except (TypeError, ValueError, OverflowError):
+        return 0.0
+    if not math.isfinite(weight) or weight < 0.0:
+        return 0.0
     if needs_review(status):
         return 0.0
     if not isinstance(status, dict):
