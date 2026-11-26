@@ -330,6 +330,25 @@ tests/test_mcp_server.py::TestRustChainMCP::test_tool_health PASSED
 }
 ```
 
+## ⏱️ Streaming & Long-Running Tools
+
+> **Authoritative answer to [`Scottcjn/rustchain-mcp#231`](https://github.com/Scottcjn/rustchain-mcp/issues/231):**
+> `rustchain-mcp` does **not** use Server-Sent Events (SSE) partial streaming or emit MCP `notifications/progress` events during tool execution. Every tool executes as a **synchronous request/response call** over the MCP `stdio_server` transport and returns the complete JSON payload in a single `TextContent` message once the upstream node responds.
+
+### Code-Backed Behavior & Declared MCP Capabilities
+
+| Behavior / Capability | Implementation Reference | Contract |
+|---|---|---|
+| **Transport & Execution Model** | `integrations/rustchain-mcp/mcp_server.py` (`call_tool`, lines 263–278; `main`, lines 508–513) | Uses `mcp.server.stdio.stdio_server`. `@self.app.call_tool()` awaits `handler(arguments)` and returns `[TextContent(type="text", text=json.dumps(result, indent=2))]` in one atomic response. |
+| **Advertised MCP Capabilities** | `integrations/rustchain-mcp/mcp_server.py` (`create_initialization_options`, lines 151–153) | Delegates to `Server("rustchain-mcp").create_initialization_options()`. Advertises `tools`, `resources`, and `prompts` with `experimental_capabilities == {}` (no streaming or progress notification capability flags). |
+| **Timeout Bounds on Slow Queries** | `integrations/rustchain-mcp/client.py` (`REQUEST_TIMEOUT`, line 52; `_ensure_session`, lines 93–103) | Bounded by `RUSTCHAIN_TIMEOUT` (default `30` seconds via `aiohttp.ClientTimeout(total=self.timeout)`). Invalid env values safely fall back to `30` via `_safe_int_env`. |
+| **Retry & Backoff on Transient Errors** | `integrations/rustchain-mcp/client.py` (`RETRY_COUNT`, line 53; `_request`, lines 137–162) | Retries `aiohttp.ClientError` up to `RUSTCHAIN_RETRY` times (default `2`, i.e., up to 3 total attempts) with `0.5 * (attempt + 1)` second backoff before raising `APIError(code="CONNECTION_FAILED", status_code=503)`. |
+| **Structured Error Propagation** | `integrations/rustchain-mcp/mcp_server.py` (lines 272–277) & `client.py` (lines 146–148) | Upstream HTTP `>= 400` responses raise `APIError` and are serialized as structured JSON (`{"error": ..., "code": ..., "status_code": ...}`) rather than hanging or returning partial data. |
+
+### Recommended Pattern for Real-Time Dashboards (`/api/miners`)
+
+Because `/api/miners` returns a single JSON snapshot and `rustchain_query(query_type="miners")` blocks until that snapshot arrives, real-time dashboards in Claude Code or custom MCP hosts should poll `rustchain_query` with a bounded `limit` (e.g., `limit=50`) on a timer and tune `RUSTCHAIN_TIMEOUT` (e.g., `RUSTCHAIN_TIMEOUT=15`) if faster fail-fast behavior is desired.
+
 ## 🔒 Security Notes
 
 - **Self-signed certificates:** The RustChain API uses self-signed TLS certificates. The client disables SSL verification (`ssl=False`).
