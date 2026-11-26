@@ -29,14 +29,6 @@ let searchResults = null;
 let searchMatches = [];
 let activeSearchIndex = -1;
 
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
-}
 let hoveredObjectKey = null;
 let leaderboardRoot = null;
 let leaderboardMode = 'beats';
@@ -292,6 +284,8 @@ function hideAgentSearchResults() {
   searchInput.setAttribute('aria-expanded', 'false');
   searchInput.removeAttribute('aria-activedescendant');
   activeSearchIndex = -1;
+}
+
 function initCityTeleport() {
   const select = document.getElementById('hud-city-teleport');
   if (!select) return;
