@@ -10,17 +10,21 @@ Usage:
     rustchain epoch info
     rustchain miners list
     rustchain attest <wallet_address>
+    rustchain services list
 """
 
 import asyncio
 import sys
 import json
+from dataclasses import asdict
 from typing import Optional
 
 import click
 
 from .client import DEFAULT_NODE_URL, RustChainClient
 from .wallet import RustChainWallet
+from .bottube import BoTTubeClient
+from .bottube.exceptions import BoTTubeError
 from . import __version__
 from .exceptions import RustChainError
 
@@ -395,6 +399,169 @@ async def _attest(wallet_address: str, seed_phrase: list, node: str, as_json: bo
             click.echo(f"   Result: {json.dumps(submit_result)}")
 
     except RustChainError as e:
+        click.echo(f"❌  Error: {e}", err=True)
+        sys.exit(1)
+
+
+# ─────────────────────────────────────────────────────────────────
+# Services Commands (BoTTube RTC spend flow)
+# ─────────────────────────────────────────────────────────────────
+
+@main.group(name="services")
+def services_group():
+    """Spend RTC on BoTTube services (bottube.ai)."""
+    pass
+
+
+def _services_client() -> BoTTubeClient:
+    # API key resolves from BOTTUBE_API_KEY or ~/.bottube/config.json;
+    # no --api-key flag, so the secret never hits shell history.
+    return BoTTubeClient()
+
+
+@services_group.command(name="list")
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output as JSON.",
+)
+def services_list(as_json: bool):
+    """List purchasable RTC services with prices."""
+    try:
+        offers = _services_client().list_services()
+        if as_json:
+            click.echo(json.dumps([asdict(o) for o in offers], indent=2, default=str))
+        else:
+            click.echo(f"Services ({len(offers)}):")
+            for offer in offers:
+                cap = f" (max {offer.max_quantity}/order)" if offer.max_quantity else ""
+                click.echo(
+                    f"  {offer.key:<20} {offer.price} {offer.currency}{cap}"
+                    f"  {offer.name}"
+                )
+    except BoTTubeError as e:
+        click.echo(f"❌  Error: {e}", err=True)
+        sys.exit(1)
+
+
+@services_group.command(name="buy")
+@click.argument("service_key")
+@click.option(
+    "--qty",
+    type=int,
+    default=1,
+    help="Quantity to purchase.",
+)
+@click.option(
+    "--yes",
+    is_flag=True,
+    help="Skip the confirmation prompt.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output as JSON.",
+)
+def services_buy(service_key: str, qty: int, yes: bool, as_json: bool):
+    """Buy an RTC service with RTC from the BoTTube account balance."""
+    try:
+        if qty < 1:
+            raise click.BadParameter("must be >= 1", param_hint="'--qty'")
+        client = _services_client()
+        try:
+            offer = next(
+                (o for o in client.list_services() if o.key == service_key), None
+            )
+        except BoTTubeError:
+            # shortcut: price preview is best-effort; pay() still validates
+            # the service server-side.
+            offer = None
+        if offer is not None:
+            total = offer.price * qty
+            click.echo(
+                f"Price: {offer.price} {offer.currency} x {qty} "
+                f"= {total} {offer.currency}"
+            )
+        else:
+            click.echo(
+                f"Service '{service_key}' not in the current listing; "
+                "the server will validate it."
+            )
+        if not yes and not click.confirm(f"Buy {qty} x {service_key}?", default=False):
+            click.echo("Aborted.")
+            return
+        receipt = client.pay(service_key, quantity=qty)
+        if as_json:
+            click.echo(json.dumps(asdict(receipt), indent=2, default=str))
+        else:
+            click.echo("✅  Purchase submitted!")
+            click.echo(f"   Service:    {receipt.service}")
+            click.echo(f"   Quantity:   {receipt.quantity}")
+            click.echo(
+                f"   Cost:       {receipt.unit_price} x {receipt.quantity} "
+                f"= {receipt.total_cost} RTC"
+            )
+            click.echo(f"   Token:      {receipt.token}")
+    except (BoTTubeError, click.ClickException) as e:
+        click.echo(f"❌  Error: {e}", err=True)
+        sys.exit(1)
+
+
+@services_group.command(name="use")
+@click.argument("service_token")
+@click.argument("payload", nargs=-1, metavar="[KEY=VALUE]...")
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output as JSON.",
+)
+def services_use(service_token: str, payload: tuple, as_json: bool):
+    """Redeem a purchased service token; KEY=VALUE args become the payload."""
+    try:
+        data = {}
+        for item in payload:
+            if "=" not in item:
+                raise click.BadParameter(
+                    f"expected KEY=VALUE, got {item!r}", param_hint="'PAYLOAD'"
+                )
+            key, _, value = item.partition("=")
+            data[key] = value
+        result = _services_client().use(service_token, **data)
+        if as_json:
+            click.echo(json.dumps(result, indent=2, default=str))
+        else:
+            click.echo(f"✅  Service used: {json.dumps(result, default=str)}")
+    except (BoTTubeError, click.ClickException) as e:
+        click.echo(f"❌  Error: {e}", err=True)
+        sys.exit(1)
+
+
+@services_group.command(name="purchases")
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Output as JSON.",
+)
+def services_purchases(as_json: bool):
+    """List your RTC service purchase history."""
+    try:
+        receipts = _services_client().purchases()
+        if as_json:
+            click.echo(
+                json.dumps([asdict(r) for r in receipts], indent=2, default=str)
+            )
+        else:
+            click.echo(f"Purchases ({len(receipts)}):")
+            for receipt in receipts:
+                click.echo(
+                    f"  {receipt.service:<20} x{receipt.quantity}"
+                    f"  {receipt.total_cost} RTC  token={receipt.token[:16]}"
+                )
+    except BoTTubeError as e:
         click.echo(f"❌  Error: {e}", err=True)
         sys.exit(1)
 
