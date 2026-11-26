@@ -11,12 +11,26 @@ import json
 import time
 import threading
 import os
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
 import requests
 from flask import Flask, render_template, jsonify, Response
+
+# The shared node probe lives at the repository root. Importing it keeps this
+# page and the other four monitors on one definition of "up", instead of each
+# decoding a 200 on its own.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from monitoring.node_probe import (  # noqa: E402
+    STATE_UP,
+    classify_health,
+    content_type_of,
+)
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -67,39 +81,53 @@ def save_state():
 
 
 def check_node(node):
-    """Poll a single node and return status dict."""
+    """Poll a single node and return status dict.
+
+    "Up" is decided by the shared probe, never by the status code alone: an
+    SPA or parking page answering 200 is reported as ``impostor``.
+    """
     start = time.time()
     try:
         _cert = os.path.expanduser("~/.rustchain/node_cert.pem")
         _verify = _cert if os.path.exists(_cert) else True
         resp = requests.get(node["endpoint"], timeout=10, verify=_verify)
         elapsed_ms = round((time.time() - start) * 1000)
-        if resp.status_code == 200:
-            try:
-                data = resp.json()
-            except ValueError:
-                data = {}
-            return {
-                "up": True,
-                "status_code": resp.status_code,
-                "response_ms": elapsed_ms,
-                "version": data.get("version", "unknown"),
-                "uptime": data.get("uptime", data.get("uptime_seconds", 0)),
-                "active_miners": data.get("active_miners", data.get("miners", 0)),
-                "current_epoch": data.get("epoch", data.get("current_epoch", 0)),
-                "checked_at": datetime.utcnow().isoformat() + "Z",
-            }
-        else:
-            return {
-                "up": False,
-                "status_code": resp.status_code,
-                "response_ms": elapsed_ms,
-                "checked_at": datetime.utcnow().isoformat() + "Z",
-            }
+
+        try:
+            data = resp.json()
+        except ValueError:
+            data = None
+        if not isinstance(data, dict):
+            data = None
+
+        probe = classify_health(
+            resp.status_code,
+            data,
+            url=node["endpoint"],
+            content_type=content_type_of(getattr(resp, "headers", None)),
+            response_ms=elapsed_ms,
+        )
+        body = probe.payload or {}
+        result = {
+            "up": probe.is_up,
+            "state": probe.state,
+            "status_code": resp.status_code,
+            "response_ms": elapsed_ms,
+            "version": body.get("version", "unknown"),
+            "uptime": body.get("uptime", body.get("uptime_seconds", body.get("uptime_s", 0))),
+            "active_miners": body.get("active_miners", body.get("miners", 0)),
+            "current_epoch": body.get("epoch", body.get("current_epoch", 0)),
+            "checked_at": datetime.utcnow().isoformat() + "Z",
+        }
+        if probe.state != STATE_UP:
+            result["reason"] = probe.reason
+            result["error"] = probe.reason
+        return result
     except Exception as e:
         elapsed_ms = round((time.time() - start) * 1000)
         return {
             "up": False,
+            "state": "unreachable",
             "error": str(e)[:200],
             "response_ms": elapsed_ms,
             "checked_at": datetime.utcnow().isoformat() + "Z",
@@ -180,7 +208,10 @@ def api_status():
     return jsonify({
         "nodes": list(node_status.values()),
         "timestamp": datetime.utcnow().isoformat() + "Z",
-        "overall": "operational" if all(n.get("up") for n in node_status.values()) else "degraded",
+        "overall": "operational" if all(
+            n.get("up") and n.get("state", STATE_UP) == STATE_UP
+            for n in node_status.values()
+        ) else "degraded",
     })
 
 

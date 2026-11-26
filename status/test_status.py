@@ -44,6 +44,17 @@ class TestCheckNode:
         assert "response_ms" in result
         assert "checked_at" in result
 
+    def test_html_200_is_impostor_not_up(self):
+        # An SPA answers 200 on every path; the body is not JSON.
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.side_effect = ValueError("Expecting value: line 1 column 1")
+        with patch("status_server.requests.get", return_value=mock_resp):
+            result = check_node(NODES[0])
+        assert result["up"] is False
+        assert result["state"] == "impostor"
+        assert "not a JSON object" in result["error"]
+
     def test_down_node_http_error(self):
         mock_resp = MagicMock()
         mock_resp.status_code = 500
@@ -209,7 +220,9 @@ class TestAPI:
         # Nodes must be built via safe DOM construction, not innerHTML
         assert "card.innerHTML" not in html
         assert "nameSpan.textContent = node.name" in html
-        assert "badge.textContent = node.up ? 'Operational' : 'Down'" in html
+        assert "badge.textContent = STATE_LABELS[state] || 'Unknown'" in html
+        # A 200 from a non-node must not render as Operational.
+        assert "impostor" in html
         # Incident rows must be built with createElement/textContent
         assert "evt.textContent = " in html
         assert "incEl.innerHTML" not in html

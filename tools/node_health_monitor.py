@@ -12,12 +12,27 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.request
 import urllib.error
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional, Any
+
+# Shared liveness probe: a 200 from an SPA is not a node.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+from monitoring.node_probe import (  # noqa: E402
+    STATE_DOWN,
+    STATE_IMPOSTOR,
+    STATE_UNREACHABLE,
+    STATE_UP,
+    looks_like_html,
+    parse_json_object,
+)
 
 # ── ANSI color codes ─────────────────────────────────────────────────────────
 GREEN  = "\033[92m"
@@ -67,6 +82,10 @@ class NodeStatus:
     # perfectly healthy through the 84-epoch settlement outage of 2026-03-03 to
     # 2026-05-27. None means the node does not report it (older build).
     settlement_lag_epochs: Optional[int] = None
+    # Shared-probe state: "up", "degraded", "impostor", "down", "unreachable".
+    # `status` stays online/slow/offline so existing callers and the table
+    # output keep working; `state` names *why* an answer was rejected.
+    state: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -117,13 +136,9 @@ class NodeHealthMonitor:
             )
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 elapsed_ms = (time.monotonic() - start) * 1000
-                raw = resp.read().decode("utf-8", errors="replace")
-                try:
-                    data = json.loads(raw)
-                except json.JSONDecodeError:
-                    data = None
-                if not isinstance(data, dict):
-                    data = None
+                raw_bytes = resp.read()
+                raw = raw_bytes.decode("utf-8", errors="replace")
+                data = parse_json_object(raw_bytes)
 
                 # A 200 is not evidence of a node.
                 #
@@ -137,6 +152,7 @@ class NodeHealthMonitor:
                 # A node is online only if it answered with JSON that actually
                 # carries node state. Anything else is impersonating one.
                 if data is None:
+                    kind = "HTML" if looks_like_html(raw_bytes) else "text"
                     return NodeStatus(
                         url=url,
                         status="offline",
@@ -144,7 +160,8 @@ class NodeHealthMonitor:
                         epoch=None,
                         miners=None,
                         error=(f"/status returned {len(raw)} bytes of non-JSON "
-                               f"(is this still a node?): {raw[:60]!r}"),
+                               f"{kind} (is this still a node?): {raw[:60]!r}"),
+                        state=STATE_IMPOSTOR,
                     )
 
                 epoch  = data.get("epoch") or data.get("current_epoch")
@@ -172,6 +189,7 @@ class NodeHealthMonitor:
                         epoch=None,
                         miners=miners,
                         error="/status carried no epoch (not a RustChain node?)",
+                        state=STATE_IMPOSTOR,
                     )
 
                 lag = data.get("settlement_lag_epochs")
@@ -197,6 +215,7 @@ class NodeHealthMonitor:
                     miners=miners,
                     error=err,
                     settlement_lag_epochs=lag,
+                    state=STATE_UP,
                 )
 
         except urllib.error.HTTPError as exc:
@@ -224,6 +243,7 @@ class NodeHealthMonitor:
                 epoch=None,
                 miners=None,
                 error=f"HTTP {exc.code}: {exc.reason}",
+                state=STATE_DOWN,
             )
         except Exception as exc:  # noqa: BLE001  (timeout, connection refused, etc.)
             return NodeStatus(
@@ -233,6 +253,7 @@ class NodeHealthMonitor:
                 epoch=None,
                 miners=None,
                 error=str(exc),
+                state=STATE_UNREACHABLE,
             )
 
     # ── Multi-node checks ─────────────────────────────────────────────────────
