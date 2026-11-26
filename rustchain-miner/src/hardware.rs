@@ -55,7 +55,14 @@ impl HardwareInfo {
 
         // Get CPU info
         let cpu_info = sys.global_cpu_info();
-        let cpu = cpu_info.name().to_string();
+        // `name()` is the per-core label ("0", "cpu0"), not the model; use `brand()`.
+        let cpu = cpu_info.brand().trim().to_string();
+        #[cfg(target_os = "macos")]
+        let cpu = if cpu.is_empty() {
+            macos_cpu_brand().unwrap_or(cpu)
+        } else {
+            cpu
+        };
         let cores = sys.cpus().len();
 
         // Get memory info
@@ -228,6 +235,17 @@ fn detect_cpu_family_arch(cpu: &str, machine: &str) -> (String, String) {
     ("unknown".to_string(), "unknown".to_string())
 }
 
+/// CPU model from sysctl (e.g. "Apple A18 Pro", "Apple M2").
+#[cfg(target_os = "macos")]
+fn macos_cpu_brand() -> Option<String> {
+    let out = std::process::Command::new("sysctl")
+        .args(["-n", "machdep.cpu.brand_string"])
+        .output()
+        .ok()?;
+    let brand = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!brand.is_empty()).then_some(brand)
+}
+
 /// Get hardware serial number (platform-specific)
 #[cfg(target_os = "macos")]
 fn get_hardware_serial() -> Option<String> {
@@ -346,6 +364,27 @@ fn get_mac_addresses() -> Vec<String> {
 
     #[cfg(target_os = "macos")]
     {
+        // Burned-in hardware MACs. `ifconfig` only shows per-network private
+        // (randomized) addresses on modern macOS, which churn and trip the
+        // node's MAC_MAX_UNIQUE_PER_DAY limit.
+        if let Ok(output) = std::process::Command::new("networksetup")
+            .arg("-listallhardwareports")
+            .output()
+        {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            for line in stdout.lines() {
+                if let Some(rest) = line.trim().strip_prefix("Ethernet Address:") {
+                    let mac = rest.trim().to_lowercase();
+                    if mac.len() == 17 && mac != "00:00:00:00:00:00" && !macs.contains(&mac) {
+                        macs.push(mac);
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    if macs.is_empty() {
         if let Ok(output) = std::process::Command::new("ifconfig").output() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
