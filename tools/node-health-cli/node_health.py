@@ -34,7 +34,7 @@ if str(_REPO_ROOT) not in sys.path:
 try:
     from monitoring.node_probe import ProbeResult, classify_health
     _PROBE_SHARED = True
-except Exception:  # standalone copy: use the vendored classifier below
+except ImportError:  # standalone copy: use the vendored classifier below
     _PROBE_SHARED = False
     # Everything between these markers is copied verbatim into
     # health-dashboard/server.py and into the fallback path of
