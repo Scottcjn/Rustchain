@@ -395,10 +395,14 @@ def enrollment_weight(hw_weight, status):
                                  REQUIRE_MEASUREMENT_BINDING_FOR_NEW_PREMIUM
     Never raises a weight.
     """
+    if isinstance(hw_weight, bool):
+        return 0.0
     try:
         weight = float(hw_weight)
     except (TypeError, ValueError):
-        return hw_weight
+        return 0.0
+    if not math.isfinite(weight) or weight < 0.0:
+        return 0.0
     if needs_review(status):
         return 0.0
     if not isinstance(status, dict):
@@ -1121,8 +1125,8 @@ def hold_for_settlement(conn, epoch, miners, weights=None, record=True,
         for m in held:
             w = (weights or {}).get(m)
             try:
-                units = int(w) if w is not None else 0
-            except (TypeError, ValueError):
+                units = 0 if (w is None or isinstance(w, bool)) else int(w)
+            except (TypeError, ValueError, OverflowError):
                 units = 0
             if units > 0:
                 record_review_escrow_safe(conn, epoch, m, units, reason)
