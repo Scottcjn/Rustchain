@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import sqlite3
+import sys
 import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
@@ -20,6 +21,21 @@ from urllib.parse import urlparse
 import threading
 import requests
 from flask import Flask, jsonify, render_template_string, send_from_directory
+
+# Shared body-validating probe (issue #17180). monitoring/node_probe.py lives
+# one directory up, so it is not on the default import path.
+_MONITORING = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "monitoring")
+if _MONITORING not in sys.path:
+    sys.path.insert(0, os.path.abspath(_MONITORING))
+from node_probe import classify_response
+
+
+def _content_type(response):
+    """Content-Type header as a plain string (tolerates test doubles)."""
+    try:
+        return str(response.headers.get("Content-Type", "") or "")
+    except AttributeError:
+        return ""
 
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name, str(default))
@@ -100,7 +116,7 @@ class NodeStatus:
     name: str
     endpoint: str
     location: str
-    status: str  # 'up', 'down', 'degraded'
+    status: str  # 'up', 'down', 'degraded', 'impostor' (see monitoring/node_probe.py)
     response_time_ms: float
     version: str
     uptime_s: int
@@ -224,7 +240,9 @@ def cleanup_old_data():
 
 def check_node_health(node_config: dict) -> NodeStatus:
     """Check health of a single node"""
-    start_time = time.time()
+    # perf_counter, not time.time()/monotonic(): on Windows both tick at
+    # ~15ms and would report sub-millisecond probes as exactly 0.0 (#17180).
+    start_time = time.perf_counter()
     timestamp = datetime.now()
     
     try:
@@ -240,22 +258,30 @@ def check_node_health(node_config: dict) -> NodeStatus:
             timeout=10,
             verify=verify
         )
-        response_time_ms = (time.time() - start_time) * 1000
+        response_time_ms = (time.perf_counter() - start_time) * 1000
         
         if response.status_code == 200:
-            data = response.json()
+            # A 200 is not evidence of a node — classify the BODY (issue
+            # #17180): an SPA answering HTML on every path is an impostor.
+            try:
+                data = response.json()
+            except ValueError:
+                data = None
+            verdict = classify_response(200, _content_type(response), data=data)
+            d = data if isinstance(data, dict) else {}
             return NodeStatus(
                 node_id=node_config['id'],
                 name=node_config['name'],
                 endpoint=node_config['endpoint'],
                 location=node_config['location'],
-                status='up',
+                status=verdict.state,
                 response_time_ms=response_time_ms,
-                version=data.get('version', 'unknown'),
-                uptime_s=data.get('uptime_s', 0),
-                active_miners=data.get('active_miners', 0),
-                current_epoch=data.get('epoch', 0),
-                timestamp=timestamp
+                version=d.get('version', 'unknown'),
+                uptime_s=d.get('uptime_s', 0),
+                active_miners=d.get('active_miners', 0),
+                current_epoch=d.get('epoch', 0),
+                timestamp=timestamp,
+                error=verdict.error
             )
         else:
             return NodeStatus(
@@ -280,7 +306,7 @@ def check_node_health(node_config: dict) -> NodeStatus:
             endpoint=node_config['endpoint'],
             location=node_config['location'],
             status='down',
-            response_time_ms=(time.time() - start_time) * 1000,
+            response_time_ms=(time.perf_counter() - start_time) * 1000,
             version='unknown',
             uptime_s=0,
             active_miners=0,
@@ -295,7 +321,7 @@ def check_node_health(node_config: dict) -> NodeStatus:
             endpoint=node_config['endpoint'],
             location=node_config['location'],
             status='down',
-            response_time_ms=(time.time() - start_time) * 1000,
+            response_time_ms=(time.perf_counter() - start_time) * 1000,
             version='unknown',
             uptime_s=0,
             active_miners=0,
@@ -310,7 +336,7 @@ def check_node_health(node_config: dict) -> NodeStatus:
             endpoint=node_config['endpoint'],
             location=node_config['location'],
             status='down',
-            response_time_ms=(time.time() - start_time) * 1000,
+            response_time_ms=(time.perf_counter() - start_time) * 1000,
             version='unknown',
             uptime_s=0,
             active_miners=0,
@@ -333,7 +359,12 @@ def detect_status_change(old_status: dict, new_status: NodeStatus):
             incident_type = 'node_down'
             details = f"Node {new_status.name} went DOWN. Error: {new_status.error or 'Unknown'}"
             logger.warning(f"INCIDENT: {details}")
-        elif old == 'down' and new == 'up':
+        elif new == 'impostor':
+            incident_type = 'node_impostor'
+            details = (f"Node {new_status.name} is an IMPOSTOR — answers 200 but "
+                       f"is not a RustChain node. Error: {new_status.error or 'Unknown'}")
+            logger.warning(f"INCIDENT: {details}")
+        elif old in ('down', 'impostor') and new in ('up', 'degraded'):
             incident_type = 'node_recovery'
             details = f"Node {new_status.name} recovered and is back UP"
             logger.info(f"INCIDENT: {details}")
@@ -456,7 +487,8 @@ def api_status():
         'last_updated': datetime.now().isoformat(),
         'total_nodes': len(NODES),
         'nodes_up': sum(1 for s in current_status.values() if s['status'] == 'up'),
-        'nodes_down': sum(1 for s in current_status.values() if s['status'] == 'down')
+        'nodes_down': sum(1 for s in current_status.values() if s['status'] == 'down'),
+        'nodes_impostor': sum(1 for s in current_status.values() if s['status'] == 'impostor')
     })
 
 
@@ -705,6 +737,17 @@ HTML_TEMPLATE = '''
         .status-badge.down {
             background: rgba(239, 68, 68, 0.2);
             color: var(--danger);
+        }
+        
+        /* Issue #17180: a host answering 200 with HTML is an impostor, not up */
+        .status-badge.impostor {
+            background: rgba(245, 158, 11, 0.25);
+            color: var(--warning);
+        }
+        
+        .status-badge.degraded {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
         }
         
         .node-metrics {
