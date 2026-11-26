@@ -1,0 +1,8 @@
+ci: exclude pre-existing broken settlement-lag test from probe step
+
+tests/test_settlement_lag_visibility.py errors on clean upstream main
+too — its NodeHelperTest setup hits a duplicate prometheus registration
+when the node module loads — so keeping it in the new CI step turned the
+whole test job red for a reason that has nothing to do with this change.
+The file is not one of the suites this bounty names, so leave it out and
+say why in the step itself.
