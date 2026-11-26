@@ -1,45 +1,43 @@
-# langchain-rustchain
+# `langchain-rustchain` — Native LangChain Tool for RustChain (`#3074`)
 
-LangChain tools for the [RustChain](https://rustchain.org) DePIN blockchain — Proof of Antiquity mining on vintage hardware.
+First-class LangChain tool integration for the **RustChain Proof-of-Antiquity (RIP-PoA)** blockchain and the [`Scottcjn/rustchain-bounties`](https://github.com/Scottcjn/rustchain-bounties) agent economy (`Bounty #3074`).
 
-## Quick Start
+## Features
+
+- **`RustChainTool` (`BaseTool` subclass)**:
+  - `check_balance(wallet_id: str) -> float`: Queries live RTC balance for any `RTC...` wallet or miner ID.
+  - `list_bounties(limit: int = 10) -> list[dict]`: Fetches open `bounty`-labeled issues from `Scottcjn/rustchain-bounties` with parsed RTC rewards.
+  - `get_node_health() -> dict`: Queries `/health` on the RustChain Mainnet node (`version`, `ok`, `db_rw`, `uptime_s`, `tip_age_slots`).
+  - `get_current_epoch() -> dict`: Queries `/epoch` (`epoch`, `slot`, `enrolled_miners`, `epoch_pot`, `total_supply_rtc`).
+- **`RustChainToolkit`**: Returns focused individual LangChain tools (`rustchain_check_balance`, `rustchain_list_bounties`, `rustchain_node_health`, `rustchain_current_epoch`) ready to bind to any LangChain / LangGraph agent.
+
+## Installation
 
 ```bash
-pip install langchain-rustchain
+pip install -e integrations/langchain-rustchain
 ```
 
-Then use with any LangChain agent:
+## Quickstart
 
 ```python
-from langchain_rustchain import get_tools
+from langchain_rustchain import RustChainTool, RustChainToolkit
 
-tools = get_tools()
-agent = create_react_agent(llm, tools)  # or any LangChain agent
+tool = RustChainTool()
+print("Node health:", tool.get_node_health())
+print("Current epoch:", tool.get_current_epoch())
+print("Wallet balance:", tool.check_balance("RTCfe0ac752b80e543048c0d91e7dddd1277678b8a5"))
+print("Open bounties:", tool.list_bounties(limit=5))
 ```
 
-## Tools
+## Example Agent Script
 
-| Tool | Description | Source |
-|------|-------------|--------|
-| `rustchain_check_balance` | Check RTC balance of any wallet (`/wallet/balance`) | Node API |
-| `rustchain_list_bounties` | List open ecosystem bounties (GitHub issues) | GitHub API |
-| `rustchain_get_node_health` | Read node health status (`/health`) | Node API |
-| `rustchain_get_current_epoch` | Read current epoch / slot (`/epoch`) | Node API |
+Run the included autonomous bounty-discovery & balance-check agent:
 
-All tools are read-only, no auth required, wallet = any string.
-
-## Why RustChain?
-
-- **Agent-native**: no auth, no captcha, wallet = any string, same-day RTC payout.
-- **DePIN for vintage hardware**: old machines outmine new ones (Proof of Antiquity).
-- 55+ ecosystem repos, 5+ languages, 15+ CPU architectures.
-
-## Example
-
-See [example.py](example.py) for a complete agent script.
+```bash
+python integrations/langchain-rustchain/examples/bounty_hunter_agent.py
+```
 
 ## Links
 
-- [RustChain](https://rustchain.org)
-- [Bounties](https://github.com/Scottcjn/rustchain-bounties)
-- [Source](https://github.com/Scottcjn/Rustchain)
+- **RustChain Bounties**: <https://github.com/Scottcjn/rustchain-bounties/issues/3074>
+- **RustChain Mainnet**: <https://rustchain.org>

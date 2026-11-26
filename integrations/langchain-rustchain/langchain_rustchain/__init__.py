@@ -1,26 +1,21 @@
-# SPDX-License-Identifier: MIT
-"""RustChain LangChain integration — check balances, list bounties, inspect node health, read current epoch.
-
-Exposes ``RustChainBalanceTool``, ``RustChainBountiesTool``,
-``RustChainNodeHealthTool``, and ``RustChainCurrentEpochTool`` as
-LangChain ``BaseTool`` subclasses, plus a convenience ``get_tools()``
-factory and ``ALL_RUSTCHAIN_TOOLS`` list.
+"""
+Native LangChain integration for RustChain (`langchain_rustchain`).
 """
 
-from langchain_rustchain.tools import (
-    ALL_RUSTCHAIN_TOOLS,
+from .tools import (
     RustChainBalanceTool,
     RustChainBountiesTool,
-    RustChainCurrentEpochTool,
-    RustChainNodeHealthTool,
-    get_tools,
+    RustChainEpochTool,
+    RustChainHealthTool,
+    RustChainTool,
+    RustChainToolkit,
 )
 
 __all__ = [
+    "RustChainTool",
+    "RustChainToolkit",
     "RustChainBalanceTool",
     "RustChainBountiesTool",
-    "RustChainNodeHealthTool",
-    "RustChainCurrentEpochTool",
-    "ALL_RUSTCHAIN_TOOLS",
-    "get_tools",
+    "RustChainHealthTool",
+    "RustChainEpochTool",
 ]
