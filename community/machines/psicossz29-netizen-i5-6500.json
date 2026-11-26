@@ -1,0 +1,21 @@
+{
+  "machine_name": "psicossz29-netizen Intel Core i5-6500",
+  "model": "Desktop PC (Intel Core i5-6500 / Skylake)",
+  "model_identifier": "Core i5-6500 / LGA1151",
+  "year_manufactured": 2015,
+  "architecture": "x86_64 (Intel Core i5-6500 CPU @ 3.20GHz)",
+  "cpu_cores": "4 cores, 4 threads",
+  "memory_gb": 16,
+  "power_draw_watts": 65,
+  "usage": [
+    "Project Independent-Genesis Autonomous Execution Engine",
+    "RustChain node preflight and RPC telemetry",
+    "PPA hardware fingerprint and consensus validation",
+    "Continuous compute and bounty automation"
+  ],
+  "description": "Repurposed 2015 desktop workstation running Windows 11 with an Intel Core i5-6500 CPU (Skylake architecture, 4 cores / 4 threads, 16 GB RAM). Operating as the primary host for Project Independent-Genesis autonomous execution engine, RustChain node preflight testing, continuous PPA hardware fingerprint validation, and open-source contribution automation. Kept in active 24/7 compute operation for 11 years to prevent e-waste and reduce carbon manufacturing overhead.",
+  "wallet_name": "psicossz29-netizen",
+  "wallet_address": "psicossz29-netizen",
+  "contributor": "psicossz29-netizen",
+  "added_date": "2026-09-14"
+}
