@@ -1,0 +1,27 @@
+name: sdk-python
+
+on:
+  push:
+    paths:
+      - 'sdk/python/**'
+      - '.github/workflows/sdk-python.yml'
+  pull_request:
+    paths:
+      - 'sdk/python/**'
+      - '.github/workflows/sdk-python.yml'
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r sdk/python/requirements-dev.txt
+          pip install -e sdk/python
+      - name: Run CLI test suite
+        run: python -m pytest sdk/python/tests/test_cli.py -v
