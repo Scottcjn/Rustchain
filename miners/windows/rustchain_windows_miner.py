@@ -75,10 +75,44 @@ except ImportError:
     address_from_pubkey = canonical_json = get_or_create_keypair = sign_payload = None
 
 # Configuration
-RUSTCHAIN_API = "http://50.28.86.131:8088"
+LEGACY_DEAD_API = "http://50.28.86.131:8088"
+RUSTCHAIN_API = "https://rustchain.org"
 WALLET_DIR = Path.home() / ".rustchain"
 CONFIG_FILE = WALLET_DIR / "config.json"
 WALLET_FILE = WALLET_DIR / "wallet.json"
+_CERT_PATH = str(WALLET_DIR / "node_cert.pem")
+
+
+def _normalize_node_url(url: str | None) -> str:
+    """Upgrade the legacy dead :8088 URL to HTTPS while preserving custom URLs."""
+    cleaned = (url or "").strip().rstrip("/")
+    if not cleaned or cleaned == LEGACY_DEAD_API:
+        return RUSTCHAIN_API
+    return cleaned
+
+
+def _tls_verify() -> str | bool:
+    """Return CA bundle or pinned node_cert.pem path, or True for system CAs.
+
+    TLS verification always stays enabled (never returns False).
+    """
+    ca_bundle = os.environ.get("RUSTCHAIN_CA_BUNDLE", "").strip()
+    if ca_bundle:
+        return ca_bundle
+    if os.path.exists(_CERT_PATH):
+        return _CERT_PATH
+    return True
+
+
+def _request_kwargs(timeout: int) -> dict:
+    kwargs: dict = {"timeout": timeout}
+    verify = _tls_verify()
+    if verify is not True:
+        kwargs["verify"] = verify
+    return kwargs
+
+
+TLS_VERIFY = _tls_verify()
 
 # Header submissions that fail because the node is temporarily unavailable
 # are retried with bounded exponential backoff.  Client-side validation and
@@ -158,7 +192,7 @@ class RustChainMiner:
     compute cost — the Zephyr miner retains 100% of its CPU for hashing.
     """
 
-    def __init__(self, wallet_address):
+    def __init__(self, wallet_address, node_url: str | None = None):
         self.wallet_address = wallet_address
         self.mining = False
         self.shares_submitted = 0
@@ -168,7 +202,7 @@ class RustChainMiner:
         self._header_retry_attempts = 0
         self._next_header_retry_at = 0.0
         self.miner_id = f"windows_{hashlib.md5(wallet_address.encode()).hexdigest()[:8]}"
-        self.node_url = RUSTCHAIN_API
+        self.node_url = _normalize_node_url(node_url)
         self.attestation_valid_until = 0
         self.last_enroll = 0
         self.enrolled = False
@@ -493,6 +527,28 @@ class RustChainMiner:
         except Exception:
             pass
 
+    def check_node_health(self) -> dict:
+        """Probe GET /health over verified HTTPS and return node status (#179)."""
+        try:
+            resp = requests.get(
+                f"{self.node_url}/health", **_request_kwargs(10)
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict):
+                    return {
+                        "ok": bool(data.get("ok", True)),
+                        "status_code": 200,
+                        "data": data,
+                    }
+            return {
+                "ok": False,
+                "status_code": getattr(resp, "status_code", 0),
+                "error": self._response_diagnostic(resp),
+            }
+        except Exception as e:
+            return {"ok": False, "status_code": 0, "error": str(e)}
+
     def attest(self):
         """
         Perform hardware attestation for PoA.
@@ -504,7 +560,7 @@ class RustChainMiner:
         """
         try:
             challenge_resp = requests.post(
-                f"{self.node_url}/attest/challenge", json={}, timeout=10
+                f"{self.node_url}/attest/challenge", json={}, **_request_kwargs(10)
             )
             if challenge_resp.status_code != 200:
                 self.last_attestation_error = (
@@ -620,7 +676,7 @@ class RustChainMiner:
 
         try:
             resp = requests.post(
-                f"{self.node_url}/attest/submit", json=attestation, timeout=30
+                f"{self.node_url}/attest/submit", json=attestation, **_request_kwargs(30)
             )
             if resp.status_code == 200 and resp.json().get("ok"):
                 self.attestation_valid_until = time.time() + 580
@@ -660,7 +716,7 @@ class RustChainMiner:
         # the miner retries on next cycle (fine, enrollment runs ~per epoch).
         current_epoch = None
         try:
-            ep_resp = requests.get(f"{self.node_url}/epoch", timeout=10)
+            ep_resp = requests.get(f"{self.node_url}/epoch", **_request_kwargs(10))
             if ep_resp.ok:
                 current_epoch = ep_resp.json().get("epoch")
         except Exception:
@@ -696,7 +752,7 @@ class RustChainMiner:
 
         try:
             resp = requests.post(
-                f"{self.node_url}/epoch/enroll", json=payload, timeout=15
+                f"{self.node_url}/epoch/enroll", json=payload, **_request_kwargs(15)
             )
             if resp.status_code == 200 and resp.json().get("ok"):
                 self.enrolled = True
@@ -712,7 +768,7 @@ class RustChainMiner:
             response = requests.get(
                 f"{self.node_url}/lottery/eligibility",
                 params={"miner_id": self.wallet_address},
-                timeout=10,
+                **_request_kwargs(10),
             )
             if response.ok:
                 result = response.json()
@@ -771,7 +827,7 @@ class RustChainMiner:
             response = requests.post(
                 f"{self.node_url}/headers/ingest_signed",
                 json=payload,
-                timeout=15,
+                **_request_kwargs(15),
             )
             try:
                 result = response.json()
@@ -986,8 +1042,7 @@ def _format_headless_event(evt):
 def run_headless(wallet_address: str, node_url: str) -> int:
     wallet = RustChainWallet()
     active_wallet = wallet_address or wallet.wallet_data["address"]
-    miner = RustChainMiner(active_wallet)
-    miner.node_url = node_url
+    miner = RustChainMiner(active_wallet, node_url=node_url)
 
     def cb(evt):
         line = _format_headless_event(evt)
@@ -1031,7 +1086,7 @@ def main(argv=None):
         return run_headless(args.wallet, args.node)
 
     app = RustChainGUI()
-    app.miner.node_url = args.node
+    app.miner.node_url = _normalize_node_url(args.node)
     if args.wallet:
         app.miner.wallet_address = args.wallet
         app.miner.miner_id = f"windows_{hashlib.md5(args.wallet.encode()).hexdigest()[:8]}"
