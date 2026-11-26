@@ -1,0 +1,100 @@
+name: netbsd-attestation-evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      wallet:
+        description: 'Optional wallet address for a full live attestation (empty = test-only + dry-run health evidence)'
+        required: false
+        default: ''
+      node_url:
+        description: 'Optional node URL override (defaults to https://rustchain.org)'
+        required: false
+        default: ''
+
+jobs:
+  netbsd:
+    runs-on: macos-13
+    timeout-minutes: 60
+    env:
+      WALLET: ${{ github.event.inputs.wallet }}
+      NODE_URL: ${{ github.event.inputs.node_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: bounty-12788-netbsd-miner-port
+
+      - name: Run NetBSD VM and capture honest evidence on the target platform
+        uses: cross-platform-actions/action@v0.27.0
+        with:
+          operating_system: netbsd
+          version: '10.0'
+          shell: sh
+          run: |
+            set -u
+            EV=netbsd-attestation-evidence.txt
+            FP=netbsd-hardware-fingerprint.txt
+
+            echo "=== RUN CONTEXT ===" | tee "$EV"
+            echo "timestamp_utc: $(date -u '+%Y-%m-%dT%H:%M:%SZ')" | tee -a "$EV"
+            echo "runner: GitHub Actions macOS x86_64 + QEMU/HVF NetBSD guest" | tee -a "$EV"
+            echo "repository: $GITHUB_REPOSITORY" | tee -a "$EV"
+            echo "ref: $GITHUB_REF_NAME commit: $GITHUB_SHA" | tee -a "$EV"
+
+            echo "=== NETBSD IDENTITY (must be real, measured on this machine) ===" | tee -a "$EV" | tee "$FP"
+            uname -a | tee -a "$EV" | tee -a "$FP"
+            echo "kern.ostype = $(sysctl -n kern.ostype)" | tee -a "$EV" | tee -a "$FP"
+            echo "kern.osrelease = $(sysctl -n kern.osrelease)" | tee -a "$EV" | tee -a "$FP"
+            echo "machdep.cpu_brand = $(sysctl -n machdep.cpu_brand 2>/dev/null || echo unknown)" | tee -a "$EV" | tee -a "$FP"
+            echo "hw.machine = $(sysctl -n hw.machine)" | tee -a "$EV" | tee -a "$FP"
+            echo "hw.ncpuonline = $(sysctl -n hw.ncpuonline)" | tee -a "$EV" | tee -a "$FP"
+            echo "hw.physmem64 = $(sysctl -n hw.physmem64 2>/dev/null || sysctl -n hw.physmem)" | tee -a "$EV" | tee -a "$FP"
+
+            if [ "$(sysctl -n kern.ostype)" != "NetBSD" ]; then
+              echo "FATAL: not running on NetBSD; refusing to produce evidence" | tee -a "$EV"
+              exit 1
+            fi
+
+            echo "=== PYTHON SETUP (pkgsrc) ===" | tee -a "$EV"
+            if ! command -v python3 >/dev/null 2>&1; then
+              sudo pkgin -y install python311 || sudo pkg_add python311
+            fi
+            PY=$(command -v python3 || echo /usr/pkg/bin/python3.11)
+            "$PY" --version | tee -a "$EV"
+
+            echo "=== TEST-ONLY: local hardware detection, no network ===" | tee -a "$EV"
+            "$PY" miners/netbsd/rustchain_netbsd_miner.py --test-only | tee -a "$EV"
+            echo "test_only_exit=$?" | tee -a "$EV"
+
+            echo "=== DRY-RUN: preflight + read-only health probe against node ===" | tee -a "$EV"
+            if [ -n "$NODE_URL" ]; then
+              RUSTCHAIN_NODE="$NODE_URL" "$PY" miners/netbsd/rustchain_netbsd_miner.py --dry-run --show-payload | tee -a "$EV"
+              echo "dry_run_exit=$?" | tee -a "$EV"
+            else
+              "$PY" miners/netbsd/rustchain_netbsd_miner.py --dry-run --show-payload | tee -a "$EV"
+              echo "dry_run_exit=$?" | tee -a "$EV"
+            fi
+
+            echo "=== LIVE ATTESTATION (only when a wallet was explicitly provided) ===" | tee -a "$EV"
+            if [ -n "$WALLET" ]; then
+              if [ -n "$NODE_URL" ]; then
+                RUSTCHAIN_NODE="$NODE_URL" "$PY" miners/netbsd/rustchain_netbsd_miner.py --wallet "$WALLET" --verbose | tee -a "$EV"
+              else
+                "$PY" miners/netbsd/rustchain_netbsd_miner.py --wallet "$WALLET" --verbose | tee -a "$EV"
+              fi
+              echo "attestation_exit=$?" | tee -a "$EV"
+            else
+              echo "SKIPPED: no wallet provided; test-only + dry-run evidence only (no fabricated attestation)" | tee -a "$EV"
+            fi
+
+            echo "=== EVIDENCE COMPLETE ===" | tee -a "$EV"
+
+      - name: Upload NetBSD evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: netbsd-attestation-evidence
+          path: |
+            netbsd-attestation-evidence.txt
+            netbsd-hardware-fingerprint.txt
+          if-no-files-found: warn
