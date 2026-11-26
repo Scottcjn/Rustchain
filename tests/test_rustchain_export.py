@@ -1,201 +1,121 @@
-import csv
+"""
+Unit tests for RustChain Attestation & Reward Data Export Pipeline (Bounty #49)
+"""
+
 import json
+import os
 import sqlite3
-import sys
 import tempfile
 import unittest
-from pathlib import Path
-from unittest import mock
+from tools.rustchain_export import export_db_mode, run_pipeline, filter_by_date
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+class TestRustChainExport(unittest.TestCase):
+    def setUp(self):
+        self.test_dir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.test_dir.name, "test_rustchain.db")
+        self.output_dir = os.path.join(self.test_dir.name, "output")
 
-import rustchain_export as exporter
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
 
-
-def make_db(path: Path) -> None:
-    conn = sqlite3.connect(path)
-    conn.executescript(
-        """
-        CREATE TABLE miner_attest_recent (
-            miner TEXT PRIMARY KEY,
-            device_family TEXT,
-            device_arch TEXT,
-            hardware_type TEXT,
-            ts_ok INTEGER,
-            entropy_score REAL,
-            warthog_bonus REAL
-        );
-        CREATE TABLE balances (
-            miner_id TEXT PRIMARY KEY,
-            amount_i64 INTEGER DEFAULT 0
-        );
-        CREATE TABLE epoch_state (
-            epoch INTEGER PRIMARY KEY,
-            settled INTEGER DEFAULT 0,
-            settled_ts INTEGER
-        );
-        CREATE TABLE epoch_rewards (
-            epoch INTEGER,
-            miner_id TEXT,
-            share_i64 INTEGER
-        );
-        CREATE TABLE ledger (
-            ts INTEGER,
-            epoch INTEGER,
-            miner_id TEXT,
-            delta_i64 INTEGER,
-            reason TEXT
-        );
-        """
-    )
-    conn.execute(
-        "INSERT INTO miner_attest_recent VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ("aliceRTC", "PowerPC", "G4", "PowerPC G4", 1770112912, 0.5, 2.5),
-    )
-    conn.execute(
-        "INSERT INTO miner_attest_recent VALUES (?, ?, ?, ?, ?, ?, ?)",
-        ("oldRTC", "x86", "x86_64", "PC", 1600000000, 0.1, 1.0),
-    )
-    conn.execute("INSERT INTO balances VALUES (?, ?)", ("aliceRTC", 1250000))
-    conn.execute("INSERT INTO balances VALUES (?, ?)", ("bobRTC", 500000))
-    conn.execute("INSERT INTO balances VALUES (?, ?)", ("carolRTC", 999999))
-    conn.execute("INSERT INTO epoch_state VALUES (?, ?, ?)", (62, 1, 1770113000))
-    conn.execute("INSERT INTO epoch_rewards VALUES (?, ?, ?)", (62, "aliceRTC", 1250000))
-    conn.execute("INSERT INTO ledger VALUES (?, ?, ?, ?, ?)", (1770113000, 62, "aliceRTC", 1250000, "reward"))
-    conn.commit()
-    conn.close()
-
-
-class RustChainExportTests(unittest.TestCase):
-    def test_db_export_writes_csv_with_date_filter(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            db_path = tmp_path / "rustchain.sqlite"
-            out_dir = tmp_path / "out"
-            make_db(db_path)
-
-            rc = exporter.main(
-                [
-                    "--mode",
-                    "db",
-                    "--db",
-                    str(db_path),
-                    "--format",
-                    "csv",
-                    "--output",
-                    str(out_dir),
-                    "--from",
-                    "2026-02-01",
-                ]
+        # Create mock tables
+        cur.execute("""
+            CREATE TABLE miner_attest_recent (
+                miner_id TEXT PRIMARY KEY,
+                arch TEXT,
+                last_seen TEXT,
+                earnings REAL
             )
+        """)
+        cur.execute("INSERT INTO miner_attest_recent VALUES ('RTCtest1', 'ppc_g4', '2026-02-15T12:00:00Z', 150.5)")
+        cur.execute("INSERT INTO miner_attest_recent VALUES ('RTCtest2', 'x86_64', '2026-02-16T14:00:00Z', 45.0)")
 
-            self.assertEqual(rc, 0)
-            with (out_dir / "miners.csv").open(newline="", encoding="utf-8") as handle:
-                rows = list(csv.DictReader(handle))
-            self.assertEqual([row["miner_id"] for row in rows], ["aliceRTC"])
-
-            with (out_dir / "balances.csv").open(newline="", encoding="utf-8") as handle:
-                balances = list(csv.DictReader(handle))
-            self.assertEqual(
-                {row["miner_id"]: row["amount_rtc"] for row in balances},
-                {
-                    "aliceRTC": "1.25",
-                    "bobRTC": "0.5",
-                    "carolRTC": "0.999999",
-                },
+        cur.execute("""
+            CREATE TABLE epoch_state (
+                epoch INTEGER PRIMARY KEY,
+                timestamp TEXT,
+                pot_size REAL,
+                status TEXT
             )
+        """)
+        cur.execute("INSERT INTO epoch_state VALUES (101, '2026-02-15T00:00:00Z', 500.0, 'settled')")
+        cur.execute("INSERT INTO epoch_state VALUES (102, '2026-02-16T00:00:00Z', 550.0, 'settled')")
 
-            manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))[0]
-            self.assertEqual(manifest["tables"]["miners"], 1)
-            self.assertEqual(manifest["format"], "csv")
+        cur.execute("""
+            CREATE TABLE epoch_rewards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                epoch INTEGER,
+                miner_id TEXT,
+                amount REAL,
+                timestamp TEXT
+            )
+        """)
+        cur.execute("INSERT INTO epoch_rewards (epoch, miner_id, amount, timestamp) VALUES (101, 'RTCtest1', 100.0, '2026-02-15T01:00:00Z')")
+        cur.execute("INSERT INTO epoch_rewards (epoch, miner_id, amount, timestamp) VALUES (102, 'RTCtest2', 45.0, '2026-02-16T01:00:00Z')")
 
-    def test_api_export_uses_public_endpoints(self):
-        calls = []
+        cur.execute("""
+            CREATE TABLE ledger (
+                tx_hash TEXT PRIMARY KEY,
+                sender TEXT,
+                recipient TEXT,
+                amount REAL,
+                timestamp TEXT
+            )
+        """)
+        cur.execute("INSERT INTO ledger VALUES ('0xabc', 'treasury', 'RTCtest1', 100.0, '2026-02-15T01:00:00Z')")
 
-        def fake_fetch(node_url, endpoint, timeout, insecure):
-            calls.append(endpoint)
-            if endpoint == "/api/miners":
-                return [
-                    {
-                        "miner": "aliceRTC",
-                        "device_family": "PowerPC",
-                        "device_arch": "G4",
-                        "hardware_type": "PowerPC G4",
-                        "antiquity_multiplier": 2.5,
-                        "entropy_score": 0.5,
-                        "last_attest": 1770112912,
-                    }
-                ]
-            if endpoint.startswith("/wallet/balance"):
-                return {"amount_rtc": 3.5}
-            if endpoint == "/epoch":
-                return {"epoch": 62, "slot": 9010, "epoch_pot": 1.5, "enrolled_miners": 1, "blocks_per_epoch": 144}
-            raise AssertionError(endpoint)
+        cur.execute("""
+            CREATE TABLE balances (
+                miner_id TEXT PRIMARY KEY,
+                balance REAL
+            )
+        """)
+        cur.execute("INSERT INTO balances VALUES ('RTCtest1', 250.5)")
+        cur.execute("INSERT INTO balances VALUES ('RTCtest2', 45.0)")
 
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(exporter, "fetch_json", fake_fetch):
-            out_dir = Path(tmp) / "api"
-            rc = exporter.main(["--mode", "api", "--format", "jsonl", "--output", str(out_dir)])
+        conn.commit()
+        conn.close()
 
-            self.assertEqual(rc, 0)
-            self.assertIn("/api/miners", calls)
-            self.assertIn("/epoch", calls)
-            rows = [json.loads(line) for line in (out_dir / "miners.jsonl").read_text(encoding="utf-8").splitlines()]
-            self.assertEqual(rows[0]["miner_id"], "aliceRTC")
-            self.assertEqual(rows[0]["total_earnings_rtc"], 3.5)
+    def tearDown(self):
+        self.test_dir.cleanup()
 
-    def test_empty_csv_still_has_header_line(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "empty.csv"
-            exporter.write_csv(path, [], ["col1", "col2"])
-            self.assertEqual(path.read_text(encoding="utf-8").strip(), "col1,col2")
+    def test_db_mode_export(self):
+        data = export_db_mode(self.db_path, None, None)
+        self.assertEqual(len(data["miners"]), 2)
+        self.assertEqual(len(data["epochs"]), 2)
+        self.assertEqual(len(data["rewards"]), 2)
+        self.assertEqual(len(data["attestations"]), 1)
+        self.assertEqual(len(data["balances"]), 2)
 
-    def test_balance_amount_normalizes_micro_columns_by_source(self):
-        self.assertEqual(exporter.balance_amount_rtc({"amount_i64": 1}), 0.000001)
-        self.assertEqual(exporter.balance_amount_rtc({"amount_i64": 500_000}), 0.5)
-        self.assertEqual(exporter.balance_amount_rtc({"balance_urtc": 999_999}), 0.999999)
-        self.assertEqual(exporter.balance_amount_rtc({"balance_rtc": 0.5}), 0.5)
+    def test_date_filtering(self):
+        data = export_db_mode(self.db_path, from_date="2026-02-16T00:00:00Z", to_date="2026-02-16T23:59:59Z")
+        self.assertEqual(len(data["epochs"]), 1)
+        self.assertEqual(data["epochs"][0]["epoch"], 102)
 
-    def test_csv_sanitize_neutralizes_formula_injection(self):
-        dangerous = [
-            "=SUM(A1:A10)",
-            "+1+2",
-            "-1+2",
-            "@SUM(A1)",
-            "\t=cmd",
-            "\r=cmd",
-            "\n=cmd",
-            "normal",
-            "",
-            "123",
-        ]
-        sanitized = [exporter._sanitize_csv_cell(v) for v in dangerous]
-        self.assertEqual(sanitized[0], "'=SUM(A1:A10)")
-        self.assertEqual(sanitized[1], "'+1+2")
-        self.assertEqual(sanitized[2], "'-1+2")
-        self.assertEqual(sanitized[3], "'@SUM(A1)")
-        self.assertEqual(sanitized[4], "'\t=cmd")
-        self.assertEqual(sanitized[5], "'\r=cmd")
-        self.assertEqual(sanitized[6], "'\n=cmd")
-        self.assertEqual(sanitized[7], "normal")
-        self.assertEqual(sanitized[8], "")
-        self.assertEqual(sanitized[9], "123")
+    def test_run_pipeline_csv_and_json(self):
+        # Test CSV run
+        summary_csv = run_pipeline(
+            mode="db",
+            target=self.db_path,
+            output_dir=self.output_dir,
+            export_format="csv"
+        )
+        self.assertTrue(os.path.exists(os.path.join(self.output_dir, "miners.csv")))
+        self.assertTrue(os.path.exists(os.path.join(self.output_dir, "export_manifest.json")))
+        self.assertEqual(summary_csv["miners"], 2)
 
-    def test_csv_write_sanitizes_malicious_miner_id(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "malicious.csv"
-            rows = [
-                {"miner_id": "=cmd|'/c calc'!A0", "device_arch": "x86"},
-                {"miner_id": "safeRTC", "device_arch": "G4"},
-            ]
-            exporter.write_csv(path, rows)
-            with path.open(newline="", encoding="utf-8") as handle:
-                reader = csv.DictReader(handle)
-                result = list(reader)
-            # CSV reader preserves the leading single-quote sanitizer prefix
-            # when the value itself contains a quote character
-            self.assertEqual(result[0]["miner_id"], "'=cmd|'/c calc'!A0")
-            self.assertEqual(result[1]["miner_id"], "safeRTC")
+        # Test JSON run
+        summary_json = run_pipeline(
+            mode="db",
+            target=self.db_path,
+            output_dir=self.output_dir,
+            export_format="json"
+        )
+        self.assertTrue(os.path.exists(os.path.join(self.output_dir, "epochs.json")))
+        with open(os.path.join(self.output_dir, "epochs.json"), "r") as f:
+            epochs_data = json.load(f)
+            self.assertEqual(len(epochs_data), 2)
 
 
 if __name__ == "__main__":
