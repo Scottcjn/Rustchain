@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MIT
+[package]
+name = "rustchain-explorer"
+version = "0.1.0"
+edition = "2021"
+description = "Read-only command-line explorer for RustChain node health, epochs, miners and balances"
+license = "MIT"
+repository = "https://github.com/Scottcjn/Rustchain"
+readme = "README.md"
+keywords = ["rustchain", "rtc", "explorer", "cli"]
+categories = ["command-line-utilities", "cryptography::cryptocurrencies"]
+include = ["src/**", "tests/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE"]
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+serde_json = "1"
