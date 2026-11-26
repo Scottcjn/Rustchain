@@ -198,6 +198,10 @@ class TestHealthCheck(unittest.TestCase):
             'epoch': 100,
             'ok': True
         }
+        # The probe reads the raw body (resp.content), never resp.json() alone.
+        mock_response.content = json.dumps(
+            mock_response.json.return_value).encode()
+        mock_response.headers = {'Content-Type': 'application/json'}
         mock_get.return_value = mock_response
         
         node_config = NODES[0]
@@ -215,6 +219,8 @@ class TestHealthCheck(unittest.TestCase):
         """Test health check with HTTP error"""
         mock_response = Mock()
         mock_response.status_code = 500
+        mock_response.content = b''
+        mock_response.headers = {'Content-Type': 'application/json'}
         mock_get.return_value = mock_response
         
         node_config = NODES[0]
@@ -259,6 +265,10 @@ class TestHealthCheck(unittest.TestCase):
             'epoch': 100,
             'ok': True
         }
+        # The probe reads the raw body (resp.content), never resp.json() alone.
+        mock_response.content = json.dumps(
+            mock_response.json.return_value).encode()
+        mock_response.headers = {'Content-Type': 'application/json'}
         mock_get.return_value = mock_response
         
         node_config = NODES[0]

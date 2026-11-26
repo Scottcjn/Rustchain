@@ -9,6 +9,15 @@ import requests
 from prometheus_client import start_http_server, Gauge, Counter, Info
 import logging
 
+# One shared /health body validator (monitoring/node_probe.py). The exporter
+# runs from its own directory in Docker (see Dockerfile.exporter, which
+# copies node_probe.py next to it), so import it as a top-level module
+# first and fall back to the package import when run from a checkout.
+try:
+    from node_probe import ProbeResult, classify_health
+except ImportError:  # pragma: no cover - checkout layout
+    from monitoring.node_probe import ProbeResult, classify_health
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger('rustchain-exporter')
 
@@ -38,6 +47,8 @@ avg_antiquity_multiplier = Gauge('rustchain_avg_antiquity_multiplier', 'Average 
 
 scrape_errors = Counter('rustchain_scrape_errors_total', 'Total number of scrape errors')
 scrape_duration_seconds = Gauge('rustchain_scrape_duration_seconds', 'Duration of last scrape')
+last_successful_scrape = Gauge('rustchain_last_successful_scrape_timestamp', 'Unix timestamp of the last scrape that returned a genuine node /health body')
+node_health_state = Info('rustchain_node_health_state', 'Validated /health probe state (up, degraded, impostor, down, unreachable)')
 
 
 def fetch_json(endpoint):
@@ -58,18 +69,60 @@ def fetch_json(endpoint):
         return None
 
 
+def fetch_health():
+    """Fetch /health and classify the BODY with the shared probe.
+
+    Returns a ProbeResult for every outcome; never raises. A 200 with the
+    wrong body is not healthy — that is the impostor case.
+    """
+    try:
+        url = f"{RUSTCHAIN_NODE}/health"
+        verify = TLS_CA_BUNDLE or TLS_VERIFY
+        start = time.time()
+        response = requests.get(url, verify=verify, timeout=10)
+        content_type = ""
+        try:
+            content_type = response.headers.get("Content-Type", "") or ""
+        except Exception:
+            content_type = ""
+        body = getattr(response, "content", b"") or b""
+        result = classify_health(response.status_code, content_type, body)
+        result.response_ms = round((time.time() - start) * 1000, 1)
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching /health: {e}")
+        scrape_errors.inc()
+        return ProbeResult(state="unreachable", detail=str(e)[:200])
+
+
 def collect_metrics():
     """Collect all metrics from RustChain node"""
     start_time = time.time()
     
     try:
-        # Health metrics
-        health = fetch_json('/health')
-        if health:
-            node_health.set(1 if health.get('ok') else 0)
-            node_uptime_seconds.set(health.get('uptime_s', 0))
-            node_db_status.set(1 if health.get('db_rw') else 0)
-            node_version.info({'version': health.get('version', 'unknown')})
+        # Health metrics — the BODY decides, never the status code
+        # alone. Any failed scrape (impostor, down, unreachable) sets the
+        # gauge to 0 instead of leaving the last value standing, and only
+        # a genuine node body (up or degraded) moves the last-success
+        # timestamp.
+        health = fetch_health()
+        node_health_state.info({'state': health.state})
+        if health.state == 'up':
+            node_health.set(1)
+            node_uptime_seconds.set(health.uptime_s or 0)
+            node_db_status.set(1 if health.db_rw else 0)
+            node_version.info({'version': health.version or 'unknown'})
+            last_successful_scrape.set(time.time())
+        elif health.state == 'degraded':
+            node_health.set(0)
+            node_uptime_seconds.set(health.uptime_s or 0)
+            node_db_status.set(1 if health.db_rw else 0)
+            node_version.info({'version': health.version or 'unknown'})
+            last_successful_scrape.set(time.time())
+        else:  # impostor, down, unreachable — do not trust stale readings
+            node_health.set(0)
+            node_uptime_seconds.set(0)
+            node_db_status.set(0)
         
         # Epoch metrics
         epoch = fetch_json('/epoch')

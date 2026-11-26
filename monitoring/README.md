@@ -251,3 +251,40 @@ docker cp rustchain-prometheus:/prometheus ./prometheus-backup
 ## License
 
 MIT - Same as RustChain
+
+## Shared /health probe (bounty #17180)
+
+`node_probe.py` is the one place that decides what a `/health` answer
+means. Every monitor classifies through it — a 200 with the wrong body is
+`impostor`, never `up`:
+
+- `up` — genuine body: JSON with `ok` (bool), `version` (non-empty string),
+  `uptime_s` (number >= 0), `ok` true, `db_rw` not false, `tip_age_slots`
+  within threshold (default 600).
+- `degraded` — a real node reporting `ok: false`, `db_rw: false`, or a
+  `tip_age_slots` above the threshold.
+- `impostor` — HTTP 200 but the body is `text/html`, not JSON, not a JSON
+  object, or JSON missing `ok` / `version` / `uptime_s`.
+- `down` — the node answered with an HTTP error status.
+- `unreachable` — no HTTP response at all (timeout, connection refused).
+
+Wiring (see the PR description for the reasoning per monitor):
+
+- `rustchain-exporter.py` imports `node_probe` directly (same directory;
+  `Dockerfile.exporter` copies it in). `rustchain_node_health` is set to 0
+  on any failed scrape instead of keeping the last value, and
+  `rustchain_last_successful_scrape_timestamp` records the last scrape that
+  returned a genuine node body. `rustchain_node_health_state_info` carries
+  the probe state.
+- `status/status_server.py` and the health dashboard classify the response
+  body; both pages render `impostor` as its own badge, distinct from `up`.
+- `tools/node_health_monitor.py` and `tools/node-health-cli/node_health.py`
+  import the shared module in a checkout and fall back to a vendored copy
+  of the same function when run as standalone scripts (the health
+  dashboard vendors it because its Docker build context cannot reach
+  `../monitoring/`). The parity test asserts every copy agrees.
+
+Tests: `monitoring/test_node_probe.py` (recorded fixtures for all six
+cases) and `monitoring/test_impostor_across_monitors.py` (the HTML-200
+fixture comes out `impostor` in every monitor's output, exporter gauges,
+and vendored-copy parity). Run them with the CI step `Monitor probe tests`.
