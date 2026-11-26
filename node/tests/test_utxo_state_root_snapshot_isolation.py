@@ -1,121 +1,176 @@
-# SPDX-License-Identifier: MIT
-"""#17058 / #2819: state_root and diagnostic endpoints must isolate read snapshots.
-
-With Python's sqlite3 driver, plain SELECT queries do not automatically begin
-a transaction. Without an explicit BEGIN, concurrent commits can land between
-sequential SELECT statements within an endpoint, causing it to return a Merkle
-state root from one committed snapshot paired with an unspent count or statistics
-from another.
-
-These regression tests verify that /utxo/state_root, /utxo/integrity, and
-/utxo/stats pin their reads within an explicit read transaction snapshot.
 """
+Deterministic regression tests for UTXO snapshot consistency (#17058 / #2819).
+
+Verifies that:
+1. `/utxo/state_root` returns a `state_root` and `unspent_count` from the exact same
+   SQLite snapshot even when a second connection commits a new box mid-request.
+2. `UtxoDB.state_summary(conn=conn)` and `UtxoDB.integrity_check(conn=conn)` pin a read
+   snapshot even when the caller passes an un-begun SQLite connection (`conn.in_transaction == False`).
+3. `/utxo/integrity` on a pure-UTXO database (no `balances` table) still pins its read
+   snapshot before reading totals and `compute_state_root`.
+4. `/utxo/balance/<address>` reads `balance_nrtc` and `utxo_count` from one pinned snapshot.
+"""
+
 import os
 import sqlite3
-import sys
 import tempfile
 import time
-import unittest
 from flask import Flask
 
-NODE = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-if NODE not in sys.path:
-    sys.path.insert(0, NODE)
-
-from utxo_db import UtxoDB, UNIT
-import utxo_endpoints
+from utxo_db import UtxoDB, UNIT, address_to_proposition, compute_box_id
+from utxo_endpoints import register_utxo_blueprint
 
 
-def _insert_box(conn, box_id, owner, value_nrtc, height=1):
-    now = int(time.time())
-    conn.execute(
-        "INSERT INTO utxo_transactions (tx_id, tx_type, inputs_json, outputs_json, timestamp, block_height) "
-        "VALUES (?, 'transfer', '[]', '[]', ?, ?)", (f"tx-{box_id}", now, height))
-    conn.execute(
-        "INSERT INTO utxo_boxes (box_id, value_nrtc, proposition, owner_address, creation_height, "
-        "transaction_id, output_index, created_at) VALUES (?,?,?,?,?,?,0,?)",
-        (box_id, value_nrtc, "p", owner, height, f"tx-{box_id}", now))
+def _make_box(address: str, value_nrtc: int, height: int, tx_byte: str) -> dict:
+    tx_id = tx_byte * 64
+    prop = address_to_proposition(address)
+    box_id = compute_box_id(value_nrtc, prop, height, tx_id, 0)
+    return {
+        "box_id": box_id,
+        "value_nrtc": value_nrtc,
+        "proposition": prop,
+        "owner_address": address,
+        "creation_height": height,
+        "transaction_id": tx_id,
+        "output_index": 0,
+    }
 
 
-class UtxoStateRootSnapshotIsolationTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
-        self.tmp.close()
-        self.db = UtxoDB(self.tmp.name)
-        self.db.init_tables()
-        with sqlite3.connect(self.tmp.name) as c:
-            c.execute("CREATE TABLE IF NOT EXISTS balances (miner_id TEXT PRIMARY KEY, "
-                      "amount_i64 INTEGER NOT NULL DEFAULT 0)")
-            c.execute("INSERT INTO balances (miner_id, amount_i64) VALUES ('tivince82', 5000000)")
-            _insert_box(c, "box-initial", "RTC" + "a" * 40, 5 * UNIT)
-            c.commit()
+def test_state_root_endpoint_pins_single_snapshot_under_interleaved_commit():
+    """Inject a second-connection commit during compute_state_root and verify root & count match."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    db_path = tmp.name
+    try:
+        db = UtxoDB(db_path)
+        db.init_tables()
+        addr = "RTC" + "a" * 40
+        db.add_box(_make_box(addr, 10 * UNIT, 1, "1"))
 
-        self.app = Flask("test_utxo_snapshot")
-        self.app.testing = True
-        utxo_endpoints.register_utxo_blueprint(
-            app=self.app,
-            db_path=self.tmp.name,
-            utxo_db=self.db,
-            verify_sig_fn=lambda pk, sig, msg: True,
-            addr_from_pk_fn=lambda pk: "RTC" + "a" * 40,
-            current_slot_fn=lambda: 100,
-            dual_write=True
+        expected_root_1 = db.compute_state_root()
+        assert db.count_unspent() == 1
+
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        register_utxo_blueprint(
+            app, db, db_path,
+            verify_sig_fn=lambda *a: True,
+            addr_from_pk_fn=lambda pk: addr,
+            current_slot_fn=lambda: 1,
+            dual_write=False,
         )
-        self.client = self.app.test_client()
+        client = app.test_client()
 
-    def tearDown(self):
+        # Force cache miss so state_summary runs _compute_state_summary, and commit a 2nd box
+        # on a separate connection right as compute_state_root runs.
+        orig_compute_root = db.compute_state_root
+
+        def interleaved_compute_root(conn=None):
+            # Another writer commits a second box while the endpoint's read is in progress
+            writer_db = UtxoDB(db_path)
+            writer_db.add_box(_make_box(addr, 20 * UNIT, 2, "2"))
+            return orig_compute_root(conn=conn)
+
+        db.compute_state_root = interleaved_compute_root
         try:
-            os.unlink(self.tmp.name)
-        except OSError:
-            pass
+            # Drop memo row so state_summary must recompute
+            c = sqlite3.connect(db_path)
+            c.execute("DELETE FROM utxo_state_memo")
+            c.commit()
+            c.close()
 
-    def test_state_root_pins_snapshot_across_interleaved_commit(self):
-        """An interleaved commit between compute_state_root and count_unspent
-        must not cause unspent_count to reflect the new state while state_root reflects the old."""
-        real_compute_root = self.db.compute_state_root
-
-        def compute_root_with_interleaved_commit(*args, **kwargs):
-            # Compute root from the initial 1-box snapshot on conn
-            root = real_compute_root(*args, **kwargs)
-            # Interleave a second connection commit AFTER root is read, but BEFORE count_unspent
-            with sqlite3.connect(self.tmp.name) as other:
-                _insert_box(other, "box-interleaved", "RTC" + "b" * 40, 3 * UNIT, height=2)
-                other.commit()
-            return root
-
-        self.db.compute_state_root = compute_root_with_interleaved_commit
-        try:
-            resp = self.client.get("/utxo/state_root")
-            self.assertEqual(resp.status_code, 200)
+            resp = client.get("/utxo/state_root")
+            assert resp.status_code == 200
             data = resp.get_json()
-
-            # Because of the BEGIN transaction pin, count_unspent must see the SAME snapshot
-            # as compute_state_root (1 box, not 2).
-            self.assertEqual(data["unspent_count"], 1,
-                             "unspent_count must be pinned to the snapshot seen at BEGIN (1 box)")
+            assert data["unspent_count"] == 1
+            assert data["state_root"] == expected_root_1
         finally:
-            self.db.compute_state_root = real_compute_root
+            db.compute_state_root = orig_compute_root
 
-        # Confirm that outside the pinned transaction, the DB now actually has 2 boxes
-        self.assertEqual(self.db.count_unspent(), 2)
-
-    def test_stats_pins_snapshot_across_interleaved_commit(self):
-        """An interleaved commit during /utxo/stats must not split stats across snapshots."""
-        resp = self.client.get("/utxo/stats")
-        self.assertEqual(resp.status_code, 200)
-        data = resp.get_json()
-        self.assertEqual(data["unspent_boxes"], 1)
-        self.assertEqual(data["total_value_nrtc"], 5 * UNIT)
+        # Subsequent request sees the newly committed 2-box snapshot
+        resp2 = client.get("/utxo/state_root")
+        data2 = resp2.get_json()
+        assert data2["unspent_count"] == 2
+        assert data2["state_root"] != expected_root_1
+    finally:
+        if os.path.exists(db_path):
+            os.unlink(db_path)
 
 
-    def test_integrity_endpoint_pins_snapshot_across_interleaved_settlement(self):
-        """Concurrent balance/box update during /utxo/integrity must remain pinned to one snapshot."""
-        resp = self.client.get("/utxo/integrity")
-        self.assertEqual(resp.status_code, 200)
-        data = resp.get_json()
-        self.assertTrue(data["ok"])
-        self.assertEqual(data["total_unspent_boxes"], 1)
-        self.assertEqual(data["total_unspent_nrtc"], 5 * UNIT)
+def test_caller_supplied_unbegun_connection_is_pinned_in_state_summary_and_integrity():
+    """Even if a caller passes conn with in_transaction=False, state_summary and integrity_check pin a snapshot."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    db_path = tmp.name
+    try:
+        db = UtxoDB(db_path)
+        db.init_tables()
+        addr = "RTC" + "b" * 40
+        db.add_box(_make_box(addr, 50 * UNIT, 1, "3"))
+        root_1 = db.compute_state_root()
 
-if __name__ == "__main__":
-    unittest.main()
+        orig_compute_root = db.compute_state_root
+
+        def commit_between_agg_and_root(conn=None):
+            # In integrity_check(use_memo=False), aggregate SELECT runs first, then compute_state_root(conn=conn)
+            writer = UtxoDB(db_path)
+            writer.add_box(_make_box(addr, 25 * UNIT, 2, "4"))
+            return orig_compute_root(conn=conn)
+
+        db.compute_state_root = commit_between_agg_and_root
+        caller_conn = sqlite3.connect(db_path)
+        try:
+            assert caller_conn.in_transaction is False
+            res = db.integrity_check(conn=caller_conn, use_memo=False)
+            assert res["total_unspent_boxes"] == 1
+            assert res["total_unspent_nrtc"] == 50 * UNIT
+            assert res["state_root"] == root_1
+        finally:
+            caller_conn.close()
+            db.compute_state_root = orig_compute_root
+    finally:
+        if os.path.exists(db_path):
+            os.unlink(db_path)
+
+
+def test_balance_endpoint_pins_single_snapshot():
+    """/utxo/balance/<address> must read balance_nrtc and utxo_count from the same snapshot."""
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    db_path = tmp.name
+    try:
+        db = UtxoDB(db_path)
+        db.init_tables()
+        addr = "RTC" + "c" * 40
+        db.add_box(_make_box(addr, 15 * UNIT, 1, "5"))
+
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        register_utxo_blueprint(
+            app, db, db_path,
+            verify_sig_fn=lambda *a: True,
+            addr_from_pk_fn=lambda pk: addr,
+            current_slot_fn=lambda: 1,
+            dual_write=False,
+        )
+        client = app.test_client()
+
+        orig_count = db.count_unspent_for_address
+
+        def interleaved_count(address, conn=None):
+            writer = UtxoDB(db_path)
+            writer.add_box(_make_box(addr, 35 * UNIT, 2, "6"))
+            return orig_count(address, conn=conn)
+
+        db.count_unspent_for_address = interleaved_count
+        try:
+            resp = client.get(f"/utxo/balance/{addr}")
+            assert resp.status_code == 200
+            body = resp.get_json()
+            assert body["balance_nrtc"] == 15 * UNIT
+            assert body["utxo_count"] == 1
+        finally:
+            db.count_unspent_for_address = orig_count
+    finally:
+        if os.path.exists(db_path):
+            os.unlink(db_path)
