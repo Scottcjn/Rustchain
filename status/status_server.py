@@ -11,12 +11,18 @@ import json
 import time
 import threading
 import os
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from xml.sax.saxutils import escape as xml_escape
 
 import requests
 from flask import Flask, render_template, jsonify, Response
+
+# One shared /health body validator (monitoring/node_probe.py). The status
+# page always runs from a checkout, so import it off the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from monitoring.node_probe import classify_health
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
@@ -74,32 +80,44 @@ def check_node(node):
         _verify = _cert if os.path.exists(_cert) else True
         resp = requests.get(node["endpoint"], timeout=10, verify=_verify)
         elapsed_ms = round((time.time() - start) * 1000)
-        if resp.status_code == 200:
-            try:
-                data = resp.json()
-            except ValueError:
-                data = {}
+        # The BODY decides, never the status code alone: a 200 from an
+        # unrelated site is "impostor", not "up".
+        content_type = ""
+        try:
+            content_type = resp.headers.get("Content-Type", "") or ""
+        except Exception:
+            content_type = ""
+        body = getattr(resp, "content", b"") or b""
+        probe = classify_health(resp.status_code, content_type, body)
+        checked_at = datetime.utcnow().isoformat() + "Z"
+        if probe.state == "up":
+            data = probe.body or {}
             return {
                 "up": True,
+                "state": "up",
                 "status_code": resp.status_code,
                 "response_ms": elapsed_ms,
-                "version": data.get("version", "unknown"),
-                "uptime": data.get("uptime", data.get("uptime_seconds", 0)),
+                "version": probe.version or "unknown",
+                "uptime": probe.uptime_s or 0,
                 "active_miners": data.get("active_miners", data.get("miners", 0)),
                 "current_epoch": data.get("epoch", data.get("current_epoch", 0)),
-                "checked_at": datetime.utcnow().isoformat() + "Z",
+                "checked_at": checked_at,
             }
-        else:
-            return {
-                "up": False,
-                "status_code": resp.status_code,
-                "response_ms": elapsed_ms,
-                "checked_at": datetime.utcnow().isoformat() + "Z",
-            }
+        return {
+            "up": False,
+            "state": probe.state,
+            "error": probe.detail,
+            "status_code": resp.status_code,
+            "response_ms": elapsed_ms,
+            "version": probe.version or "unknown",
+            "uptime": probe.uptime_s or 0,
+            "checked_at": checked_at,
+        }
     except Exception as e:
         elapsed_ms = round((time.time() - start) * 1000)
         return {
             "up": False,
+            "state": "unreachable",
             "error": str(e)[:200],
             "response_ms": elapsed_ms,
             "checked_at": datetime.utcnow().isoformat() + "Z",
@@ -139,6 +157,7 @@ def poll_all():
         history[nid].append({
             "t": result["checked_at"],
             "up": result["up"],
+            "state": result.get("state", "unknown"),
             "ms": result.get("response_ms", 0),
         })
         # Trim to 24h
@@ -180,7 +199,12 @@ def api_status():
     return jsonify({
         "nodes": list(node_status.values()),
         "timestamp": datetime.utcnow().isoformat() + "Z",
-        "overall": "operational" if all(n.get("up") for n in node_status.values()) else "degraded",
+        "overall": (
+            "operational" if all(n.get("up") for n in node_status.values())
+            else "impostor" if any(n.get("state") == "impostor"
+                                  for n in node_status.values())
+            else "degraded"
+        ),
     })
 
 

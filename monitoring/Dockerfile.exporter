@@ -6,6 +6,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY rustchain-exporter.py ./
+COPY node_probe.py ./
 
 EXPOSE 9100
 

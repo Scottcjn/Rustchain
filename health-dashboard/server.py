@@ -21,6 +21,195 @@ import threading
 import requests
 from flask import Flask, jsonify, render_template_string, send_from_directory
 
+# ── Shared /health body validator (vendored) ─────────────────────────────
+# Vendored from monitoring/node_probe.py (classify_health). This image is
+# built with health-dashboard/ as its Docker context, so COPY cannot reach
+# ../monitoring/node_probe.py; restructuring the build context is out of
+# scope for this change. Canonical source: monitoring/node_probe.py.
+# The parity test in monitoring/test_impostor_across_monitors.py asserts
+# this copy returns the canonical verdict on all fixtures.
+# Everything between these markers is copied verbatim into
+# health-dashboard/server.py and into the fallback path of
+# tools/node_health_monitor.py and tools/node-health-cli/node_health.py.
+# It must stay self-contained: only json / dataclasses / typing names.
+# The parity test in monitoring/test_impostor_across_monitors.py asserts
+# every copy returns the canonical verdict on all fixtures.
+STATE_UP = "up"
+STATE_DOWN = "down"
+STATE_IMPOSTOR = "impostor"
+STATE_DEGRADED = "degraded"
+STATE_UNREACHABLE = "unreachable"
+
+STATES = (STATE_UP, STATE_DOWN, STATE_IMPOSTOR, STATE_DEGRADED, STATE_UNREACHABLE)
+
+# A /health body without any of these is not a node body.
+REQUIRED_KEYS = ("ok", "version", "uptime_s")
+
+# Slots behind the tip before a live node counts as degraded.
+DEFAULT_TIP_AGE_SLOTS_THRESHOLD = 600
+
+
+@dataclass
+class ProbeResult:
+    """The verdict of one /health probe."""
+
+    state: str
+    status_code: Optional[int] = None
+    ok: Optional[bool] = None
+    version: Optional[str] = None
+    uptime_s: Optional[int] = None
+    db_rw: Optional[bool] = None
+    tip_age_slots: Optional[int] = None
+    detail: str = ""
+    response_ms: Optional[float] = None
+    content_type: Optional[str] = None
+    # Parsed JSON object when the body was one, else None. Monitors read
+    # extra fields (active_miners, epoch, ...) from here without re-parsing.
+    body: Optional[Dict] = None
+
+
+def _coerce_content_type(content_type) -> str:
+    if isinstance(content_type, str):
+        return content_type
+    return ""
+
+
+def _coerce_body(body) -> bytes:
+    if isinstance(body, (bytes, bytearray)):
+        return bytes(body)
+    if isinstance(body, str):
+        return body.encode("utf-8")
+    return b""
+
+
+def _is_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def classify_health(status_code, content_type, body, *,
+                    tip_age_slots_threshold: int = DEFAULT_TIP_AGE_SLOTS_THRESHOLD
+                    ) -> ProbeResult:
+    """Classify one /health answer. Pure function — no I/O.
+
+    ``status_code`` is the HTTP status (None when there was no response),
+    ``content_type`` the response Content-Type header, ``body`` the raw
+    response bytes (a str is accepted for convenience).
+    """
+    content_type = _coerce_content_type(content_type)
+    raw = _coerce_body(body)
+    media = content_type.split(";")[0].strip().lower()
+
+    if status_code is None:
+        return ProbeResult(state=STATE_UNREACHABLE, detail="no HTTP response")
+
+    head = raw.lstrip()[:200].decode("utf-8", errors="replace").lower()
+    is_html = (
+        media == "text/html"
+        or head.startswith("<!doctype html")
+        or head.startswith("<html")
+    )
+    if is_html:
+        if status_code == 200:
+            return ProbeResult(
+                state=STATE_IMPOSTOR,
+                status_code=status_code,
+                content_type=content_type,
+                detail=("HTTP 200 with text/html body — an unrelated site "
+                        "(e.g. a single-page app) is answering on this address, "
+                        "not a RustChain node"),
+            )
+        # An HTML error page from a proxy is the node being down, not an impostor.
+        return ProbeResult(
+            state=STATE_DOWN,
+            status_code=status_code,
+            content_type=content_type,
+            detail="HTTP %s" % status_code,
+        )
+
+    try:
+        parsed = json.loads(raw.decode("utf-8")) if raw else None
+    except (ValueError, UnicodeDecodeError):
+        parsed = None
+    data = parsed if isinstance(parsed, dict) else None
+    if data is None:
+        if status_code == 200:
+            return ProbeResult(
+                state=STATE_IMPOSTOR,
+                status_code=status_code,
+                content_type=content_type,
+                detail="HTTP 200 but /health body is not a JSON object",
+            )
+        return ProbeResult(
+            state=STATE_DOWN,
+            status_code=status_code,
+            content_type=content_type,
+            detail="HTTP %s" % status_code,
+        )
+
+    missing = [key for key in REQUIRED_KEYS if key not in data]
+    if "ok" in data and not isinstance(data["ok"], bool):
+        missing.append("ok (not a boolean)")
+    if "version" in data and not (isinstance(data["version"], str)
+                                  and data["version"]):
+        missing.append("version (not a non-empty string)")
+    if "uptime_s" in data and (not _is_number(data["uptime_s"])
+                               or data["uptime_s"] < 0):
+        missing.append("uptime_s (not a number >= 0)")
+    if missing:
+        if status_code == 200:
+            return ProbeResult(
+                state=STATE_IMPOSTOR,
+                status_code=status_code,
+                content_type=content_type,
+                body=data,
+                detail=("HTTP 200 but /health JSON is missing required field(s): "
+                        + ", ".join(missing)),
+            )
+        return ProbeResult(
+            state=STATE_DOWN,
+            status_code=status_code,
+            content_type=content_type,
+            body=data,
+            detail="HTTP %s" % status_code,
+        )
+
+    ok = data["ok"]
+    db_rw = data.get("db_rw")
+    tip_age = data.get("tip_age_slots")
+    tip_age = tip_age if _is_number(tip_age) else None
+
+    result = ProbeResult(
+        state=STATE_UP,
+        status_code=status_code,
+        ok=ok,
+        version=data["version"],
+        uptime_s=data["uptime_s"],
+        db_rw=db_rw if isinstance(db_rw, bool) else None,
+        tip_age_slots=tip_age,
+        content_type=content_type,
+        body=data,
+    )
+    if ok is False:
+        result.state = STATE_DEGRADED
+        result.detail = "node reports ok:false"
+        return result
+    if db_rw is False:
+        result.state = STATE_DEGRADED
+        result.detail = "node reports db_rw:false"
+        return result
+    if tip_age is not None and tip_age > tip_age_slots_threshold:
+        result.state = STATE_DEGRADED
+        result.detail = ("tip_age_slots %s is above threshold %s"
+                         % (tip_age, tip_age_slots_threshold))
+        return result
+    if status_code != 200:
+        # A valid healthy body behind an HTTP error status: the transport
+        # says something is wrong, so do not call it up.
+        result.state = STATE_DOWN
+        result.detail = "HTTP %s" % status_code
+        return result
+    return result
+
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name, str(default))
     try:
@@ -100,7 +289,7 @@ class NodeStatus:
     name: str
     endpoint: str
     location: str
-    status: str  # 'up', 'down', 'degraded'
+    status: str  # 'up', 'down', 'degraded', 'impostor'
     response_time_ms: float
     version: str
     uptime_s: int
@@ -242,8 +431,18 @@ def check_node_health(node_config: dict) -> NodeStatus:
         )
         response_time_ms = (time.time() - start_time) * 1000
         
-        if response.status_code == 200:
-            data = response.json()
+        # The BODY decides, never the status code alone: a 200 from an
+        # unrelated site is "impostor", not "up". Transport failures keep
+        # their existing 'down' mapping below.
+        content_type = ""
+        try:
+            content_type = response.headers.get("Content-Type", "") or ""
+        except Exception:
+            content_type = ""
+        body = getattr(response, "content", b"") or b""
+        probe = classify_health(response.status_code, content_type, body)
+        data = probe.body or {}
+        if probe.state == "up":
             return NodeStatus(
                 node_id=node_config['id'],
                 name=node_config['name'],
@@ -251,27 +450,42 @@ def check_node_health(node_config: dict) -> NodeStatus:
                 location=node_config['location'],
                 status='up',
                 response_time_ms=response_time_ms,
-                version=data.get('version', 'unknown'),
-                uptime_s=data.get('uptime_s', 0),
+                version=probe.version or 'unknown',
+                uptime_s=probe.uptime_s or 0,
                 active_miners=data.get('active_miners', 0),
                 current_epoch=data.get('epoch', 0),
                 timestamp=timestamp
             )
-        else:
+        if probe.state == "degraded":
             return NodeStatus(
                 node_id=node_config['id'],
                 name=node_config['name'],
                 endpoint=node_config['endpoint'],
                 location=node_config['location'],
-                status='down',
+                status='degraded',
                 response_time_ms=response_time_ms,
-                version='unknown',
-                uptime_s=0,
-                active_miners=0,
-                current_epoch=0,
+                version=probe.version or 'unknown',
+                uptime_s=probe.uptime_s or 0,
+                active_miners=data.get('active_miners', 0),
+                current_epoch=data.get('epoch', 0),
                 timestamp=timestamp,
-                error=f"HTTP {response.status_code}"
+                error=probe.detail
             )
+        # impostor or down: the body proves nothing, so report no node state.
+        return NodeStatus(
+            node_id=node_config['id'],
+            name=node_config['name'],
+            endpoint=node_config['endpoint'],
+            location=node_config['location'],
+            status=probe.state,
+            response_time_ms=response_time_ms,
+            version='unknown',
+            uptime_s=0,
+            active_miners=0,
+            current_epoch=0,
+            timestamp=timestamp,
+            error=probe.detail
+        )
             
     except requests.exceptions.Timeout:
         return NodeStatus(
@@ -329,11 +543,15 @@ def detect_status_change(old_status: dict, new_status: NodeStatus):
     new = new_status.status
     
     if old != new:
-        if new == 'down':
+        if new in ('down', 'impostor'):
             incident_type = 'node_down'
-            details = f"Node {new_status.name} went DOWN. Error: {new_status.error or 'Unknown'}"
+            details = f"Node {new_status.name} went DOWN ({new_status.status}). Error: {new_status.error or 'Unknown'}"
             logger.warning(f"INCIDENT: {details}")
-        elif old == 'down' and new == 'up':
+        elif new == 'degraded' and old != 'degraded':
+            incident_type = 'node_degraded'
+            details = f"Node {new_status.name} is DEGRADED. Error: {new_status.error or 'Unknown'}"
+            logger.warning(f"INCIDENT: {details}")
+        elif old in ('down', 'impostor', 'degraded') and new == 'up':
             incident_type = 'node_recovery'
             details = f"Node {new_status.name} recovered and is back UP"
             logger.info(f"INCIDENT: {details}")
@@ -456,7 +674,9 @@ def api_status():
         'last_updated': datetime.now().isoformat(),
         'total_nodes': len(NODES),
         'nodes_up': sum(1 for s in current_status.values() if s['status'] == 'up'),
-        'nodes_down': sum(1 for s in current_status.values() if s['status'] == 'down')
+        'nodes_down': sum(1 for s in current_status.values() if s['status'] == 'down'),
+        'nodes_impostor': sum(1 for s in current_status.values() if s['status'] == 'impostor'),
+        'nodes_degraded': sum(1 for s in current_status.values() if s['status'] == 'degraded')
     })
 
 
@@ -707,6 +927,21 @@ HTML_TEMPLATE = '''
             color: var(--danger);
         }
         
+        .status-badge.impostor {
+            background: rgba(249, 115, 22, 0.2);
+            color: #f97316;
+        }
+        
+        .status-badge.degraded {
+            background: rgba(234, 179, 8, 0.2);
+            color: #eab308;
+        }
+        
+        .status-badge.unreachable {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+        
         .node-metrics {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -926,7 +1161,7 @@ HTML_TEMPLATE = '''
                     <div class="node-metrics">
                         <div class="metric">
                             <div class="metric-label">Response Time</div>
-                            <div class="metric-value">${node.status === 'up' ? node.response_time_ms.toFixed(0) + ' ms' : 'N/A'}</div>
+                            <div class="metric-value">${['up', 'degraded'].includes(node.status) ? node.response_time_ms.toFixed(0) + ' ms' : 'N/A'}</div>
                         </div>
                         <div class="metric">
                             <div class="metric-label">Version</div>
@@ -1134,7 +1369,7 @@ HTML_TEMPLATE = '''
                     top: ${(90 - node.lat) / 180 * 100}%;
                     width: 12px;
                     height: 12px;
-                    background: ${current_status[node.id]?.status === 'up' ? '#22c55e' : '#ef4444'};
+                    background: ${current_status[node.id]?.status === 'up' ? '#22c55e' : current_status[node.id]?.status === 'degraded' ? '#eab308' : current_status[node.id]?.status === 'impostor' ? '#f97316' : '#ef4444'};
                     border: 2px solid white;
                     border-radius: 50%;
                     cursor: pointer;

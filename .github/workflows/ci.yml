@@ -62,3 +62,17 @@ jobs:
         RC_P2P_SECRET: "ci-test-secret-00000000000000000000000000000000"
         DB_PATH: ":memory:"
       run: pytest tests/ -v --ignore=tests/test_epoch_settlement_formal.py --ignore=tests/test_rip201_bucket_spoof.py
+
+    - name: Monitor probe tests (bounty #17180)
+      run: |
+        pip install -q prometheus_client requests -r monitoring/alerts/requirements.txt
+        # tests/test_settlement_lag_visibility.py is deliberately not in
+        # this list: its NodeHelperTest setup errors on clean upstream main
+        # too (duplicate prometheus registration when the node module
+        # loads), so it would turn this step red for a pre-existing reason.
+        python -m pytest status/test_status.py monitoring/test_node_probe.py monitoring/test_impostor_across_monitors.py health-dashboard/test_health_dashboard.py tools/node-health-cli/tests/test_node_health.py tests/test_health_monitor.py tests/test_node_liveness_requires_node_state.py tools/test_node_health_total_miners.py -v
+        # Alerts tests run separately: monitoring/alerts/tests/ and tests/
+        # share basenames (test_api.py, ...), so pytest cannot collect both
+        # directories in one invocation (import file mismatch). Pre-existing
+        # repo layout quirk, unrelated to this change.
+        python -m pytest monitoring/alerts/tests/ -v
