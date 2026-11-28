@@ -25,6 +25,7 @@ Date: 2026-03-07
 
 import hmac
 import logging
+import math
 import sqlite3
 import time
 from typing import Any, Optional
@@ -63,7 +64,7 @@ def _verify_miner_signature(miner_id: str, action: str, data: dict) -> bool:
     signature_hex = signature_value.strip()
     timestamp = data.get("timestamp")
 
-    if not signature_hex or not timestamp:
+    if not signature_hex or timestamp is None or isinstance(timestamp, bool) or not timestamp:
         return False
 
     # Reject stale signatures to prevent replay
@@ -182,25 +183,32 @@ def _balance_rtc_for_miner(conn: sqlite3.Connection, miner_id: str) -> float:
     return 0.0
 
 
-def _deduct_proposal_fee(conn: sqlite3.Connection, miner_id: str, fee_rtc: float) -> None:
-    """Deduct proposal fee from miner balance, tolerant to both schemas."""
-    fee_i64 = int(fee_rtc * 1_000_000)
+def _deduct_proposal_fee(conn: sqlite3.Connection, miner_id: str, fee_rtc: float) -> bool:
+    """Atomically deduct proposal fee from miner balance if sufficient, tolerant to both schemas."""
+    if isinstance(fee_rtc, bool) or not math.isfinite(fee_rtc) or fee_rtc < 0:
+        return False
+    fee_i64 = int(round(fee_rtc * 1_000_000))
     try:
         updated = conn.execute(
-            "UPDATE balances SET amount_i64 = amount_i64 - ? WHERE miner_id = ?",
-            (fee_i64, miner_id),
+            "UPDATE balances SET amount_i64 = amount_i64 - ? "
+            "WHERE miner_id = ? AND amount_i64 >= ?",
+            (fee_i64, miner_id, fee_i64),
         ).rowcount
         if updated > 0:
-            return
-    except Exception:
+            return True
+    except sqlite3.OperationalError:
         pass
     try:
-        conn.execute(
-            "UPDATE balances SET balance_rtc = balance_rtc - ? WHERE miner_pk = ?",
-            (fee_rtc, miner_id),
-        )
-    except Exception:
+        updated = conn.execute(
+            "UPDATE balances SET balance_rtc = balance_rtc - ? "
+            "WHERE miner_pk = ? AND balance_rtc >= ?",
+            (fee_rtc, miner_id, fee_rtc),
+        ).rowcount
+        if updated > 0:
+            return True
+    except sqlite3.OperationalError:
         pass
+    return False
 
 
 def _get_miner_antiquity_weight(miner_id: str, db_path: str) -> float:
@@ -211,8 +219,10 @@ def _get_miner_antiquity_weight(miner_id: str, db_path: str) -> float:
                 "SELECT antiquity_multiplier FROM miners WHERE wallet_name = ?",
                 (miner_id,)
             ).fetchone()
-            if row:
-                return max(float(row[0]), 1.0)
+            if row and row[0] is not None:
+                weight = float(row[0])
+                if math.isfinite(weight):
+                    return max(weight, 1.0)
     except Exception as e:
         log.debug("Could not fetch antiquity for %s: %s", miner_id, e)
     return 1.0
@@ -447,7 +457,11 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         expires_at = now + VOTING_WINDOW_SECONDS
 
         try:
-            with sqlite3.connect(db_path) as conn:
+            with sqlite3.connect(db_path, timeout=30.0) as conn:
+                # Serialize balance check, anti-spam cap, and fee deduction atomically
+                # so concurrent requests cannot overdraft balances or bypass the cap.
+                conn.execute("BEGIN IMMEDIATE")
+
                 # Fee check: ensure miner has sufficient balance
                 table_check = conn.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name='balances'"
@@ -455,6 +469,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                 if table_check:
                     balance = _balance_rtc_for_miner(conn, miner_id)
                     if balance < PROPOSAL_FEE_RTC:
+                        conn.execute("ROLLBACK")
                         return jsonify({
                             "error": f"Insufficient balance: proposal fee is {PROPOSAL_FEE_RTC} RTC"
                         }), 402
@@ -468,12 +483,16 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                     (miner_id, STATUS_ACTIVE)
                 ).fetchone()[0]
                 if active_count >= MAX_PROPOSALS_PER_MINER:
+                    conn.execute("ROLLBACK")
                     return jsonify({"error": f"Max {MAX_PROPOSALS_PER_MINER} active proposals per miner"}), 429
 
                 # Charge the fee only after every rejection path is ruled out, so
                 # an accepted proposal still pays and a rejection never burns balance.
-                if table_check:
-                    _deduct_proposal_fee(conn, miner_id, PROPOSAL_FEE_RTC)
+                if table_check and not _deduct_proposal_fee(conn, miner_id, PROPOSAL_FEE_RTC):
+                    conn.execute("ROLLBACK")
+                    return jsonify({
+                        "error": f"Insufficient balance: proposal fee is {PROPOSAL_FEE_RTC} RTC"
+                    }), 402
 
                 # Build proposal data for Sophia evaluation
                 proposal_data = {
@@ -652,7 +671,7 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
                 if proposal[1] != STATUS_ACTIVE:
                     conn.execute("ROLLBACK")
                     return jsonify({"error": f"proposal is {proposal[1]}, not active"}), 409
-                if proposal[2] < now:
+                if proposal[2] <= now:
                     conn.execute("ROLLBACK")
                     return jsonify({"error": "voting window has closed"}), 409
 
@@ -786,22 +805,37 @@ def create_governance_blueprint(db_path: str) -> Blueprint:
         expected_key = os.environ.get("RUSTCHAIN_ADMIN_KEY", "")
         if not expected_key or not hmac.compare_digest(admin_key, expected_key):
             return jsonify({"error": "invalid admin_key"}), 403
+        if len(reason) > MAX_DESCRIPTION_LEN:
+            return jsonify({"error": f"reason too long (max {MAX_DESCRIPTION_LEN} chars)"}), 400
+
+        _settle_expired_proposals(db_path)
+        now = int(time.time())
 
         try:
-            with sqlite3.connect(db_path) as conn:
+            with sqlite3.connect(db_path, timeout=30.0) as conn:
+                conn.execute("BEGIN IMMEDIATE")
                 proposal = conn.execute(
-                    "SELECT id, status FROM governance_proposals WHERE id = ?",
+                    "SELECT id, status, expires_at FROM governance_proposals WHERE id = ?",
                     (proposal_id,)
                 ).fetchone()
                 if not proposal:
+                    conn.execute("ROLLBACK")
                     return jsonify({"error": "proposal not found"}), 404
                 if proposal[1] != STATUS_ACTIVE:
+                    conn.execute("ROLLBACK")
                     return jsonify({"error": f"proposal is already {proposal[1]}"}), 409
+                if proposal[2] <= now:
+                    conn.execute("ROLLBACK")
+                    return jsonify({"error": "voting window has closed"}), 409
 
-                conn.execute(
-                    "UPDATE governance_proposals SET status = ?, vetoed_by = ?, veto_reason = ? WHERE id = ?",
-                    (STATUS_VETOED, "founder", reason, proposal_id)
+                updated = conn.execute(
+                    "UPDATE governance_proposals SET status = ?, vetoed_by = ?, veto_reason = ? "
+                    "WHERE id = ? AND status = ?",
+                    (STATUS_VETOED, "founder", reason, proposal_id, STATUS_ACTIVE)
                 )
+                if updated.rowcount != 1:
+                    conn.execute("ROLLBACK")
+                    return jsonify({"error": "proposal is no longer active"}), 409
                 conn.commit()
 
         except Exception as e:
